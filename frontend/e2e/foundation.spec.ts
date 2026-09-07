@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./operation-fixture";
 import {
   source,
   diagnostics,
@@ -233,7 +233,7 @@ test("source route remount isolates late discovery results", async ({
   await page.goto("/sources/source-1/sync");
   let finish;
   await page.route(
-    "**/api/v1/sources/source-1/discovery",
+    "**/api/v1/sources/source-1/operations/discovery",
     (route) =>
       new Promise((resolve) => {
         finish = async () => {

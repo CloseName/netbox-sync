@@ -1,4 +1,5 @@
-import { test, expect, chromium } from "@playwright/test";
+import { installOperationFixtures } from './operation-fixture';
+import { test, expect, chromium } from "./operation-fixture";
 import { mkdtemp, mkdir, writeFile, rm, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -119,7 +120,7 @@ async function fixture(page, options: any = {}) {
       sources.push(created);
       return route.fulfill({ json: created });
     }
-    if (p.endsWith("/sync-plan"))
+    if (p.endsWith("/operations/plan"))
       return route.fulfill({
         json: {
           ...mixedPlan,
@@ -553,6 +554,7 @@ test("native Chromium 200 percent zoom reflows the app", async () => {
       args: ["--window-size=1440,900"],
     });
     const page = context.pages()[0];
+    installOperationFixtures(page);
     await fixture(page);
     for (const route of ["/", "/sources", "/sources/source-1", "/sources/source-1/runs", "/sources/source-1/schedule", "/sources/source-1/diagnostics", "/sources/source-1/configuration", "/runs", "/runs/" + runId, "/diagnostics", "/sources/add"]) {
       await page.goto("http://127.0.0.1:5179" + route);

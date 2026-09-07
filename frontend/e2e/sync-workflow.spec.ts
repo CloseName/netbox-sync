@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./operation-fixture";
 import { source, diagnostics, run, runId } from "../tests/fixtures.mjs";
 const digest = "a".repeat(64);
 const row = (action: string, extra: any = {}) => ({
@@ -45,7 +45,7 @@ async function fixture(page, value = plan([row("UPDATE"), retention])) {
     const req = route.request(),
       path = new URL(req.url()).pathname;
     if (req.method() !== "GET") writes.push({ path, body: req.postDataJSON() });
-    if (path.endsWith("/sync-plan"))
+    if (path.endsWith("/operations/plan"))
       return route.fulfill({
         json: { ...value, source_instance: path.split("/")[4] },
       });
@@ -117,7 +117,7 @@ test("empty and independent discovery pending/result", async ({ page }) => {
   await expect(page.getByText("No plan yet")).toBeVisible();
   await page.screenshot({ path: "test-results/ui3-empty.png", fullPage: true });
   let release: any;
-  await page.route("**/api/v1/sources/source-1/discovery", async (route) => {
+  await page.route("**/api/v1/sources/source-1/operations/discovery", async (route) => {
     await new Promise((resolve) => (release = resolve));
     await route.fallback();
   });
@@ -137,7 +137,7 @@ test("empty and independent discovery pending/result", async ({ page }) => {
     path: "test-results/ui3-discovery-result.png",
     fullPage: true,
   });
-  expect(writes.filter((w) => w.path.endsWith("/sync-plan"))).toHaveLength(0);
+  expect(writes.filter((w) => w.path.endsWith("/operations/plan"))).toHaveLength(0);
   await build(page);
 });
 test("mixed operation counts, default filters and exact two-way diff", async ({
@@ -266,9 +266,10 @@ test("review allowed, keyboard modal trap/cancel/return and digest/token exactne
   await expect(page.locator(".sync-result")).toContainText("Sync completed");
   expect(
     writes.find((w) => w.path.endsWith("/sync-confirmations")).body,
-  ).toEqual({ plan_digest: digest, confirmed: true });
+  ).toEqual({ plan_digest: digest, confirmed: true, operation_id: expect.stringMatching(/^[a-f0-9-]{36}$/) });
   expect(writes.find((w) => w.path.endsWith("/sync")).body).toEqual({
     confirmation_token: "b".repeat(64),
+    operation_id: expect.stringMatching(/^[a-f0-9-]{36}$/),
   });
   await expect(
     page.getByRole("link", { name: "Open run", exact: true }),
@@ -373,7 +374,7 @@ test("duplicate clicks do not duplicate planning or apply", async ({
 }) => {
   const writes = await fixture(page);
   let releasePlan: any, releaseApply: any;
-  await page.route("**/api/v1/sources/source-1/sync-plan", async (route) => {
+  await page.route("**/api/v1/sources/source-1/operations/plan", async (route) => {
     await new Promise((resolve) => (releasePlan = resolve));
     await route.fallback();
   });
@@ -408,7 +409,7 @@ test("duplicate clicks do not duplicate planning or apply", async ({
   await expect(
     page.getByRole("heading", { name: "Sync completed", exact: true }),
   ).toBeVisible();
-  expect(writes.filter((w) => w.path.endsWith("/sync-plan"))).toHaveLength(1);
+  expect(writes.filter((w) => w.path.endsWith("/operations/plan"))).toHaveLength(1);
   expect(writes.filter((w) => w.path.endsWith("/sync"))).toHaveLength(1);
 });
 for (const stage of ["sync-confirmations", "sync"])
@@ -489,7 +490,7 @@ test("failed rebuild preserves previous evidence but cannot apply it", async ({
 }) => {
   await fixture(page);
   await build(page);
-  await page.route("**/api/v1/sources/source-1/sync-plan", (route) =>
+  await page.route("**/api/v1/sources/source-1/operations/plan", (route) =>
     route.fulfill({
       status: 503,
       json: { error: { code: "REGISTRY_UNAVAILABLE", message: "RAW SECRET" } },

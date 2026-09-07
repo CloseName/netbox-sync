@@ -18,6 +18,8 @@ import {
 import { healthStatus, runStatus, scheduleStates } from "../ui/status";
 import { duration } from "../ui/format";
 import { sourcePath, runPath } from "../ui/routes";
+import { SourceLifecyclePanel, RemovedSource, RemovedSourceLookup } from "./SourceLifecycle";
+import type { SourceLifecycle } from "../api/lifecycle";
 import { SourceSync } from "./SourceSync";
 import { SourceSchedule, ScheduleSummary } from "./SourceSchedule";
 import { DiagnosticAttention } from "../ui/DiagnosticAttention";
@@ -74,12 +76,15 @@ export function SourcesPage() {
   );
   const diagnostics = useResource(fetchDiagnostics);
   const detail = source.data;
+  const [removed, setRemoved] = useState<SourceLifecycle | null>(null);
   const evidence = diagnosticIndex(diagnostics.data).get(sourceInstance);
   const concern = attention(evidence);
   const base = sourcePath(sourceInstance);
   useEffect(() => {
     document.title = `${detail?.name ?? sourceInstance}${tab && tab !== "Overview" ? " / " + tab : ""} | NetBox Sync`;
   }, [detail?.name, sourceInstance, tab]);
+  if (removed?.source_instance === sourceInstance) return <RemovedSource value={removed} />;
+  if (source.failure instanceof SourceNotFoundError) return <RemovedSourceLookup source={sourceInstance} />;
   if (!tab)
     return (
       <main>
@@ -477,12 +482,13 @@ export function SourcesPage() {
               </details>
             </section>
           )}
-          {tab === "Configuration" && (
+          {tab === "Configuration" && (<>
             <SourceConfiguration
               source={detail}
               scheduleLink={base + "/schedule"}
             />
-          )}
+            <SourceLifecyclePanel source={detail} onRemoved={setRemoved} />
+          </>)}
         </>
       )}
     </main>

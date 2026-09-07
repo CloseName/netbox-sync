@@ -121,7 +121,7 @@ const pairs = (value: unknown): value is [string, unknown][] =>
       Array.isArray(pair) && pair.length === 2 && typeof pair[0] === "string",
   ) &&
   new Set(value.map((pair) => pair[0])).size === value.length;
-const validPlan = (value: unknown, instance: string): value is SyncPlan =>
+export const validPlan = (value: unknown, instance: string): value is SyncPlan =>
   record(value) &&
   value.source_instance === instance &&
   (value.source_type === "proxmox" || value.source_type === "esxi") &&
@@ -201,10 +201,11 @@ export async function prepareSync(
   instance: string,
   expectedDigest: string,
   signal: AbortSignal,
+  operationId?: string,
 ): Promise<string> {
   const response = await protectedPost(
     `/api/v1/sources/${encodeURIComponent(instance)}/sync-confirmations`,
-    { plan_digest: expectedDigest, confirmed: true },
+    { plan_digest: expectedDigest, confirmed: true, ...(operationId ? { operation_id: operationId } : {}) },
     signal,
   );
   if (!response.ok) throw await errorFor(response);
@@ -222,10 +223,11 @@ export async function applySync(
   instance: string,
   token: string,
   signal: AbortSignal,
+  operationId?: string,
 ): Promise<ApplyResult> {
   const response = await protectedPost(
     `/api/v1/sources/${encodeURIComponent(instance)}/sync`,
-    { confirmation_token: token },
+    { confirmation_token: token, ...(operationId ? {operation_id: operationId} : {}) },
     signal,
   );
   if (!response.ok) throw await errorFor(response);

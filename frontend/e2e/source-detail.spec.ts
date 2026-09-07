@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./operation-fixture";
 import { source, diagnostics, run, runId } from "../tests/fixtures.mjs";
 async function fixture(page, options: any = {}) {
   const sources = [source(), { ...source(2), enabled: true }],
@@ -343,7 +343,7 @@ test("schedule save A finishing on B cannot replace B state", async ({
 test("discovery persists across tabs", async ({ page }) => {
   await fixture(page);
   let release: any;
-  await page.route("**/api/v1/sources/source-1/discovery", async (route) => {
+  await page.route("**/api/v1/sources/source-1/operations/discovery", async (route) => {
     await new Promise((resolve) => {
       release = resolve;
     });
@@ -481,7 +481,7 @@ test("Build plan needs no discovery, retains result and confirmation semantics a
 }) => {
   await fixture(page);
   const digest = "a".repeat(64);
-  await page.route("**/api/v1/sources/source-1/sync-plan", (route) =>
+  await page.route("**/api/v1/sources/source-1/operations/plan", (route) =>
     route.fulfill({
       json: {
         source_instance: "source-1",
@@ -502,6 +502,7 @@ test("Build plan needs no discovery, retains result and confirmation semantics a
     expect(route.request().postDataJSON()).toEqual({
       plan_digest: digest,
       confirmed: true,
+      operation_id: expect.stringMatching(/^[a-f0-9-]{36}$/),
     });
     return route.fulfill({ json: { confirmation_token: "b".repeat(64) } });
   });
@@ -538,7 +539,7 @@ test("Build plan needs no discovery, retains result and confirmation semantics a
 test("late plan for A cannot appear on B", async ({ page }) => {
   await fixture(page);
   let release: any;
-  await page.route("**/api/v1/sources/source-1/sync-plan", async (route) => {
+  await page.route("**/api/v1/sources/source-1/operations/plan", async (route) => {
     await new Promise((resolve) => {
       release = resolve;
     });
@@ -560,7 +561,7 @@ test("late plan for A cannot appear on B", async ({ page }) => {
   });
   await page.goto("/sources/source-1/sync");
   await page.getByRole("button", { name: "Build plan", exact: true }).click();
-  await expect(page.getByText(/Building read-only plan/)).toBeVisible();
+  await expect(page.getByText(/Planning in progress/)).toBeVisible();
   await page.getByRole("link", { name: "Back to sources" }).click();
   await page.getByRole("link", { name: "Source 002", exact: true }).click();
   await section(page, "Sync").click();

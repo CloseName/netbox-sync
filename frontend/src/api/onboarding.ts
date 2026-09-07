@@ -1,6 +1,10 @@
 import { isSource } from './sources.ts';
 import type { Source } from './sources';
 
+export class SourceIdReservedError extends Error {
+  constructor() { super('This Source ID was previously used and is reserved by a removed source.'); }
+}
+
 export interface ConnectionInput {
   source_type: 'proxmox' | 'esxi'; address: string; verify_ssl: boolean;
   username: string; secret: string; token_id?: string;
@@ -21,7 +25,12 @@ async function post(path: string, payload: ConnectionInput | RegistrationInput |
       body: JSON.stringify(payload), signal: AbortSignal.timeout(20000) });
   } catch { throw new Error('Request failed or timed out. Registration outcome may require operator review.'); }
   if (!response.ok) {
-    if (response.status === 409) throw new Error('Source already exists or onboarding expired. Review before retrying.');
+    if (response.status === 409) {
+      let code='';
+      try { const value=await response.json(); if(typeof value?.error?.code==='string') code=value.error.code; } catch { /* safe fallback */ }
+      if (code==='SOURCE_ID_RESERVED') throw new SourceIdReservedError();
+      throw new Error('Source already exists or onboarding expired. Review before retrying.');
+    }
     if (response.status === 403) throw new Error('Write access rejected. Check the configured tunnel origin.');
     throw new Error('Operation failed. Check configuration or ask the operator; credentials are not displayed.');
   }

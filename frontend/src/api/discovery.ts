@@ -13,6 +13,9 @@ const item = (value: unknown): value is DiscoveryItem => record(value)
   && (value.matched_object_id === null || typeof value.matched_object_id === 'string' || typeof value.matched_object_id === 'number')
   && (value.matched_object_name === null || typeof value.matched_object_name === 'string');
 
+export const validDiscovery = (value: unknown, instance: string): value is DiscoveryResult =>
+  record(value) && value.source_instance === instance && (value.source_type === 'proxmox' || value.source_type === 'esxi') && typeof value.site_slug === 'string' && typeof value.cluster_name === 'string' && Array.isArray(value.items) && value.items.every(item);
+
 export async function runDiscovery(instance: string, signal: AbortSignal): Promise<DiscoveryResult> {
   let response: Response;
   try { response = await fetch(`/api/v1/sources/${encodeURIComponent(instance)}/discovery`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-NetBox-Sync-CSRF': 'same-origin' }, credentials: 'same-origin', body: '{}', signal, cache: 'no-store' }); }

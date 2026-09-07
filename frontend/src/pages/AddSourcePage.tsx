@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import {
   cancelOnboarding,
   registerSource,
+  SourceIdReservedError,
   testConnection,
 } from "../api/onboarding";
 import type { Source } from "../api/sources";
@@ -117,8 +118,9 @@ export function AddSourcePage() {
         confirm_sync_disabled: true,
       });
       setCreated(result);
-    } catch {
+    } catch (failure) {
       setError(
+        failure instanceof SourceIdReservedError ? failure.message :
         "Registration failed or outcome is uncertain. Ask the operator before retrying.",
       );
     } finally {

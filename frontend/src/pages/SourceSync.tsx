@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Source } from "../api/sources";
-import { runDiscovery } from "../api/discovery";
+import { fetchOperations, startOperation, operationReason, type SourceOperation } from "../api/operations";
 import type { DiscoveryResult } from "../api/discovery";
 import {
   applySync,
-  buildSyncPlan,
   ManualSyncRequestError,
   prepareSync,
 } from "../api/sync";
@@ -63,6 +62,58 @@ export function SourceSync({
     cancelButton = useRef<HTMLButtonElement>(null);
   const feedback = useRef<HTMLDivElement>(null);
   const selected = detail.source_instance;
+  const [operations, setOperations] = useState<SourceOperation[]>([]);
+  const [operationError, setOperationError] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  const [refreshOperations, setRefreshOperations] = useState(0);
+  const reviewedId = useRef('');
+  const inspectedId = useRef('');
+  const planOperation = operations.find(item => item.operation_kind === 'PLAN');
+  useEffect(() => {
+    if (!active) return;
+    const reconnect = () => setRefreshOperations(value=>value+1);
+    window.addEventListener('focus', reconnect);
+    return () => window.removeEventListener('focus', reconnect);
+  }, [active]);
+  useEffect(() => {
+    if (!active) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const rows = await fetchOperations(selected, AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]));
+        if (controller.signal.aborted) return;
+        setOperations(rows); setLoaded(true); setOperationError('');
+        if (rows.some(row => row.status === 'RUNNING')) timer = setTimeout(poll, 2500);
+      } catch {
+        if (!controller.signal.aborted) { setOperationError('Operation state is unavailable. Reload to check current state.'); setLoaded(false); setUsable(false); }
+      }
+    };
+    void poll();
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [selected, active, refreshOperations]);
+  useEffect(() => {
+    const current = operations.find(row => row.operation_kind === 'PLAN');
+    if (current) {
+      setPhase(previous => previous === 'validating' || previous === 'applying' ? previous : current.status === 'RUNNING' ? 'planning' : 'idle');
+      if (current.status === 'RUNNING') { setStarted(Date.parse(current.started_at)); setUsable(false); setPlanningError(null); }
+      else if (current.status === 'READY' && current.result && reviewedId.current !== current.operation_id) {
+        reviewedId.current = current.operation_id;
+        setPlan({value: current.result as SyncPlan, received: current.finished_at!}); setUsable(true); setPlanningError(null);
+      } else if (current.status === 'FAILED' || current.status === 'STALE') {
+        setUsable(false); setPlanningError(new ManualSyncRequestError(current.status === 'STALE' ? 'Plan is no longer current. Build a new plan.' : operationReason(current.safe_error_code)));
+      }
+    }
+    if (!current && !busy.current) setPhase(previous => previous === 'planning' ? 'idle' : previous);
+    const inspection = operations.find(row => row.operation_kind === 'DISCOVERY');
+    if (!inspection && !discoveryBusy.current) setDiscovering(false);
+    if (inspection) {
+      if (inspectedId.current !== inspection.operation_id) { inspectedId.current = inspection.operation_id; setDiscoveryOpen(true); }
+      setDiscovering(inspection.status === 'RUNNING'); setDiscoveryStarted(Date.parse(inspection.started_at));
+      if (inspection.status === 'SUCCEEDED' && inspection.result) { setDiscovery({value: inspection.result as DiscoveryResult, received: inspection.finished_at!}); setDiscoveryError(''); }
+      if (inspection.status === 'FAILED') setDiscoveryError(operationReason(inspection.safe_error_code));
+    }
+  }, [operations]);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -87,52 +138,21 @@ export function SourceSync({
     dialog.current?.close();
     if (active) confirmButton.current?.focus();
   };
-  const buildPlan = async () => {
-    if (busy.current || !detail.enabled) return;
-    busy.current = true;
-    setPhase("planning");
-    setStarted(Date.now());
-    setUsable(false);
-    setPlanningError(null);
+  const launch = async (kind: 'PLAN' | 'DISCOVERY') => {
+    if (!detail.enabled || !loaded || operations.some(row => row.operation_kind === kind && row.status === 'RUNNING')) return;
+    if (kind === 'PLAN') { if (busy.current) return; busy.current = true; setPhase('planning'); setStarted(Date.now()); setUsable(false); setPlanningError(null); }
+    else { if (discoveryBusy.current) return; discoveryBusy.current = true; setDiscovering(true); setDiscoveryOpen(true); setDiscoveryStarted(Date.now()); setDiscoveryError(''); }
     try {
-      const value = await buildSyncPlan(selected, AbortSignal.timeout(330000));
-      if (alive.current) {
-        setPlan({ value, received: new Date().toISOString() });
-        setUsable(true);
-      }
-    } catch (error) {
-      if (alive.current)
-        setPlanningError(
-          error instanceof ManualSyncRequestError
-            ? error
-            : new ManualSyncRequestError("Plan could not be built."),
-        );
+      const operation = await startOperation(selected, kind, AbortSignal.timeout(15000));
+      if (alive.current) { setOperations(rows => [...rows.filter(row => row.operation_kind !== kind), operation]); setRefreshOperations(value=>value+1); }
+    } catch {
+      if (alive.current) { setOperationError('Start acknowledgement was lost or rejected. Reload to check current state; no automatic retry.'); setLoaded(false); setRefreshOperations(value=>value+1); }
     } finally {
-      busy.current = false;
-      if (alive.current) setPhase("idle");
+      if (kind === 'PLAN') busy.current = false; else discoveryBusy.current = false;
     }
   };
-  const discover = async () => {
-    if (discoveryBusy.current || !detail.enabled || busy.current) return;
-    discoveryBusy.current = true;
-    setDiscovering(true);
-    setDiscoveryOpen(true);
-    setDiscoveryStarted(Date.now());
-    setDiscoveryError("");
-    try {
-      const value = await runDiscovery(selected, AbortSignal.timeout(330000));
-      if (alive.current)
-        setDiscovery({ value, received: new Date().toISOString() });
-    } catch (error) {
-      if (alive.current)
-        setDiscoveryError(
-          error instanceof Error ? error.message : "Discovery failed.",
-        );
-    } finally {
-      discoveryBusy.current = false;
-      if (alive.current) setDiscovering(false);
-    }
-  };
+  const buildPlan = () => launch('PLAN');
+  const discover = () => launch('DISCOVERY');
   const submit = async () => {
     if (
       !active ||
@@ -140,6 +160,7 @@ export function SourceSync({
       !confirmOpen ||
       !plan ||
       !usable ||
+      !planOperation ||
       !plan.value.apply_allowed ||
       !detail.enabled
     )
@@ -155,6 +176,7 @@ export function SourceSync({
         selected,
         reviewed.digest,
         AbortSignal.timeout(330000),
+        planOperation?.operation_id,
       );
       // Navigation to another source must not cause a later prepare response to submit apply.
       if (!alive.current) return;
@@ -164,6 +186,7 @@ export function SourceSync({
         selected,
         token,
         AbortSignal.timeout(330000),
+        planOperation?.operation_id,
       );
       if (alive.current) setResult(applyOutcome(value, reviewed.digest));
     } catch (error) {
@@ -185,17 +208,20 @@ export function SourceSync({
       <p className="muted">
         {detail.name} → Site {detail.site_slug} / {detail.cluster_name}
       </p>
+      {operationError && <p role="alert">{operationError} <button onClick={() => setRefreshOperations(value=>value+1)}>Reload operations</button></p>}
+      {!loaded && !operationError && <p role="status">Loading operation state...</p>}
+      {planOperation && <p className="muted">Started <Timestamp value={planOperation.started_at} />{planOperation.status === 'READY' && <> Built <Timestamp value={planOperation.finished_at} /></>}</p>}
       <div className="page-actions">
         <button
           className="primary"
-          disabled={phase !== "idle" || confirmOpen || !detail.enabled}
+          disabled={!loaded || phase !== "idle" || confirmOpen || !detail.enabled}
           onClick={buildPlan}
         >
           {plan ? "Rebuild plan" : "Build plan"}
         </button>
         <button
           disabled={
-            phase !== "idle" || discovering || confirmOpen || !detail.enabled
+            !loaded || applying || discovering || confirmOpen || !detail.enabled
           }
           onClick={discover}
         >
@@ -212,7 +238,7 @@ export function SourceSync({
         <div className="sync-pending">
           <p role="status">
             {phase === "planning"
-              ? "Building read-only plan"
+              ? "Planning in progress"
               : phase === "validating"
                 ? "Preparing / validating reviewed plan"
                 : "Submitting / applying reviewed plan"}{" "}
@@ -224,7 +250,7 @@ export function SourceSync({
       <div ref={feedback} tabIndex={-1}>
         {planningError && (
           <div className="source-error" role="alert">
-            <strong>Plan could not be built.</strong>
+            <strong>{planOperation?.status === 'STALE' ? 'Plan is no longer current.' : 'Plan could not be built.'}</strong>
             <p>{planningError.message}</p>
             <details>
               <summary>Technical details</summary>
