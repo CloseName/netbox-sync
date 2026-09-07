@@ -240,3 +240,60 @@ def test_manual_apply_lock_records_locked_without_starting_child(monkeypatch):
         supervisor.apply('pve-infra-test', token)
     assert recorder.finished[0]['status'] is RunStatus.LOCKED
     assert recorder.finished[0]['error_code'] == 'APPLY_LOCKED'
+
+
+class GenerationGuard:
+    def __init__(self):
+        self.current = '11111111-1111-4111-8111-111111111111'
+        self.calls = []
+
+    def review_guard(self, source, digest, operation_id):
+        from contextlib import contextmanager
+        from netbox_sync.source_operations import OperationError
+        @contextmanager
+        def guard():
+            self.calls.append((source, digest, operation_id))
+            if operation_id != self.current:
+                raise OperationError('PLAN_STALE')
+            yield
+        return guard()
+
+
+def test_replaced_generation_cannot_apply_even_with_unchanged_digest(monkeypatch):
+    writes = []
+    supervisor, _, recorder = _manual_supervisor(monkeypatch, writes.append)
+    gate = GenerationGuard()
+    supervisor.operations = gate
+    config = sample_source_config()
+    claims = ConfirmationClaims(config.source_instance, config.id, 'a' * 64, 'version',
+                                'source', 'target', gate.current)
+    token = supervisor._confirmations.issue(claims)
+    gate.current = '22222222-2222-4222-8222-222222222222'
+    with pytest.raises(ApplyWorkerError, match='PLAN_STALE'):
+        supervisor.apply(config.source_instance, token)
+    assert writes == []
+    assert recorder.finished[-1]['error_code'] == 'PLAN_STALE'
+    with pytest.raises(ApplyWorkerError, match='CONFIRMATION_INVALID'):
+        supervisor.apply(config.source_instance, token)
+
+
+def test_prepare_requires_reviewed_generation_and_binds_token(monkeypatch):
+    config = sample_source_config()
+    supervisor = ApplySupervisor('', '', '', '', '', '', '')
+    gate = GenerationGuard()
+    supervisor.operations = gate
+    calls = []
+    monkeypatch.setattr(supervisor, '_source', lambda _: config)
+    monkeypatch.setattr(supervisor, '_payload', lambda *_: {})
+    def plan(_):
+        calls.append(True)
+        return dict(apply_allowed=True, digest='a'*64, planner_version='v',
+                    source_fingerprint='s', target_fingerprint='t')
+    monkeypatch.setattr(supervisor, '_child', plan)
+    with pytest.raises(ApplyWorkerError, match='PLAN_STALE'):
+        supervisor.prepare(config.source_instance, 'a'*64)
+    assert calls == []
+    response = supervisor.prepare(config.source_instance, 'a'*64, gate.current)
+    claims = supervisor._confirmations.consume(response['confirmation_token'], config.source_instance)
+    assert claims.operation_id == gate.current
+    assert claims.plan_digest == 'a'*64

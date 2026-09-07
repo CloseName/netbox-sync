@@ -20,8 +20,12 @@ def source_database():
     dsn = _safe_test_dsn()
     schema = 'netbox_sync_test_' + uuid.uuid4().hex
     registry = SourceRegistry(lambda: psycopg.connect(dsn), schema)
-    # Setup only, never the API path. No Alembic baseline is applied.
-    registry.initialize()
+    # Production APIs require the migrated lifecycle schema.
+    from sqlalchemy import create_engine
+    from tests.test_migrations_postgres import _upgrade
+    engine = create_engine('postgresql+psycopg://', creator=lambda: psycopg.connect(dsn))
+    _upgrade(registry, engine)
+    engine.dispose()
     settings = ApiSettings(registry_dsn=dsn, registry_schema=schema)
     try:
         with TestClient(create_app(settings)) as client:

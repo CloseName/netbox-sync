@@ -59,7 +59,7 @@ def test_history_revision_is_additive_and_forward_only():
 
 
 def test_naming_revision_is_forward_only_and_schema_neutral():
-    revision = _revision('head')
+    revision = _revision('0003_netbox_sync_naming')
     assert revision.revision == '0003_netbox_sync_naming'
     assert revision.down_revision == '0002_sync_run_history'
     assert revision.upgrade('netbox_sync') is None
@@ -68,7 +68,7 @@ def test_naming_revision_is_forward_only_and_schema_neutral():
 
 
 def test_naming_revision_allows_only_guarded_disposable_test_schema(monkeypatch):
-    revision = _revision('head')
+    revision = _revision('0003_netbox_sync_naming')
     result = SimpleNamespace(scalar_one=lambda: 'netbox_sync_test')
     binding = SimpleNamespace(execute=lambda _query: result)
     monkeypatch.setattr(revision.op, 'get_bind', lambda: binding)
@@ -122,3 +122,14 @@ def test_invalid_schema_fails_before_connection_use():
     config.attributes['connection'] = SimpleNamespace(dialect=postgresql.dialect())
     with pytest.raises(ValueError, match='safe explicit'):
         command.upgrade(config, 'head')
+
+
+def test_ui6_revisions_form_one_forward_only_chain():
+    operations = _revision('0004_source_operations')
+    lifecycle = _revision('head')
+    assert operations.down_revision == '0003_netbox_sync_naming'
+    assert lifecycle.revision == '0005_source_tombstones'
+    assert lifecycle.down_revision == operations.revision
+    for revision in (operations, lifecycle):
+        with pytest.raises(RuntimeError):
+            revision.downgrade('netbox_sync_test')

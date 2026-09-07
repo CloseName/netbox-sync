@@ -17,6 +17,7 @@ class ConfirmationClaims:
     planner_version: str
     source_fingerprint: str
     target_fingerprint: str
+    operation_id: str | None = None
 
 
 class ConfirmationError(RuntimeError):

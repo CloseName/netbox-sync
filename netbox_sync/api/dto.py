@@ -327,6 +327,7 @@ class ConfirmationRequestDTO(PublicModel):
     """The browser may identify an exact plan but cannot submit operations."""
 
     plan_digest: str = Field(pattern=r'^[a-f0-9]{64}$')
+    operation_id: UUID | None = None
     confirmed: Literal[True]
 
 
@@ -341,6 +342,7 @@ class ApplyRequestDTO(PublicModel):
     """Only a worker-issued capability crosses the API boundary."""
 
     confirmation_token: str = Field(pattern=r'^[a-f0-9]{64}$')
+    operation_id: UUID | None = None
 
 
 class ApplyResultDTO(PublicModel):

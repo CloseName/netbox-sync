@@ -1,0 +1,10 @@
+ARG WEB_IMAGE=netbox-sync:local
+FROM postgres:16-bookworm AS pgtools
+FROM ${WEB_IMAGE}
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client && rm -rf /var/lib/apt/lists/*
+COPY --from=pgtools /usr/lib/postgresql/16/bin/ /usr/local/lib/pg16/
+ENV PATH=/usr/local/lib/pg16:$PATH
+RUN pip install --no-cache-dir pytest httpx
+COPY . /app
+CMD ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]

@@ -189,3 +189,38 @@ def test_hard_link_and_replaced_leaf_rollback_rejected(store):
     with pytest.raises(BrokerError):
         broker.rollback(OP, KEY, receipt)
     assert (root / KEY).read_text() == 'replacement'
+
+
+def test_lifecycle_cleanup_validates_all_files_before_removing_any(store):
+    broker, root = store
+    second = KEY + '-second'
+    broker.create(OP, KEY, VALUE)
+    (root / second).write_text('legacy-credential')
+    (root / second).chmod(0o600)
+    assert broker.remove_owned([KEY, second]) is False
+    assert (root / KEY).exists() and (root / second).exists()
+
+
+def test_lifecycle_cleanup_removes_only_completed_broker_files(store):
+    broker, root = store
+    second = KEY + '-second'
+    broker.create(OP, KEY, VALUE)
+    broker.create(OP, second, VALUE)
+    (root / 'unrelated').write_text('retain')
+    assert broker.remove_owned([KEY, second]) is True
+    assert not (root / KEY).exists() and not (root / second).exists()
+    assert (root / 'unrelated').read_text() == 'retain'
+
+
+def test_lifecycle_cleanup_retains_hardlinks_and_legacy_xattrs(store):
+    from netbox_sync.secret_broker import XATTR_NAMES, LEGACY_XATTR_NAMES
+    broker, root = store
+    broker.create(OP, KEY, VALUE)
+    os.link(root / KEY, root / 'linked')
+    assert broker.remove_owned([KEY]) is False
+    (root / 'linked').unlink()
+    for field, name in XATTR_NAMES.items():
+        os.setxattr(root / KEY, LEGACY_XATTR_NAMES[field], os.getxattr(root / KEY, name))
+        os.removexattr(root / KEY, name)
+    assert broker.remove_owned([KEY]) is False
+    assert (root / KEY).exists()

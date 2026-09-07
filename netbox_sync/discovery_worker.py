@@ -13,6 +13,8 @@ import socket
 import subprocess
 import struct
 import sys
+import signal
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -20,6 +22,7 @@ import psycopg
 
 from .source_config import SOURCE_INSTANCE_PATTERN
 from .source_registry import SourceRegistry
+from .source_operations import OperationStore, OperationError
 
 MAX_REQUEST = 512
 MAX_RESPONSE = 8 * 1024 * 1024
@@ -72,6 +75,7 @@ class DiscoverySupervisor:
         self._child_uid = child_uid
         self._child_gid = child_gid
         self._popen = popen
+        self.operations = None
 
     def _source(self, instance):
         try:
@@ -222,8 +226,17 @@ def _receive(connection):
         raise WorkerError('REQUEST_INVALID') from None
     if request == {'operation': 'health'}:
         return None, 'health'
+    if isinstance(request, dict) and request.get('operation') == 'invalidate_plan':
+        from uuid import UUID
+        try:
+            if set(request) != {'operation','source_instance','operation_id'} or not SOURCE_INSTANCE_PATTERN.fullmatch(request['source_instance']):
+                raise ValueError()
+            UUID(request['operation_id'])
+        except (ValueError, TypeError, AttributeError):
+            raise WorkerError('REQUEST_INVALID') from None
+        return request['source_instance'], request
     if set(request) not in ({'source_instance'}, {'source_instance', 'operation'}) \
-            or request.get('operation', 'discover') not in ('discover', 'plan') \
+            or request.get('operation', 'discover') not in ('discover', 'plan', 'start_plan', 'start_discovery', 'operations') \
             or not SOURCE_INSTANCE_PATTERN.fullmatch(request.get('source_instance', '')):
         raise WorkerError('REQUEST_INVALID')
     return request['source_instance'], request.get('operation', 'discover')
@@ -238,9 +251,47 @@ def _authorize_peer(connection, allowed_uid):
         raise WorkerError('PEER_FORBIDDEN')
 
 
-def _handle_request(supervisor, instance, operation):
-    """Answer health without touching registry, secrets, NetBox, or a child."""
-    return {'status': 'ok'} if operation == 'health' else supervisor.run(instance, operation)
+def _operation_public(row):
+    return {key: (str(value) if key == 'operation_id' else value.isoformat()
+                  if hasattr(value, 'isoformat') else value) for key, value in row.items()}
+
+
+def _handle_request(supervisor, instance, operation, launch=None):
+    """Own operation state outside HTTP; preserve injected test supervisors."""
+    if operation == 'health':
+        return {'status': 'ok'}
+    store = getattr(supervisor, 'operations', None)
+    if store is None:
+        if operation in ('start_plan', 'start_discovery', 'operations'):
+            raise WorkerError('OPERATIONS_UNAVAILABLE')
+        return supervisor.run(instance, operation)
+    if isinstance(operation, dict):
+        store.invalidate_plan(instance, operation['operation_id'])
+        return {}
+    if operation == 'operations':
+        return {'operations': [_operation_public(row) for row in store.latest(instance)]}
+    kind = 'PLAN' if operation in ('plan', 'start_plan') else 'DISCOVERY'
+    row, created = store.start(instance, kind)
+    run = lambda: store.execute(row, lambda: supervisor.run(
+        instance, 'plan' if kind == 'PLAN' else 'discover'))
+    if operation.startswith('start_'):
+        if created:
+            launch(run)
+        return {'operation': _operation_public(row)}
+    if created:
+        run()
+    deadline = time.monotonic() + 130
+    while time.monotonic() < deadline:
+        current = next((item for item in store.latest(instance)
+                        if item['operation_id'] == row['operation_id']), None)
+        if current is None:
+            raise WorkerError('PLAN_STALE')
+        if current['status'] != 'RUNNING':
+            if current['result'] is not None:
+                return current['result']
+            raise WorkerError(current['safe_error_code'] or 'OPERATION_FAILED')
+        time.sleep(0.5)
+    raise WorkerError('OPERATION_STILL_EXECUTING')
 
 
 def serve(socket_path, supervisor, allowed_uid):
@@ -262,19 +313,45 @@ def serve(socket_path, supervisor, allowed_uid):
         server.bind(str(path))
         os.chown(path, 0, allowed_uid)
         os.chmod(path, 0o660)
-        server.listen(8)
+        server.listen(32)
+        signal.signal(signal.SIGCHLD, signal.SIG_IGN)
         while True:
             connection, _ = server.accept()
+            try:
+                _authorize_peer(connection, allowed_uid)
+            except WorkerError as exc:
+                try:
+                    connection.sendall(json.dumps({'ok': False, 'error': exc.code}).encode())
+                finally:
+                    connection.close()
+                continue
+            pid = os.fork()
+            if pid:
+                connection.close()
+                continue
+            signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+            server.close()
+            def launch(callback):
+                worker_pid = os.fork()
+                if worker_pid == 0:
+                    connection.close()
+                    try:
+                        callback()
+                    finally:
+                        os._exit(0)
             with connection:
                 try:
                     _authorize_peer(connection, allowed_uid)
                     instance, operation = _receive(connection)
-                    result = {'ok': True, 'result': _handle_request(supervisor, instance, operation)}
-                except WorkerError as exc:
+                    result = {'ok': True, 'result': _handle_request(supervisor, instance, operation, launch)}
+                except (WorkerError, OperationError) as exc:
                     result = {'ok': False, 'error': exc.code}
                 except Exception:  # pylint: disable=broad-exception-caught
                     result = {'ok': False, 'error': 'WORKER_INTERNAL_ERROR'}
-                connection.sendall(json.dumps(result).encode())
+                try:
+                    connection.sendall(json.dumps(result, separators=(',', ':')).encode())
+                finally:
+                    os._exit(0)
 
 
 def main():
@@ -301,6 +378,9 @@ def main():
                                      args.netbox_url or os.environ.get('NETBOX_SYNC_DISCOVERY_NB_API_URL', ''),
                                      args.netbox_token_file,
                                      args.child_uid, args.child_gid)
+    supervisor.operations = OperationStore(
+        os.environ.get('NETBOX_SYNC_OPERATION_WRITER_DSN', ''),
+        args.registry_schema or os.environ.get('NETBOX_SYNC_REGISTRY_SCHEMA', ''))
     serve(args.socket, supervisor, args.api_uid)
 
 

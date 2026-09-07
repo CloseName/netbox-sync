@@ -17,6 +17,8 @@ from dataclasses import asdict
 from pathlib import Path
 
 import psycopg
+from contextlib import nullcontext
+from .source_operations import OperationStore, OperationError
 
 from .application.confirmation import ConfirmationClaims, ConfirmationError, ConfirmationStore
 from .discovery_worker import (_bounded_secret, _child_config, _config_payload, _drop_privileges,
@@ -130,6 +132,7 @@ class ApplySupervisor:
         self._child_uid, self._child_gid, self._popen = child_uid, child_gid, popen
         self._confirmations = confirmations or ConfirmationStore()
         self._runs = run_repository
+        self.operations = None
 
     def _source(self, instance):
         try:
@@ -201,18 +204,22 @@ class ApplySupervisor:
             raise ApplyWorkerError('APPLY_FAILED')
         return response['result']
 
-    def prepare(self, instance, digest):
-        """Recompute plan and issue a capability only for an exact safe match."""
-        config = self._source(instance)
-        plan = self._child(self._payload(config, 'plan'))
-        if not plan['apply_allowed']:
-            raise ApplyWorkerError('PLAN_BLOCKED')
-        if plan['digest'] != digest:
-            raise ApplyWorkerError('PLAN_STALE')
-        claims = ConfirmationClaims(instance, config.id, digest, plan['planner_version'],
-                                    plan['source_fingerprint'], plan['target_fingerprint'])
-        return {'confirmation_token': self._confirmations.issue(claims),
-                'expires_in_seconds': 300}
+    def prepare(self, instance, digest, operation_id=None):
+        """Recompute the exact current generation and bind its single-use token."""
+        guard = self.operations.review_guard(instance, digest, operation_id) if self.operations else nullcontext()
+        try:
+            with guard:
+                config = self._source(instance)
+                plan = self._child(self._payload(config, 'plan'))
+                if not plan['apply_allowed']:
+                    raise ApplyWorkerError('PLAN_BLOCKED')
+                if plan['digest'] != digest:
+                    raise ApplyWorkerError('PLAN_STALE')
+                claims = ConfirmationClaims(instance, config.id, digest, plan['planner_version'],
+                    plan['source_fingerprint'], plan['target_fingerprint'], operation_id)
+                return {'confirmation_token': self._confirmations.issue(claims), 'expires_in_seconds': 300}
+        except OperationError as exc:
+            raise ApplyWorkerError(exc.code) from None
 
     def apply(self, instance, token):
         """Consume, lock, reload and recompute before any write."""
@@ -239,15 +246,20 @@ class ApplySupervisor:
                     fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except OSError:
                     raise ApplyWorkerError('APPLY_LOCKED') from None
-                config = self._source(instance)
-                if config.id != claims.source_id:
-                    raise ApplyWorkerError('PLAN_STALE')
-                apply_started = True
-                result = self._child(self._payload(config, 'apply', claims.plan_digest))
-                if result.get('plan_digest') != claims.plan_digest:
-                    # The child may already have crossed the NetBox write boundary.
-                    # A response-contract mismatch is therefore not a pre-write stale plan.
-                    raise ApplyWorkerError('OUTCOME_UNCERTAIN')
+                guard = self.operations.review_guard(instance, claims.plan_digest, claims.operation_id) if self.operations else nullcontext()
+                try:
+                    with guard:
+                        config = self._source(instance)
+                        if config.id != claims.source_id:
+                            raise ApplyWorkerError('PLAN_STALE')
+                        apply_started = True
+                        result = self._child(self._payload(config, 'apply', claims.plan_digest))
+                        if result.get('plan_digest') != claims.plan_digest:
+                            # The child may already have crossed the NetBox write boundary.
+                            # A response-contract mismatch is therefore not a pre-write stale plan.
+                            raise ApplyWorkerError('OUTCOME_UNCERTAIN')
+                except OperationError as exc:
+                    raise ApplyWorkerError(exc.code) from None
             finally:
                 os.close(lock_fd)
             counts = ActionCounts(**result.pop('action_counts', {}))
@@ -303,6 +315,13 @@ def _receive(connection):
     operation = request.get('operation') if isinstance(request, dict) else None
     allowed = ({'operation', 'source_instance', 'plan_digest'} if operation == 'prepare'
                else {'operation', 'source_instance', 'confirmation_token'})
+    if operation == 'prepare' and isinstance(request, dict) and 'operation_id' in request:
+        allowed = allowed | {'operation_id'}
+        from uuid import UUID
+        try:
+            UUID(request['operation_id'])
+        except (ValueError, TypeError, AttributeError):
+            raise ApplyWorkerError('REQUEST_INVALID') from None
     if (not isinstance(request, dict) or set(request) != allowed
             or operation not in ('prepare', 'apply')
             or not SOURCE_INSTANCE_PATTERN.fullmatch(request.get('source_instance', ''))
@@ -328,6 +347,8 @@ def _handle_request(supervisor, request):
     if request['operation'] == 'health':
         return {'status': 'ok'}
     if request['operation'] == 'prepare':
+        if 'operation_id' in request:
+            return supervisor.prepare(request['source_instance'], request['plan_digest'], request['operation_id'])
         return supervisor.prepare(request['source_instance'], request['plan_digest'])
     return supervisor.apply(request['source_instance'], request['confirmation_token'])
 
@@ -384,6 +405,7 @@ def main():
             os.environ.get('NETBOX_SYNC_RUN_WRITER_DSN', ''),
             os.environ.get('NETBOX_SYNC_REGISTRY_SCHEMA', ''),
         ))
+    supervisor.operations = OperationStore(supervisor._dsn, supervisor._schema)
     serve(args.socket, supervisor, args.api_uid)
 
 

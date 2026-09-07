@@ -62,10 +62,12 @@ services:
     user: "0:0"
     group_add: ["10001"]
     command: [python, -m, netbox_sync.secret_broker, --socket, /run/netbox-sync-broker/broker.sock, --secret-root, /var/lib/netbox-sync/source-secrets, --allowed-uid, "10001"]
-    network_mode: none
+    env_file: ${NETBOX_SYNC_CONFIG_DIR:-./deploy/examples}/broker.env
+    networks: [netbox-sync-db]
     cap_add: [CHOWN]
     volumes:
       - netbox-sync-broker-socket:/run/netbox-sync-broker
+      - ${NETBOX_SYNC_APPLY_LOCK_DIR:-/run/netbox-sync}:/run/netbox-sync-lock
       - ${NETBOX_SYNC_SOURCE_SECRET_DIR:-./deploy/example-secrets/sources}:/var/lib/netbox-sync/source-secrets
     restart: unless-stopped
 

@@ -50,12 +50,18 @@ services:
     group_add: ["10001"]
     command: [python, -m, netbox_sync.secret_broker, --socket, /run/netbox-sync-broker/broker.sock,
               --secret-root, /var/lib/netbox-sync/source-secrets, --allowed-uid, "10001"]
-    network_mode: none
+    # Lifecycle requires the configured database; no provider credentials are mounted.
+    networks: [netbox]
+    environment:
+      NETBOX_SYNC_LIFECYCLE_WRITER_DSN: ${NETBOX_SYNC_LIFECYCLE_WRITER_DSN:-}
+      NETBOX_SYNC_REGISTRY_SCHEMA: ${NETBOX_SYNC_REGISTRY_SCHEMA:-}
+      NETBOX_SYNC_APPLY_LOCK_PATH: /run/netbox-sync/apply.lock
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     volumes:
       - netbox-sync-broker-socket:/run/netbox-sync-broker
+      - ${NETBOX_SYNC_APPLY_LOCK_DIR:-/run/netbox-sync}:/run/netbox-sync
       - ${NETBOX_SYNC_SOURCE_SECRET_DIR:-../secrets/sources}:/var/lib/netbox-sync/source-secrets
     restart: unless-stopped
 
@@ -73,6 +79,7 @@ services:
               --api-uid, "10001", --child-uid, "10001", --child-gid, "10001"]
     environment:
       NETBOX_SYNC_DISCOVERY_REGISTRY_DSN: ${NETBOX_SYNC_DISCOVERY_REGISTRY_DSN:-}
+      NETBOX_SYNC_OPERATION_WRITER_DSN: ${NETBOX_SYNC_OPERATION_WRITER_DSN:-}
       NETBOX_SYNC_REGISTRY_SCHEMA: ${NETBOX_SYNC_REGISTRY_SCHEMA:-}
       NETBOX_SYNC_DISCOVERY_NB_API_URL: ${NETBOX_SYNC_DISCOVERY_NB_API_URL:-}
     volumes:

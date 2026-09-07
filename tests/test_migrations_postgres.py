@@ -59,7 +59,7 @@ def test_existing_populated_registry_is_preserved(migration_database):
         marker = sa.Table('alembic_version', sa.MetaData(), schema=registry.schema,
                           autoload_with=connection)
         assert connection.execute(sa.select(marker.c.version_num)).scalar_one() == (
-            '0003_netbox_sync_naming')
+            '0005_source_tombstones')
         inspector = sa.inspect(connection)
         assert inspector.has_table('sync_runs', schema=registry.schema)
         assert inspector.get_foreign_keys('sync_runs', schema=registry.schema) == []

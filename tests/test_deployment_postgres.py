@@ -53,7 +53,7 @@ def test_clean_bootstrap_migrate_grants_and_idempotency(tmp_path):
     with psycopg.connect(deployment.connection_info('bootstrap', env)) as connection:
         with connection.cursor() as cursor:
             cursor.execute("SELECT version_num FROM netbox_sync.alembic_version")
-            assert cursor.fetchone() == ('0003_netbox_sync_naming',)
+            assert cursor.fetchone() == ('0005_source_tombstones',)
             cursor.execute("SELECT count(*) FROM netbox_sync.sources")
             assert cursor.fetchone() == (0,)
             cursor.execute("SELECT rolname FROM pg_roles WHERE rolname = ANY(%s)",
@@ -154,3 +154,34 @@ def test_migration_ownership_preflight_rejects_foreign_schema_owner(tmp_path):
             with connection.cursor() as cursor:
                 cursor.execute(sql.SQL('ALTER SCHEMA netbox_sync OWNER TO {}').format(
                     sql.Identifier(owner)))
+
+
+def test_ui6_writers_have_only_the_required_capabilities(tmp_path):
+    env = _environment(tmp_path)
+    deployment.bootstrap_roles(env); deployment.migrate(env); deployment.apply_grants(env)
+    with psycopg.connect(deployment.connection_info('bootstrap', env)) as connection:
+        for key in ('operation_writer','lifecycle_writer'):
+            role = deployment.DATABASE_ROLES[key]
+            for table in ('sources','source_operations','source_tombstones','sync_runs'):
+                for privilege in ('DELETE','TRUNCATE','TRIGGER','REFERENCES'):
+                    assert connection.execute('SELECT has_table_privilege(%s,%s,%s)',
+                        (role,'netbox_sync.'+table,privilege)).fetchone()==(False,)
+            assert connection.execute('SELECT has_schema_privilege(%s,%s,%s)',(role,'netbox_sync','CREATE')).fetchone()==(False,)
+        for key, table, column, allowed in (
+            ('lifecycle_writer','sources','enabled',True),
+            ('lifecycle_writer','sources','sync_enabled',True),
+            ('lifecycle_writer','sources','source_instance',False),
+            ('lifecycle_writer','sources','token_secret_key',False),
+            ('operation_writer','sources','enabled',False),
+            ('operation_writer','source_operations','status',True),
+            ('web_reader','source_operations','status',False),
+            ('apply_registry_reader','source_operations','status',False)):
+            assert connection.execute('SELECT has_column_privilege(%s,%s,%s,%s)',
+                (deployment.DATABASE_ROLES[key],'netbox_sync.'+table,column,'UPDATE')).fetchone()==(allowed,)
+    for key in ('operation_writer','lifecycle_writer'):
+        for statement in ('DELETE FROM netbox_sync.sources','TRUNCATE netbox_sync.source_operations',
+                          'CREATE TABLE netbox_sync.forbidden(id integer)',
+                          "UPDATE netbox_sync.sources SET source_instance='stolen'"):
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                with psycopg.connect(deployment.connection_info(key, env)) as connection:
+                    connection.execute(statement)

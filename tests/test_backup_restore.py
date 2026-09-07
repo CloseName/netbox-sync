@@ -54,11 +54,18 @@ class FakeDatabase:
         if not dump.read_bytes().startswith(b'PGDMP'):
             raise backup.BackupError('dump unreadable')
 
+    def reconcile_operations(self):
+        self.operations_reconciled = True
+
     def postgres_major(self):
         return self.major
 
     def target_counts(self):
         return 0, 0
+
+    def validate_empty_target(self):
+        if self.target_counts() != (0, 0):
+            raise backup.BackupError("fresh restore target contains registry or run-history rows")
 
     def validate_foundation_target(self):
         return None
@@ -80,7 +87,7 @@ def _layout(root):
         path.chmod(mode)
     install.activate_release(root, root / 'releases/r1')
     for name in install.CONFIG_NAMES:
-        text = ('NETBOX_SYNC_COMPOSE_PROJECT=test-project\nUNKNOWN_KEY=preserved\n'
+        text = ('NETBOX_SYNC_COMPOSE_PROJECT=test-project\nNETBOX_SYNC_IMAGE=netbox-sync:test\nUNKNOWN_KEY=preserved\n'
                 if name == 'compose.env' else f'FILE={name}\n')
         path = root / 'config' / name
         path.write_text(text, encoding='utf-8')
@@ -476,7 +483,7 @@ def test_fresh_database_restore_requires_live_maintenance_boundary(monkeypatch,
     observed = []
     tool = backup.DatabaseTool(tmp_path)
     monkeypatch.setattr(tool, 'validate_foundation_target', lambda: None)
-    monkeypatch.setattr(tool, 'target_counts', lambda: (0, 0))
+    monkeypatch.setattr(tool, 'validate_empty_target', lambda: None)
     monkeypatch.setattr(
         tool, '_run',
         lambda executable, arguments, **kwargs: observed.append(
@@ -499,8 +506,11 @@ def test_fresh_database_restore_requires_live_maintenance_boundary(monkeypatch,
     assert cleanup == (
         'DROP TABLE IF EXISTS netbox_sync.sync_runs; '
         'DROP TABLE IF EXISTS netbox_sync.sources; '
+        'DROP TABLE IF EXISTS netbox_sync.source_tombstones; '
+        'DROP TABLE IF EXISTS netbox_sync.source_operations; '
         'DROP TABLE IF EXISTS netbox_sync.schema_meta; '
         'DROP TABLE IF EXISTS netbox_sync.alembic_version; '
+        'DROP FUNCTION IF EXISTS netbox_sync.guard_source_credential_refs(); '
         'DROP SCHEMA netbox_sync')
     assert 'CASCADE' not in cleanup
     assert observed[1][2]['input_file'] == tmp_path / 'database.dump'
@@ -512,7 +522,7 @@ def test_fresh_restore_converts_verified_legacy_schema_without_cascade(monkeypat
     observed = []
     tool = backup.DatabaseTool(tmp_path)
     monkeypatch.setattr(tool, 'validate_foundation_target', lambda: None)
-    monkeypatch.setattr(tool, 'target_counts', lambda: (0, 0))
+    monkeypatch.setattr(tool, 'validate_empty_target', lambda: None)
     monkeypatch.setattr(tool, '_run', lambda executable, arguments, **kwargs:
                         observed.append((executable, arguments, kwargs)))
 
@@ -666,3 +676,17 @@ def test_stable_restore_failure_codes_are_secret_free():
     assert backup._failure_code(  # pylint: disable=protected-access
         'restore', backup.BackupError('backup database revision is newer or unsupported')) == \
         'RESTORE_INCOMPATIBLE'
+
+
+def test_external_backup_executes_the_same_client_binary_it_checked(tmp_path, monkeypatch):
+    monkeypatch.setattr(backup.shutil, 'which', lambda _: '/reviewed/pg16/pg_restore')
+    tool = backup.DatabaseTool(tmp_path, 'external', {'NETBOX_SYNC_BACKUP_DSN':'dbname=netbox_sync_backup_test'})
+    assert tool._command('pg_restore', '--version') == ['/reviewed/pg16/pg_restore','--version']
+
+@pytest.mark.parametrize('counts', ['1|0', '0|1'])
+def test_fresh_restore_rejects_orphan_operation_or_tombstone(monkeypatch, tmp_path, counts):
+    tool = backup.DatabaseTool(tmp_path)
+    monkeypatch.setattr(tool, 'target_counts', lambda: (0, 0))
+    monkeypatch.setattr(tool, 'query', lambda _statement: [counts])
+    with pytest.raises(backup.BackupError, match='operation or tombstone'):
+        tool.validate_empty_target()

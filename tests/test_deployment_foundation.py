@@ -89,7 +89,9 @@ def test_worker_network_and_credential_boundaries_are_preserved():
         '  netbox-sync-schedule-worker:', 1)[0]
     schedule = text.split('  netbox-sync-schedule-worker:', 1)[1].split(
         '  netbox-sync-scheduler:', 1)[0]
-    assert 'network_mode: none' in broker
+    assert 'networks: [netbox-sync-db]' in broker
+    assert 'netbox-sync-egress' not in broker
+    assert 'broker.env' in broker
     assert 'cap_add: [CHOWN]' in broker
     assert 'networks: [netbox-sync-db, netbox-sync-web]' in api
     assert 'netbox-sync-db, netbox-sync-egress' in discovery
@@ -460,6 +462,7 @@ def test_database_role_matrix_is_complete_and_has_no_secret_literals():
     assert set(deployment.DATABASE_ROLES) == {
         'owner', 'web_reader', 'registration_writer', 'discovery_reader',
         'apply_registry_reader', 'registry_reader', 'run_writer', 'schedule_writer',
+        'operation_writer', 'lifecycle_writer',
     }
     source = (ROOT / 'netbox_sync/deployment.py').read_text(encoding='utf-8')
     assert 'DELETE' not in source

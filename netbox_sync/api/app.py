@@ -26,7 +26,7 @@ from .database import PostgresHealthProbe
 from .dto import (DiagnosticsDTO, ErrorDTO, ErrorDetailDTO, LivenessDTO,
                   SystemHealthDTO, VersionDTO)
 from .settings import ApiSettings, application_version
-from .source_reader import PostgresSourceReader
+from .lifecycle_adapters import ActiveSourceReader, LifecycleRegistrationRegistry
 from .dto import (ApplyRequestDTO, ApplyResultDTO, ConfirmationDTO, ConfirmationRequestDTO,
                   DiscoveryResultDTO, ScheduleDTO, ScheduleUpdateDTO, SourceDTO,
                   SourceListDTO, SyncPlanDTO)
@@ -38,6 +38,8 @@ from .onboarding_dto import CancellationRequest, CancellationResult
 from .onboarding_adapters import BrokerSecretStore, RegistrationRegistry, test_esxi, test_proxmox
 from .run_reader import PostgresRunReader
 from .worker_health import WorkerHealthClient
+from .lifecycle_client import LifecycleClient, LifecycleRequestError
+from .operation_dto import LifecycleDTO, RemovalDTO
 from .schedule_client import ScheduleRequestError, ScheduleWorkerClient
 
 LOGGER = logging.getLogger('netbox_sync.api')
@@ -50,6 +52,20 @@ def _error(request, status, code, message):
 
 
 def _install_boundaries(app, settings):
+    @app.exception_handler(LifecycleRequestError)
+    async def lifecycle_error(request, exc):
+        messages = {
+            'SOURCE_NOT_FOUND': (404, 'Source not found'),
+            'SOURCE_ALREADY_REMOVED': (409, 'Source is already removed'),
+            'SOURCE_LIFECYCLE_CONFLICT': (409, 'Source changed; review its current state'),
+            'SOURCE_CONFIRMATION_INVALID': (422, 'Enter the exact Source ID'),
+            'SOURCE_OPERATION_ACTIVE': (409, 'Wait for active Plan or Discovery to finish'),
+            'SOURCE_APPLY_ACTIVE': (409, 'Wait for active synchronization to finish'),
+            'SOURCE_APPLY_UNCONFIRMED': (409, 'Synchronization outcome requires reconciliation'),
+        }
+        status, message = messages.get(exc.code, (503, 'Source lifecycle is unavailable; reload to check its state'))
+        return _error(request, status, exc.code if exc.code in messages else 'LIFECYCLE_UNAVAILABLE', message)
+
     @app.exception_handler(OnboardingError)
     async def onboarding_error(request, exc):
         errors = {
@@ -67,6 +83,9 @@ def _install_boundaries(app, settings):
             'REGISTRATION_UNCERTAIN': (503, 'Registration outcome requires operator reconciliation'),
         }
         status, message = errors[exc.code.value]
+        if getattr(exc, 'reserved_source_id', False):
+            return _error(request, 409, 'SOURCE_ID_RESERVED',
+                          'This Source ID was previously used and is reserved by a removed source.')
         return _error(request, status, exc.code.value, message)
 
     @app.exception_handler(SourceReadError)
@@ -92,6 +111,9 @@ def _install_boundaries(app, settings):
             'DISCOVERY_FAILED': (502, 'Discovery failed'),
             'DISCOVERY_RESPONSE_INVALID': (502, 'Discovery returned an invalid response'),
             'DISCOVERY_UNAVAILABLE': (503, 'Discovery worker is unavailable'),
+            'OPERATIONS_UNAVAILABLE': (503, 'Durable operations are unavailable'),
+            'OPERATION_STILL_EXECUTING': (409, 'The operation is still executing'),
+            'PLAN_STALE': (409, 'Plan is no longer current'),
         }
         status, message = errors.get(exc.code, errors['DISCOVERY_UNAVAILABLE'])
         return _error(request, status, exc.code, message)
@@ -147,7 +169,8 @@ def _install_boundaries(app, settings):
                     ) or (
                         request.url.path.startswith('/api/v1/sources/')
                         and request.url.path.endswith(('/discovery', '/sync-plan',
-                                                       '/sync-confirmations', '/sync', '/schedule'))
+                                                       '/sync-confirmations', '/sync', '/schedule',
+                                                       '/operations/plan', '/operations/discovery', '/remove'))
                     )):
                 origin = urlsplit(request.headers.get('origin', ''))
                 host = request.headers.get('host', '')
@@ -207,11 +230,11 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
     service = service or SystemHealthService(
         PostgresHealthProbe(settings), netbox_configured=settings.netbox_configured,
     )
-    source_service = source_service or SourceVisibilityService(PostgresSourceReader(settings))
+    source_service = source_service or SourceVisibilityService(ActiveSourceReader(settings))
     onboarding_service = onboarding_service or SourceOnboardingService(
         {'proxmox': partial(test_proxmox, policy=settings.egress_policy),
          'esxi': partial(test_esxi, policy=settings.egress_policy)}, EphemeralOnboardingStore(),
-        RegistrationRegistry(settings.registration_dsn, settings.registry_schema),
+        LifecycleRegistrationRegistry(settings.registration_dsn, settings.registry_schema),
         BrokerSecretStore(settings.broker_socket),
     )
     discovery_client = discovery_client or DiscoveryWorkerClient(settings.discovery_socket)
@@ -275,6 +298,16 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
     def source_detail(source_instance: str):
         return SourceDTO.from_view(source_service.get_source(source_instance))
 
+    lifecycle_client = LifecycleClient(settings.broker_socket)
+
+    @router.get('/sources/{source_instance}/lifecycle', response_model=LifecycleDTO)
+    def source_lifecycle(source_instance: str):
+        return lifecycle_client.request(source_instance)
+
+    @router.post('/sources/{source_instance}/remove', response_model=LifecycleDTO)
+    def remove_source(source_instance: str, payload: RemovalDTO):
+        return lifecycle_client.request(source_instance, payload.model_dump())
+
     @router.get('/sources/{source_instance}/schedule', response_model=ScheduleDTO)
     def source_schedule(source_instance: str):
         return ScheduleDTO.from_view(schedule_service.get(source_instance))
@@ -283,6 +316,34 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
     def update_source_schedule(source_instance: str, payload: ScheduleUpdateDTO):
         return ScheduleDTO.from_view(schedule_service.update(
             source_instance, payload.model_dump()))
+
+    def operation_view(value, source):
+        from .operation_dto import OperationDTO
+        result = dict(value)
+        if result.get('source_instance') != source:
+            raise DiscoveryRequestError('DISCOVERY_RESPONSE_INVALID')
+        if result.get('result') is not None and result['result'].get('source_instance') != source:
+            raise DiscoveryRequestError('DISCOVERY_RESPONSE_INVALID')
+        if result.get('result') is not None:
+            dto = SyncPlanDTO if result['operation_kind'] == 'PLAN' else DiscoveryResultDTO
+            result['result'] = dto.from_worker(result['result']).model_dump(mode='json')
+        return OperationDTO.model_validate(result)
+
+    @router.get('/sources/{source_instance}/operations')
+    def source_operations(source_instance: str):
+        source_service.get_source(source_instance)
+        return {'operations': [operation_view(value, source_instance) for value in
+                               discovery_client.operations(source_instance)['operations']]}
+
+    @router.post('/sources/{source_instance}/operations/plan', status_code=202)
+    def start_plan(source_instance: str, _request: SyncPlanRequestDTO):
+        source_service.get_source(source_instance)
+        return operation_view(discovery_client.start_operation(source_instance, 'PLAN')['operation'], source_instance)
+
+    @router.post('/sources/{source_instance}/operations/discovery', status_code=202)
+    def start_discovery(source_instance: str, _request: SyncPlanRequestDTO):
+        source_service.get_source(source_instance)
+        return operation_view(discovery_client.start_operation(source_instance, 'DISCOVERY')['operation'], source_instance)
 
     @router.post('/sources/{source_instance}/discovery', response_model=DiscoveryResultDTO)
     def discover_source(source_instance: str):
@@ -298,17 +359,33 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
             raise DiscoveryRequestError('DISCOVERY_RESPONSE_INVALID')
         return result
 
+    def persist_stale(source, operation_id, error):
+        if error.code == 'PLAN_STALE' and operation_id is not None:
+            try:
+                discovery_client.invalidate_plan(source, operation_id)
+            except Exception:
+                # Never weaken the original fail-closed apply response on transport loss.
+                pass
+
     @router.post('/sources/{source_instance}/sync-confirmations', response_model=ConfirmationDTO)
     def prepare_sync(source_instance: str, request: ConfirmationRequestDTO):
-        result = apply_client.prepare(source_instance, request.plan_digest)
-        return ConfirmationDTO.model_validate(result)
+        try:
+            result = (apply_client.prepare(source_instance, request.plan_digest, str(request.operation_id))
+                      if request.operation_id else apply_client.prepare(source_instance, request.plan_digest))
+            return ConfirmationDTO.model_validate(result)
+        except ApplyRequestError as exc:
+            persist_stale(source_instance, request.operation_id, exc)
+            raise
 
     @router.post('/sources/{source_instance}/sync', response_model=ApplyResultDTO)
     def apply_sync(source_instance: str, payload: ApplyRequestDTO, request: Request):
-        result = ApplyResultDTO.model_validate(apply_client.apply(
-            source_instance, payload.confirmation_token))
-        request.state.run_id = str(result.run_id) if result.run_id else None
-        return result
+        try:
+            result = ApplyResultDTO.model_validate(apply_client.apply(source_instance, payload.confirmation_token))
+            request.state.run_id = str(result.run_id) if result.run_id else None
+            return result
+        except ApplyRequestError as exc:
+            persist_stale(source_instance, payload.operation_id, exc)
+            raise
 
     @router.post('/sources/test-connection', response_model=ConnectionResult)
     def connection_test(request: ConnectionRequest):

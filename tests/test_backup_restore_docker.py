@@ -54,6 +54,8 @@ def test_bundled_postgres_custom_dump_restore_transport(tmp_path):
             "INSERT INTO netbox_sync.sources VALUES "
             "('pve-smoke', 'file', 'pve-id', 'file', 'pve-secret'), "
             "('esxi-smoke', 'file', 'esxi-user', 'file', 'esxi-password'); "
+            "CREATE TABLE netbox_sync.source_operations(source_instance text); "
+            "CREATE TABLE netbox_sync.source_tombstones(source_instance text); "
             "CREATE TABLE netbox_sync.sync_runs(run_id text, status text); "
             "INSERT INTO netbox_sync.sync_runs VALUES ('one', 'RUNNING')")
         assert database.metadata()['source_count'] == 2

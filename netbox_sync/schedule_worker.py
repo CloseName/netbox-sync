@@ -144,7 +144,8 @@ def main():
     parser.add_argument('--socket', required=True)
     parser.add_argument('--api-uid', type=int, default=10001)
     args = parser.parse_args()
-    store = ScheduleStore(os.environ.get('NETBOX_SYNC_SCHEDULE_WRITER_DSN', ''),
+    from .api.lifecycle_adapters import LifecycleScheduleStore
+    store = LifecycleScheduleStore(os.environ.get('NETBOX_SYNC_SCHEDULE_WRITER_DSN', ''),
                           os.environ.get('NETBOX_SYNC_REGISTRY_SCHEMA', ''))
     serve(args.socket, store, args.api_uid)
 

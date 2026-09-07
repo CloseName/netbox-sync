@@ -29,9 +29,11 @@ LEGACY_BOOTSTRAP_ROLE = 'infra_sync_bootstrap'
 DATABASE_ROLES = {
     key: f'netbox_sync_{key}' for key in (
         'owner', 'web_reader', 'registration_writer', 'discovery_reader',
-        'apply_registry_reader', 'registry_reader', 'run_writer', 'schedule_writer')
+        'apply_registry_reader', 'registry_reader', 'run_writer', 'schedule_writer',
+        'operation_writer', 'lifecycle_writer')
 }
-LEGACY_DATABASE_ROLES = {key: f'infra_sync_{key}' for key in DATABASE_ROLES}
+LEGACY_DATABASE_ROLES = {key: f'infra_sync_{key}' for key in DATABASE_ROLES
+                         if key not in {'operation_writer', 'lifecycle_writer'}}
 NAMING_CONFIRMATION = 'RENAME_INFRA_SYNC_DATABASE_TO_NETBOX_SYNC'
 PASSWORD_FILES = {
     'bootstrap': 'postgres_bootstrap_password',
@@ -398,6 +400,29 @@ def apply_grants(environ=None):
             _grant_columns(cursor, 'UPDATE', sources,
                            ('sync_enabled', 'sync_interval_seconds'),
                            DATABASE_ROLES['schedule_writer'])
+
+            operations = sql.Identifier(schema, 'source_operations')
+            tombstones = sql.Identifier(schema, 'source_tombstones')
+            for key in ('web_reader', 'registration_writer', 'schedule_writer', 'lifecycle_writer'):
+                cursor.execute(sql.SQL('GRANT SELECT ON {} TO {}').format(
+                    tombstones, sql.Identifier(DATABASE_ROLES[key])))
+            cursor.execute(sql.SQL('GRANT SELECT ON {} TO {}').format(
+                operations, sql.Identifier(DATABASE_ROLES['apply_registry_reader'])))
+            _grant_columns(cursor, 'SELECT', sources, ('source_instance','enabled'),
+                           DATABASE_ROLES['operation_writer'])
+            for privilege in ('SELECT','INSERT','UPDATE'):
+                cursor.execute(sql.SQL('GRANT {} ON {} TO {}').format(sql.SQL(privilege),
+                    operations, sql.Identifier(DATABASE_ROLES['operation_writer'])))
+            for table in (sources, operations, runs):
+                cursor.execute(sql.SQL('GRANT SELECT ON {} TO {}').format(
+                    table, sql.Identifier(DATABASE_ROLES['lifecycle_writer'])))
+            _grant_columns(cursor, 'UPDATE', sources, ('enabled','sync_enabled'),
+                           DATABASE_ROLES['lifecycle_writer'])
+            _grant_columns(cursor, 'INSERT', tombstones,
+                           ('source_instance','display_name','credential_state'),
+                           DATABASE_ROLES['lifecycle_writer'])
+            _grant_columns(cursor, 'UPDATE', tombstones, ('credential_state',),
+                           DATABASE_ROLES['lifecycle_writer'])
 
 
 def main(argv=None):

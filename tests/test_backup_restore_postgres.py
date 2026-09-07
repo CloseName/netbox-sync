@@ -105,6 +105,11 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
     with psycopg.connect(deployment.connection_info('bootstrap', environment)) as connection:
         _seed(connection)
         connection.commit()
+        connection.execute("UPDATE netbox_sync.sources SET enabled=false,sync_enabled=false WHERE source_instance='esxi-backup-test'")
+        connection.execute("INSERT INTO netbox_sync.source_tombstones(source_instance,display_name,credential_state) VALUES ('esxi-backup-test','Retained ESXi','REMOVED')")
+        connection.execute("INSERT INTO netbox_sync.source_operations(source_instance,operation_kind,operation_id,status) VALUES ('pve-backup-test','PLAN',%s,'RUNNING')", (uuid.uuid4(),))
+        connection.commit()
+        expected_tombstone = connection.execute('SELECT * FROM netbox_sync.source_tombstones').fetchall()
         expected = _snapshot(connection)
 
     tool = backup.DatabaseTool(
@@ -126,6 +131,8 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
     deployment.apply_grants(environment)
     with psycopg.connect(deployment.connection_info('bootstrap', environment)) as connection:
         assert _snapshot(connection) == expected
+        assert connection.execute('SELECT * FROM netbox_sync.source_tombstones').fetchall() == expected_tombstone
+        assert connection.execute('SELECT status FROM netbox_sync.source_operations').fetchone() == ('RUNNING',)
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT pg_get_userbyid(relowner) FROM pg_class c "
@@ -135,3 +142,9 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
             cursor.execute("SELECT has_table_privilege('netbox_sync_web_reader', "
                            "'netbox_sync.sync_runs', 'SELECT')")
             assert cursor.fetchone() == (True,)
+
+    tool.reconcile_operations()
+    with psycopg.connect(deployment.connection_info('bootstrap', environment)) as connection:
+        assert connection.execute('SELECT status,safe_error_code,result FROM netbox_sync.source_operations').fetchone() == ('FAILED','OPERATION_INTERRUPTED',None)
+        assert connection.execute('SELECT * FROM netbox_sync.source_tombstones').fetchall() == expected_tombstone
+    assert [row['source_instance'] for row in tool.source_secret_references()] == ['pve-backup-test']

@@ -26,6 +26,8 @@ ROLE_USERS = {
     'registry_reader': 'netbox_sync_registry_reader',
     'run_writer': 'netbox_sync_run_writer',
     'schedule_writer': 'netbox_sync_schedule_writer',
+    'operation_writer': 'netbox_sync_operation_writer',
+    'lifecycle_writer': 'netbox_sync_lifecycle_writer',
 }
 PASSWORD_NAMES = ('postgres_bootstrap', *ROLE_USERS)
 RELEASE_PATTERN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$')
@@ -35,7 +37,7 @@ IGNORED_NAMES = frozenset({
     '.venv', 'venv', '.idea', '.vscode',
 })
 CONFIG_NAMES = ('compose.env', 'api.env', 'discovery.env', 'apply.env',
-                'schedule.env', 'scheduler.env')
+                'schedule.env', 'scheduler.env', 'broker.env')
 ENV_KEY_PATTERN = re.compile(r'^[A-Z][A-Z0-9_]*$')
 LEGACY_ENV_SUFFIXES = frozenset({
     'APPLY_LOCK_DIR', 'APPLY_NB_API_URL', 'APPLY_NB_TOKEN_FILE',
@@ -258,6 +260,8 @@ def migrate_legacy_environment(root, *, apply=False):
     migrated = 0
     for filename in CONFIG_NAMES:
         path = root / 'config' / filename
+        if filename == 'broker.env' and not path.exists():
+            continue  # UI-6 adds this file after validating/translating an older bundle.
         if path.is_symlink() or not path.is_file() or path.stat().st_size > 1024 * 1024:
             raise InstallError(f'invalid config path: {filename}')
         lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
@@ -361,8 +365,13 @@ def _configuration_values(root, image):
             'NB_API_URL': '', 'NB_API_TOKEN_FILE': '',
             'NETBOX_SYNC_WRITE_HOSTS': '127.0.0.1:8000,localhost:8000',
         },
+        'broker.env': {
+            **common, 'NETBOX_SYNC_LIFECYCLE_WRITER_DSN': dsns['lifecycle_writer'],
+            'NETBOX_SYNC_APPLY_LOCK_PATH': '/run/netbox-sync-lock/apply.lock',
+        },
         'discovery.env': {
             **common, 'NETBOX_SYNC_DISCOVERY_REGISTRY_DSN': dsns['discovery_reader'],
+            'NETBOX_SYNC_OPERATION_WRITER_DSN': dsns['operation_writer'],
             'NETBOX_SYNC_DISCOVERY_NB_API_URL': '',
         },
         'apply.env': {

@@ -13,6 +13,7 @@ import stat as file_stat
 import struct
 import time
 from pathlib import Path
+from .source_lifecycle import LifecycleError
 
 
 KEY_PATTERN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]{15,127}$')
@@ -209,6 +210,41 @@ class SecretBrokerStore:
                 os.close(descriptor)
 
 
+    def remove_owned(self, keys):
+        """Remove an exclusively referenced pair only after lifecycle authorization.
+
+        Validate every file before unlinking any. The broker singleton and protected
+        directory remain authoritative; callers never supply filesystem paths.
+        """
+        opened = []
+        deleting = False
+        try:
+            for key in keys:
+                key = self._key(key)
+                descriptor = os.open(key, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                                     dir_fd=self._directory)
+                opened.append((descriptor, key, None))
+                info = os.fstat(descriptor)
+                stored, attributes = self._stored_attributes(descriptor)
+                if (not file_stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0
+                        or info.st_nlink != 1 or file_stat.S_IMODE(info.st_mode) != 0o600
+                        or stored['complete'] != b'1'
+                        or not set(XATTR_NAMES.values()).issubset(set(attributes))):
+                    return False
+                opened[-1] = (descriptor, key, attributes)
+            deleting = True
+            for descriptor, key, attributes in opened:
+                self._unlink_owned(descriptor, key, attributes)
+            return True
+        except BrokerError:
+            if deleting:
+                raise
+            return False
+        finally:
+            for descriptor, _, _ in opened:
+                os.close(descriptor)
+
+
 def _operation(value):
     if not isinstance(value, str) or not OPERATION_PATTERN.fullmatch(value):
         raise BrokerError('OPERATION_ID_INVALID')
@@ -223,7 +259,7 @@ def _reply(connection, payload):
         pass
 
 
-def serve(socket_path, secret_root, allowed_uid):
+def serve(socket_path, secret_root, allowed_uid, lifecycle=None):
     """Serve one request per local authenticated Unix connection."""
     store = SecretBrokerStore(secret_root)
     store.singleton()
@@ -257,6 +293,10 @@ def serve(socket_path, secret_root, allowed_uid):
             try:
                 raw = read_request(connection)
                 request = json.loads(raw)
+                if isinstance(request, dict) and request.get('action') in ('source_lifecycle', 'remove_source'):
+                    from .lifecycle_protocol import handle_lifecycle
+                    _reply(connection, {'ok': True, 'result': handle_lifecycle(lifecycle, store, request)})
+                    continue
                 operation_id = _operation(request.get('operation_id'))
                 if request.get('action') == 'create' and set(request) == {
                         'action', 'operation_id', 'key', 'value'}:
@@ -268,8 +308,8 @@ def serve(socket_path, secret_root, allowed_uid):
                     _reply(connection, {'ok': True})
                 else:
                     raise BrokerError('OPERATION_NOT_ALLOWED')
-            except (BrokerError, json.JSONDecodeError) as exc:
-                code = exc.code if isinstance(exc, BrokerError) else 'REQUEST_INVALID'
+            except (BrokerError, LifecycleError, json.JSONDecodeError) as exc:
+                code = exc.code if isinstance(exc, (BrokerError, LifecycleError)) else 'REQUEST_INVALID'
                 _reply(connection, {'ok': False, 'error': code})
             except Exception:  # pylint: disable=broad-exception-caught
                 _reply(connection, {'ok': False, 'error': 'BROKER_INTERNAL_ERROR'})
@@ -307,7 +347,11 @@ def main():
     parser.add_argument('--allowed-uid', type=int, default=10001)
     arguments = parser.parse_args()
     try:
-        serve(arguments.socket, arguments.secret_root, arguments.allowed_uid)
+        from .source_lifecycle import LifecycleStore
+        lifecycle = LifecycleStore(os.environ.get('NETBOX_SYNC_LIFECYCLE_WRITER_DSN', ''),
+            os.environ.get('NETBOX_SYNC_REGISTRY_SCHEMA', ''),
+            os.environ.get('NETBOX_SYNC_APPLY_LOCK_PATH', '/run/netbox-sync-lock/apply.lock'))
+        serve(arguments.socket, arguments.secret_root, arguments.allowed_uid, lifecycle)
     except Exception:
         print(json.dumps({'component': 'secret_broker', 'error_code': 'BROKER_FAILED'}))
         raise SystemExit(1) from None

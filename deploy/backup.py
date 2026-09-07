@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from psycopg import pq
-from psycopg.conninfo import conninfo_to_dict
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 if __package__ in (None, ''):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -29,7 +29,8 @@ from netbox_sync.deployment import PASSWORD_FILES, RESTORE_BOOTSTRAP_FILE
 
 FORMAT_VERSION = 1
 ALEMBIC_CHAIN = (
-    '0001_registry_baseline', '0002_sync_run_history', '0003_netbox_sync_naming')
+    '0001_registry_baseline', '0002_sync_run_history', '0003_netbox_sync_naming',
+    '0004_source_operations', '0005_source_tombstones')
 ALEMBIC_HEAD = ALEMBIC_CHAIN[-1]
 PRODUCT = 'NetBox Sync'
 DATABASE_NAME = 'netbox_sync'
@@ -50,7 +51,8 @@ VALID_BROKER_XATTR_SETS = frozenset({
     frozenset(BROKER_XATTRS),
 })
 PAYLOAD_FILES = ('database.dump', 'state.tar', 'manifest.json')
-FOUNDATION_TABLES = ('alembic_version', 'schema_meta', 'sources', 'sync_runs')
+FOUNDATION_TABLES = ('alembic_version', 'schema_meta', 'source_operations',
+                     'source_tombstones', 'sources', 'sync_runs')
 SAFE_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
 SAFE_SCHEMA = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,62}$')
 MAINTENANCE_SERVICES = (
@@ -260,9 +262,10 @@ class DatabaseTool:
             return _compose_command(
                 self.root, 'exec', '-T', 'postgres', executable, *arguments,
                 mode=self.mode)
-        if shutil.which(executable) is None:
+        resolved = shutil.which(executable)
+        if resolved is None:
             raise BackupError(f'required PostgreSQL client is missing: {executable}')
-        return [executable, *arguments]
+        return [resolved, *arguments]
 
     def _environment(self):
         environment = self.environ.copy()
@@ -342,10 +345,13 @@ class DatabaseTool:
 
     def source_secret_references(self):
         """Read logical credential references without resolving secret values."""
+        tombstones = self.query(f"SELECT to_regclass('{SCHEMA_NAME}.source_tombstones') IS NOT NULL") == ['t']
+        active = (f'WHERE NOT EXISTS (SELECT 1 FROM {SCHEMA_NAME}.source_tombstones t '
+                  'WHERE t.source_instance=sources.source_instance) ' if tombstones else '')
         rows = self.query(
             'SELECT source_instance, token_id_provider, token_id_key, '
             f'token_secret_provider, token_secret_key FROM {SCHEMA_NAME}.sources '
-            'ORDER BY source_instance')
+            + active + 'ORDER BY source_instance')
         references = []
         for row in rows:
             values = row.split('|')
@@ -381,6 +387,16 @@ class DatabaseTool:
         sources, runs = values[0].split('|')
         return int(sources), int(runs)
 
+    def validate_empty_target(self):
+        """Refuse replacement of any retained registry, history or lifecycle state."""
+        if self.target_counts() != (0, 0):
+            raise BackupError('fresh restore target contains registry or run-history rows')
+        values = self.query(
+            f'SELECT (SELECT count(*) FROM {SCHEMA_NAME}.source_operations), '
+            f'(SELECT count(*) FROM {SCHEMA_NAME}.source_tombstones)')
+        if values != ['0|0']:
+            raise BackupError('fresh restore target contains operation or tombstone rows')
+
     def validate_foundation_target(self):
         """Reject unknown schemas even when their application tables are empty."""
         values = self.query(
@@ -388,6 +404,14 @@ class DatabaseTool:
             f"FROM pg_tables WHERE schemaname='{SCHEMA_NAME}'")
         if values != [','.join(FOUNDATION_TABLES)]:
             raise BackupError('fresh restore target is not an exact Foundation schema')
+
+    def reconcile_operations(self):
+        """Restored process/confirmation state cannot authorize resumption or apply."""
+        self.query(f"UPDATE {SCHEMA_NAME}.source_operations SET "
+                   "status=CASE WHEN operation_kind='PLAN' AND status='READY' THEN 'STALE' ELSE 'FAILED' END, "
+                   "safe_error_code='OPERATION_INTERRUPTED', result=NULL, "
+                   "updated_at=clock_timestamp(), finished_at=clock_timestamp() "
+                   "WHERE status IN ('RUNNING','READY')")
 
     def postgres_major(self):
         """Return the connected server major version."""
@@ -408,14 +432,13 @@ class DatabaseTool:
         if not maintenance.authorizes_fresh_restore(self.root, self.mode):
             raise BackupError('fresh restore maintenance boundary is unavailable')
         self.validate_foundation_target()
-        if self.target_counts() != (0, 0):
-            raise BackupError('fresh restore target contains registry or run-history rows')
+        self.validate_empty_target()
         # Older reviewed dumps cannot name objects introduced by newer revisions.
         # Delete only the exact, prevalidated Foundation allowlist; never CASCADE.
         cleanup = '; '.join(
             f'DROP TABLE IF EXISTS {SCHEMA_NAME}.{name}'
             for name in reversed(FOUNDATION_TABLES)
-        ) + f'; DROP SCHEMA {SCHEMA_NAME}'
+        ) + f'; DROP FUNCTION IF EXISTS {SCHEMA_NAME}.guard_source_credential_refs(); DROP SCHEMA {SCHEMA_NAME}'
         self._run('psql', (
             '--no-psqlrc', '--quiet', *self._connection_arguments(),
             '--command', cleanup))
@@ -563,7 +586,10 @@ def verify_bundle(bundle, database=None, require_complete=True):
     archived_payload = {member.name.rstrip('/') for member in members if member.isfile()}
     if archived_payload != archived:
         raise BackupError('backup archive and manifest file sets differ')
-    if set(manifest['config_files']) != {f'config/{name}' for name in CONFIG_FILES}:
+    config_sets = [{f'config/{name}' for name in CONFIG_FILES}]
+    if manifest['alembic_revision'] in ALEMBIC_CHAIN[:3]:
+        config_sets.append({f'config/{name}' for name in CONFIG_FILES if name != 'broker.env'})
+    if set(manifest['config_files']) not in config_sets:
         raise BackupError('backup canonical configuration list is invalid')
     if not set(manifest['config_files']).issubset(archived):
         raise BackupError('backup canonical configuration is incomplete')
@@ -756,6 +782,35 @@ def _validate_restored_files(stage, manifest):
             raise BackupError('restored persistent file metadata differs from manifest')
 
 
+def _extend_ui6_restored_configuration(stage):
+    """Extend only older staged bundles, preserving all existing config bytes."""
+    config = stage / 'config'
+    discovery = _read_env(config / 'discovery.env')
+    needs_operations = 'NETBOX_SYNC_OPERATION_WRITER_DSN' not in discovery
+    needs_broker = not (config / 'broker.env').exists()
+    # Current bundles already contain the capability files; leave their env untouched.
+    if not needs_broker:
+        return
+    template = discovery.get('NETBOX_SYNC_DISCOVERY_REGISTRY_DSN', '')
+    if not template:
+        raise BackupError('older bundle lacks a reviewed discovery database configuration')
+    schema = discovery.get('NETBOX_SYNC_REGISTRY_SCHEMA')
+    if schema != SCHEMA_NAME:
+        raise BackupError('restored lifecycle schema is unsupported')
+    dsns = {}
+    for role in ('operation_writer','lifecycle_writer'):
+        password = install.ensure_secret(stage / 'secrets/infrastructure' / PASSWORD_FILES[role])
+        dsns[role] = make_conninfo(template, user='netbox_sync_' + role, password=password)
+    if needs_operations:
+        defaults = {'NETBOX_SYNC_OPERATION_WRITER_DSN': dsns['operation_writer']}
+        install._atomic_write(config / 'discovery.env', install._merged_config(config / 'discovery.env', defaults))
+    install.write_config(config / 'broker.env', {
+        'NETBOX_SYNC_REGISTRY_SCHEMA': schema,
+        'NETBOX_SYNC_LIFECYCLE_WRITER_DSN': dsns['lifecycle_writer'],
+        'NETBOX_SYNC_APPLY_LOCK_PATH': '/run/netbox-sync-lock/apply.lock',
+    })
+
+
 def _prepare_password_transition(root, restored):
     directory = Path(tempfile.mkdtemp(prefix='restore-passwords-', dir=root / 'state'))
     directory.chmod(0o700)
@@ -844,24 +899,26 @@ def restore_fresh(root, bundle, database, *, no_systemd=False, check_only=False)
     _validate_canonical_files(root)
     database.validate_foundation_target()
     if check_only:
-        if database.target_counts() != (0, 0):
-            raise BackupError('fresh restore target contains registry or run-history rows')
+        database.validate_empty_target()
         return manifest
     stage = Path(tempfile.mkdtemp(prefix='restore-state-', dir=root / 'state'))
     stage.chmod(0o700)
     with Maintenance(root, restore_after=False, no_systemd=no_systemd,
                      postgres_mode=database.mode) as maintenance:
         database.validate_foundation_target()
-        if database.target_counts() != (0, 0):
-            raise BackupError('fresh restore target contains registry or run-history rows')
+        database.validate_empty_target()
         _tar_extract(bundle / 'state.tar', stage)
         _validate_restored_files(stage, manifest)
         if manifest['product'] == LEGACY_PRODUCT:
             install.migrate_legacy_environment(stage, apply=True)
+        # Older bundles do not contain the new role secrets or broker env file.
+        # Extend only the staged restored state, after its exact metadata was verified.
+        _extend_ui6_restored_configuration(stage)
         database.restore_fresh(
             bundle / 'database.dump', maintenance, manifest['schema_name'])
         _run_deployment_tool(root, 'netbox-sync-migrate', postgres_mode=database.mode)
         _run_deployment_tool(root, 'netbox-sync-db-grants', postgres_mode=database.mode)
+        database.reconcile_operations()
         restored = database.metadata()
         if (restored['source_count'], restored['run_count']) != (
                 manifest['source_count'], manifest['run_count']):

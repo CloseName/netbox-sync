@@ -51,10 +51,10 @@ class ApplyWorkerClient:
             raise ApplyRequestError('APPLY_RESPONSE_INVALID')
         return response['result']
 
-    def prepare(self, source_instance, plan_digest):
+    def prepare(self, source_instance, plan_digest, operation_id=None):
         """Request a capability for a server-recomputed exact digest."""
         return self._request({'operation': 'prepare', 'source_instance': source_instance,
-                              'plan_digest': plan_digest})
+                              'plan_digest': plan_digest, **({'operation_id': str(operation_id)} if operation_id else {})})
 
     def apply(self, source_instance, confirmation_token):
         """Consume one opaque capability; never accept operations from the browser."""
