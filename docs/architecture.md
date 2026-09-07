@@ -431,3 +431,39 @@ reapplies grants, rotates fixed role passwords from restored protected files, an
 publishes filesystem state from staging. Runtime health is required, while the timer
 remains stopped for explicit read-only validation. See
 [Backup and restore](backup-restore.md).
+
+## UI-6 durable operations and source lifecycle
+
+`source_operations` is separate from authoritative `sync_runs`: at most one latest
+PLAN and one latest DISCOVERY slot per source, each with a generation UUID, timestamps,
+closed status/error and canonical result (8 MiB maximum). A source transaction advisory
+gate and composite key deduplicate starts; a per-source/kind session advisory lock owns
+execution. The discovery supervisor authenticates Unix peers, forks short request
+handlers and detaches provider work from the response socket. Closing a browser does
+not cancel accepted work. Other sources and the other operation kind remain independent.
+There is no global operation queue or persistent discovery history.
+
+Completion updates only the same RUNNING UUID. A discarded late completion records
+`OPERATION_COMPLETION_DISCARDED` with source/UUID only, without replacing the latest
+slot or inventing a sync run. A RUNNING slot older than 180 seconds is interrupted on
+lookup only if its executor lock is free. Provider work retains its existing 120-second
+child timeout. DB connections have bounded connection/statement/lock and TCP liveness
+settings. A process still holding an executor lock is conservatively treated as active;
+an operator must investigate an unresponsive supervisor, not force a concurrent retry.
+Results expire after 24 hours on lookup; plans become STALE. No automatic resumption.
+
+Manual confirmation and Apply bind the current READY generation as well as the existing
+digest and single-use token. The source gate prevents generation replacement during
+revalidation/write; Apply still uses the original shared filesystem lock and replans
+before writing. A failed newer plan cannot reactivate an older plan. Scheduled execution
+continues through its existing wrapper/lock and is not disabled by read-only planning.
+
+Removal uses the same apply lock, a source transition gate and a credential-reference
+gate. Active PLAN/DISCOVERY or RUNNING/OUTCOME_UNCERTAIN/PARTIALLY_APPLIED run evidence
+blocks removal. The transaction disables the source and automatic sync and commits a
+tombstone; NetBox objects, the original source row and history remain. Source identity
+is reserved. API/scheduler adapters exclude tombstones without redefining run history.
+Explicit local credential cleanup follows the commit through the existing root broker.
+Only exclusive broker-owned files pass reference, inode, mode and receipt checks;
+shared/ambiguous files remain. Cleanup failure cannot undo removal or imply revocation.
+There is no provider-side revocation, restore, purge, actor identity or new RBAC model.

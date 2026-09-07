@@ -59,8 +59,8 @@ container repr() is suppressed, without changing runtime fields or resolution.
 
 The opt-in netbox-sync-secret-broker service runs UID/GID 0:0, supplementary GID
 10001, with cap_drop ALL, no-new-privileges, read-only root filesystem and
-network_mode=none. Its only mounts are the dedicated source-secret directory and
-the shared Unix-socket volume. It has no TCP listener and no Docker socket.
+an internal DB network in production. Its mounts include the dedicated source-secret
+directory, shared Unix-socket volume and shared apply-lock directory. It has no TCP listener and no Docker socket.
 
 The Web/API remains UID 10001, cap_drop ALL, no-new-privileges and read-only. It
 receives only the socket volume read-only, not the source-secret directory.
@@ -69,7 +69,7 @@ group/others. Linux SO_PEERCRED must identify UID 10001 before a request is read
 The broker uses the supplementary group to set socket ownership without adding
 CAP_CHOWN. Container smoke tests exercise this exact restriction.
 
-Only create and rollback requests exist. There is no read/list endpoint. Clients
+Original credential operations are create and rollback; UI-6 adds fixed source lifecycle requests. There is no read/list endpoint. Clients
 send a logical key, never a filesystem path. Keys must match
 `^[A-Za-z0-9][A-Za-z0-9_-]{15,127}$`: no dots, slashes, backslashes or percent
 encoding. Onboarding generates src-<normalized-instance>-<kind>-<random-hex> keys.
@@ -211,7 +211,7 @@ approved private IPs work by default. Operator variables are comma-separated:
 Any nonempty allow configuration becomes a restriction: every answer must match an
 allowed CIDR or the approved hostname/suffix. Denied CIDRs always win. Prefer narrow
 CIDRs/exact hostnames; allowlisting a public hostname authorizes its public DNS answers.
-The broker has no egress; these variables apply only to the Test Connection child.
+The production broker has only internal DB reachability; these variables apply only to the Test Connection child.
 
 DNS is resolved once, every answer is checked, and one approved IPv4 answer is pinned
 for every subsequent socket lookup in the isolated child. Original hostname/SNI and
@@ -873,3 +873,36 @@ and UI redesign remain separate work.
 ## UI-0 / UI-1 frontend foundation
 
 See [Frontend foundation](frontend.md) for routing, operational Overview, Sources filtering, and status evidence boundaries.
+
+## UI-6 current operation/lifecycle API contract
+
+This section supersedes earlier synchronous-only and create/rollback-only descriptions.
+The API exposes protected `POST /api/v1/sources/{source}/operations/plan` and
+`.../operations/discovery` (202, current operation, including duplicate starts), plus
+`GET .../operations` (at most two latest slots). Closed DTOs reject foreign identity,
+inconsistent kind/result/status and unexpected worker fields. Canonical planner results
+are validated before persistence and projected without internal source IDs or secrets.
+Existing synchronous plan/discovery compatibility endpoints use the same durable store;
+the frontend uses short start/read requests. The discovery parent alone receives
+`NETBOX_SYNC_OPERATION_WRITER_DSN`; provider children never receive it.
+
+Prepare now requires the reviewed `operation_id` in the configured production path.
+The single-use capability binds it to the source and existing digest; Apply checks the
+current READY generation under the existing shared apply lock and still replans.
+Apply request operation metadata is not an alternative authorization token. PLAN_STALE
+revalidation invalidates only the exact reviewed generation through the discovery worker;
+failure to update that projection does not permit Apply. No weaker parallel apply path.
+
+`GET .../lifecycle` returns active revision or tombstone. Protected `POST .../remove`
+requires `confirmed_source`, current `revision`, and strict `remove_credentials` boolean.
+The API sends only fixed lifecycle actions over the peer-checked broker socket; it cannot
+request arbitrary paths or a general file deletion. Public errors are allowlisted.
+The broker now has a narrow lifecycle DB capability and the existing shared lock mount.
+Production broker networking is restricted to the internal DB network; the development
+Compose uses its configured external DB network. No provider credentials are revoked.
+No API migration-owner/writer DSN or source-secret filesystem mount is introduced.
+
+This remains an operator UI behind the established access boundary, not authentication
+or RBAC. Run history remains the evidence for actual synchronization and uncertain writes.
+See [architecture](architecture.md), [deployment](deployment.md) and
+[isolated historical bridge](historical-ui-test-bridge.md).

@@ -119,7 +119,7 @@ value is inherited only by the operator process/client tools and is never printe
 
 The supported target is a clean Debian host with the Foundation installed, its
 intended immutable release active, PostgreSQL reachable, fixed roles bootstrapped,
-and no source/history rows. First perform a no-write check:
+and no source/history/operation/tombstone rows. First perform a no-write check:
 
 ```sh
 cd /opt/netbox-sync/current
@@ -129,7 +129,7 @@ sudo python deploy/backup.py restore /protected/netbox-sync-backup-TIMESTAMP
 
 Restore verifies format, checksums, archive paths/types, xattr contract, dump
 readability, PostgreSQL direction, Alembic compatibility, canonical layout, and empty
-`sources`/`sync_runs` before the first write. The empty check is repeated inside the
+`sources`/`sync_runs`/`source_operations`/`source_tombstones` before the first write. The empty check is repeated inside the
 maintenance lock after all writer services stop; two datasets are never merged.
 
 The write sequence is:
@@ -208,3 +208,25 @@ Restore:
 For upgrades, the future handoff is: verified backup, prepare immutable new release,
 forward migration, then activation. The installer does not silently combine backup,
 restore, and upgrade.
+
+## UI-6 state and recovery
+
+The reviewed chain now ends at `0005_source_tombstones`; the Foundation inventory has
+six tables, adding source_operations and source_tombstones. Dumps preserve tombstones,
+source identity and durable operation state. Manifest credential references cover active
+sources only: a removed source may retain its original DB references even when its
+exclusive local files were explicitly removed. Remaining secret files still retain the
+existing tar/mode/owner/xattr verification contract.
+
+Fresh restore rejects any source, run, operation or tombstone rows, including orphan
+lifecycle evidence. The exact empty-schema cleanup also removes the known invoker trigger
+function without CASCADE. After migration/grants, restored RUNNING operations become
+FAILED/OPERATION_INTERRUPTED and READY plans become STALE; results are cleared. Work is
+not resumed and old confirmation context cannot become applicable. Existing uncertain
+sync-run history remains unchanged and continues to block removal conservatively.
+
+Reviewed pre-UI-6 bundles are extended only in validated staging with new operation and
+lifecycle role passwords/DSNs and broker.env. Current bundles preserve their configuration.
+No runtime receives migration-owner credentials. External client tools are executed by
+the same resolved absolute binary path whose version was checked, avoiding PATH mismatch.
+Bundled Docker transport and PostgreSQL logical restore tests are separate evidence.

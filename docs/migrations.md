@@ -83,3 +83,23 @@ rollout checklist are documented in [Web deployment](web.md#web-6-durable-run-hi
 
 The connection-sharing/transaction approach follows the
 [official Alembic cookbook](https://alembic.sqlalchemy.org/en/latest/cookbook.html#sharing-a-connection-across-one-or-more-programmatic-migration-commands).
+
+## UI-6 forward revisions
+
+`0004_source_operations` follows `0003_netbox_sync_naming` and adds bounded latest
+PLAN/DISCOVERY slots with a composite source/kind key and unique generation UUID.
+`0005_source_tombstones` follows it and is the current head. It reserves removed source
+IDs without deleting source/history rows or creating a cascading relationship.
+Historical migrations remain unchanged; downgrade remains deliberately unsupported.
+
+The credential-reference trigger is invoker-security with a fixed `pg_catalog` search
+path. It takes a shared transaction gate before new reference assignments and rejects
+references reserved by a tombstoned source. Removal holds the matching exclusive gate
+while checking exclusivity and cleaning up; concurrent assignment cannot steal a file
+being removed. Unchanged-reference schedule/lifecycle updates bypass unnecessary checks.
+Tracked grants give only the required readers access to tombstones and operations.
+Runtime services never migrate or obtain DDL/DELETE/TRUNCATE authority.
+
+New schemas, populated upgrades, repeated upgrade and actual role-forbidden writes are
+covered by PostgreSQL integration tests. Restore rehearsals invalidate interrupted work
+and READY review context; see [backup/restore](backup-restore.md).

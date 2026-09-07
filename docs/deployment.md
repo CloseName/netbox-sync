@@ -13,7 +13,7 @@ volume is `netbox-sync-postgres-data`, it is attached to the private `netbox-syn
 network and it has no host-published port. The API also joins a dedicated Web bridge
 for its loopback-published port. Discovery, apply and scheduled execution
 also join `netbox-sync-egress` for normal HTTPS connections to providers and NetBox.
-There is no NetBox Docker-network dependency. The broker is networkless and the
+There is no NetBox Docker-network dependency. The broker uses only the internal DB network and the
 schedule worker has DB access only.
 
 The runtime boundaries remain separate. In particular, the API has no source-secret
@@ -181,3 +181,28 @@ resource limits, run-history retention and stale-run recovery are deliberately d
 The supported logical backup/fresh-restore workflow is documented in
 [Backup and restore](backup-restore.md). Run history remains unlimited and stale
 RUNNING rows remain diagnostic-only.
+
+## UI-6 runtime capabilities
+
+The installer generates `broker.env` with `NETBOX_SYNC_LIFECYCLE_WRITER_DSN`, registry
+schema and the existing apply-lock path. `discovery.env` adds
+`NETBOX_SYNC_OPERATION_WRITER_DSN`. These root-protected configurations accompany the
+matching image/migrations/grants; do not mix UI-6 API and historical worker protocols.
+
+| Role | Additional allowed capability |
+| --- | --- |
+| netbox_sync_operation_writer | SELECT source identity/enabled; SELECT/INSERT/UPDATE operation slots |
+| netbox_sync_lifecycle_writer | SELECT sources/operations/runs/tombstones; UPDATE source enabled/sync_enabled; INSERT tombstone identity/name/credential state; UPDATE cleanup state |
+| netbox_sync_apply_registry_reader | SELECT operation review context only |
+| web/registration/schedule roles | SELECT tombstone evidence needed by existing adapters |
+
+Runtime roles still have no DELETE/TRUNCATE/DDL, identity rewrite, schema ownership or
+role administration. Actual PostgreSQL tests assert forbidden table/column writes.
+Provider subprocess environments strip the new writer DSNs. API receives neither writer.
+
+Production broker now joins only `netbox-sync-db` (internal), mounts the same apply-lock
+directory as manual/scheduled execution and retains root filesystem/secret protections.
+It has no provider/NetBox egress network or Docker socket. Development compose.web.yml
+uses the existing external DB network and requires its own narrow lifecycle DSN.
+Lifecycle is a new fixed broker protocol, not an arbitrary file deletion service.
+For an isolated manual-acceptance clone, use the [bridge runbook](historical-ui-test-bridge.md).

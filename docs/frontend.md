@@ -241,7 +241,7 @@ The request sequence is unchanged:
 1. Build a server-generated plan with an empty request.
 2. Submit its exact digest and confirmed=true for preparation.
 3. Keep the returned token only in the pending function scope.
-4. Submit only that token to apply.
+4. Submit that token to apply, with the reviewed operation UUID as context metadata.
 
 The worker re-plans before issuing and consuming the capability. The frontend
 does not replace stale checks, apply_allowed, the shared lock or source/NetBox
@@ -251,7 +251,7 @@ No token enters a URL, browser storage or rendered technical details.
 
 Known phases are Building read-only plan, Preparing / validating and Submitting /
 applying. Elapsed time is shown outside the live announcement; no percentages or
-unreported internal stages are invented. Workflow requests have a 330-second
+unreported internal stages are invented. Prepare/Apply requests have a 330-second
 client response bound, longer than the current 310-second apply transport bound.
 A client timeout does not cancel work already accepted by the server.
 
@@ -628,3 +628,32 @@ no Bootstrap wizard, LDAP/RBAC, global search, saved views, bulk actions, deleti
 telemetry, new integrations or speculative post-v1 work. Large-scale backend
 pagination/coverage work remains outside this phase. Production and the historical
 server were untouched. Push/deploy requires a separate explicit user request.
+
+## UI-6 operator lifecycle
+
+Sync loads durable operations when opened or refocused. While the source has RUNNING
+work, sequential reads poll every 2.5 seconds; navigation stops browser polling, not
+server work. Reads time out after 10 seconds; starts after 15 seconds. A lost start
+acknowledgement triggers a read, never an automatic POST retry. Unknown state disables
+new operation controls until reloaded. Only the latest source/kind slots are returned.
+
+Another browser sees the same Planning/Discovering status, server start time and elapsed
+time; duplicate starts return the active UUID. PLAN and DISCOVERY can run independently.
+A newly observed Discovery generation opens its inspection section, including on reopen.
+READY results repopulate review from server truth. FAILED/STALE stay explicit; a previous
+plan may remain visible in the current page but cannot be applied. Reopening never revives
+an older generation. Prepare binds the reviewed UUID; Apply's token remains authoritative.
+
+Configuration > Lifecycle offers Remove Source. The dialog lists retained NetBox objects,
+retained history, stopped automatic sync and reserved identity; requires the exact Source
+ID; and defaults to retaining local credentials. Explicit cleanup is conditional on
+exclusive broker ownership. Shared/legacy and failed cleanup states explain operator
+follow-up without claiming provider revocation. Removed direct URLs show a read-only
+state and history link; source lists exclude removed sources. Registration of that ID
+reports: "This Source ID was previously used and is reserved by a removed source."
+No actor name is invented before RBAC exists.
+
+Automated browser evidence is distinct from real-provider acceptance. UI-6 covers two
+browser contexts, close/reopen, deduplication, cross-source work, failed/stale results,
+removal blockers and tombstones, with visual scenarios at 1440/1024/768. See
+[UI-6 report](ui6-implementation-status.md) for the final executed matrix and limits.
