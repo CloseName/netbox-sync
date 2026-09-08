@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
 
-cd /opt/netbox-sync/src
+: "${NETBOX_SYNC_LEGACY_SOURCE_ROOT:?Set the reviewed historical checkout directory explicitly}"
+cd "$NETBOX_SYNC_LEGACY_SOURCE_ROOT"
 
 /usr/bin/install -d -m 0750 /run/netbox-sync
 
@@ -14,7 +15,7 @@ exec /usr/bin/flock \
     run \
     --rm \
     --no-deps \
-    -v /opt/netbox-sync/src/netbox_sync:/app/netbox_sync:ro \
+    -v "$NETBOX_SYNC_LEGACY_SOURCE_ROOT/netbox_sync:/app/netbox_sync:ro" \
     -e PYTHONPATH=/app \
     -e SYNC_MODE=apply \
     -e APPLY_SCOPE=full \

@@ -566,6 +566,7 @@ def test_backup_scope_excludes_runtime_and_release_payloads():
 
 
 def test_maintenance_restores_prior_services_and_timer(monkeypatch, tmp_path):
+    monkeypatch.setattr(backup, "validate_no_legacy_runtime", lambda: None)
     calls = []
 
     @contextlib.contextmanager
@@ -596,6 +597,7 @@ def test_maintenance_restores_prior_services_and_timer(monkeypatch, tmp_path):
 
 
 def test_restore_maintenance_never_restarts_writers_or_timer(monkeypatch, tmp_path):
+    monkeypatch.setattr(backup, "validate_no_legacy_runtime", lambda: None)
     calls = []
     monkeypatch.setattr(install, 'stop_timer', lambda: True)
     monkeypatch.setattr(install, 'shared_apply_lock', lambda _path: nullcontext())
@@ -610,6 +612,7 @@ def test_restore_maintenance_never_restarts_writers_or_timer(monkeypatch, tmp_pa
 
 
 def test_backup_lock_failure_restores_previous_timer_state(monkeypatch, tmp_path):
+    monkeypatch.setattr(backup, "validate_no_legacy_runtime", lambda: None)
     calls = []
 
     class Locked:
@@ -690,3 +693,26 @@ def test_fresh_restore_rejects_orphan_operation_or_tombstone(monkeypatch, tmp_pa
     monkeypatch.setattr(tool, 'query', lambda _statement: [counts])
     with pytest.raises(backup.BackupError, match='operation or tombstone'):
         tool.validate_empty_target()
+
+
+def test_manifest_records_identity_and_reads_older_v1(bundle_setup):
+    root, database = bundle_setup
+    bundle = backup.create_backup(root, root / 'backups', database)
+    manifest = backup.verify_bundle(bundle, database)
+    assert manifest['deployment_identity']['root'] == str(root.resolve())
+    assert manifest['deployment_identity']['tls_dir'] == str(root.resolve() / 'secrets/tls')
+    del manifest['deployment_identity']
+    (bundle / 'manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+    backup._write_checksums(bundle)
+    assert 'deployment_identity' not in backup.verify_bundle(bundle, database)
+
+
+def test_manifest_rejects_unsafe_identity_before_restore(bundle_setup):
+    root, database = bundle_setup
+    bundle = backup.create_backup(root, root / 'backups', database)
+    manifest = backup.verify_bundle(bundle, database)
+    manifest['deployment_identity']['root'] = '/srv/../etc'
+    (bundle / 'manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+    backup._write_checksums(bundle)
+    with pytest.raises(backup.BackupError, match='recorded deployment path'):
+        backup.verify_bundle(bundle, database)

@@ -31,7 +31,7 @@ services:
       - "80:8080"
       - "443:8443"
     volumes:
-      - ./deploy/nginx.conf.template:/etc/netbox-sync/nginx.conf.template:ro
+      - ${NETBOX_SYNC_TLS_TEMPLATE:-./deploy/nginx.conf.template}:/etc/netbox-sync/nginx.conf.template:ro
       - ${NETBOX_SYNC_TLS_DIR:-./deploy/example-secrets/tls}:/run/netbox-sync-tls:ro
       - netbox-sync-http-socket:/run/netbox-sync-http:ro
     networks: [netbox-sync-web]

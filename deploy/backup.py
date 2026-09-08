@@ -523,6 +523,32 @@ def _write_checksums(directory):
     _atomic_text(directory / 'checksums.sha256', ''.join(lines))
 
 
+def deployment_identity(root):
+    directory, layout = install.resolve_tls_settings(root)
+    identity = {'root': str(root), 'public_url': _read_env(root / 'config/api.env').get('NETBOX_SYNC_PUBLIC_URL', ''),
+                'ingress_mode': install.resolve_ingress_mode(root),
+                'tls_dir': str(directory), 'tls_layout': layout}
+    validate_deployment_identity(identity)
+    return identity
+
+
+def validate_deployment_identity(identity):
+    # Recorded paths are metadata only, never filesystem targets or CLI defaults.
+    if not isinstance(identity, dict) or set(identity) != {
+            'root', 'public_url', 'ingress_mode', 'tls_dir', 'tls_layout'}:
+        raise BackupError('invalid deployment identity')
+    if not all(isinstance(value, str) for value in identity.values()):
+        raise BackupError('invalid deployment identity')
+    for key in ('root', 'tls_dir'):
+        path = identity[key]
+        if not Path(path).is_absolute() or '..' in Path(path).parts or (os.name == 'posix' and not re.fullmatch(r'/[A-Za-z0-9_./-]+', path)):
+            raise BackupError('invalid recorded deployment path')
+    if identity['public_url']:
+        install.public_authority(identity['public_url'])
+    if identity['ingress_mode'] not in ('standalone', 'external') or identity['tls_layout'] not in ('legacy', 'corporate'):
+        raise BackupError('invalid deployment identity')
+
+
 def _load_manifest(bundle):
     try:
         payload = json.loads((bundle / 'manifest.json').read_text(encoding='utf-8'))
@@ -535,8 +561,10 @@ def _load_manifest(bundle):
         'source_count', 'run_count', 'secret_file_count', 'config_files',
         'files', 'source_secret_references', 'checksum_algorithm',
     }
-    if set(payload) != required or payload['backup_format_version'] != FORMAT_VERSION:
+    if set(payload) not in (required, required | {'deployment_identity'}) or payload['backup_format_version'] != FORMAT_VERSION:
         raise BackupError('backup format is unsupported')
+    if 'deployment_identity' in payload:
+        validate_deployment_identity(payload['deployment_identity'])
     if payload['checksum_algorithm'] != 'SHA-256':
         raise BackupError('backup checksum algorithm is unsupported')
     identity = (payload['product'], payload['database_name'], payload['schema_name'])
@@ -633,6 +661,18 @@ def verify_bundle(bundle, database=None, require_complete=True):
     return manifest
 
 
+def validate_no_legacy_runtime():
+    legacy_timer = install.run(
+        ['systemctl', 'is-active', '--quiet', 'infra-netbox-sync.timer'],
+        check=False)
+    legacy_containers = install.run([
+        'docker', 'ps', '--quiet', '--filter',
+        'label=com.docker.compose.project=infra-sync'],
+        check=False, capture_output=True)
+    if legacy_timer.returncode == 0 or legacy_containers.stdout.strip():
+        raise BackupError('legacy runtime must be stopped before maintenance')
+
+
 @dataclass
 class Maintenance:
     """Short v1 maintenance window with exact prior-state restoration for backup."""
@@ -652,21 +692,13 @@ class Maintenance:
         self.writers_stopped = False
 
     def __enter__(self):
-        if not self.no_systemd and self.root == Path('/opt/netbox-sync'):
-            legacy_timer = install.run(
-                ['systemctl', 'is-active', '--quiet', 'infra-netbox-sync.timer'],
-                check=False)
-            legacy_containers = install.run([
-                'docker', 'ps', '--quiet', '--filter',
-                'label=com.docker.compose.project=infra-sync'],
-                check=False, capture_output=True)
-            if legacy_timer.returncode == 0 or legacy_containers.stdout.strip():
-                raise BackupError('legacy runtime must be stopped before maintenance')
+        if not self.no_systemd:
+            install.validate_systemd_root(self.root)
+            validate_no_legacy_runtime()
         if not self.no_systemd:
             self.timer_active = install.stop_timer()
         self.timer_stopped = True
-        lock = self.root / 'run/apply.lock' if self.root != Path('/opt/netbox-sync') \
-            else Path('/run/netbox-sync/apply.lock')
+        lock = install.GLOBAL_RUNTIME / 'apply.lock'
         self.lock = install.shared_apply_lock(lock)
         try:
             self.lock.__enter__()
@@ -748,6 +780,7 @@ def create_backup(  # pylint: disable=too-many-arguments
             active = _active_release(root)
             manifest = {
                 'backup_format_version': FORMAT_VERSION,
+                'deployment_identity': deployment_identity(root),
                 'created_at': created_at.isoformat().replace('+00:00', 'Z'),
                 'product': PRODUCT, 'application_version': _application_version(),
                 'release_id': release_id or active, 'active_release_id': active,
@@ -845,6 +878,20 @@ def _extend_tls_restored_configuration(stage, root):
     if not public_url:return  # Restoring an older supported HTTP release, not a TLS upgrade.
     incoming=_read_env(stage/'config/api.env').get('NETBOX_SYNC_PUBLIC_URL','')
     if incoming and incoming!=public_url:raise BackupError('restored public URL differs from prepared target')
+    settings = install.resolve_tls_settings(root)
+    if settings[1] == 'corporate':
+        # Public TLS lives outside the backup root. Never restore keys into /etc;
+        # the operator prepares target material before restoring application state.
+        mode = install.resolve_ingress_mode(root)
+        if not (stage/'secrets/ca').exists():
+            shutil.copytree(root/'secrets/ca',stage/'secrets/ca')
+        install.validate_netbox_ca(stage)
+        if mode == 'standalone':install.validate_tls_material(root,public_url,settings)
+        else:install.initialize_ingress_directory(root)
+        prepared = install.PreparedDeployment(root,root/'current',stage/'config','restored')
+        install.configure_ingress(prepared,mode)
+        install.configure_tls(prepared,public_url,settings)
+        return
     for name in ('tls','ca'):
         if not (stage/'secrets'/name).exists():
             shutil.copytree(root/'secrets'/name,stage/'secrets'/name)
@@ -1023,7 +1070,7 @@ def inspect_bundle(bundle, database=None):
 def parse_args(argv=None):
     """Parse bounded backup/restore operator commands."""
     parser = argparse.ArgumentParser(description='NetBox Sync backup and fresh restore')
-    parser.add_argument('--root', type=Path, default=Path('/opt/netbox-sync'))
+    parser.add_argument('--root', type=Path, help='Target root; required explicitly for restore')
     parser.add_argument('--postgres-mode', choices=('bundled', 'external'), default='bundled')
     parser.add_argument('--no-systemd', action='store_true', help=argparse.SUPPRESS)
     commands = parser.add_subparsers(dest='command', required=True)
@@ -1044,8 +1091,10 @@ def parse_args(argv=None):
 def main(argv=None):
     """Run one sanitized operator command and return a stable process status."""
     args = parse_args(argv)
-    root = args.root.resolve()
     try:
+        if args.command == 'restore' and args.root is None:
+            raise BackupError('restore requires explicit --root target')
+        root = install.validate_root(args.root or install.default_root())
         if args.command == 'list':
             directory = (args.directory or root / 'backups').resolve()
             bundles = set(directory.glob('netbox-sync-backup-*'))

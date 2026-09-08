@@ -90,7 +90,7 @@ def test_external_bundle_uses_prepared_standalone_certificate_pair(tmp_path):
     for directory,mode in ((root,'standalone'),(stage,'external')):
         (directory/'config').mkdir()
         (directory/'config/api.env').write_text('NETBOX_SYNC_PUBLIC_URL='+URL+'\n')
-        (directory/'config/compose.env').write_text('NETBOX_SYNC_INGRESS_MODE='+mode+'\n')
+        (directory/'config/compose.env').write_text('NETBOX_SYNC_INGRESS_MODE='+mode+'\nNETBOX_SYNC_TLS_DIR='+str(directory/'secrets/tls')+'\n')
     for name in ('fullchain.pem','privkey.pem'):
         target=root/'secrets/tls'/name;shutil.copyfile(certs/name,target)
         target.chmod(0o640);os.chown(target,0,10001)

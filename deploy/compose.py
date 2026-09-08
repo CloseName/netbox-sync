@@ -11,12 +11,12 @@ from deploy import install
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--root', type=Path, default=Path('/opt/netbox-sync'))
+    parser.add_argument('--root', type=Path, default=install.default_root())
     args, command = parser.parse_known_args(argv)
     if not command:
         parser.error('Compose arguments required')
     try:
-        return install.run(install.compose_command(args.root, *command), check=False).returncode
+        return install.run(install.compose_command(install.validate_root(args.root), *command), check=False).returncode
     except (install.InstallError, OSError):
         print('Compose configuration unavailable or ingress mode invalid', file=sys.stderr)
         return 1

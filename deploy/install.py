@@ -60,6 +60,7 @@ LEGACY_ENV_SUFFIXES = frozenset({
 REQUIRED_RELEASE_FILES = (
     'compose.production.yml', 'Dockerfile.web', 'deploy/nginx.conf.template',
     'compose.external-ingress.yml', 'deploy/nginx.external-ingress.conf.template', 'deploy/compose.py',
+    'deploy/nginx.corporate.conf.template',
     'deploy/backup.py',
     'deploy/systemd/netbox-sync.service',
     'deploy/systemd/netbox-sync.timer', 'scripts/run-scheduled-sync.sh',
@@ -78,6 +79,39 @@ class PreparedDeployment:
     release: Path
     config: Path
     image: str
+
+
+GLOBAL_RUNTIME = Path('/run/netbox-sync')
+
+
+def default_root():
+    release = Path(__file__).resolve().parents[1]
+    return release.parent.parent if release.parent.name == 'releases' else Path('/opt/netbox-sync')
+
+
+def validate_root(path):
+    path = Path(path)
+    if not path.is_absolute() or '..' in path.parts or path.as_posix() in ('/', '/etc', '/run', '/usr', '/var', '/opt', '/home'):
+        raise InstallError('deployment root must be a dedicated absolute directory')
+    if os.name == 'posix' and not re.fullmatch(r'/[A-Za-z0-9_./-]+', str(path)):
+        raise InstallError('deployment root contains unsupported characters')
+    if any(item.is_symlink() for item in (path, *path.parents)):
+        raise InstallError('deployment root must not traverse symbolic links')
+    return path
+
+
+def validate_systemd_root(root, unit_directory=Path('/etc/systemd/system')):
+    unit = unit_directory / 'netbox-sync.service'
+    if unit.exists():
+        entries = [line.split('=', 1)[1] for line in unit.read_text().splitlines()
+                   if line.startswith('WorkingDirectory=')]
+        if entries != [str(root / 'current')]:
+            raise InstallError('another deployment root owns the product systemd unit')
+
+
+def render_systemd(template, root):
+    validate_root(root)
+    return template.replace('@DEPLOYMENT_ROOT@', str(root))
 
 
 def run(command, *, check=True, capture_output=False):
@@ -428,8 +462,8 @@ def prepare_layout(root, source, release_id, image):
     staging = Path(tempfile.mkdtemp(prefix=f'prepare-{release_id}-', dir=root / 'state'))
     config = staging / 'config'
     generate_configuration(root, image, destination=config)
-    ensure_directory(Path('/run/netbox-sync') if root == Path('/opt/netbox-sync')
-                     else root / 'run', 0o750)
+    if os.name == 'posix':
+        ensure_directory(GLOBAL_RUNTIME, 0o750)
     return PreparedDeployment(root, release, config, image)
 
 
@@ -601,8 +635,6 @@ def shared_apply_lock(path, timeout_seconds=120):
 
 def check_legacy_dropin(root):
     """Require explicit operator removal of the one known obsolete override."""
-    if root != Path('/opt/netbox-sync'):
-        return
     legacy = Path('/etc/systemd/system/infra-netbox-sync.timer.d/web8-fixed-tick.conf')
     if legacy.exists():
         raise InstallError('remove the known legacy WEB-8 timer drop-in before activation')
@@ -643,14 +675,13 @@ def _cleanup_prepared(prepared):
         pass
 
 
-def install_systemd(root, *, start=True):
+def install_systemd(root, *, start=True, unit_directory=Path('/etc/systemd/system')):
     """Install tracked units idempotently; never used by tests implicitly."""
-    if root != Path('/opt/netbox-sync'):
-        raise InstallError('systemd installation requires canonical /opt/netbox-sync root')
+    validate_systemd_root(root,unit_directory)
     unit_root = root / 'current' / 'deploy' / 'systemd'
     for name in ('netbox-sync.service', 'netbox-sync.timer'):
-        destination = Path('/etc/systemd/system') / name
-        shutil.copy2(unit_root / name, destination)
+        destination = unit_directory / name
+        destination.write_text(render_systemd((unit_root / name).read_text(), root), encoding='utf-8')
         destination.chmod(0o644)
     run(['systemctl', 'daemon-reload'])
     if start:
@@ -719,6 +750,41 @@ def validate_netbox_ca(root):
         _tls['validate_ca'](_tls['protected_file'](ca, 0o644))
 
 
+def read_compose_values(root):
+    path = root / 'config/compose.env'
+    if not path.exists():
+        return {}
+    return dict(line.split('=', 1) for line in path.read_text(encoding='utf-8').splitlines()
+                if '=' in line and not line.startswith('#'))
+
+
+def resolve_tls_settings(root, explicit=None):
+    saved = read_compose_values(root)
+    if explicit is not None:
+        directory, layout = validate_root(explicit), 'corporate'
+    elif saved.get('NETBOX_SYNC_TLS_DIR'):
+        directory = validate_root(Path(saved['NETBOX_SYNC_TLS_DIR']))
+        layout = saved.get('NETBOX_SYNC_TLS_LAYOUT', 'legacy')
+    else:
+        directory, layout = root / 'secrets/tls', 'legacy'
+    if layout not in ('corporate', 'legacy'):
+        raise InstallError('invalid TLS layout')
+    return directory, layout
+
+
+def initialize_operator_tls(directory):
+    validate_root(directory)
+    if directory.exists():
+        info = directory.stat()
+        if not directory.is_dir() or (os.name == 'posix' and
+                (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (0, 10001, 0o750)):
+            raise InstallError('operator TLS directory must be root:10001 0750')
+    else:
+        directory.mkdir(parents=True, mode=0o750)
+        if os.name == 'posix':os.chown(directory, 0, 10001)
+        directory.chmod(0o750)
+
+
 def initialize_tls_layout(root):
     for path, mode, gid in ((root,0o755,0),(root/'secrets',0o700,0),
                            (root/'secrets/tls',0o750,10001),(root/'secrets/ca',0o755,0)):
@@ -746,16 +812,20 @@ def resolve_public_url(root, explicit=None):
     return selected
 
 
-def validate_tls_material(root, public_url):
+def validate_tls_material(root, public_url, tls_settings=None):
     host=public_authority(public_url)
-    directory=root/'secrets/tls'
-    for name in ('fullchain.pem','privkey.pem'):
+    directory, layout = tls_settings or (root/'secrets/tls', 'legacy')
+    certificate, key = ('ssl.crt', 'ssl.key') if layout == 'corporate' else ('fullchain.pem', 'privkey.pem')
+    for name in (certificate, key):
         _tls['protected_file'](directory/name,0o640,10001)
     try:
         context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.load_cert_chain(directory/'fullchain.pem',directory/'privkey.pem',password=lambda: '')
+        context.load_cert_chain(directory/certificate,directory/key,password=lambda: '')
+        if layout == 'corporate':
+            _tls['protected_file'](directory/'dhparam.pem',0o640,10001)
+            context.load_dh_params(directory/'dhparam.pem')
         for args in (['-checkend','0'],['-checkhost',host]):
-            result=subprocess.run(['openssl','x509','-in',str(directory/'fullchain.pem'),'-noout',*args],
+            result=subprocess.run(['openssl','x509','-in',str(directory/certificate),'-noout',*args],
                                   stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
             if result.returncode:raise ValueError()
     except (ValueError,OSError,ssl.SSLError,subprocess.SubprocessError):
@@ -763,10 +833,14 @@ def validate_tls_material(root, public_url):
     validate_netbox_ca(root)
 
 
-def configure_tls(prepared, public_url):
+def configure_tls(prepared, public_url, tls_settings=None):
     authority=public_authority(public_url)
+    directory, layout = tls_settings or (prepared.root/'secrets/tls', 'legacy')
+    template = 'nginx.corporate.conf.template' if layout == 'corporate' else 'nginx.conf.template'
     for name, defaults in {
-        'compose.env': {'NETBOX_SYNC_TLS_DIR':str(prepared.root/'secrets/tls'),
+        'compose.env': {'NETBOX_SYNC_TLS_DIR':str(directory),
+                        'NETBOX_SYNC_TLS_LAYOUT':layout,
+                        'NETBOX_SYNC_TLS_TEMPLATE':'./deploy/'+template,
                         'NETBOX_SYNC_CA_DIR':str(prepared.root/'secrets/ca'),
                         'NETBOX_SYNC_PUBLIC_HOST':authority},
         'api.env': {'NETBOX_SYNC_PUBLIC_URL':public_url,'NETBOX_SYNC_WRITE_HOSTS':authority},
@@ -778,6 +852,7 @@ def configure_tls(prepared, public_url):
 def parse_args(argv=None):
     """Parse bounded non-interactive installer options."""
     parser = argparse.ArgumentParser(description='Prepare a NetBox Sync v1 foundation')
+    parser.add_argument('--tls-dir', type=Path, help='Operator TLS directory with ssl.crt, ssl.key and dhparam.pem')
     parser.add_argument('--ingress-mode', choices=('standalone', 'external'),
                         help='Explicit ingress mode; fresh default standalone, existing setting preserved')
     parser.add_argument('--public-url', help='Canonical https://FQDN, required for first HTTPS installation')
@@ -787,7 +862,7 @@ def parse_args(argv=None):
     parser.add_argument('--prepare-only', action='store_true')
     parser.add_argument('--no-start', action='store_true')
     parser.add_argument('--no-systemd', action='store_true')
-    parser.add_argument('--root', type=Path, default=Path('/opt/netbox-sync'))
+    parser.add_argument('--root', type=Path, default=default_root())
     parser.add_argument('--source', type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument('--release-id')
     parser.add_argument('--image', help='immutable app image/tag; defaults to the release id')
@@ -802,16 +877,19 @@ def main(argv=None):
     if args.release_id is not None and not RELEASE_PATTERN.fullmatch(args.release_id):
         raise SystemExit('invalid release id')
     try:
-        root=args.root.resolve()
+        root=validate_root(args.root)
+        tls_settings = resolve_tls_settings(root, args.tls_dir)
+        mode = resolve_ingress_mode(root, args.ingress_mode)
         if args.init_tls_layout:
             initialize_tls_layout(root)
-            print('TLS layout ready; operator certificates must be supplied separately')
+            if mode == 'standalone':initialize_operator_tls(tls_settings[0])
+            print('Local layout ready; public TLS material is operator-owned')
             return 0
         mode = resolve_ingress_mode(root, args.ingress_mode)
         if args.check_tls:
             public_authority(resolve_public_url(root,args.public_url))
             if mode == 'standalone':
-                validate_tls_material(root,resolve_public_url(root,args.public_url))
+                validate_tls_material(root,resolve_public_url(root,args.public_url),tls_settings)
             else:
                 validate_netbox_ca(root)
             print('Local TLS/CA preflight OK; external ingress certificate verification is operator-owned'
@@ -819,19 +897,21 @@ def main(argv=None):
             return 0
         validate_prerequisites(require_systemd=not args.no_systemd)
         validate_ingress_prerequisites(mode)
+        if not args.no_systemd:
+            validate_systemd_root(root)
         if args.check:
             print('deployment prerequisites OK')
             return 0
         image = args.image or f'netbox-sync:{args.release_id}'
-        root = args.root.resolve()
+        root = validate_root(args.root)
         public_url=resolve_public_url(root,args.public_url)
         initialize_tls_layout(root)
         if mode == 'standalone':
-            validate_tls_material(root,public_url)
+            validate_tls_material(root,public_url,tls_settings)
         else:
             validate_netbox_ca(root)
         prepared = prepare_layout(root, args.source.resolve(), args.release_id, image)
-        configure_tls(prepared,public_url)
+        configure_tls(prepared,public_url,tls_settings)
         configure_ingress(prepared,mode)
         if mode == 'external':
             initialize_ingress_directory(root)
@@ -842,8 +922,7 @@ def main(argv=None):
             if upgrading:
                 stop_timer()
             check_legacy_dropin(root)
-            lock_path = (Path('/run/netbox-sync/apply.lock') if root == Path('/opt/netbox-sync')
-                         else root / 'run/apply.lock')
+            lock_path = GLOBAL_RUNTIME / 'apply.lock'
             with shared_apply_lock(lock_path):
                 prepare_stack(prepared)
                 if not args.prepare_only:

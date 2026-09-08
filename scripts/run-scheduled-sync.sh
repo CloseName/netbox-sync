@@ -1,7 +1,13 @@
 #!/bin/sh
 set -eu
 
-install_root="${NETBOX_SYNC_ROOT:-/opt/netbox-sync}"
+if [ -n "${NETBOX_SYNC_ROOT:-}" ]; then
+  install_root="$NETBOX_SYNC_ROOT"
+else
+  script_release=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+  test "$(basename -- "$(dirname -- "$script_release")")" = releases
+  install_root=$(dirname -- "$(dirname -- "$script_release")")
+fi
 release_root="${install_root}/current"
 
 cd "${release_root}"

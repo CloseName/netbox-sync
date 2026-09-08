@@ -15,7 +15,7 @@ def test_scheduled_and_manual_apply_use_same_host_lock_directory():
     compose = (ROOT / 'compose.production.yml').read_text(encoding='utf-8')
     wrapper = (ROOT / 'scripts' / 'run-scheduled-sync.sh').read_text(encoding='utf-8')
     assert 'ExecStartPre=/usr/bin/install -d -m 0750 /run/netbox-sync' in service
-    assert 'ExecStart=/opt/netbox-sync/current/scripts/run-scheduled-sync.sh' in service
+    assert 'ExecStart=@DEPLOYMENT_ROOT@/current/scripts/run-scheduled-sync.sh' in service
     assert '/usr/bin/flock -n /run/netbox-sync/apply.lock' in wrapper
     assert '/usr/bin/flock' not in service
     assert '${NETBOX_SYNC_APPLY_LOCK_DIR:-/run/netbox-sync}:/run/netbox-sync-lock' in compose

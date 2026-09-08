@@ -5,9 +5,10 @@ After=network-online.target docker.service
 
 [Service]
 Type=oneshot
-WorkingDirectory=/opt/netbox-sync/current
+Environment=NETBOX_SYNC_ROOT=@DEPLOYMENT_ROOT@
+WorkingDirectory=@DEPLOYMENT_ROOT@/current
 ExecStartPre=/usr/bin/install -d -m 0750 /run/netbox-sync
-ExecStart=/opt/netbox-sync/current/scripts/run-scheduled-sync.sh
+ExecStart=@DEPLOYMENT_ROOT@/current/scripts/run-scheduled-sync.sh
 
 User=root
 Group=root

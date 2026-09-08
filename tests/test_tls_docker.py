@@ -13,7 +13,7 @@ pytestmark=pytest.mark.skipif(os.environ.get('NETBOX_SYNC_TLS_DOCKER_TEST')!='1'
 ROOT=Path(__file__).parents[1]
 
 
-@pytest.mark.parametrize('ingress_mode',['standalone','external'])
+@pytest.mark.parametrize('ingress_mode',['standalone','corporate','external'])
 def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
     prefix='netbox-sync-tls-smoke-'+uuid.uuid4().hex[:10]
     label='netbox-sync.tls-smoke='+prefix
@@ -48,7 +48,13 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
         api=launch('api',['--network','none','--read-only','--cap-drop','ALL','--tmpfs','/tmp',
             '-e','NETBOX_SYNC_PUBLIC_URL=https://sync.example.test',*mount('http','/run/netbox-sync-http'),
             *mount('bootstrap','/run/netbox-sync-bootstrap',True)],image,['python','-m','netbox_sync.web_runtime','serve'])
-        template=ROOT/'deploy/nginx.conf.template'
+        if ingress_mode=='corporate':
+            docker('run','--rm','--network','none','--user','0:0','--label',label,*mount('tls','/tls'),runner,
+                'python','-c',"import shutil,os,subprocess; from pathlib import Path; "
+                "shutil.copyfile('/tls/fullchain.pem','/tls/ssl.crt'); shutil.copyfile('/tls/privkey.pem','/tls/ssl.key'); "
+                "subprocess.run(['openssl','genpkey','-genparam','-algorithm','DH','-pkeyopt','group:ffdhe2048','-out','/tls/dhparam.pem'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); "
+                "[(os.chown('/tls/'+n,0,10001),Path('/tls/'+n).chmod(0o640)) for n in ('ssl.crt','ssl.key','dhparam.pem')]")
+        template=ROOT/('deploy/nginx.corporate.conf.template' if ingress_mode=='corporate' else 'deploy/nginx.conf.template')
         upstream_mount=mount('http','/run/netbox-sync-http',True)
         if ingress_mode=='external':
             docker('run','--rm','--network','none','--user','0:0','--label',label,
@@ -136,7 +142,7 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
         docker('stop',proxy)
         docker('run','--rm','--network','none','--user','0:0','--label',label,
                *mount('tls','/tls'),image,'python','-c',
-               "from pathlib import Path; Path('/tls/fullchain.pem').write_text('invalid certificate')")
+               "from pathlib import Path; Path('/tls/"+('ssl.crt' if ingress_mode=='corporate' else 'fullchain.pem')+"').write_text('invalid certificate')")
         docker('start',proxy)
         for _ in range(30):
             if not json.loads(docker('inspect',proxy))[0]['State']['Running']:break
