@@ -646,3 +646,39 @@ def test_lf_policy_covers_deployment_artifacts():
     for pattern in ('*.py text eol=lf', '*.sh text eol=lf', '*.yml text eol=lf',
                     '*.service text eol=lf', '*.timer text eol=lf'):
         assert pattern in attributes
+
+
+@pytest.mark.parametrize('existing_config', [False, True])
+def test_fresh_runtime_failure_then_new_release_preserves_credentials(tmp_path, monkeypatch, existing_config):
+    source = _release_tree(tmp_path / 'repo')
+    root = tmp_path / 'target'
+    first = install.prepare_layout(root, source, 'failed-release', 'netbox-sync:failed')
+    if existing_config:
+        install.generate_configuration(root, 'netbox-sync:previous')
+        with (root / 'config/api.env').open('a') as stream:
+            stream.write('OPERATOR_SETTING=preserved\n')
+    snapshot = install._config_snapshot(root)
+    passwords = {p.name: p.read_bytes() for p in (root / 'secrets/infrastructure').iterdir()}
+    stopped = []
+    monkeypatch.setattr(install, 'install_systemd', lambda *a, **k: None)
+    monkeypatch.setattr(install, 'quiesce_uncertain_runtime', lambda prepared: stopped.append(prepared.release))
+    def fail_start(prepared):
+        raise install.InstallError('proxy mount creation failed')
+    monkeypatch.setattr(install, 'start_runtime', fail_start)
+    with pytest.raises(install.InstallError, match='proxy mount'):
+        install.activate_prepared(first, install_units=True, start_services=True)
+    install._cleanup_prepared(first)
+    assert not (root / 'current').exists()
+    assert install._config_snapshot(root) == snapshot
+    assert not first.config.exists()
+    assert first.release.exists() and stopped == [first.release]
+    second = install.prepare_layout(root, source, 'fixed-release', 'netbox-sync:fixed')
+    assert {p.name: p.read_bytes() for p in (root / 'secrets/infrastructure').iterdir()} == passwords
+    assert 'NETBOX_SYNC_POSTGRES_VOLUME=netbox-sync-postgres-data' in (second.config / 'compose.env').read_text()
+    if existing_config:assert 'OPERATOR_SETTING=preserved' in (second.config / 'api.env').read_text()
+    monkeypatch.setattr(install, 'start_runtime', lambda prepared: None)
+    install.activate_prepared(second, install_units=True, start_services=True)
+    assert (root / 'current').resolve() == second.release.resolve()
+    assert first.release.exists()
+    assert {p.name: p.read_bytes() for p in (root / 'secrets/infrastructure').iterdir()} == passwords
+    install._cleanup_prepared(second)

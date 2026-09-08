@@ -57,6 +57,9 @@ def test_merged_compose_has_only_intended_publication(mode,tmp_path):
     if mode=='external':args+=['-f',str(ROOT/'compose.external-ingress.yml')]
     model=json.loads(subprocess.check_output(args+['config','--format','json'],env=env,text=True))
     services=model['services'];proxy=services['netbox-sync-proxy']
+    assert proxy['tmpfs']==['/tmp:size=64m,mode=1777']
+    for service in services.values():
+        assert all(mount.startswith('/') for mount in service.get('tmpfs', []))
     if mode=='standalone':assert {p['published'] for p in proxy['ports']}=={'80','443'}
     else:
         assert not proxy.get('ports') and proxy['network_mode']=='none'

@@ -299,3 +299,5 @@ VLANs/Prefixes, sources, provider tokens or infrastructure are created automatic
 Do not begin source/provider rehearsal until this first-run gate passes. Real
 Debian/systemd/reboot and real NetBox acceptance must be recorded separately from
 repository automation; this runbook has not been executed on the VM by the agent.
+
+For a partial activation failure at proxy creation, see the [tmpfs recovery gates](proxy-tmpfs-recovery.md) before any retry.
