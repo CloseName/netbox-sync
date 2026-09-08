@@ -657,3 +657,12 @@ Automated browser evidence is distinct from real-provider acceptance. UI-6 cover
 browser contexts, close/reopen, deduplication, cross-source work, failed/stale results,
 removal blockers and tombstones, with visual scenarios at 1440/1024/768. See
 [UI-6 report](ui6-implementation-status.md) for the final executed matrix and limits.
+
+## First-run gate
+
+`BootstrapGate` wraps routed content, reads durable server state on load/focus, and
+polls accepted validation work. Incomplete/unavailable state shows setup on any direct
+route. `/setup` supports deliberate token replacement after completion. No token is
+loaded from GET or stored in browser storage. POST outcomes are reconciled through
+explicit Reload, without automatic mutation retry. See [first-run flow](first-run.md)
+and its disposable-VM checklist; browser mocks are not live NetBox permission evidence.

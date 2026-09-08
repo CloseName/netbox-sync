@@ -230,3 +230,15 @@ lifecycle role passwords/DSNs and broker.env. Current bundles preserve their con
 No runtime receives migration-owner credentials. External client tools are executed by
 the same resolved absolute binary path whose version was checked, avoiding PATH mismatch.
 Bundled Docker transport and PostgreSQL logical restore tests are separate evidence.
+
+## Bootstrap state and new control services
+
+Backup quiescence now includes lifecycle and Bootstrap workers. The existing protected
+`secrets/netbox` inventory contains bootstrap.json and its lock file; state and separate
+tokens remain one verified atomic document. Restore retains READY setup truth, not a
+claim of present NetBox reachability. Expired VALIDATING state is reconciled to ATTENTION
+on status lookup. Revalidate the destination before using a restored deployment.
+Older bundles gain missing Bootstrap/runtime socket settings only after validated
+staging; absent bootstrap.json means FRESH, never inferred readiness from old env files.
+The filename broker.env remains for compatibility but only the lifecycle worker reads it.
+See [first-run recovery and clean-VM checklist](first-run.md).

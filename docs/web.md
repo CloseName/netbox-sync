@@ -211,7 +211,7 @@ approved private IPs work by default. Operator variables are comma-separated:
 Any nonempty allow configuration becomes a restriction: every answer must match an
 allowed CIDR or the approved hostname/suffix. Denied CIDRs always win. Prefer narrow
 CIDRs/exact hostnames; allowlisting a public hostname authorizes its public DNS answers.
-The production broker has only internal DB reachability; these variables apply only to the Test Connection child.
+The production broker has literal `network_mode: none`; these variables apply only to the Test Connection child.
 
 DNS is resolved once, every answer is checked, and one approved IPv4 answer is pinned
 for every subsequent socket lookup in the isolated child. Original hostname/SNI and
@@ -895,14 +895,22 @@ failure to update that projection does not permit Apply. No weaker parallel appl
 
 `GET .../lifecycle` returns active revision or tombstone. Protected `POST .../remove`
 requires `confirmed_source`, current `revision`, and strict `remove_credentials` boolean.
-The API sends only fixed lifecycle actions over the peer-checked broker socket; it cannot
+The API sends only fixed lifecycle actions over the peer-checked lifecycle worker socket; it cannot
 request arbitrary paths or a general file deletion. Public errors are allowlisted.
-The broker now has a narrow lifecycle DB capability and the existing shared lock mount.
-Production broker networking is restricted to the internal DB network; the development
-Compose uses its configured external DB network. No provider credentials are revoked.
+The separate lifecycle worker holds the narrow lifecycle DB capability and shared lock.
+The secret broker has `network_mode: none`, no DB connectivity and no NetBox/provider
+egress. Only its local filesystem operations remain. No provider credentials are revoked.
 No API migration-owner/writer DSN or source-secret filesystem mount is introduced.
 
 This remains an operator UI behind the established access boundary, not authentication
 or RBAC. Run history remains the evidence for actual synchronization and uncertain writes.
 See [architecture](architecture.md), [deployment](deployment.md) and
 [isolated historical bridge](historical-ui-test-bridge.md).
+
+## First-run Bootstrap
+
+The [first-run guide](first-run.md) describes `/setup`, the durable readiness gate,
+separate NetBox tokens, bounded validation, manual prerequisites and restart recovery.
+GET `/api/v1/bootstrap` returns secret-free state; POST `/configuration`, `/validate`
+and `/finish` under that prefix reuse origin/CSRF checks and carry expected revisions.
+Only the separate Bootstrap worker writes protected NetBox configuration.

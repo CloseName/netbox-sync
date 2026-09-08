@@ -110,3 +110,5 @@ The v1 scope is safe Proxmox VE and VMware ESXi inventory reconciliation, source
 
 Licensed under the GNU General Public License v3.0. See [LICENSE.txt](LICENSE.txt).
 See [Project provenance](docs/provenance.md) for derivation and history details.
+
+Clean zero-source installation and browser-based NetBox setup: [First-run Bootstrap](docs/first-run.md).

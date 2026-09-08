@@ -467,3 +467,13 @@ Explicit local credential cleanup follows the commit through the existing root b
 Only exclusive broker-owned files pass reference, inode, mode and receipt checks;
 shared/ambiguous files remain. Cleanup failure cannot undo removal or imply revocation.
 There is no provider-side revocation, restore, purge, actor identity or new RBAC model.
+
+## Bootstrap control and literal broker isolation
+
+[First-run architecture](first-run.md) adds a separate NetBox bootstrap worker with
+protected atomic file state and bounded read-only validation. It has no DB role or
+provider secrets. The API receives only a secret-free projection over its Unix socket.
+The UI-6 lifecycle writer now runs in a separate worker: internal DB access, shared
+apply lock, broker socket, no source/NetBox file mounts. Broker networking is literally
+`network_mode: none`; no PostgreSQL connection or lifecycle DB import remains.
+Existing source gates, tombstones, history retention and grants are unchanged.

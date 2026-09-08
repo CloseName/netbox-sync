@@ -103,3 +103,10 @@ Runtime services never migrate or obtain DDL/DELETE/TRUNCATE authority.
 New schemas, populated upgrades, repeated upgrade and actual role-forbidden writes are
 covered by PostgreSQL integration tests. Restore rehearsals invalidate interrupted work
 and READY review context; see [backup/restore](backup-restore.md).
+
+## Bootstrap stage
+
+The migration head remains `0005_source_tombstones`; no new DB role or schema object
+is required. The existing lifecycle_writer capability moves to the lifecycle process.
+Bootstrap state uses the protected NetBox secrets directory and existing backup file
+metadata contract. No API/worker gains DDL or owner privileges. See [first-run](first-run.md).

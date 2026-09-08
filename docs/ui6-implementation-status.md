@@ -148,9 +148,11 @@ needed tombstone/operation SELECT. Actual grants deny runtime DELETE/TRUNCATE/DD
 creation, identity rewrite and unrelated table/column writes. No migration-owner DSN reaches
 runtime. Provider children strip writer DSNs; API receives neither new writer.
 
-Production broker networking changes from none to internal DB only, retaining restricted
-mounts/capabilities. It uses the same apply-lock mount. Development Compose uses its
-configured external DB network. No source-secret mount or provider credentials reach API.
+Bootstrap-stage follow-up supersedes the original broker/DB integration: the broker
+now has literal `network_mode: none` and no DB credentials. A separate lifecycle worker
+owns the unchanged narrow DB capability and shared apply lock, and calls broker-owned
+file cleanup over Unix socket. It has no provider or NetBox secret mounts. See
+[first-run boundaries and acceptance](first-run.md).
 
 ## 16. Historical-server bridge
 

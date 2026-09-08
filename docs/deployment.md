@@ -7,13 +7,13 @@ restored database before changing an existing installation.
 ## Topology
 
 `compose.production.yml` defines one stable Compose project (`netbox-sync`), one
-application image and separate API, discovery, apply, schedule, secret-broker and
+application image and separate API, discovery, apply, schedule, bootstrap, lifecycle, secret-broker and
 transient scheduler processes. Bundled PostgreSQL 16 is the default. Its deterministic
 volume is `netbox-sync-postgres-data`, it is attached to the private `netbox-sync-db`
 network and it has no host-published port. The API also joins a dedicated Web bridge
 for its loopback-published port. Discovery, apply and scheduled execution
 also join `netbox-sync-egress` for normal HTTPS connections to providers and NetBox.
-There is no NetBox Docker-network dependency. The broker uses only the internal DB network and the
+There is no NetBox Docker-network dependency. The broker uses literal `network_mode: none`; the lifecycle worker and the
 schedule worker has DB access only.
 
 The runtime boundaries remain separate. In particular, the API has no source-secret
@@ -33,7 +33,7 @@ Compose edit.
   config/                      generated service-specific env files (0750/0600)
   secrets/infrastructure/      generated database passwords (0700/0600)
   secrets/sources/             broker-managed source secrets (0700/0600)
-  secrets/netbox/              read-token and apply-token files (0700/0600)
+  secrets/netbox/              bootstrap.json: state + separate tokens (0700/0600)
   backups/                     protected complete Backup Format v1 bundles (0700)
   state/                       future persistent operator state
 /run/netbox-sync/               shared apply lock (0750)
@@ -84,9 +84,8 @@ them only with Compose `--env-file`/`env_file` as the tracked wrapper and instal
 
 The zero-source state is valid: API/UI liveness does not require a source or live
 NetBox, workers can wait for requests, and a scheduled registry-all tick evaluates
-zero due sources without provider execution. NetBox URLs and token files are populated
-later by the reviewed bootstrap/onboarding procedure; diagnostics may report them
-unavailable meanwhile.
+zero due sources without provider execution. NetBox configuration is entered through the [first-run browser flow](first-run.md).
+An incomplete bootstrap keeps source writes gated and system readiness degraded.
 
 ## Database lifecycle and roles
 
@@ -176,7 +175,7 @@ fails before Alembic DDL with safe operator guidance; the installer never perfor
 hidden ownership takeover. Reassign ownership only through a separately reviewed,
 backup-backed transition procedure.
 
-Interactive onboarding, RBAC/LDAPS, TLS/reverse proxy,
+RBAC/LDAPS, TLS/reverse proxy,
 resource limits, run-history retention and stale-run recovery are deliberately deferred.
 The supported logical backup/fresh-restore workflow is documented in
 [Backup and restore](backup-restore.md). Run history remains unlimited and stale
@@ -184,7 +183,7 @@ RUNNING rows remain diagnostic-only.
 
 ## UI-6 runtime capabilities
 
-The installer generates `broker.env` with `NETBOX_SYNC_LIFECYCLE_WRITER_DSN`, registry
+The installer generates `broker.env` for the separate lifecycle worker with `NETBOX_SYNC_LIFECYCLE_WRITER_DSN`, registry
 schema and the existing apply-lock path. `discovery.env` adds
 `NETBOX_SYNC_OPERATION_WRITER_DSN`. These root-protected configurations accompany the
 matching image/migrations/grants; do not mix UI-6 API and historical worker protocols.
@@ -200,9 +199,10 @@ Runtime roles still have no DELETE/TRUNCATE/DDL, identity rewrite, schema owners
 role administration. Actual PostgreSQL tests assert forbidden table/column writes.
 Provider subprocess environments strip the new writer DSNs. API receives neither writer.
 
-Production broker now joins only `netbox-sync-db` (internal), mounts the same apply-lock
-directory as manual/scheduled execution and retains root filesystem/secret protections.
-It has no provider/NetBox egress network or Docker socket. Development compose.web.yml
-uses the existing external DB network and requires its own narrow lifecycle DSN.
-Lifecycle is a new fixed broker protocol, not an arbitrary file deletion service.
+Production broker is literally networkless (`network_mode: none`) and consumes no
+DB env file or apply-lock mount. The separate lifecycle worker has the existing narrow
+lifecycle role, internal DB network, shared apply lock and broker Unix socket. It mounts
+no provider or NetBox credentials. API source removal sends fixed source-identity
+requests to the lifecycle socket. The broker admits owned-file cleanup only from that
+worker's root peer, never the API UID. See [first-run security boundaries](first-run.md).
 For an isolated manual-acceptance clone, use the [bridge runbook](historical-ui-test-bridge.md).
