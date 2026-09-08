@@ -180,6 +180,8 @@ def execute_child(payload):
     source['username'] = credentials['username']
     config = _child_config(source)
     nb_api = pynetbox.api(payload['netbox_url'], token=payload['netbox_token'])
+    from .netbox_tls import configure_session
+    configure_session(nb_api.http_session)
     if config.source_type == 'proxmox':
         token_name = credentials['token_id'].split('!', 1)[-1]
         provider = ProxmoxAPI(config.address, user=credentials['username'], token_name=token_name,

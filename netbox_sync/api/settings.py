@@ -11,6 +11,7 @@ from ..application.scheduling import stale_threshold
 class ApiSettings:
     """Reuse registry conventions; no source or NetBox credential resolution."""
 
+    public_url: str = ''
     registry_dsn: str = field(default='', repr=False)
     registry_schema: str = ''
     netbox_configured: bool = False
@@ -31,7 +32,12 @@ class ApiSettings:
         """Read only required configuration; never log or serialize the environment."""
         env = os.environ if environ is None else environ
         stale_seconds = stale_threshold(env.get('NETBOX_SYNC_DIAGNOSTICS_STALE_SECONDS', '7200'))
+        public_url=env.get('NETBOX_SYNC_PUBLIC_URL','')
+        if public_url:
+            from ..tls_config import public_authority
+            public_authority(public_url)
         return cls(
+            public_url=public_url,
             registry_dsn=env.get('NETBOX_SYNC_REGISTRY_DSN', '').strip(),
             registry_schema=env.get('NETBOX_SYNC_REGISTRY_SCHEMA', '').strip(),
             netbox_configured=bool(

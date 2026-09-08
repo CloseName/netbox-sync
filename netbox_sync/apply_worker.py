@@ -80,6 +80,8 @@ def execute_child(payload):
     from .netbox_full_apply import apply_full_sync
     config, hosts = _discover(payload)
     nb_api = pynetbox.api(payload['netbox_url'], token=payload['netbox_token'])
+    from .netbox_tls import configure_session
+    configure_session(nb_api.http_session)
     plan = _plan(nb_api, hosts, config)
     if payload['operation'] == 'plan':
         return {**plan.canonical_dict(), 'digest': plan.digest}

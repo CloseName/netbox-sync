@@ -170,6 +170,8 @@ class FakeNetBox:
     }
 
     def __init__(self):
+        import requests
+        self.http_session = requests.Session()
         self.mutations = []
 
         for group_name, endpoint_names in self.ENDPOINTS.items():

@@ -35,3 +35,28 @@ for(const width of [1440,1024,768])test(`first-run recovery and completion at ${
  await page.getByRole('button',{name:'Finish setup'}).click();await expect(page.getByRole('heading',{name:'Welcome to NetBox Sync'})).toHaveCount(0);
  await page.goto('/sources');await expect(page.getByRole('heading',{name:'Welcome to NetBox Sync'})).toHaveCount(0);
 });
+
+
+test('Bootstrap uses the browser HTTPS origin without hardcoded localhost',async({page,context,request})=>{
+ let configured=false;
+ await context.route('https://sync.example.test/**',async route=>{
+  const url=new URL(route.request().url());
+  if(url.pathname.startsWith('/api/')){
+   if(route.request().method()==='POST'){
+    expect(route.request().headers()['origin']).toBe('https://sync.example.test');
+    expect(route.request().headers()['x-netbox-sync-csrf']).toBe('same-origin');
+    expect(url.pathname).toBe('/api/v1/bootstrap/configuration');configured=true;
+   }
+   return route.fulfill({json:{revision:configured?1:0,status:configured?'CONFIGURED':'FRESH',url:configured?'https://netbox.example.test':'',completed:false,read_token_present:configured,apply_token_present:configured,safe_code:null,checks:[],validated_at:null}});
+  }
+  const response=await request.get('http://127.0.0.1:5179'+url.pathname+url.search);
+  await route.fulfill({response});
+ });
+ await page.goto('https://sync.example.test/setup');
+ await page.getByLabel('NetBox HTTPS URL').fill('https://netbox.example.test');
+ await page.getByLabel('Read-only token',{exact:true}).fill('TEST-READ-TOKEN');
+ await page.getByLabel('Apply token',{exact:true}).fill('TEST-APPLY-TOKEN');
+ await page.getByRole('button',{name:'Save connection',exact:true}).click();
+ await expect(page.getByText('Setup: configured')).toBeVisible();
+ expect(configured).toBe(true);
+});

@@ -28,6 +28,7 @@ services:
       NB_CLUSTER_NAME: ${NB_CLUSTER_NAME:?NB_CLUSTER_NAME is required}
 
     volumes:
+      - ${NETBOX_SYNC_CA_DIR:-../secrets/ca}:/run/netbox-sync-ca:ro
       # Separate root avoids nesting legacy file mounts inside a read-only bind.
       - ${NETBOX_SYNC_SOURCE_SECRET_DIR:-../secrets/sources}:/run/secrets/netbox-sync-sources:ro
       - ../secrets/proxmox_token_id:/run/secrets/proxmox_token_id:ro

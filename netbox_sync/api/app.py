@@ -171,6 +171,20 @@ def _install_boundaries(app, settings):
         request.state.run_id = None
         request.state.diagnostics_status = None
         try:
+            if settings.public_url:
+                from ..tls_config import public_authority
+                authority=public_authority(settings.public_url)
+                local_health=(request.scope.get('client') is None and request.method=='GET'
+                              and request.scope['path']=='/api/v1/health'
+                              and request.headers.get('host')=='localhost')
+                if not local_health:
+                    # Uvicorn proxy middleware is disabled. Only the private Unix
+                    # listener (client=None) may carry the proxy's canonical scheme.
+                    if (request.scope.get('client') is not None
+                            or request.headers.get('host')!=authority
+                            or request.headers.get('x-forwarded-proto')!='https'):
+                        return _error(request,403,'API_WRITE_FORBIDDEN','Public HTTPS boundary required')
+                    request.scope['scheme']='https'
             if request.method in ('POST', 'PATCH') and (
                     request.url.path.startswith('/api/v1/bootstrap/') or request.url.path in (
                         '/api/v1/sources', '/api/v1/sources/test-connection',
@@ -183,7 +197,7 @@ def _install_boundaries(app, settings):
                     )):
                 origin = urlsplit(request.headers.get('origin', ''))
                 host = request.headers.get('host', '')
-                if (host not in settings.allowed_write_hosts or origin.netloc != host
+                if (host not in ((public_authority(settings.public_url),) if settings.public_url else settings.allowed_write_hosts) or origin.netloc != host
                         or origin.scheme != request.url.scheme or origin.path not in ('', '/')
                         or origin.query or origin.fragment or origin.username is not None
                         or request.headers.get('sec-fetch-site', 'same-origin') not in ('same-origin', 'none')

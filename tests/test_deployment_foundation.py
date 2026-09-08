@@ -94,7 +94,9 @@ def test_worker_network_and_credential_boundaries_are_preserved():
     assert 'netbox-sync-egress' not in broker
     assert 'broker.env' not in broker
     assert 'cap_add: [CHOWN]' in broker
-    assert 'networks: [netbox-sync-db, netbox-sync-web]' in api
+    assert 'networks: [netbox-sync-db]' in api
+    assert 'ports:' not in api
+    assert 'web_runtime, serve' in api
     assert 'netbox-sync-db, netbox-sync-egress' in discovery
     assert 'netbox-sync-db, netbox-sync-egress' in apply
     assert 'networks: [netbox-sync-db]' in schedule
@@ -315,6 +317,10 @@ def test_upgrade_stops_timer_and_acquires_shared_lock_before_prepare(tmp_path, m
     monkeypatch.setattr(install, 'validate_prerequisites', lambda **_kwargs: None)
     monkeypatch.setattr(install.shutil, 'which', lambda _name: 'systemctl')
     monkeypatch.setattr(install, 'prepare_layout', lambda *_args: prepared)
+    monkeypatch.setattr(install, 'resolve_public_url', lambda *_args: 'https://sync.example.test')
+    monkeypatch.setattr(install, 'initialize_tls_layout', lambda *_args: None)
+    monkeypatch.setattr(install, 'validate_tls_material', lambda *_args: None)
+    monkeypatch.setattr(install, 'configure_tls', lambda *_args: None)
     monkeypatch.setattr(install, 'stop_timer', lambda: events.append('timer-stopped'))
     monkeypatch.setattr(install, 'check_legacy_dropin', lambda _root: None)
     monkeypatch.setattr(install, 'shared_apply_lock',
@@ -353,6 +359,10 @@ def test_prepare_failure_keeps_timer_stopped_and_never_activates(tmp_path, monke
     monkeypatch.setattr(install, 'validate_prerequisites', lambda **_kwargs: None)
     monkeypatch.setattr(install.shutil, 'which', lambda _name: 'systemctl')
     monkeypatch.setattr(install, 'prepare_layout', lambda *_args: prepared)
+    monkeypatch.setattr(install, 'resolve_public_url', lambda *_args: 'https://sync.example.test')
+    monkeypatch.setattr(install, 'initialize_tls_layout', lambda *_args: None)
+    monkeypatch.setattr(install, 'validate_tls_material', lambda *_args: None)
+    monkeypatch.setattr(install, 'configure_tls', lambda *_args: None)
     monkeypatch.setattr(install, 'stop_timer', lambda: events.append('timer-stopped'))
     monkeypatch.setattr(install, 'check_legacy_dropin', lambda _root: None)
     monkeypatch.setattr(install, 'shared_apply_lock',

@@ -6,6 +6,9 @@ import contextlib
 import hashlib
 import os
 import re
+import runpy
+import ssl
+import stat
 import secrets
 import shutil
 import subprocess
@@ -34,6 +37,7 @@ RELEASE_PATTERN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$')
 IGNORED_NAMES = frozenset({
     '.git', '.pytest_cache', '.mypy_cache', '.ruff_cache', '.coverage', 'coverage.xml',
     'htmlcov', 'build', 'dist', 'node_modules', '__pycache__', '.codex-test-tmp',
+    'secrets', 'privkey.pem',
     '.venv', 'venv', '.idea', '.vscode',
 })
 CONFIG_NAMES = ('compose.env', 'api.env', 'discovery.env', 'apply.env',
@@ -54,7 +58,7 @@ LEGACY_ENV_SUFFIXES = frozenset({
     'WEB_PORT', 'WRITE_HOSTS',
 })
 REQUIRED_RELEASE_FILES = (
-    'compose.production.yml', 'Dockerfile.web',
+    'compose.production.yml', 'Dockerfile.web', 'deploy/nginx.conf.template',
     'deploy/backup.py',
     'deploy/systemd/netbox-sync.service',
     'deploy/systemd/netbox-sync.timer', 'scripts/run-scheduled-sync.sh',
@@ -142,7 +146,7 @@ def normalize_release_permissions(root):
 
 
 def _ignore(_directory, names):
-    return [name for name in names if (name in IGNORED_NAMES or name.endswith(('.pyc', '.log'))
+    return [name for name in names if (name in IGNORED_NAMES or name.endswith(('.pyc', '.log', '.key'))
                                        or name == '.env' or name.endswith('.env'))]
 
 
@@ -155,7 +159,7 @@ def _release_digest(root):
             continue
         if path.is_symlink():
             raise InstallError('release source must not contain symbolic links')
-        if path.is_dir() or path.name.endswith(('.pyc', '.log', '.env')) or path.name == '.env':
+        if path.is_dir() or path.name.endswith(('.pyc', '.log', '.env', '.key')) or path.name == '.env':
             continue
         digest.update(relative.as_posix().encode('utf-8') + b'\0')
         digest.update(path.read_bytes())
@@ -465,12 +469,14 @@ def prepare_stack(prepared):
 
 
 def _runtime_services():
-    return ('netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker', 'netbox-sync-discovery-worker',
+    return ('netbox-sync-proxy', 'netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker', 'netbox-sync-discovery-worker',
             'netbox-sync-apply-worker', 'netbox-sync-schedule-worker')
 
 
 def start_runtime(prepared, *, overrides=()):
     """Start the prepared application and require every long-running service."""
+    run(compose_command(prepared.root, '--profile', 'tools', 'run', '--rm', '--no-deps',
+        'netbox-sync-http-init', release=prepared.release, config=prepared.root/'config', overrides=overrides))
     command = compose_command(prepared.root, 'up', '-d', *_runtime_services(),
                               release=prepared.release, config=prepared.root / 'config',
                               overrides=overrides)
@@ -484,13 +490,14 @@ def start_runtime(prepared, *, overrides=()):
         running = set(status.stdout.split()) if status.returncode == 0 else set()
         if set(_runtime_services()).issubset(running):
             health = run(compose_command(
-                prepared.root, 'exec', '-T', 'netbox-sync-api', 'python', '-c',
-                "import urllib.request; urllib.request.urlopen("
-                "'http://127.0.0.1:8000/api/v1/health', timeout=2).close()",
+                prepared.root, 'exec', '-T', 'netbox-sync-api', 'python', '-m', 'netbox_sync.web_runtime', 'health',
                 release=prepared.release, config=prepared.root / 'config',
                 overrides=overrides),
                          check=False)
-            if health.returncode == 0:
+            proxy = run(compose_command(prepared.root, 'exec', '-T', 'netbox-sync-proxy',
+                'wget', '-q', '--spider', 'http://127.0.0.1:8081/health',
+                release=prepared.release, config=prepared.root/'config', overrides=overrides),check=False)
+            if health.returncode == 0 and proxy.returncode == 0:
                 return
         time.sleep(2)
     raise InstallError('application services did not become ready')
@@ -647,9 +654,76 @@ def install_systemd(root, *, start=True):
         run(['systemctl', 'enable', '--now', 'netbox-sync.timer'])
 
 
+# Load the shared stdlib-only contract without importing the application's runtime
+# dependencies on the Debian host. The path belongs to this reviewed release.
+_tls = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'netbox_sync/tls_config.py'))
+public_authority = _tls['public_authority']
+TLSConfigurationError = _tls['TLSConfigurationError']
+
+
+def initialize_tls_layout(root):
+    for path, mode, gid in ((root,0o755,0),(root/'secrets',0o700,0),
+                           (root/'secrets/tls',0o750,10001),(root/'secrets/ca',0o755,0)):
+        if path.is_symlink():raise InstallError('TLS layout contains a symbolic link')
+        if path.exists():
+            info=path.stat()
+            if not path.is_dir() or (os.name=='posix' and (info.st_uid,info.st_gid,stat.S_IMODE(info.st_mode))!=(0,gid,mode)):
+                raise InstallError('TLS layout ownership or permissions are invalid')
+        else:
+            path.mkdir(parents=True,mode=mode)
+            if os.name=='posix':os.chown(path,0,gid)
+            path.chmod(mode)
+
+
+def resolve_public_url(root, explicit=None):
+    path=root/'config/api.env'
+    current=''
+    if path.exists():
+        for line in path.read_text(encoding='utf-8').splitlines():
+            if line.startswith('NETBOX_SYNC_PUBLIC_URL='):current=line.split('=',1)[1]
+    if current and explicit and current!=explicit:
+        raise InstallError('public URL change requires a separately reviewed transition')
+    selected=explicit or current
+    public_authority(selected)
+    return selected
+
+
+def validate_tls_material(root, public_url):
+    host=public_authority(public_url)
+    directory=root/'secrets/tls'
+    for name in ('fullchain.pem','privkey.pem'):
+        _tls['protected_file'](directory/name,0o640,10001)
+    try:
+        context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(directory/'fullchain.pem',directory/'privkey.pem',password=lambda: '')
+        for args in (['-checkend','0'],['-checkhost',host]):
+            result=subprocess.run(['openssl','x509','-in',str(directory/'fullchain.pem'),'-noout',*args],
+                                  stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
+            if result.returncode:raise ValueError()
+    except (ValueError,OSError,ssl.SSLError,subprocess.SubprocessError):
+        raise InstallError('TLS certificate/key invalid, expired, encrypted or hostname mismatch') from None
+    ca=root/'secrets/ca/netbox-ca.pem'
+    if ca.exists() or ca.is_symlink():_tls['validate_ca'](_tls['protected_file'](ca,0o644))
+
+
+def configure_tls(prepared, public_url):
+    authority=public_authority(public_url)
+    for name, defaults in {
+        'compose.env': {'NETBOX_SYNC_TLS_DIR':str(prepared.root/'secrets/tls'),
+                        'NETBOX_SYNC_CA_DIR':str(prepared.root/'secrets/ca'),
+                        'NETBOX_SYNC_PUBLIC_HOST':authority},
+        'api.env': {'NETBOX_SYNC_PUBLIC_URL':public_url,'NETBOX_SYNC_WRITE_HOSTS':authority},
+    }.items():
+        path=prepared.config/name
+        # Explicitly reviewed HTTP -> HTTPS transition updates the old loopback allowlist.
+        _atomic_write(path,_merged_config(path,defaults,{'NETBOX_SYNC_WRITE_HOSTS':authority} if name=='api.env' else defaults))
+
 def parse_args(argv=None):
     """Parse bounded non-interactive installer options."""
     parser = argparse.ArgumentParser(description='Prepare a NetBox Sync v1 foundation')
+    parser.add_argument('--public-url', help='Canonical https://FQDN, required for first HTTPS installation')
+    parser.add_argument('--init-tls-layout', action='store_true', help='Create TLS/CA directories only; no certificates or deployment')
+    parser.add_argument('--check-tls', action='store_true', help='Validate public URL and operator TLS/CA files only')
     parser.add_argument('--check', action='store_true', help='validate only; make no changes')
     parser.add_argument('--prepare-only', action='store_true')
     parser.add_argument('--no-start', action='store_true')
@@ -664,18 +738,31 @@ def parse_args(argv=None):
 def main(argv=None):
     """Validate or prepare a deployment foundation."""
     args = parse_args(argv)
-    if not args.check and not args.release_id:
+    if not (args.check or args.init_tls_layout or args.check_tls) and not args.release_id:
         raise SystemExit('--release-id is required')
     if args.release_id is not None and not RELEASE_PATTERN.fullmatch(args.release_id):
         raise SystemExit('invalid release id')
     try:
+        root=args.root.resolve()
+        if args.init_tls_layout:
+            initialize_tls_layout(root)
+            print('TLS layout ready; operator certificates must be supplied separately')
+            return 0
+        if args.check_tls:
+            validate_tls_material(root,resolve_public_url(root,args.public_url))
+            print('TLS material and public URL OK')
+            return 0
         validate_prerequisites(require_systemd=not args.no_systemd)
         if args.check:
             print('deployment prerequisites OK')
             return 0
         image = args.image or f'netbox-sync:{args.release_id}'
         root = args.root.resolve()
+        public_url=resolve_public_url(root,args.public_url)
+        initialize_tls_layout(root)
+        validate_tls_material(root,public_url)
         prepared = prepare_layout(root, args.source.resolve(), args.release_id, image)
+        configure_tls(prepared,public_url)
         upgrading = current_release(root) is not None
         if upgrading and shutil.which('systemctl') is None:
             raise InstallError('systemctl is required to coordinate an existing installation')
@@ -696,8 +783,11 @@ def main(argv=None):
                     print(f'prepared release {args.release_id}; activation was not attempted')
         finally:
             _cleanup_prepared(prepared)
+    except TLSConfigurationError as error:
+        print(str(error),file=sys.stderr)
+        return 1
     except (InstallError, OSError, subprocess.SubprocessError):
-        print('deployment preparation failed; inspect host prerequisites and protected config',
+        print('deployment preparation failed; check TLS material/public URL, then inspect host prerequisites and protected config',
               file=sys.stderr)
         return 1
     print('NetBox Sync deployment foundation prepared')

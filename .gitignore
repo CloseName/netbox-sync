@@ -14,3 +14,8 @@ __pycache__/
 # Local browser validation
 frontend/test-results/
 frontend/playwright-report/
+
+# Operator private TLS material never belongs to a release
+*.key
+privkey.pem
+secrets/

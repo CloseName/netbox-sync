@@ -5,6 +5,8 @@ import sys
 from urllib.parse import urlsplit
 import requests
 from .api.egress import EgressPolicy, pinned_dns
+from .netbox_tls import configure_session
+from .tls_config import TLSConfigurationError
 
 FIELDS = {
     'sync_identities': ('json', ('dcim.device','dcim.interface','virtualization.virtualmachine','virtualization.vminterface')),
@@ -57,7 +59,7 @@ def probe(value, session_factory=requests.Session, policy=None):
         parsed = urlsplit(value['url'])
         host, address = (policy or EgressPolicy(allowed_hosts=(parsed.hostname,))).resolve(parsed.hostname, parsed.port or 443)
         with pinned_dns(host, address, parsed.port or 443), session_factory() as session:
-            session.trust_env = False
+            configure_session(session)
             for endpoint in ENDPOINTS:
                 url = value['url'] + '/api/' + endpoint + '/'
                 for kind in ('read', 'apply'):
@@ -83,7 +85,7 @@ def probe(value, session_factory=requests.Session, policy=None):
                 okay = field_type == kind and set(models).issubset(set(row.get('object_types', [])))
                 checks.append({'name': name, 'type': kind, 'models': list(models), 'ok': okay})
             return {'safe_code': None if all(check['ok'] for check in checks) else 'PREREQUISITES_MISSING', 'checks': checks}
-    except requests.exceptions.SSLError:
+    except (requests.exceptions.SSLError, TLSConfigurationError):
         code = 'TLS_FAILED'
     except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, socket.gaierror):
         code = 'NETWORK_UNREACHABLE'

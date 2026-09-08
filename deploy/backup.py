@@ -56,7 +56,7 @@ FOUNDATION_TABLES = ('alembic_version', 'schema_meta', 'source_operations',
 SAFE_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
 SAFE_SCHEMA = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,62}$')
 MAINTENANCE_SERVICES = (
-    'netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker', 'netbox-sync-discovery-worker',
+    'netbox-sync-proxy', 'netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker', 'netbox-sync-discovery-worker',
     'netbox-sync-apply-worker', 'netbox-sync-schedule-worker')
 HOST_LOCAL_COMPOSE_KEYS = (
     'NETBOX_SYNC_COMPOSE_PROJECT', 'NETBOX_SYNC_IMAGE', 'NETBOX_SYNC_CONFIG_DIR',
@@ -155,6 +155,17 @@ def _read_env(path):
     return values
 
 
+def _persistent_permissions(relative, directory=False):
+    """Exact additional public-CA/TLS paths; ordinary secrets keep root:root 0700/0600."""
+    if relative=='secrets/tls' and directory:return 0o750,10001
+    if relative=='secrets/ca' and directory:return 0o755,0
+    if relative in ('secrets/tls/fullchain.pem','secrets/tls/privkey.pem') and not directory:return 0o640,10001
+    if relative=='secrets/ca/netbox-ca.pem' and not directory:return 0o644,0
+    if relative.startswith(('secrets/tls/','secrets/ca/')):
+        raise BackupError('non-canonical TLS/CA entry')
+    return (0o700 if directory else 0o600),0
+
+
 def _file_metadata(root):  # pylint: disable=too-many-locals,too-many-nested-blocks
     records = []
     for top in STATE_DIRS:
@@ -164,11 +175,12 @@ def _file_metadata(root):  # pylint: disable=too-many-locals,too-many-nested-blo
         for directory, names, filenames in os.walk(base, followlinks=False):
             current = Path(directory)
             current_info = current.stat(follow_symlinks=False)
+            expected_mode,expected_gid=_persistent_permissions(current.relative_to(root).as_posix(),True)
             if (os.name == 'posix' and current.relative_to(root).parts[0] == 'secrets'
-                    and stat.S_IMODE(current_info.st_mode) != 0o700):
+                    and stat.S_IMODE(current_info.st_mode) != expected_mode):
                 raise BackupError('secret directory permissions must be 0700')
             if (getattr(os, 'geteuid', lambda: -1)() == 0
-                    and (current_info.st_uid, current_info.st_gid) != (0, 0)):
+                    and (current_info.st_uid, current_info.st_gid) != (0, expected_gid)):
                 raise BackupError('persistent state must be owned by root')
             names.sort()
             filenames.sort()
@@ -183,10 +195,11 @@ def _file_metadata(root):  # pylint: disable=too-many-locals,too-many-nested-blo
                 relative = path.relative_to(root).as_posix()
                 info = path.stat(follow_symlinks=False)
                 mode = stat.S_IMODE(info.st_mode)
-                if os.name == 'posix' and mode != 0o600:
+                expected_mode,expected_gid=_persistent_permissions(relative)
+                if os.name == 'posix' and mode != expected_mode:
                     raise BackupError('persistent config and secret files must be 0600')
                 if (getattr(os, 'geteuid', lambda: -1)() == 0
-                        and (info.st_uid, info.st_gid) != (0, 0)):
+                        and (info.st_uid, info.st_gid) != (0, expected_gid)):
                     raise BackupError('persistent state must be owned by root')
                 xattrs = {}
                 if relative.startswith('secrets/sources/'):
@@ -222,7 +235,9 @@ def _validate_canonical_files(root):
     if {path.name for path in (root / 'config').iterdir()} != set(CONFIG_FILES):
         raise BackupError('config directory contains non-canonical entries')
     secret_root = root / 'secrets'
-    if ({path.name for path in secret_root.iterdir()} != set(REQUIRED_SECRET_DIRS)
+    actual_dirs={path.name for path in secret_root.iterdir()}
+    if (not set(REQUIRED_SECRET_DIRS).issubset(actual_dirs)
+            or not actual_dirs.issubset(set(REQUIRED_SECRET_DIRS)|{'tls','ca'})
             or any(not path.is_dir() for path in secret_root.iterdir())):
         raise BackupError('secret directory contains non-canonical entries')
     for directory in REQUIRED_SECRET_DIRS:
@@ -824,6 +839,22 @@ def _extend_bootstrap_restored_configuration(stage):
         'NETBOX_SYNC_BOOTSTRAP_SOCKET': '/run/netbox-sync-bootstrap/worker.sock'}))
 
 
+def _extend_tls_restored_configuration(stage, root):
+    public_url=_read_env(root/'config/api.env').get('NETBOX_SYNC_PUBLIC_URL','')
+    if not public_url:return  # Restoring an older supported HTTP release, not a TLS upgrade.
+    incoming=_read_env(stage/'config/api.env').get('NETBOX_SYNC_PUBLIC_URL','')
+    if incoming and incoming!=public_url:raise BackupError('restored public URL differs from prepared target')
+    for name in ('tls','ca'):
+        if not (stage/'secrets'/name).exists():
+            shutil.copytree(root/'secrets'/name,stage/'secrets'/name)
+            if os.name=='posix':
+                gid=10001 if name=='tls' else 0
+                os.chown(stage/'secrets'/name,0,gid)
+                for path in (stage/'secrets'/name).iterdir():os.chown(path,0,gid)
+    install.validate_tls_material(stage,public_url)
+    install.configure_tls(install.PreparedDeployment(root,root/'current',stage/'config','restored'),public_url)
+
+
 def _prepare_password_transition(root, restored):
     directory = Path(tempfile.mkdtemp(prefix='restore-passwords-', dir=root / 'state'))
     directory.chmod(0o700)
@@ -891,9 +922,7 @@ def _start_restored_runtime(root, postgres_mode):
                      if postgres_mode == 'external' else ())
         install.start_runtime(prepared, overrides=overrides)
         result = install.run(_compose_command(
-            root, 'exec', '-T', 'netbox-sync-api', 'python', '-c',
-            "import urllib.request; urllib.request.urlopen("
-            "'http://127.0.0.1:8000/api/v1/diagnostics', timeout=5).close()",
+            root, 'exec', '-T', 'netbox-sync-api', 'python', '-m', 'netbox_sync.web_runtime', 'diagnostics',
             mode=postgres_mode), check=False)
         if result.returncode:
             raise BackupError('post-restore diagnostics did not become ready')
@@ -928,6 +957,7 @@ def restore_fresh(root, bundle, database, *, no_systemd=False, check_only=False)
         # Extend only the staged restored state, after its exact metadata was verified.
         _extend_ui6_restored_configuration(stage)
         _extend_bootstrap_restored_configuration(stage)
+        _extend_tls_restored_configuration(stage,root)
         database.restore_fresh(
             bundle / 'database.dump', maintenance, manifest['schema_name'])
         _run_deployment_tool(root, 'netbox-sync-migrate', postgres_mode=database.mode)

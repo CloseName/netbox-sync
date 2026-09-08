@@ -98,6 +98,7 @@ services:
     cap_add: [SETUID, SETGID, CHOWN]
     security_opt: [no-new-privileges:true]
     volumes:
+      - ${NETBOX_SYNC_CA_DIR:-../secrets/ca}:/run/netbox-sync-ca:ro
       - netbox-sync-bootstrap-socket:/run/netbox-sync-bootstrap
       - ${NETBOX_SYNC_APPLY_LOCK_DIR:-/run/netbox-sync}:/run/netbox-sync-lock
       - ${NETBOX_SYNC_NETBOX_SECRET_DIR:-../secrets/netbox}:/var/lib/netbox-sync/netbox
@@ -122,6 +123,7 @@ services:
       NETBOX_SYNC_NETBOX_CONFIG_FILE: /run/secrets/netbox/bootstrap.json
       NETBOX_SYNC_DISCOVERY_NB_API_URL: ${NETBOX_SYNC_DISCOVERY_NB_API_URL:-}
     volumes:
+      - ${NETBOX_SYNC_CA_DIR:-../secrets/ca}:/run/netbox-sync-ca:ro
       - netbox-sync-discovery-socket:/run/netbox-sync-discovery
       - ${NETBOX_SYNC_LEGACY_SOURCE_SECRET_DIR:-../secrets/legacy-sources}:/run/secrets/netbox-sync:ro
       - ${NETBOX_SYNC_SOURCE_SECRET_DIR:-../secrets/sources}:/run/secrets/netbox-sync-sources:ro
@@ -154,6 +156,7 @@ services:
       NETBOX_SYNC_NETBOX_CONFIG_FILE: /run/secrets/netbox/bootstrap.json
       NETBOX_SYNC_APPLY_NB_API_URL: ${NETBOX_SYNC_APPLY_NB_API_URL:-}
     volumes:
+      - ${NETBOX_SYNC_CA_DIR:-../secrets/ca}:/run/netbox-sync-ca:ro
       - netbox-sync-apply-socket:/run/netbox-sync-apply
       - ${NETBOX_SYNC_APPLY_LOCK_DIR:-/run/netbox-sync}:/run/netbox-sync-lock
       - ${NETBOX_SYNC_LEGACY_SOURCE_SECRET_DIR:-../secrets/legacy-sources}:/run/secrets/netbox-sync:ro

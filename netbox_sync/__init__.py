@@ -892,6 +892,8 @@ def execute_discovered_source(
     else:
         netbox_url, netbox_token = os.environ['NB_API_URL'], _read_secret(nb_token_variable)
     nb_api = pynetbox.api(url=netbox_url, token=netbox_token)
+    from .netbox_tls import configure_session
+    configure_session(nb_api.http_session)
 
     if source_config.source_type == 'esxi' and sync_mode == 'plan':
         execute_esxi_runtime(

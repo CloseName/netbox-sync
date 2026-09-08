@@ -17,6 +17,47 @@ x-app: &app
       max-file: "5"
 
 services:
+  netbox-sync-proxy:
+    image: ${NETBOX_SYNC_PROXY_IMAGE:-nginx:stable-alpine}
+    user: "10001:10001"
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - >-
+        envsubst '$$NETBOX_SYNC_PUBLIC_HOST' < /etc/netbox-sync/nginx.conf.template > /tmp/nginx.conf;
+        exec nginx -c /tmp/nginx.conf -g 'daemon off;'
+    environment:
+      NETBOX_SYNC_PUBLIC_HOST: ${NETBOX_SYNC_PUBLIC_HOST:-}
+    ports:
+      - "80:8080"
+      - "443:8443"
+    volumes:
+      - ./deploy/nginx.conf.template:/etc/netbox-sync/nginx.conf.template:ro
+      - ${NETBOX_SYNC_TLS_DIR:-./deploy/example-secrets/tls}:/run/netbox-sync-tls:ro
+      - netbox-sync-http-socket:/run/netbox-sync-http:ro
+    networks: [netbox-sync-web]
+    read_only: true
+    tmpfs: [/tmp:size=64m,mode=1777]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    logging: *bounded-logging
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:8081/health]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  netbox-sync-http-init:
+    <<: *app
+    profiles: [tools]
+    user: "0:0"
+    command: [python, -m, netbox_sync.web_runtime, init]
+    network_mode: none
+    cap_add: [CHOWN]
+    volumes:
+      - netbox-sync-http-socket:/run/netbox-sync-http
+    restart: "no"
+
   postgres:
     image: ${NETBOX_SYNC_POSTGRES_IMAGE:-postgres:16-bookworm}
     environment:
@@ -39,21 +80,20 @@ services:
   netbox-sync-api:
     <<: *app
     user: "10001:10001"
-    command: [uvicorn, "netbox_sync.api.app:create_app", --factory, --host, "0.0.0.0", --port, "8000", --no-access-log]
+    command: [python, -m, netbox_sync.web_runtime, serve]
     env_file: ${NETBOX_SYNC_CONFIG_DIR:-./deploy/examples}/api.env
-    ports:
-      - "127.0.0.1:${NETBOX_SYNC_WEB_PORT:-8000}:8000"
     volumes:
+      - netbox-sync-http-socket:/run/netbox-sync-http
       - netbox-sync-broker-socket:/run/netbox-sync-broker:ro
       - netbox-sync-lifecycle-socket:/run/netbox-sync-lifecycle:ro
       - netbox-sync-bootstrap-socket:/run/netbox-sync-bootstrap:ro
       - netbox-sync-discovery-socket:/run/netbox-sync-discovery:ro
       - netbox-sync-apply-socket:/run/netbox-sync-apply:ro
       - netbox-sync-schedule-socket:/run/netbox-sync-schedule:ro
-    networks: [netbox-sync-db, netbox-sync-web]
+    networks: [netbox-sync-db]
     restart: unless-stopped
     healthcheck:
-      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=2).close()"]
+      test: [CMD, python, -m, netbox_sync.web_runtime, health]
       interval: 30s
       timeout: 3s
       retries: 3
@@ -91,6 +131,7 @@ services:
     networks: [netbox-sync-egress]
     cap_add: [SETUID, SETGID, CHOWN]
     volumes:
+      - ${NETBOX_SYNC_CA_DIR:-./deploy/example-secrets/ca}:/run/netbox-sync-ca:ro
       - netbox-sync-bootstrap-socket:/run/netbox-sync-bootstrap
       - ${NETBOX_SYNC_APPLY_LOCK_DIR:-/run/netbox-sync}:/run/netbox-sync-lock
       - ${NETBOX_SYNC_NETBOX_SECRET_DIR:-./deploy/example-secrets/netbox}:/var/lib/netbox-sync/netbox
@@ -102,6 +143,7 @@ services:
     command: [python, -m, netbox_sync.discovery_worker, --socket, /run/netbox-sync-discovery/worker.sock, --secret-root, /run/secrets/netbox-sync, --source-secret-root, /run/secrets/netbox-sync-sources, --netbox-token-file, /run/secrets/netbox/read-token, --api-uid, "10001", --child-uid, "10001", --child-gid, "10001"]
     env_file: ${NETBOX_SYNC_CONFIG_DIR:-./deploy/examples}/discovery.env
     volumes:
+      - ${NETBOX_SYNC_CA_DIR:-./deploy/example-secrets/ca}:/run/netbox-sync-ca:ro
       - netbox-sync-discovery-socket:/run/netbox-sync-discovery
       - ${NETBOX_SYNC_SOURCE_SECRET_DIR:-./deploy/example-secrets/sources}:/run/secrets/netbox-sync-sources:ro
       - ${NETBOX_SYNC_NETBOX_SECRET_DIR:-./deploy/example-secrets/netbox}:/run/secrets/netbox:ro
@@ -115,6 +157,7 @@ services:
     command: [python, -m, netbox_sync.apply_worker, --socket, /run/netbox-sync-apply/worker.sock, --secret-root, /run/secrets/netbox-sync, --source-secret-root, /run/secrets/netbox-sync-sources, --netbox-token-file, /run/secrets/netbox/apply-token, --lock-path, /run/netbox-sync-lock/apply.lock, --api-uid, "10001", --child-uid, "10001", --child-gid, "10001"]
     env_file: ${NETBOX_SYNC_CONFIG_DIR:-./deploy/examples}/apply.env
     volumes:
+      - ${NETBOX_SYNC_CA_DIR:-./deploy/example-secrets/ca}:/run/netbox-sync-ca:ro
       - netbox-sync-apply-socket:/run/netbox-sync-apply
       - ${NETBOX_SYNC_APPLY_LOCK_DIR:-/run/netbox-sync}:/run/netbox-sync-lock
       - ${NETBOX_SYNC_SOURCE_SECRET_DIR:-./deploy/example-secrets/sources}:/run/secrets/netbox-sync-sources:ro
@@ -141,6 +184,7 @@ services:
     command: [netbox-sync]
     env_file: ${NETBOX_SYNC_CONFIG_DIR:-./deploy/examples}/scheduler.env
     volumes:
+      - ${NETBOX_SYNC_CA_DIR:-./deploy/example-secrets/ca}:/run/netbox-sync-ca:ro
       - ${NETBOX_SYNC_SOURCE_SECRET_DIR:-./deploy/example-secrets/sources}:/run/secrets/netbox-sync-sources:ro
       - ${NETBOX_SYNC_NETBOX_SECRET_DIR:-./deploy/example-secrets/netbox}:/run/secrets/netbox:ro
     networks: [netbox-sync-db, netbox-sync-egress]
@@ -209,6 +253,7 @@ services:
     restart: "no"
 
 volumes:
+  netbox-sync-http-socket:
   netbox-sync-postgres:
     name: ${NETBOX_SYNC_POSTGRES_VOLUME:-netbox-sync-postgres-data}
   netbox-sync-broker-socket:
