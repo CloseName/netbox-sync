@@ -7,29 +7,25 @@ does not include LDAPS/RBAC, TLS automation, or automatic infrastructure creatio
 
 ## Clean installation
 
-On a fresh supported Debian host, install Python 3.10+, Docker Engine/Compose v2,
-systemd, GNU tar with ACL/xattr support and the other deployment prerequisites.
-Use a reviewed checkout/release of CloseName/netbox-sync. From its root:
-
-```sh
-python3 deploy/install.py --check
-sudo python3 deploy/install.py --release-id <unique-reviewed-release-id>
-```
+Follow the exact [DNS/TLS clean-install runbook](clean-install-tls-runbook.md).
+Use `deploy/install.py --init-tls-layout`, copy operator certificates and optional
+NetBox CA, validate with `--check-tls --public-url https://your.fqdn`, then run the
+normal installer with the same public URL and reviewed release ID. No manual env
+fabrication or legacy naming migration is part of a fresh installation.
 
 The existing installer transaction prepares `/opt/netbox-sync/releases/<release-id>`,
 generates protected role-specific config and infrastructure passwords, builds the Web
 image, starts bundled PostgreSQL, provisions roles, migrates through
 `0005_source_tombstones`, applies grants and activates `/opt/netbox-sync/current`.
-It starts API, broker, lifecycle, bootstrap, discovery, apply and schedule workers,
+It starts nginx, API, broker, lifecycle, bootstrap, discovery, apply and schedule workers,
 then enables the canonical systemd timer. No legacy naming migration is needed.
 No NetBox token or provider configuration is required to start these processes.
 A registry-all scheduler tick with zero sources performs no provider/NetBox work.
 
-The API is published on host loopback port 8000. For initial access use the existing
-protected access boundary, for example an SSH tunnel to host port 8000 and browse
-`http://127.0.0.1:8000`. A reverse proxy and remote-origin allowlist are separately
-reviewed deployment configuration. First-run browser operations need no env editing.
-Do not expose this pre-RBAC operator interface directly to an untrusted network.
+Open the configured HTTPS public URL. nginx is the supported TLS boundary;
+production API uses a private Unix socket with no TCP publication. See
+[TLS trust and external NetBox prerequisites](tls.md). First-run browser operations
+need no env editing. This remains a pre-RBAC interface for a trusted operator network.
 
 ## Browser flow
 

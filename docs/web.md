@@ -1,3 +1,8 @@
+> Current production deployment uses [nginx HTTPS and a private API Unix socket](tls.md).
+> Follow the [clean-install runbook](clean-install-tls-runbook.md). Loopback ports and
+> older deployment limitations below describe historical WEB stages or development,
+> not the canonical production Compose path. UI-6 and Bootstrap are implemented.
+
 # WEB-3: protected source onboarding, health and source visibility
 
 > Deployment note: `compose.production.yml` and [Deployment](deployment.md) are the

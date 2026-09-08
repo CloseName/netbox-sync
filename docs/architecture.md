@@ -477,3 +477,12 @@ The UI-6 lifecycle writer now runs in a separate worker: internal DB access, sha
 apply lock, broker socket, no source/NetBox file mounts. Broker networking is literally
 `network_mode: none`; no PostgreSQL connection or lifecycle DB import remains.
 Existing source gates, tombstones, history retention and grants are unchanged.
+
+## Canonical production HTTPS boundary
+
+See [TLS architecture and threat boundaries](tls.md). nginx alone publishes 80/443;
+API has a private Unix listener, disables Uvicorn proxy middleware and requires the
+controlled peer/Host/scheme plus existing same-origin write protection. No new DB
+privileges, host-control mounts or broker network are introduced. Exact-file CA trust
+is limited to NetBox clients. TLS does not add authentication: operator-network access
+controls remain required.

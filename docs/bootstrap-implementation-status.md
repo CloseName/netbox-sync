@@ -71,5 +71,7 @@ pending on the upcoming explicitly authorized disposable VM. Repository tests do
 replace that acceptance. NetBox prerequisite creation is deliberately manual and visible.
 Read-only GET/OPTIONS evidence cannot prove every object-level PATCH permission or the
 absence of delete rights; operator permission review remains required. LDAPS/RBAC,
-reverse-proxy/TLS automation and IPv6-only NetBox validation are outside this stage.
+automatic certificate issuance and IPv6-only NetBox validation are outside this stage.
+The subsequent [DNS/TLS hardening stage](tls.md) adds operator-supplied HTTPS and
+explicit NetBox CA trust; use its [clean-install runbook](clean-install-tls-runbook.md).
 No production or historical installation was modified.

@@ -10,8 +10,8 @@ restored database before changing an existing installation.
 application image and separate API, discovery, apply, schedule, bootstrap, lifecycle, secret-broker and
 transient scheduler processes. Bundled PostgreSQL 16 is the default. Its deterministic
 volume is `netbox-sync-postgres-data`, it is attached to the private `netbox-sync-db`
-network and it has no host-published port. The API also joins a dedicated Web bridge
-for its loopback-published port. Discovery, apply and scheduled execution
+network and it has no host-published port. nginx publishes HTTPS 443 and redirects
+HTTP 80 on a separate Web bridge; the API listens only on a private Unix socket. Discovery, apply and scheduled execution
 also join `netbox-sync-egress` for normal HTTPS connections to providers and NetBox.
 There is no NetBox Docker-network dependency. The broker uses literal `network_mode: none`; the lifecycle worker and the
 schedule worker has DB access only.
@@ -34,6 +34,8 @@ Compose edit.
   secrets/infrastructure/      generated database passwords (0700/0600)
   secrets/sources/             broker-managed source secrets (0700/0600)
   secrets/netbox/              bootstrap.json: state + separate tokens (0700/0600)
+  secrets/tls/                 operator fullchain.pem + privkey.pem (0750/0640 root:10001)
+  secrets/ca/                  optional netbox-ca.pem (0755/0644 root:root)
   backups/                     protected complete Backup Format v1 bundles (0700)
   state/                       future persistent operator state
 /run/netbox-sync/               shared apply lock (0750)
@@ -46,15 +48,20 @@ existing password. Do not copy secrets into a release directory.
 
 ## Fresh Debian foundation
 
-Prerequisites are Python 3.10+, Docker Engine with Compose v2, systemd, `flock` and
+Prerequisites are Python 3.10+, Docker Engine with Compose v2, systemd, OpenSSL, `flock` and
 `install`. The installer itself uses only the Python standard library; database and
 migration code runs inside the application image.
 
+Use the exact [DNS/TLS clean-install runbook](clean-install-tls-runbook.md).
+[HTTPS and CA trust](tls.md) define required material, permissions and upgrades.
 From an unpacked reviewed release:
 
 ```sh
 python3 deploy/install.py --check
-sudo python3 deploy/install.py --release-id <release-id>
+sudo python3 deploy/install.py --init-tls-layout
+# Install operator certificates and optional NetBox CA using the linked runbook.
+sudo python3 deploy/install.py --check-tls --public-url https://your.fqdn
+sudo python3 deploy/install.py --release-id <release-id> --public-url https://your.fqdn
 ```
 
 `--check` is read-only. Every install requires an explicit release ID; an existing ID
@@ -70,7 +77,7 @@ and builds the Compose artifact, starts/waits for PostgreSQL, bootstraps roles, 
 legacy object ownership, migrates and reapplies grants. It does not change `current`.
 ACTIVATE publishes the staged config, atomically switches `current`, installs units,
 starts the long-running services, verifies that they and API liveness are ready, and
-only then enables the timer.
+only then enables the timer. nginx readiness and operator TLS preflight are also required.
 
 Existing config values and unknown operator keys are retained verbatim. Missing known
 keys are appended, while the installer-owned image/config-directory fields track the

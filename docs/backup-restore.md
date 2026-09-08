@@ -18,7 +18,7 @@ The required state is:
 - a logical custom-format dump of database `netbox_sync`, including schema
   `netbox_sync`, `schema_meta`, `sources`, `sync_runs`, `alembic_version`, indexes,
   constraints and every application schema object;
-- `/opt/netbox-sync/config`: the six canonical env files, preserved byte-for-byte,
+- `/opt/netbox-sync/config`: the seven canonical env files, preserved byte-for-byte,
   including unknown operator keys;
 - `/opt/netbox-sync/secrets/infrastructure`: the bootstrap and fixed runtime-role
   password files;
@@ -242,3 +242,17 @@ Older bundles gain missing Bootstrap/runtime socket settings only after validate
 staging; absent bootstrap.json means FRESH, never inferred readiness from old env files.
 The filename broker.env remains for compatibility but only the lifecycle worker reads it.
 See [first-run recovery and clean-VM checklist](first-run.md).
+
+## TLS material in Backup Format v1
+
+[TLS hardening](tls.md) adds exact canonical `secrets/tls` and `secrets/ca` entries.
+TLS directory/files preserve root:10001 0750/0640; CA directory/file preserve
+root:root 0755/0644. These are bounded exceptions to root-only source/infrastructure
+secret rules, not a general relaxation. Only fullchain.pem, privkey.pem and optional
+netbox-ca.pem are accepted there. Backups therefore contain the TLS private key.
+
+Prepare a fresh HTTPS target using the [runbook](clean-install-tls-runbook.md) before
+restore. Public URLs must match; a different hostname fails before DB restore. Old
+bundles lacking TLS/CA retain the prepared target's supplied material. Host paths are
+rewritten for the target, files are validated before DB restore, and API post-restore
+diagnostics use the Unix socket. No TLS private material is put in env files.

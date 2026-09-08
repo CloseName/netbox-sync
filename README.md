@@ -112,3 +112,11 @@ Licensed under the GNU General Public License v3.0. See [LICENSE.txt](LICENSE.tx
 See [Project provenance](docs/provenance.md) for derivation and history details.
 
 Clean zero-source installation and browser-based NetBox setup: [First-run Bootstrap](docs/first-run.md).
+
+## Production HTTPS installation
+
+Use the [DNS/TLS clean-install runbook](docs/clean-install-tls-runbook.md) and
+[TLS/CA security boundary](docs/tls.md). The canonical installer requires an explicit
+public HTTPS FQDN and operator-supplied certificate/key; nginx terminates TLS while
+API uses a private Unix socket. NetBox remains external, with optional explicit
+corporate CA trust. No ACME, NetBox deployment or operator authentication is bundled.
