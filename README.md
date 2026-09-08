@@ -117,6 +117,8 @@ Clean zero-source installation and browser-based NetBox setup: [First-run Bootst
 
 Use the [DNS/TLS clean-install runbook](docs/clean-install-tls-runbook.md) and
 [TLS/CA security boundary](docs/tls.md). The canonical installer requires an explicit
-public HTTPS FQDN and operator-supplied certificate/key; nginx terminates TLS while
-API uses a private Unix socket. NetBox remains external, with optional explicit
+public HTTPS FQDN. Standalone nginx uses an operator-supplied certificate/key;
+[external/shared ingress mode](docs/external-ingress.md) instead exposes a protected
+host Unix upstream and leaves public TLS to the operator-managed ingress. API uses
+a separate private Unix socket in both modes. NetBox remains external, with optional explicit
 corporate CA trust. No ACME, NetBox deployment or operator authentication is bundled.

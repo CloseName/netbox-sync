@@ -256,3 +256,8 @@ restore. Public URLs must match; a different hostname fails before DB restore. O
 bundles lacking TLS/CA retain the prepared target's supplied material. Host paths are
 rewritten for the target, files are validated before DB restore, and API post-restore
 diagnostics use the Unix socket. No TLS private material is put in env files.
+
+External/shared ingress restore preserves the prepared target's mode and local
+socket directory. It requires no duplicate public server certificate. The mode-aware
+Compose selector is used for maintenance/startup; socket files are not backed up.
+See [the ingress contract](external-ingress.md).

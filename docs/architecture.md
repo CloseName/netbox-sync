@@ -486,3 +486,8 @@ controlled peer/Host/scheme plus existing same-origin write protection. No new D
 privileges, host-control mounts or broker network are introduced. Exact-file CA trust
 is limited to NetBox clients. TLS does not add authentication: operator-network access
 controls remain required.
+
+The explicit [external-ingress mode](external-ingress.md) publishes no Sync ports.
+Its networkless nginx accepts only a protected host Unix upstream, validates canonical
+Host/HTTPS scheme and preserves the private API socket. Only the operator-managed
+outer ingress owns public TLS in this mode; NetBox remains independently managed.

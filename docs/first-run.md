@@ -10,7 +10,9 @@ does not include LDAPS/RBAC, TLS automation, or automatic infrastructure creatio
 Follow the exact [DNS/TLS clean-install runbook](clean-install-tls-runbook.md).
 Use `deploy/install.py --init-tls-layout`, copy operator certificates and optional
 NetBox CA, validate with `--check-tls --public-url https://your.fqdn`, then run the
-normal installer with the same public URL and reviewed release ID. No manual env
+normal installer with the same public URL and reviewed release ID. For an
+operator-managed shared ingress, choose `--ingress-mode external`; only optional
+NetBox CA is supplied locally, while outer ingress owns the public certificate. No manual env
 fabrication or legacy naming migration is part of a fresh installation.
 
 The existing installer transaction prepares `/opt/netbox-sync/releases/<release-id>`,

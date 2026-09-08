@@ -1,5 +1,9 @@
 # DNS/TLS hardening acceptance evidence
 
+This records the earlier standalone TLS stage. The subsequent
+[external/shared-ingress stage](external-ingress.md) now supports co-hosting behind
+one operator-managed ingress; see acceptance evidence in that document.
+
 Implemented on top of Bootstrap HEAD `94451abe262dd0471c861707b3b2f34a03bef815`.
 The supported path and threat boundaries are in [tls.md](tls.md); the exact operator
 procedure is [clean-install-tls-runbook.md](clean-install-tls-runbook.md).

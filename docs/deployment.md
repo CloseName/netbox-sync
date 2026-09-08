@@ -4,6 +4,15 @@ This is the supported clean-install foundation. It is code-ready but does not
 authorize a production cutover. Rehearse it on a disposable Debian host and a
 restored database before changing an existing installation.
 
+## Ingress mode
+
+Standalone remains the default. `--ingress-mode external` selects a protected host
+Unix upstream without any Sync published ports or duplicate TLS certificate.
+See [external/shared ingress](external-ingress.md). Existing saved mode is preserved
+when omitted on upgrade. Use `deploy/compose.py` for mode-aware operator commands;
+installer, backup and scheduler share that same selection. Shared ingress and NetBox
+configuration remain external responsibilities.
+
 ## Topology
 
 `compose.production.yml` defines one stable Compose project (`netbox-sync`), one
@@ -37,7 +46,8 @@ Compose edit.
   secrets/tls/                 operator fullchain.pem + privkey.pem (0750/0640 root:10001)
   secrets/ca/                  optional netbox-ca.pem (0755/0644 root:root)
   backups/                     protected complete Backup Format v1 bundles (0700)
-  state/                       future persistent operator state
+  state/                       persistent operator state
+  ingress/upstream.sock        external mode only; parent 10001:10001 0750
 /run/netbox-sync/               shared apply lock (0750)
 ```
 
@@ -99,14 +109,11 @@ An incomplete bootstrap keeps source writes gated and system readiness degraded.
 The one-shot services provide the supported host-venv-free operations:
 
 ```sh
-docker compose --env-file /opt/netbox-sync/config/compose.env \
-  -f /opt/netbox-sync/current/compose.production.yml --profile tools \
+python3 /opt/netbox-sync/current/deploy/compose.py --profile tools \
   run --rm --no-deps netbox-sync-db-roles
-docker compose --env-file /opt/netbox-sync/config/compose.env \
-  -f /opt/netbox-sync/current/compose.production.yml --profile tools \
+python3 /opt/netbox-sync/current/deploy/compose.py --profile tools \
   run --rm --no-deps netbox-sync-migrate
-docker compose --env-file /opt/netbox-sync/config/compose.env \
-  -f /opt/netbox-sync/current/compose.production.yml --profile tools \
+python3 /opt/netbox-sync/current/deploy/compose.py --profile tools \
   run --rm --no-deps netbox-sync-db-grants
 ```
 

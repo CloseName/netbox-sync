@@ -1,6 +1,7 @@
 # DNS, HTTPS and explicit NetBox CA trust
 
-Production uses `compose.production.yml` and the existing `deploy/install.py`.
+Standalone production uses `compose.production.yml` and the existing `deploy/install.py`.
+External/shared ingress is also supported; see [its exact Unix-socket contract](external-ingress.md).
 Follow [the pinned clean-install runbook](clean-install-tls-runbook.md). NetBox
 remains a separately installed external dependency; this project does not deploy it.
 
@@ -62,12 +63,10 @@ endpoint. Both operator clients and relevant containers must resolve the names.
 Publish AAAA only if that complete path is supported; bootstrap currently requires
 an approved IPv4 destination. These names are examples, not defaults.
 
-Canonical Compose owns host ports 80/443 on all interfaces. Two independent TLS
-proxies cannot bind those same ports on the same VM with this configuration.
-For this runbook, provide NetBox on a separate host/endpoint. Co-hosting NetBox on
-this VM requires a separately reviewed ingress/port design; hostname-only DNS does
-not resolve a port conflict. NetBox's proxy/config/key layout belongs to its external
-deployment and is not invented or managed by this repository.
+Standalone Compose owns host ports 80/443. For two applications on one host, use
+[external ingress mode](external-ingress.md): the operator-owned shared ingress
+owns those ports and routes Sync to its protected Unix upstream. NetBox remains
+independently installed and configured; no NetBox ingress configuration is shipped.
 
 ## Operator material
 
@@ -131,11 +130,9 @@ staging. Do not print keys. nginx continues using the loaded pair until reload. 
 
 ```sh
 sudo python3 /opt/netbox-sync/current/deploy/install.py --check-tls
-sudo docker compose --env-file /opt/netbox-sync/config/compose.env \
-  -f /opt/netbox-sync/current/compose.production.yml exec -T netbox-sync-proxy \
+sudo python3 /opt/netbox-sync/current/deploy/compose.py exec -T netbox-sync-proxy \
   nginx -c /tmp/nginx.conf -t
-sudo docker compose --env-file /opt/netbox-sync/config/compose.env \
-  -f /opt/netbox-sync/current/compose.production.yml exec -T netbox-sync-proxy \
+sudo python3 /opt/netbox-sync/current/deploy/compose.py exec -T netbox-sync-proxy \
   nginx -c /tmp/nginx.conf -s reload
 ```
 
