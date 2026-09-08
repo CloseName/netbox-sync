@@ -1,3 +1,5 @@
+> Set `ROOT` explicitly for operator commands; see [deployment paths](deployment-paths.md).
+
 # Canonical v1 deployment foundation
 
 This is the supported clean-install foundation. It is code-ready but does not
@@ -35,15 +37,18 @@ Compose edit.
 
 ## Host layout
 
+`ROOT` defaults to `/opt/netbox-sync`; choose it explicitly for operator commands.
+Optional `--tls-dir "$TLS_DIR"` selects operator files outside this layout.
+
 ```text
-/opt/netbox-sync/
+${ROOT}/
   releases/<release-id>/       immutable packaged release
   current -> releases/<id>     atomic active-release link
   config/                      generated service-specific env files (0750/0600)
   secrets/infrastructure/      generated database passwords (0700/0600)
   secrets/sources/             broker-managed source secrets (0700/0600)
   secrets/netbox/              bootstrap.json: state + separate tokens (0700/0600)
-  secrets/tls/                 operator fullchain.pem + privkey.pem (0750/0640 root:10001)
+  secrets/tls/                 default fullchain.pem, privkey.pem (0750/0640 root:10001)
   secrets/ca/                  optional netbox-ca.pem (0755/0644 root:root)
   backups/                     protected complete Backup Format v1 bundles (0700)
   state/                       persistent operator state
@@ -67,11 +72,11 @@ Use the exact [DNS/TLS clean-install runbook](clean-install-tls-runbook.md).
 From an unpacked reviewed release:
 
 ```sh
-python3 deploy/install.py --check
-sudo python3 deploy/install.py --init-tls-layout
+python3 deploy/install.py --root "$ROOT" --check
+sudo python3 deploy/install.py --root "$ROOT" --tls-dir "$TLS_DIR" --init-tls-layout
 # Install operator certificates and optional NetBox CA using the linked runbook.
-sudo python3 deploy/install.py --check-tls --public-url https://your.fqdn
-sudo python3 deploy/install.py --release-id <release-id> --public-url https://your.fqdn
+sudo python3 deploy/install.py --root "$ROOT" --tls-dir "$TLS_DIR" --check-tls --public-url https://your.fqdn
+sudo python3 deploy/install.py --root "$ROOT" --tls-dir "$TLS_DIR" --release-id <release-id> --public-url https://your.fqdn
 ```
 
 `--check` is read-only. Every install requires an explicit release ID; an existing ID
@@ -109,11 +114,11 @@ An incomplete bootstrap keeps source writes gated and system readiness degraded.
 The one-shot services provide the supported host-venv-free operations:
 
 ```sh
-python3 /opt/netbox-sync/current/deploy/compose.py --profile tools \
+python3 ${ROOT}/current/deploy/compose.py --profile tools \
   run --rm --no-deps netbox-sync-db-roles
-python3 /opt/netbox-sync/current/deploy/compose.py --profile tools \
+python3 ${ROOT}/current/deploy/compose.py --profile tools \
   run --rm --no-deps netbox-sync-migrate
-python3 /opt/netbox-sync/current/deploy/compose.py --profile tools \
+python3 ${ROOT}/current/deploy/compose.py --profile tools \
   run --rm --no-deps netbox-sync-db-grants
 ```
 
@@ -133,7 +138,7 @@ downgrade path. Always back up and rehearse a restored copy before production mi
 
 ## Scheduled execution and locking
 
-The tracked service calls `/opt/netbox-sync/current/scripts/run-scheduled-sync.sh` every
+The tracked service calls `${ROOT}/current/scripts/run-scheduled-sync.sh` every
 60 seconds. That wrapper invokes the full canonical Compose file, so existing long-lived
 containers belong to the same model and do not appear as orphans. It never uses
 `--remove-orphans` and never bind-mounts source code.

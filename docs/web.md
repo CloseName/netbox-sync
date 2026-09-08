@@ -1,3 +1,5 @@
+> Paths using `/opt/netbox-sync` below illustrate the generic default. For another root, use the selected ROOT and [deployment path contract](deployment-paths.md).
+
 > Current production deployment uses [nginx HTTPS and a private API Unix socket](tls.md).
 > Follow the [clean-install runbook](clean-install-tls-runbook.md). Loopback ports and
 > older deployment limitations below describe historical WEB stages or development,

@@ -1,3 +1,5 @@
+> Set `ROOT` explicitly for operator commands; see [deployment paths](deployment-paths.md).
+
 # Bootstrap / first-run onboarding
 
 Use this with [deployment](deployment.md) and [backup/restore](backup-restore.md).
@@ -15,10 +17,10 @@ operator-managed shared ingress, choose `--ingress-mode external`; only optional
 NetBox CA is supplied locally, while outer ingress owns the public certificate. No manual env
 fabrication or legacy naming migration is part of a fresh installation.
 
-The existing installer transaction prepares `/opt/netbox-sync/releases/<release-id>`,
+The existing installer transaction prepares `${ROOT}/releases/<release-id>`,
 generates protected role-specific config and infrastructure passwords, builds the Web
 image, starts bundled PostgreSQL, provisions roles, migrates through
-`0005_source_tombstones`, applies grants and activates `/opt/netbox-sync/current`.
+`0005_source_tombstones`, applies grants and activates `${ROOT}/current`.
 It starts nginx, API, broker, lifecycle, bootstrap, discovery, apply and schedule workers,
 then enables the canonical systemd timer. No legacy naming migration is needed.
 No NetBox token or provider configuration is required to start these processes.
@@ -96,7 +98,7 @@ The child has a 45-second wall budget, per-request timeouts, and a 2 MiB respons
 ## Durable truth and recovery
 
 There is no new DB migration or DB role. A single atomic root-owned 0600 document,
-`/opt/netbox-sync/secrets/netbox/bootstrap.json`, holds format/revision/state, URL,
+`${ROOT}/secrets/netbox/bootstrap.json`, holds format/revision/state, URL,
 separate tokens and safe prerequisite evidence. Its directory is root-owned 0700.
 An advisory lock, exclusive temporary file, file fsync, atomic replace and directory
 fsync prevent partial writes. The public projection never contains either token.

@@ -1,3 +1,5 @@
+> Paths using `/opt/netbox-sync` below illustrate the generic default. For another root, use the selected ROOT and [deployment path contract](deployment-paths.md).
+
 # PostgreSQL migration procedure
 
 WEB-0 introduces Alembic, isolated from synchronization. Never run this procedure

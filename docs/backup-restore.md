@@ -1,3 +1,5 @@
+> Set `ROOT` explicitly for operator commands; see [deployment paths](deployment-paths.md).
+
 # NetBox Sync backup and fresh restore
 
 Status: Backup Format v1 is the supported operator workflow for the canonical
@@ -18,12 +20,12 @@ The required state is:
 - a logical custom-format dump of database `netbox_sync`, including schema
   `netbox_sync`, `schema_meta`, `sources`, `sync_runs`, `alembic_version`, indexes,
   constraints and every application schema object;
-- `/opt/netbox-sync/config`: the seven canonical env files, preserved byte-for-byte,
+- `${ROOT}/config`: the seven canonical env files, preserved byte-for-byte,
   including unknown operator keys;
-- `/opt/netbox-sync/secrets/infrastructure`: the bootstrap and fixed runtime-role
+- `${ROOT}/secrets/infrastructure`: the bootstrap and fixed runtime-role
   password files;
-- `/opt/netbox-sync/secrets/sources`: exact logical filenames and broker xattrs;
-- `/opt/netbox-sync/secrets/netbox`: separate read and apply token files when
+- `${ROOT}/secrets/sources`: exact logical filenames and broker xattrs;
+- `${ROOT}/secrets/netbox`: separate read and apply token files when
   configured;
 - a manifest identifying the active immutable release and deployment/database
   metadata.
@@ -42,7 +44,7 @@ re-registration.
 
 ## Bundle Format v1
 
-The default destination is `/opt/netbox-sync/backups` (0700). A complete directory is
+The default destination is `${ROOT}/backups` (0700). A complete directory is
 published atomically only after verification:
 
 ```text
@@ -77,11 +79,11 @@ directory and never touches a previous backup.
 Run from the active release as root:
 
 ```sh
-cd /opt/netbox-sync/current
+cd ${ROOT}/current
 sudo python deploy/backup.py create
 sudo python deploy/backup.py create --output /protected/backup-target
-sudo python deploy/backup.py verify /opt/netbox-sync/backups/netbox-sync-backup-TIMESTAMP
-sudo python deploy/backup.py inspect /opt/netbox-sync/backups/netbox-sync-backup-TIMESTAMP
+sudo python deploy/backup.py verify ${ROOT}/backups/netbox-sync-backup-TIMESTAMP
+sudo python deploy/backup.py inspect ${ROOT}/backups/netbox-sync-backup-TIMESTAMP
 sudo python deploy/backup.py list
 ```
 
@@ -122,9 +124,9 @@ intended immutable release active, PostgreSQL reachable, fixed roles bootstrappe
 and no source/history/operation/tombstone rows. First perform a no-write check:
 
 ```sh
-cd /opt/netbox-sync/current
-sudo python deploy/backup.py restore /protected/netbox-sync-backup-TIMESTAMP --check
-sudo python deploy/backup.py restore /protected/netbox-sync-backup-TIMESTAMP
+cd ${ROOT}/current
+sudo python deploy/backup.py --root "$ROOT" restore /protected/netbox-sync-backup-TIMESTAMP --check
+sudo python deploy/backup.py --root "$ROOT" restore /protected/netbox-sync-backup-TIMESTAMP
 ```
 
 Restore verifies format, checksums, archive paths/types, xattr contract, dump
@@ -245,11 +247,13 @@ See [first-run recovery and clean-VM checklist](first-run.md).
 
 ## TLS material in Backup Format v1
 
-[TLS hardening](tls.md) adds exact canonical `secrets/tls` and `secrets/ca` entries.
+[TLS hardening](tls.md) supports legacy in-root `secrets/tls` and `secrets/ca` entries.
 TLS directory/files preserve root:10001 0750/0640; CA directory/file preserve
 root:root 0755/0644. These are bounded exceptions to root-only source/infrastructure
 secret rules, not a general relaxation. Only fullchain.pem, privkey.pem and optional
-netbox-ca.pem are accepted there. Backups therefore contain the TLS private key.
+netbox-ca.pem are accepted there. Legacy in-root backups contain the TLS private key. New corporate `/etc` TLS
+material is outside the application backup and must be protected separately. Restore
+validates the prepared target TLS selection without writing to the operator directory.
 
 Prepare a fresh HTTPS target using the [runbook](clean-install-tls-runbook.md) before
 restore. Public URLs must match; a different hostname fails before DB restore. Old
@@ -261,3 +265,6 @@ External/shared ingress restore preserves the prepared target's mode and local
 socket directory. It requires no duplicate public server certificate. The mode-aware
 Compose selector is used for maintenance/startup; socket files are not backed up.
 See [the ingress contract](external-ingress.md).
+
+New backups record deployment identity. Restore requires explicit `--root`, including
+`--check`; recorded paths never select the destination. See [path contracts](deployment-paths.md).

@@ -1,3 +1,5 @@
+> Set `ROOT` explicitly for operator commands; see [deployment paths](deployment-paths.md).
+
 # External/shared ingress deployment mode
 
 NetBox Sync supports two explicit deployment models. Standalone remains the default.
@@ -10,7 +12,7 @@ Use the [clean-install runbook](clean-install-tls-runbook.md) for either model.
 | Sync upstream | Private API Unix socket | Protected host Unix socket into Sync nginx |
 | Sync published ports | 80/443 only | None |
 | Sync nginx network | Dedicated Web bridge | Literal `network_mode: none` |
-| Public server certificate | Canonical Sync TLS files | Outer ingress owns it; no duplicate required |
+| Public server certificate | Default or operator-selected TLS directory | Outer ingress owns it; no duplicate required |
 | NetBox additional CA | Optional canonical bundle | Same optional canonical bundle |
 
 ## Interface and compatibility
@@ -33,8 +35,8 @@ The installer checks support before preparing the database.
 Use the mode-aware operator command for all canonical Compose operations:
 
 ```sh
-sudo python3 /opt/netbox-sync/current/deploy/compose.py ps
-sudo python3 /opt/netbox-sync/current/deploy/compose.py config --quiet
+sudo python3 ${ROOT}/current/deploy/compose.py --root "$ROOT" ps
+sudo python3 ${ROOT}/current/deploy/compose.py --root "$ROOT" config --quiet
 ```
 
 It reads only the saved mode to select `compose.production.yml` and, for external
@@ -56,7 +58,7 @@ backup; the installer/restore prepares its persistent parent directory.
 
 Canonical host upstream is HTTP over:
 
-`/opt/netbox-sync/ingress/upstream.sock`
+`${ROOT}/ingress/upstream.sock`
 
 The directory is numeric **10001:10001, mode 0750**; the installer creates it. It is
 outside releases, secrets, backup payload and `/run`, so its owner/mode survive reboot.
@@ -73,7 +75,7 @@ localhost health listener is reachable only inside its network namespace.
 
 For a host ingress, authorize its worker identity to traverse/connect using numeric
 group 10001 outside this repository. For an operator-managed container ingress,
-bind-mount only `/opt/netbox-sync/ingress` read-only and grant its worker that group.
+bind-mount only `${ROOT}/ingress` read-only and grant its worker that group.
 Do not mount the API volume, source secrets or Docker socket into the outer ingress.
 The outer ingress must support HTTP upstreams over Unix sockets; this mode does not
 publish a loopback TCP alternative. It is a same-host boundary, not a remote backend.
@@ -94,9 +96,10 @@ TLS is not product login/RBAC. Limit public listener access to trusted operators
 
 ## Certificates and health ownership
 
-Standalone continues to require `/opt/netbox-sync/secrets/tls/fullchain.pem` and
-`privkey.pem` with the existing 0750/0640 root:10001 contract. External mode neither
-loads nor mounts them. Empty TLS directories may exist for canonical layout/backup
+Standalone defaults to `$ROOT/secrets/tls/fullchain.pem` and `privkey.pem`.
+Explicit `--tls-dir` selects `ssl.crt`, `ssl.key`, `dhparam.pem`, directory
+0750/files 0640 root:10001. Saved settings remain compatible. External mode neither loads nor mounts public
+server TLS files. Empty TLS directories may exist for canonical layout/backup
 compatibility; no duplicate certificate or key is required. Outer certificate paths,
 renewal, trust/CSRF settings for NetBox, and the shared ingress configuration belong
 to the separate operator deployment. This repository generates none of them.
@@ -115,7 +118,7 @@ shared host ingress :80/:443 (operator-owned certificates and configuration)
 ├── netbox-test.indeed-id.hq
 │   └── separately deployed NetBox upstream (outside this repository)
 └── netbox-sync-test.indeed-id.hq
-    └── unix:/opt/netbox-sync/ingress/upstream.sock
+    └── unix:${ROOT}/ingress/upstream.sock
         └── NetBox Sync nginx, network_mode: none
             └── private API Unix socket -> API -> private PostgreSQL
 ```
@@ -126,16 +129,16 @@ hostname and owns both public certificates. NetBox Sync's public URL remains
 onboarding as `https://netbox-test.indeed-id.hq`. NetBox remains a separate product:
 this repository includes no NetBox service or deployable general-purpose ingress.
 
-## Local upstream verification (trusted operator, after installation)
+## Test example: local upstream verification (trusted operator, after installation)
 
 ```sh
-sudo stat -c '%u:%g %a %n' /opt/netbox-sync/ingress
-sudo test -S /opt/netbox-sync/ingress/upstream.sock
-sudo curl --unix-socket /opt/netbox-sync/ingress/upstream.sock \
+sudo stat -c '%u:%g %a %n' ${ROOT}/ingress
+sudo test -S ${ROOT}/ingress/upstream.sock
+sudo curl --unix-socket ${ROOT}/ingress/upstream.sock \
   --noproxy '*' --fail --silent --show-error --max-time 10 \
   -H 'Host: netbox-sync-test.indeed-id.hq' -H 'X-Forwarded-Proto: https' \
   http://localhost/api/v1/health
-sudo python3 /opt/netbox-sync/current/deploy/compose.py ps
+sudo python3 ${ROOT}/current/deploy/compose.py --root "$ROOT" ps
 ```
 
 Expected directory 10001:10001 750, socket present, health success and no Sync published

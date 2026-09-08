@@ -1,3 +1,5 @@
+> Set `ROOT` explicitly for operator commands; see [deployment paths](deployment-paths.md).
+
 # DNS, HTTPS and explicit NetBox CA trust
 
 Standalone production uses `compose.production.yml` and the existing `deploy/install.py`.
@@ -70,13 +72,19 @@ independently installed and configured; no NetBox ingress configuration is shipp
 
 ## Operator material
 
-| Host path under `/opt/netbox-sync/secrets` | Owner | Mode | Consumer |
+Generic standalone defaults to `$ROOT/secrets/tls/fullchain.pem` and `privkey.pem`.
+To select the optional external-directory layout, pass `--tls-dir`. Set
+`TLS_DIR=/etc/netbox-sync-test/cert` for the test or select another explicit directory.
+Existing in-root fullchain.pem/privkey.pem layouts remain supported on upgrade.
+
+| Host path | Owner | Mode | Consumer |
 |---|---|---|---|
-| `tls/` | root:10001 | 0750 | nginx only |
-| `tls/fullchain.pem` | root:10001 | 0640 | nginx, read-only |
-| `tls/privkey.pem` | root:10001 | 0640 | nginx, read-only |
-| `ca/` | root:root | 0755 | outbound NetBox clients |
-| `ca/netbox-ca.pem` (optional) | root:root | 0644 | outbound NetBox clients, read-only |
+| `$TLS_DIR/` | root:10001 | 0750 | nginx only |
+| `$TLS_DIR/ssl.crt` | root:10001 | 0640 | nginx, read-only |
+| `$TLS_DIR/ssl.key` | root:10001 | 0640 | nginx, read-only |
+| `$TLS_DIR/dhparam.pem` | root:10001 | 0640 | nginx, read-only |
+| `$ROOT/secrets/ca/` | root:root | 0755 | outbound NetBox clients |
+| `$ROOT/secrets/ca/netbox-ca.pem` (optional) | root:root | 0644 | outbound NetBox clients |
 
 The parent `secrets/` remains root:root 0700. Rootful Docker bind-mounts the leaf
 directories; UID 10001 never traverses the host secret parent. Reserve this numeric
@@ -95,8 +103,9 @@ runbook; host preflight does not certify the operator's issuer or DNS reachabili
 Only nginx receives `/run/netbox-sync-tls` read-only. Neither private-key bytes nor
 certificate bytes are placed in env files, DB, browser state or application logs.
 Git, Docker context and release packaging exclude the secret tree and canonical
-private-key filenames. Keep all operator material outside the checkout. Backups intentionally include
-these protected files: treat the entire backup as secret and encrypt it off-host.
+private-key filenames. Keep all operator material outside the checkout. Corporate TLS files outside ROOT are backed up separately by the operator;
+application backups include legacy in-root keys only. All application backups still
+contain credentials and must be encrypted off-host.
 
 ## NetBox CA trust
 
@@ -129,10 +138,10 @@ For renewal, install both new files with the same owner/modes from protected ope
 staging. Do not print keys. nginx continues using the loaded pair until reload. Run:
 
 ```sh
-sudo python3 /opt/netbox-sync/current/deploy/install.py --check-tls
-sudo python3 /opt/netbox-sync/current/deploy/compose.py exec -T netbox-sync-proxy \
+sudo python3 "${ROOT}/current/deploy/install.py" --root "$ROOT" --check-tls
+sudo python3 "${ROOT}/current/deploy/compose.py" --root "$ROOT" exec -T netbox-sync-proxy \
   nginx -c /tmp/nginx.conf -t
-sudo python3 /opt/netbox-sync/current/deploy/compose.py exec -T netbox-sync-proxy \
+sudo python3 "${ROOT}/current/deploy/compose.py" --root "$ROOT" exec -T netbox-sync-proxy \
   nginx -c /tmp/nginx.conf -s reload
 ```
 
@@ -150,7 +159,7 @@ allowlist is replaced by the chosen authority. Existing secrets and other operat
 settings remain. Timer/shared-lock/activation rollback semantics remain in force.
 There is no DB migration for TLS: head remains `0005_source_tombstones`.
 
-Backup v1 now recognizes the exact TLS/CA permission exceptions, preserving numeric
+For legacy in-root TLS only, Backup v1 recognizes the exact TLS/CA permission exceptions, preserving numeric
 metadata. Restore rejects a different public URL and validates TLS before DB restore.
 An older bundle without TLS can use the prepared target's operator TLS/CA material.
 Host-local mount paths are rewritten to the target root. Source secret rules are not

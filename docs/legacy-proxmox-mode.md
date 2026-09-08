@@ -1,3 +1,5 @@
+> Paths using `/opt/netbox-sync` below illustrate the generic default. For another root, use the selected ROOT and [deployment path contract](deployment-paths.md).
+
 # Legacy Proxmox mode
 
 This compatibility path runs one Proxmox VE source from the historical provider-specific environment contract. It is not the canonical production deployment.

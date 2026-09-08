@@ -122,3 +122,8 @@ public HTTPS FQDN. Standalone nginx uses an operator-supplied certificate/key;
 host Unix upstream and leaves public TLS to the operator-managed ingress. API uses
 a separate private Unix socket in both modes. NetBox remains external, with optional explicit
 corporate CA trust. No ACME, NetBox deployment or operator authentication is bundled.
+
+Deployment roots are operator-selected: `--root /srv/example-sync` supports the full
+installer/systemd/backup lifecycle. Public standalone TLS can use
+`--tls-dir /etc/example-sync/cert` with `ssl.crt`, `ssl.key`, `dhparam.pem`.
+See [deployment path contracts](docs/deployment-paths.md) and the ROOT-variable runbook.
