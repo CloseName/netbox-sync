@@ -79,6 +79,7 @@ export function App() {
               {item.label}
             </NavLink>
           ))}
+          <Link to="/setup">NetBox connection</Link>
         </nav>
         <div className="app-content" id="content" ref={content} tabIndex={-1}>
           {!sourceDetail && (

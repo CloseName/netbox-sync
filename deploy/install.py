@@ -359,6 +359,8 @@ def _configuration_values(root, image):
             **common, 'NETBOX_SYNC_REGISTRY_DSN': dsns['web_reader'],
             'NETBOX_SYNC_REGISTRATION_DSN': dsns['registration_writer'],
             'NETBOX_SYNC_BROKER_SOCKET': '/run/netbox-sync-broker/broker.sock',
+            'NETBOX_SYNC_LIFECYCLE_SOCKET': '/run/netbox-sync-lifecycle/worker.sock',
+            'NETBOX_SYNC_BOOTSTRAP_SOCKET': '/run/netbox-sync-bootstrap/worker.sock',
             'NETBOX_SYNC_DISCOVERY_SOCKET': '/run/netbox-sync-discovery/worker.sock',
             'NETBOX_SYNC_APPLY_SOCKET': '/run/netbox-sync-apply/worker.sock',
             'NETBOX_SYNC_SCHEDULE_SOCKET': '/run/netbox-sync-schedule/worker.sock',
@@ -373,11 +375,13 @@ def _configuration_values(root, image):
             **common, 'NETBOX_SYNC_DISCOVERY_REGISTRY_DSN': dsns['discovery_reader'],
             'NETBOX_SYNC_OPERATION_WRITER_DSN': dsns['operation_writer'],
             'NETBOX_SYNC_DISCOVERY_NB_API_URL': '',
+            'NETBOX_SYNC_NETBOX_CONFIG_FILE': '/run/secrets/netbox/bootstrap.json',
         },
         'apply.env': {
             **common, 'NETBOX_SYNC_APPLY_REGISTRY_DSN': dsns['apply_registry_reader'],
             'NETBOX_SYNC_RUN_WRITER_DSN': dsns['run_writer'],
             'NETBOX_SYNC_APPLY_NB_API_URL': '',
+            'NETBOX_SYNC_NETBOX_CONFIG_FILE': '/run/secrets/netbox/bootstrap.json',
         },
         'schedule.env': {
             **common, 'NETBOX_SYNC_SCHEDULE_WRITER_DSN': dsns['schedule_writer'],
@@ -388,6 +392,7 @@ def _configuration_values(root, image):
             'NETBOX_SYNC_REGISTRY_DSN': dsns['registry_reader'],
             'NETBOX_SYNC_RUN_WRITER_DSN': dsns['run_writer'],
             'NETBOX_SYNC_SOURCE_SECRET_DIR': '/run/secrets/netbox-sync-sources',
+            'NETBOX_SYNC_NETBOX_CONFIG_FILE': '/run/secrets/netbox/bootstrap.json',
             'NB_API_URL': '', 'NB_APPLY_API_TOKEN_FILE': '/run/secrets/netbox/apply-token',
         },
     }
@@ -460,7 +465,7 @@ def prepare_stack(prepared):
 
 
 def _runtime_services():
-    return ('netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-discovery-worker',
+    return ('netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker', 'netbox-sync-discovery-worker',
             'netbox-sync-apply-worker', 'netbox-sync-schedule-worker')
 
 
@@ -543,7 +548,7 @@ def quiesce_uncertain_runtime(prepared):
     """Best-effort stop of write entrypoints after a partial runtime activation."""
     run(compose_command(
         prepared.root, 'stop', 'netbox-sync-api', 'netbox-sync-apply-worker',
-        'netbox-sync-schedule-worker', release=prepared.release,
+        'netbox-sync-schedule-worker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker', release=prepared.release,
         config=prepared.root / 'config'), check=False)
 
 

@@ -56,7 +56,7 @@ FOUNDATION_TABLES = ('alembic_version', 'schema_meta', 'source_operations',
 SAFE_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
 SAFE_SCHEMA = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,62}$')
 MAINTENANCE_SERVICES = (
-    'netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-discovery-worker',
+    'netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker', 'netbox-sync-discovery-worker',
     'netbox-sync-apply-worker', 'netbox-sync-schedule-worker')
 HOST_LOCAL_COMPOSE_KEYS = (
     'NETBOX_SYNC_COMPOSE_PROJECT', 'NETBOX_SYNC_IMAGE', 'NETBOX_SYNC_CONFIG_DIR',
@@ -811,6 +811,19 @@ def _extend_ui6_restored_configuration(stage):
     })
 
 
+def _extend_bootstrap_restored_configuration(stage):
+    """Older bundles enter first-run explicitly; never infer readiness from env."""
+    config = stage / 'config'
+    for name in ('discovery', 'apply', 'scheduler'):
+        path = config / (name + '.env')
+        install._atomic_write(path, install._merged_config(path, {
+            'NETBOX_SYNC_NETBOX_CONFIG_FILE': '/run/secrets/netbox/bootstrap.json'}))
+    path = config / 'api.env'
+    install._atomic_write(path, install._merged_config(path, {
+        'NETBOX_SYNC_LIFECYCLE_SOCKET': '/run/netbox-sync-lifecycle/worker.sock',
+        'NETBOX_SYNC_BOOTSTRAP_SOCKET': '/run/netbox-sync-bootstrap/worker.sock'}))
+
+
 def _prepare_password_transition(root, restored):
     directory = Path(tempfile.mkdtemp(prefix='restore-passwords-', dir=root / 'state'))
     directory.chmod(0o700)
@@ -914,6 +927,7 @@ def restore_fresh(root, bundle, database, *, no_systemd=False, check_only=False)
         # Older bundles do not contain the new role secrets or broker env file.
         # Extend only the staged restored state, after its exact metadata was verified.
         _extend_ui6_restored_configuration(stage)
+        _extend_bootstrap_restored_configuration(stage)
         database.restore_fresh(
             bundle / 'database.dump', maintenance, manifest['schema_name'])
         _run_deployment_tool(root, 'netbox-sync-migrate', postgres_mode=database.mode)

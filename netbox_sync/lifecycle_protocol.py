@@ -1,4 +1,4 @@
-"""Fixed broker capability: source identity only, never arbitrary cleanup keys."""
+"""Fixed lifecycle worker capability: source identity only, never arbitrary cleanup keys."""
 import re
 from .source_config import SOURCE_INSTANCE_PATTERN
 from .source_lifecycle import LifecycleError

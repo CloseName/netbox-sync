@@ -15,6 +15,7 @@ export function installOperationFixtures(page: any) {
       const index=entries.push({url,handler})-1;
       return register(url, async (route: any) => {
       const path = new URL(route.request().url()).pathname;
+      if(path==='/api/v1/bootstrap')return route.fulfill({json:{revision:1,status:'READY',url:'https://netbox.test',completed:true,read_token_present:true,apply_token_present:true,safe_code:null,checks:[],validated_at:1}});
       const source = path.split('/')[4];
       if (route.request().method() === 'GET' && path.endsWith('/operations'))
         return route.fulfill({json:{operations:[...slots.values()].filter(row=>row.source_instance===source)}});

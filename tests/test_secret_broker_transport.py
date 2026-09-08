@@ -19,9 +19,7 @@ def start_broker(root, socket_path, uid=0):
     process = subprocess.Popen([
         sys.executable, '-m', 'netbox_sync.secret_broker', '--socket', str(socket_path),
         '--secret-root', str(root), '--allowed-uid', str(uid),
-    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env={**os.environ,
-        'NETBOX_SYNC_LIFECYCLE_WRITER_DSN': 'dbname=netbox_sync_test',
-        'NETBOX_SYNC_REGISTRY_SCHEMA': 'netbox_sync_test'})
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env={key:value for key,value in os.environ.items() if 'DSN' not in key and 'TOKEN' not in key})
     for _attempt in range(100):
         if process.poll() is not None:
             raise AssertionError('Test broker did not start')

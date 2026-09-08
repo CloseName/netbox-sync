@@ -4,6 +4,8 @@ services:
     profiles: [bundled-postgres]
   netbox-sync-api:
     networks: [netbox-sync-web, netbox-sync-egress]
+  netbox-sync-lifecycle-worker:
+    networks: [netbox-sync-egress]
   netbox-sync-schedule-worker:
     networks: [netbox-sync-egress]
   netbox-sync-db-roles:

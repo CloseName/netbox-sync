@@ -1,4 +1,4 @@
-"""Bounded, no-retry lifecycle broker client; no filesystem capability in Web."""
+"""Bounded, no-retry lifecycle worker client; no filesystem capability in Web."""
 import json
 import socket
 from .operation_dto import LifecycleDTO

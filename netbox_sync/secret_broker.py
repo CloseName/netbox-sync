@@ -13,7 +13,6 @@ import stat as file_stat
 import struct
 import time
 from pathlib import Path
-from .source_lifecycle import LifecycleError
 
 
 KEY_PATTERN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]{15,127}$')
@@ -221,8 +220,13 @@ class SecretBrokerStore:
         try:
             for key in keys:
                 key = self._key(key)
-                descriptor = os.open(key, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
-                                     dir_fd=self._directory)
+                try:
+                    descriptor = os.open(key, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                                         dir_fd=self._directory)
+                except FileNotFoundError:
+                    # A retry after a lost reply or partial unlink needs no side effect
+                    # for an absent file. Every remaining file still needs ownership proof.
+                    continue
                 opened.append((descriptor, key, None))
                 info = os.fstat(descriptor)
                 stored, attributes = self._stored_attributes(descriptor)
@@ -259,7 +263,7 @@ def _reply(connection, payload):
         pass
 
 
-def serve(socket_path, secret_root, allowed_uid, lifecycle=None):
+def serve(socket_path, secret_root, allowed_uid):
     """Serve one request per local authenticated Unix connection."""
     store = SecretBrokerStore(secret_root)
     store.singleton()
@@ -287,16 +291,24 @@ def serve(socket_path, secret_root, allowed_uid, lifecycle=None):
         with connection:
             connection.settimeout(5)
             _, uid, _ = struct.unpack('3i', connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
-            if uid != allowed_uid:
+            if uid not in (allowed_uid, 0):
                 _reply(connection, {'ok': False, 'error': 'PEER_NOT_AUTHORIZED'})
                 continue
             try:
                 raw = read_request(connection)
                 request = json.loads(raw)
-                if isinstance(request, dict) and request.get('action') in ('source_lifecycle', 'remove_source'):
-                    from .lifecycle_protocol import handle_lifecycle
-                    _reply(connection, {'ok': True, 'result': handle_lifecycle(lifecycle, store, request)})
+                if isinstance(request, dict) and request.get('action') == 'remove_owned':
+                    if uid != 0 or set(request) != {'action', 'keys'}:
+                        raise BrokerError('PEER_NOT_AUTHORIZED')
+                    keys = request['keys']
+                    if (not isinstance(keys, list) or not 1 <= len(keys) <= 2
+                            or any(not isinstance(key, str) or not KEY_PATTERN.fullmatch(key) for key in keys)
+                            or len(set(keys)) != len(keys)):
+                        raise BrokerError('REQUEST_INVALID')
+                    _reply(connection, {'ok': True, 'removed': store.remove_owned(keys)})
                     continue
+                if uid != allowed_uid:
+                    raise BrokerError('PEER_NOT_AUTHORIZED')
                 operation_id = _operation(request.get('operation_id'))
                 if request.get('action') == 'create' and set(request) == {
                         'action', 'operation_id', 'key', 'value'}:
@@ -308,8 +320,8 @@ def serve(socket_path, secret_root, allowed_uid, lifecycle=None):
                     _reply(connection, {'ok': True})
                 else:
                     raise BrokerError('OPERATION_NOT_ALLOWED')
-            except (BrokerError, LifecycleError, json.JSONDecodeError) as exc:
-                code = exc.code if isinstance(exc, (BrokerError, LifecycleError)) else 'REQUEST_INVALID'
+            except (BrokerError, json.JSONDecodeError) as exc:
+                code = exc.code if isinstance(exc, BrokerError) else 'REQUEST_INVALID'
                 _reply(connection, {'ok': False, 'error': code})
             except Exception:  # pylint: disable=broad-exception-caught
                 _reply(connection, {'ok': False, 'error': 'BROKER_INTERNAL_ERROR'})
@@ -347,11 +359,7 @@ def main():
     parser.add_argument('--allowed-uid', type=int, default=10001)
     arguments = parser.parse_args()
     try:
-        from .source_lifecycle import LifecycleStore
-        lifecycle = LifecycleStore(os.environ.get('NETBOX_SYNC_LIFECYCLE_WRITER_DSN', ''),
-            os.environ.get('NETBOX_SYNC_REGISTRY_SCHEMA', ''),
-            os.environ.get('NETBOX_SYNC_APPLY_LOCK_PATH', '/run/netbox-sync-lock/apply.lock'))
-        serve(arguments.socket, arguments.secret_root, arguments.allowed_uid, lifecycle)
+        serve(arguments.socket, arguments.secret_root, arguments.allowed_uid)
     except Exception:
         print(json.dumps({'component': 'secret_broker', 'error_code': 'BROKER_FAILED'}))
         raise SystemExit(1) from None

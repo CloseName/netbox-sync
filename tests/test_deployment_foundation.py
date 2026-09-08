@@ -82,16 +82,17 @@ def test_worker_network_and_credential_boundaries_are_preserved():
     text = COMPOSE.read_text(encoding='utf-8')
     api = text.split('  netbox-sync-api:', 1)[1].split('  netbox-sync-secret-broker:', 1)[0]
     broker = text.split('  netbox-sync-secret-broker:', 1)[1].split(
-        '  netbox-sync-discovery-worker:', 1)[0]
+        '  netbox-sync-lifecycle-worker:', 1)[0]
     discovery = text.split('  netbox-sync-discovery-worker:', 1)[1].split(
         '  netbox-sync-apply-worker:', 1)[0]
     apply = text.split('  netbox-sync-apply-worker:', 1)[1].split(
         '  netbox-sync-schedule-worker:', 1)[0]
     schedule = text.split('  netbox-sync-schedule-worker:', 1)[1].split(
         '  netbox-sync-scheduler:', 1)[0]
-    assert 'networks: [netbox-sync-db]' in broker
+    assert 'network_mode: none' in broker
+    assert 'networks:' not in broker
     assert 'netbox-sync-egress' not in broker
-    assert 'broker.env' in broker
+    assert 'broker.env' not in broker
     assert 'cap_add: [CHOWN]' in broker
     assert 'networks: [netbox-sync-db, netbox-sync-web]' in api
     assert 'netbox-sync-db, netbox-sync-egress' in discovery

@@ -44,7 +44,7 @@ class PostgresHealthProbe:
                         raise ValueError('Unsupported registry schema')
                     cursor.execute(
                         sql.SQL(
-                            'SELECT id, source_instance, source_type, enabled, sync_enabled FROM {} LIMIT 0'
+                            'SELECT source_instance, source_type, enabled, sync_enabled FROM {} LIMIT 0'
                         ).format(
                             sql.Identifier(schema, 'sources')
                         )

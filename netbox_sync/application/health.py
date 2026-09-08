@@ -54,16 +54,20 @@ class SystemHealthService:
     def check(self) -> SystemHealth:
         """Healthy means API/registry ready, not that external sync targets were tested."""
         database, registry = self._probe.check()
+        try:
+            configured = self._netbox_configured() if callable(self._netbox_configured) else self._netbox_configured
+        except Exception:
+            configured = False
         if HealthStatus.UNAVAILABLE in (database.status, registry.status):
             overall = HealthStatus.UNAVAILABLE
         elif (database.status != HealthStatus.HEALTHY
-              or registry.status != HealthStatus.HEALTHY or not self._netbox_configured):
+              or registry.status != HealthStatus.HEALTHY or not configured):
             overall = HealthStatus.DEGRADED
         else:
             overall = HealthStatus.HEALTHY
         netbox_message = (
             'Configuration present; connectivity and credentials not checked'
-            if self._netbox_configured else 'Configuration incomplete; connectivity not checked'
+            if configured else 'Configuration incomplete; connectivity not checked'
         )
         return SystemHealth(
             overall,

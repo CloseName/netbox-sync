@@ -15,6 +15,8 @@ services:
       NB_API_TOKEN_FILE: ${NB_API_TOKEN_FILE:-}
       NETBOX_SYNC_REGISTRATION_DSN: ${NETBOX_SYNC_REGISTRATION_DSN:-}
       NETBOX_SYNC_BROKER_SOCKET: /run/netbox-sync-broker/broker.sock
+      NETBOX_SYNC_BOOTSTRAP_SOCKET: /run/netbox-sync-bootstrap/worker.sock
+      NETBOX_SYNC_LIFECYCLE_SOCKET: /run/netbox-sync-lifecycle/worker.sock
       NETBOX_SYNC_DISCOVERY_SOCKET: /run/netbox-sync-discovery/worker.sock
       NETBOX_SYNC_APPLY_SOCKET: /run/netbox-sync-apply/worker.sock
       NETBOX_SYNC_SCHEDULE_SOCKET: /run/netbox-sync-schedule/worker.sock
@@ -26,6 +28,8 @@ services:
       NETBOX_SYNC_ONBOARDING_ALLOWED_SUFFIXES: ${NETBOX_SYNC_ONBOARDING_ALLOWED_SUFFIXES:-}
     volumes:
       - netbox-sync-broker-socket:/run/netbox-sync-broker:ro
+      - netbox-sync-bootstrap-socket:/run/netbox-sync-bootstrap:ro
+      - netbox-sync-lifecycle-socket:/run/netbox-sync-lifecycle:ro
       - netbox-sync-discovery-socket:/run/netbox-sync-discovery:ro
       - netbox-sync-apply-socket:/run/netbox-sync-apply:ro
       - netbox-sync-schedule-socket:/run/netbox-sync-schedule:ro
@@ -50,19 +54,53 @@ services:
     group_add: ["10001"]
     command: [python, -m, netbox_sync.secret_broker, --socket, /run/netbox-sync-broker/broker.sock,
               --secret-root, /var/lib/netbox-sync/source-secrets, --allowed-uid, "10001"]
-    # Lifecycle requires the configured database; no provider credentials are mounted.
-    networks: [netbox]
-    environment:
-      NETBOX_SYNC_LIFECYCLE_WRITER_DSN: ${NETBOX_SYNC_LIFECYCLE_WRITER_DSN:-}
-      NETBOX_SYNC_REGISTRY_SCHEMA: ${NETBOX_SYNC_REGISTRY_SCHEMA:-}
-      NETBOX_SYNC_APPLY_LOCK_PATH: /run/netbox-sync/apply.lock
+    network_mode: none
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     volumes:
       - netbox-sync-broker-socket:/run/netbox-sync-broker
-      - ${NETBOX_SYNC_APPLY_LOCK_DIR:-/run/netbox-sync}:/run/netbox-sync
       - ${NETBOX_SYNC_SOURCE_SECRET_DIR:-../secrets/sources}:/var/lib/netbox-sync/source-secrets
+    restart: unless-stopped
+
+  netbox-sync-lifecycle-worker:
+    profiles: [onboarding]
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    user: "0:0"
+    command: [python, -m, netbox_sync.lifecycle_worker]
+    environment:
+      NETBOX_SYNC_LIFECYCLE_WRITER_DSN: ${NETBOX_SYNC_LIFECYCLE_WRITER_DSN:-}
+      NETBOX_SYNC_REGISTRY_SCHEMA: ${NETBOX_SYNC_REGISTRY_SCHEMA:-}
+    networks: [netbox]
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - netbox-sync-lifecycle-socket:/run/netbox-sync-lifecycle
+      - netbox-sync-broker-socket:/run/netbox-sync-broker:ro
+      - ${NETBOX_SYNC_APPLY_LOCK_DIR:-/run/netbox-sync}:/run/netbox-sync-lock
+    restart: unless-stopped
+
+  netbox-sync-bootstrap-worker:
+    profiles: [onboarding]
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    user: "0:0"
+    command: [python, -m, netbox_sync.bootstrap_worker]
+    networks: [netbox]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID, CHOWN]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - netbox-sync-bootstrap-socket:/run/netbox-sync-bootstrap
+      - ${NETBOX_SYNC_APPLY_LOCK_DIR:-/run/netbox-sync}:/run/netbox-sync-lock
+      - ${NETBOX_SYNC_NETBOX_SECRET_DIR:-../secrets/netbox}:/var/lib/netbox-sync/netbox
     restart: unless-stopped
 
   netbox-sync-discovery-worker:
@@ -81,12 +119,13 @@ services:
       NETBOX_SYNC_DISCOVERY_REGISTRY_DSN: ${NETBOX_SYNC_DISCOVERY_REGISTRY_DSN:-}
       NETBOX_SYNC_OPERATION_WRITER_DSN: ${NETBOX_SYNC_OPERATION_WRITER_DSN:-}
       NETBOX_SYNC_REGISTRY_SCHEMA: ${NETBOX_SYNC_REGISTRY_SCHEMA:-}
+      NETBOX_SYNC_NETBOX_CONFIG_FILE: /run/secrets/netbox/bootstrap.json
       NETBOX_SYNC_DISCOVERY_NB_API_URL: ${NETBOX_SYNC_DISCOVERY_NB_API_URL:-}
     volumes:
       - netbox-sync-discovery-socket:/run/netbox-sync-discovery
       - ${NETBOX_SYNC_LEGACY_SOURCE_SECRET_DIR:-../secrets/legacy-sources}:/run/secrets/netbox-sync:ro
       - ${NETBOX_SYNC_SOURCE_SECRET_DIR:-../secrets/sources}:/run/secrets/netbox-sync-sources:ro
-      - ${NETBOX_SYNC_DISCOVERY_NB_TOKEN_FILE:-../secrets/netbox_discovery_token}:/run/secrets/netbox-read-token:ro
+      - ${NETBOX_SYNC_NETBOX_SECRET_DIR:-../secrets/netbox}:/run/secrets/netbox:ro
     networks: [netbox]
     read_only: true
     tmpfs: [/tmp]
@@ -112,13 +151,14 @@ services:
       NETBOX_SYNC_APPLY_REGISTRY_DSN: ${NETBOX_SYNC_APPLY_REGISTRY_DSN:-}
       NETBOX_SYNC_RUN_WRITER_DSN: ${NETBOX_SYNC_RUN_WRITER_DSN:-}
       NETBOX_SYNC_REGISTRY_SCHEMA: ${NETBOX_SYNC_REGISTRY_SCHEMA:-}
+      NETBOX_SYNC_NETBOX_CONFIG_FILE: /run/secrets/netbox/bootstrap.json
       NETBOX_SYNC_APPLY_NB_API_URL: ${NETBOX_SYNC_APPLY_NB_API_URL:-}
     volumes:
       - netbox-sync-apply-socket:/run/netbox-sync-apply
       - ${NETBOX_SYNC_APPLY_LOCK_DIR:-/run/netbox-sync}:/run/netbox-sync-lock
       - ${NETBOX_SYNC_LEGACY_SOURCE_SECRET_DIR:-../secrets/legacy-sources}:/run/secrets/netbox-sync:ro
       - ${NETBOX_SYNC_SOURCE_SECRET_DIR:-../secrets/sources}:/run/secrets/netbox-sync-sources:ro
-      - ${NETBOX_SYNC_APPLY_NB_TOKEN_FILE:-../secrets/netbox_web_apply_token}:/run/secrets/netbox-apply-token:ro
+      - ${NETBOX_SYNC_NETBOX_SECRET_DIR:-../secrets/netbox}:/run/secrets/netbox:ro
     networks: [netbox]
     read_only: true
     tmpfs: [/tmp]
@@ -149,6 +189,8 @@ services:
     restart: unless-stopped
 
 volumes:
+  netbox-sync-bootstrap-socket:
+  netbox-sync-lifecycle-socket:
   netbox-sync-broker-socket:
   netbox-sync-discovery-socket:
   netbox-sync-apply-socket:

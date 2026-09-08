@@ -52,6 +52,15 @@ def _error(request, status, code, message):
 
 
 def _install_boundaries(app, settings):
+    from ..local_control import ControlError
+
+    @app.exception_handler(ControlError)
+    async def control_error(request, exc):
+        known = {'BOOTSTRAP_CONFLICT', 'BOOTSTRAP_NOT_READY', 'BOOTSTRAP_INVALID', 'BOOTSTRAP_BUSY', 'SOURCE_APPLY_ACTIVE'}
+        return _error(request, 409 if exc.code in known else 503,
+                      exc.code if exc.code in known else 'BOOTSTRAP_UNAVAILABLE',
+                      'Reload bootstrap state and review before retrying')
+
     @app.exception_handler(LifecycleRequestError)
     async def lifecycle_error(request, exc):
         messages = {
@@ -163,7 +172,7 @@ def _install_boundaries(app, settings):
         request.state.diagnostics_status = None
         try:
             if request.method in ('POST', 'PATCH') and (
-                    request.url.path in (
+                    request.url.path.startswith('/api/v1/bootstrap/') or request.url.path in (
                         '/api/v1/sources', '/api/v1/sources/test-connection',
                         '/api/v1/sources/cancel-onboarding',
                     ) or (
@@ -185,7 +194,16 @@ def _install_boundaries(app, settings):
                       or int(request.headers['content-length']) > 16384):
                     response = _error(request, 413, 'API_REQUEST_TOO_LARGE', 'Request body is too large')
                 else:
-                    response = await call_next(request)
+                    ready = True
+                    if settings.bootstrap_socket and request.url.path.startswith('/api/v1/sources'):
+                        from starlette.concurrency import run_in_threadpool
+                        from .bootstrap import BootstrapClient
+                        try:
+                            state = await run_in_threadpool(BootstrapClient(settings.bootstrap_socket).call, 'status')
+                            ready = state.status == 'READY'
+                        except Exception:
+                            ready = False
+                    response = await call_next(request) if ready else _error(request, 409, 'BOOTSTRAP_NOT_READY', 'Complete NetBox setup first')
             else:
                 response = await call_next(request)
         except Exception:  # pylint: disable=broad-exception-caught
@@ -227,8 +245,12 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         LOGGER.addHandler(logging.StreamHandler())
     LOGGER.setLevel(logging.INFO)
     settings = settings or ApiSettings.from_environment()
+    from .bootstrap import BootstrapClient
+    def bootstrap_ready():
+        return BootstrapClient(settings.bootstrap_socket).call('status').status == 'READY'
+
     service = service or SystemHealthService(
-        PostgresHealthProbe(settings), netbox_configured=settings.netbox_configured,
+        PostgresHealthProbe(settings), netbox_configured=bootstrap_ready if settings.bootstrap_socket else settings.netbox_configured,
     )
     source_service = source_service or SourceVisibilityService(ActiveSourceReader(settings))
     onboarding_service = onboarding_service or SourceOnboardingService(
@@ -298,7 +320,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
     def source_detail(source_instance: str):
         return SourceDTO.from_view(source_service.get_source(source_instance))
 
-    lifecycle_client = LifecycleClient(settings.broker_socket)
+    lifecycle_client = LifecycleClient(settings.lifecycle_socket)
 
     @router.get('/sources/{source_instance}/lifecycle', response_model=LifecycleDTO)
     def source_lifecycle(source_instance: str):
@@ -404,6 +426,10 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         onboarding_service.cancel(request.onboarding_token)
         return CancellationResult()
 
+    if settings.bootstrap_socket:
+        from .bootstrap import BootstrapClient, routes
+        bootstrap_client = BootstrapClient(settings.bootstrap_socket)
+        app.include_router(routes(bootstrap_client))
     app.include_router(router)
     if settings.web_dist:
         root = Path(settings.web_dist)
@@ -411,6 +437,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
             raise ValueError('Frontend build is unavailable')
         app.mount('/assets', StaticFiles(directory=root / 'assets'), name='assets')
 
+        @app.get('/setup', include_in_schema=False)
         @app.get('/sources', include_in_schema=False)
         @app.get('/sources/add', include_in_schema=False)
         @app.get('/sources/{source_instance}/sync', include_in_schema=False)

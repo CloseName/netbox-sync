@@ -885,11 +885,13 @@ def execute_discovered_source(
     else:
         nb_token_variable = 'NB_API_TOKEN'
 
-    # Instantiate connection to the NetBox API
-    nb_api = pynetbox.api(
-        url=os.environ['NB_API_URL'],
-        token=_read_secret(nb_token_variable),
-    )
+    # Read durable truth only inside the trusted scheduled runtime.
+    if os.environ.get('NETBOX_SYNC_NETBOX_CONFIG_FILE'):
+        from .bootstrap_state import runtime_netbox
+        netbox_url, netbox_token = runtime_netbox(os.environ['NETBOX_SYNC_NETBOX_CONFIG_FILE'], 'apply' if sync_mode == 'apply' else 'read')
+    else:
+        netbox_url, netbox_token = os.environ['NB_API_URL'], _read_secret(nb_token_variable)
+    nb_api = pynetbox.api(url=netbox_url, token=netbox_token)
 
     if source_config.source_type == 'esxi' and sync_mode == 'plan':
         execute_esxi_runtime(

@@ -158,11 +158,16 @@ class ApplySupervisor:
             credentials = FileSecretResolver(
                 secret_root=self._secret_root, source_secret_root=self._source_secret_root,
                 max_secret_bytes=4096).resolve_credentials(config.credentials)
-            token = _bounded_secret(self._netbox_token_file)
+            netbox_url = self._netbox_url
+            if os.environ.get('NETBOX_SYNC_NETBOX_CONFIG_FILE'):
+                from .bootstrap_state import runtime_netbox
+                netbox_url, token = runtime_netbox(os.environ['NETBOX_SYNC_NETBOX_CONFIG_FILE'], 'apply')
+            else:
+                token = _bounded_secret(self._netbox_token_file)
         except (SecretResolutionError, OSError):
             raise ApplyWorkerError('CREDENTIAL_UNAVAILABLE') from None
         return {'source': _config_payload(config), 'credentials': asdict(credentials),
-                'netbox_url': self._netbox_url, 'netbox_token': token,
+                'netbox_url': netbox_url, 'netbox_token': token,
                 'operation': operation, 'expected_digest': expected_digest}
 
     def _child(self, payload):

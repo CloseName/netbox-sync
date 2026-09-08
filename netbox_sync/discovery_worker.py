@@ -104,7 +104,12 @@ class DiscoverySupervisor:
                                           source_secret_root=self._source_secret_root,
                                           max_secret_bytes=MAX_SECRET)
             credentials = resolver.resolve_credentials(config.credentials)
-            netbox_token = _bounded_secret(self._netbox_token_file)
+            netbox_url = self._netbox_url
+            if os.environ.get('NETBOX_SYNC_NETBOX_CONFIG_FILE'):
+                from .bootstrap_state import runtime_netbox
+                netbox_url, netbox_token = runtime_netbox(os.environ['NETBOX_SYNC_NETBOX_CONFIG_FILE'], 'read')
+            else:
+                netbox_token = _bounded_secret(self._netbox_token_file)
             if (not netbox_token or any(len(value.encode()) > MAX_SECRET for value in
                                         (credentials.token_id, credentials.token_secret))):
                 raise OSError('empty token')
@@ -112,7 +117,7 @@ class DiscoverySupervisor:
             raise WorkerError('CREDENTIAL_UNAVAILABLE') from None
         payload = json.dumps({
             'source': _config_payload(config), 'credentials': asdict(credentials),
-            'netbox_url': self._netbox_url, 'netbox_token': netbox_token,
+            'netbox_url': netbox_url, 'netbox_token': netbox_token,
             'operation': operation,
         }).encode()
         try:

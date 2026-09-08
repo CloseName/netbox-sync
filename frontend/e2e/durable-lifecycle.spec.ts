@@ -11,6 +11,7 @@ function backend(){
   const complete=(id:string,kind:string,status?:string)=>{const key=id+kind,row=slots.get(key);slots.set(key,{...row,status:status??(kind==='PLAN'?'READY':'SUCCEEDED'),finished_at:new Date().toISOString(),result:status?null:kind==='PLAN'?canonical(id):{source_instance:id,source_type:'proxmox',site_slug:'dc1',cluster_name:'Cluster 1',items:[]},safe_error_code:status==='FAILED'?'OPERATION_INTERRUPTED':null});};
   const attach=async(context:any)=>context.route('**/api/v1/**',async(route:any)=>{
     const request=route.request(),path=new URL(request.url()).pathname,id=path.split('/')[4];
+    if(path==='/api/v1/bootstrap')return route.fulfill({json:{revision:1,status:'READY',url:'https://netbox.test',completed:true,read_token_present:true,apply_token_present:true,safe_code:null,checks:[],validated_at:1}});
     if(path.endsWith('/operations')) return route.fulfill({json:{operations:[...slots.values()].filter(r=>r.source_instance===id)}});
     if(/\/operations\/(plan|discovery)$/.test(path)){
       const kind=path.endsWith('/plan')?'PLAN':'DISCOVERY',key=id+kind;

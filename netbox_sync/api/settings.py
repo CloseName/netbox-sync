@@ -17,6 +17,8 @@ class ApiSettings:
     web_dist: str = field(default='', repr=False)
     registration_dsn: str = field(default='', repr=False)
     broker_socket: str = field(default='', repr=False)
+    lifecycle_socket: str = field(default='', repr=False)
+    bootstrap_socket: str = field(default='', repr=False)
     discovery_socket: str = field(default='', repr=False)
     apply_socket: str = field(default='', repr=False)
     schedule_socket: str = field(default='', repr=False)
@@ -39,6 +41,8 @@ class ApiSettings:
             web_dist=env.get('NETBOX_SYNC_WEB_DIST', '').strip(),
             registration_dsn=env.get('NETBOX_SYNC_REGISTRATION_DSN', '').strip(),
             broker_socket=env.get('NETBOX_SYNC_BROKER_SOCKET', '').strip(),
+            bootstrap_socket=env.get('NETBOX_SYNC_BOOTSTRAP_SOCKET', '/run/netbox-sync-bootstrap/worker.sock').strip(),
+            lifecycle_socket=env.get('NETBOX_SYNC_LIFECYCLE_SOCKET', '/run/netbox-sync-lifecycle/worker.sock').strip(),
             discovery_socket=env.get('NETBOX_SYNC_DISCOVERY_SOCKET', '').strip(),
             apply_socket=env.get('NETBOX_SYNC_APPLY_SOCKET', '').strip(),
             schedule_socket=env.get('NETBOX_SYNC_SCHEDULE_SOCKET', '').strip(),
