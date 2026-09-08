@@ -1,0 +1,10 @@
+# Compose >=2.24.4. Apply only through the mode-aware deploy/compose.py entrypoint.
+services:
+  netbox-sync-proxy:
+    ports: !reset []
+    networks: !reset []
+    network_mode: none
+    volumes: !override
+      - ./deploy/nginx.external-ingress.conf.template:/etc/netbox-sync/nginx.conf.template:ro
+      - netbox-sync-http-socket:/run/netbox-sync-http:ro
+      - ${NETBOX_SYNC_INGRESS_DIR:?external ingress directory required}:/run/netbox-sync-ingress

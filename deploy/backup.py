@@ -62,7 +62,8 @@ HOST_LOCAL_COMPOSE_KEYS = (
     'NETBOX_SYNC_COMPOSE_PROJECT', 'NETBOX_SYNC_IMAGE', 'NETBOX_SYNC_CONFIG_DIR',
     'NETBOX_SYNC_INFRA_SECRET_DIR', 'NETBOX_SYNC_SOURCE_SECRET_DIR',
     'NETBOX_SYNC_NETBOX_SECRET_DIR', 'NETBOX_SYNC_APPLY_LOCK_DIR',
-    'NETBOX_SYNC_POSTGRES_VOLUME', 'NETBOX_SYNC_WEB_PORT')
+    'NETBOX_SYNC_POSTGRES_VOLUME', 'NETBOX_SYNC_WEB_PORT',
+    'NETBOX_SYNC_INGRESS_MODE', 'NETBOX_SYNC_INGRESS_DIR')
 
 
 class BackupError(RuntimeError):
@@ -851,7 +852,26 @@ def _extend_tls_restored_configuration(stage, root):
                 gid=10001 if name=='tls' else 0
                 os.chown(stage/'secrets'/name,0,gid)
                 for path in (stage/'secrets'/name).iterdir():os.chown(path,0,gid)
-    install.validate_tls_material(stage,public_url)
+    mode = install.resolve_ingress_mode(root)
+    if mode == 'standalone':
+        # An external-mode bundle intentionally has no server certificate. Use the
+        # prepared target pair only when both incoming files are absent; partial
+        # material is ambiguous and must still fail validation.
+        incoming_mode = install.ingress_mode_from_config(stage/'config/compose.env')
+        names = ('fullchain.pem', 'privkey.pem')
+        if incoming_mode == 'external' and not any((stage/'secrets/tls'/n).exists() for n in names):
+            install.validate_tls_material(root,public_url)
+            for name in names:
+                target = stage/'secrets/tls'/name
+                shutil.copyfile(root/'secrets/tls'/name,target)
+                target.chmod(0o640)
+                if os.name == 'posix':os.chown(target,0,10001)
+        install.validate_tls_material(stage,public_url)
+    else:
+        install.validate_netbox_ca(stage)
+        install.initialize_ingress_directory(root)
+    prepared = install.PreparedDeployment(root,root/'current',stage/'config','restored')
+    install.configure_ingress(prepared,mode)
     install.configure_tls(install.PreparedDeployment(root,root/'current',stage/'config','restored'),public_url)
 
 

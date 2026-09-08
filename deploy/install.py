@@ -59,6 +59,7 @@ LEGACY_ENV_SUFFIXES = frozenset({
 })
 REQUIRED_RELEASE_FILES = (
     'compose.production.yml', 'Dockerfile.web', 'deploy/nginx.conf.template',
+    'compose.external-ingress.yml', 'deploy/nginx.external-ingress.conf.template', 'deploy/compose.py',
     'deploy/backup.py',
     'deploy/systemd/netbox-sync.service',
     'deploy/systemd/netbox-sync.timer', 'scripts/run-scheduled-sync.sh',
@@ -437,6 +438,8 @@ def compose_command(root, *arguments, release=None, config=None, overrides=()):
     release = release or root / 'current'
     config = config or root / 'config'
     files = ['-f', str(release / 'compose.production.yml')]
+    if ingress_mode_from_config(config / 'compose.env') == 'external':
+        files.extend(('-f', str(release / 'compose.external-ingress.yml')))
     for override in overrides:
         files.extend(('-f', str(override)))
     return ['docker', 'compose', '--env-file', str(config / 'compose.env'),
@@ -661,6 +664,61 @@ public_authority = _tls['public_authority']
 TLSConfigurationError = _tls['TLSConfigurationError']
 
 
+def ingress_mode_from_config(path):
+    """Missing setting is the existing standalone contract; unknown values fail closed."""
+    values = []
+    if path.exists():
+        values = [line.split('=', 1)[1] for line in path.read_text(encoding='utf-8').splitlines()
+                  if line.startswith('NETBOX_SYNC_INGRESS_MODE=')]
+    if len(values) > 1 or (values and values[0] not in ('standalone', 'external')):
+        raise InstallError('invalid or duplicate ingress mode')
+    return values[0] if values else 'standalone'
+
+
+def resolve_ingress_mode(root, explicit=None):
+    current = ingress_mode_from_config(root / 'config/compose.env')
+    return explicit or current
+
+
+def validate_ingress_prerequisites(mode):
+    if mode != 'external':
+        return
+    result = run(['docker', 'compose', 'version', '--short'], capture_output=True)
+    match = re.fullmatch(r'v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?', result.stdout.strip())
+    if not match or tuple(map(int, match.groups())) < (2, 24, 4):
+        raise InstallError('external ingress requires Docker Compose >=2.24.4')
+
+
+def configure_ingress(prepared, mode):
+    path = prepared.config / 'compose.env'
+    values = {'NETBOX_SYNC_INGRESS_MODE': mode,
+              'NETBOX_SYNC_INGRESS_DIR': str(prepared.root / 'ingress')}
+    _atomic_write(path, _merged_config(path, values, values))
+
+
+def initialize_ingress_directory(root):
+    """Persistent parent survives reboot; socket itself is disposable, never backed up."""
+    path = root / 'ingress'
+    if path.is_symlink():
+        raise InstallError('ingress directory must not be a symlink')
+    if path.exists():
+        info = path.stat()
+        if not path.is_dir() or (os.name == 'posix' and
+                (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (10001, 10001, 0o750)):
+            raise InstallError('ingress directory ownership or permissions are invalid')
+        return
+    path.mkdir(mode=0o750)
+    if os.name == 'posix':
+        os.chown(path, 10001, 10001)
+    path.chmod(0o750)
+
+
+def validate_netbox_ca(root):
+    ca = root / 'secrets/ca/netbox-ca.pem'
+    if ca.exists() or ca.is_symlink():
+        _tls['validate_ca'](_tls['protected_file'](ca, 0o644))
+
+
 def initialize_tls_layout(root):
     for path, mode, gid in ((root,0o755,0),(root/'secrets',0o700,0),
                            (root/'secrets/tls',0o750,10001),(root/'secrets/ca',0o755,0)):
@@ -702,8 +760,7 @@ def validate_tls_material(root, public_url):
             if result.returncode:raise ValueError()
     except (ValueError,OSError,ssl.SSLError,subprocess.SubprocessError):
         raise InstallError('TLS certificate/key invalid, expired, encrypted or hostname mismatch') from None
-    ca=root/'secrets/ca/netbox-ca.pem'
-    if ca.exists() or ca.is_symlink():_tls['validate_ca'](_tls['protected_file'](ca,0o644))
+    validate_netbox_ca(root)
 
 
 def configure_tls(prepared, public_url):
@@ -721,6 +778,8 @@ def configure_tls(prepared, public_url):
 def parse_args(argv=None):
     """Parse bounded non-interactive installer options."""
     parser = argparse.ArgumentParser(description='Prepare a NetBox Sync v1 foundation')
+    parser.add_argument('--ingress-mode', choices=('standalone', 'external'),
+                        help='Explicit ingress mode; fresh default standalone, existing setting preserved')
     parser.add_argument('--public-url', help='Canonical https://FQDN, required for first HTTPS installation')
     parser.add_argument('--init-tls-layout', action='store_true', help='Create TLS/CA directories only; no certificates or deployment')
     parser.add_argument('--check-tls', action='store_true', help='Validate public URL and operator TLS/CA files only')
@@ -748,11 +807,18 @@ def main(argv=None):
             initialize_tls_layout(root)
             print('TLS layout ready; operator certificates must be supplied separately')
             return 0
+        mode = resolve_ingress_mode(root, args.ingress_mode)
         if args.check_tls:
-            validate_tls_material(root,resolve_public_url(root,args.public_url))
-            print('TLS material and public URL OK')
+            public_authority(resolve_public_url(root,args.public_url))
+            if mode == 'standalone':
+                validate_tls_material(root,resolve_public_url(root,args.public_url))
+            else:
+                validate_netbox_ca(root)
+            print('Local TLS/CA preflight OK; external ingress certificate verification is operator-owned'
+                  if mode == 'external' else 'TLS material and public URL OK')
             return 0
         validate_prerequisites(require_systemd=not args.no_systemd)
+        validate_ingress_prerequisites(mode)
         if args.check:
             print('deployment prerequisites OK')
             return 0
@@ -760,9 +826,15 @@ def main(argv=None):
         root = args.root.resolve()
         public_url=resolve_public_url(root,args.public_url)
         initialize_tls_layout(root)
-        validate_tls_material(root,public_url)
+        if mode == 'standalone':
+            validate_tls_material(root,public_url)
+        else:
+            validate_netbox_ca(root)
         prepared = prepare_layout(root, args.source.resolve(), args.release_id, image)
         configure_tls(prepared,public_url)
+        configure_ingress(prepared,mode)
+        if mode == 'external':
+            initialize_ingress_directory(root)
         upgrading = current_release(root) is not None
         if upgrading and shutil.which('systemctl') is None:
             raise InstallError('systemctl is required to coordinate an existing installation')

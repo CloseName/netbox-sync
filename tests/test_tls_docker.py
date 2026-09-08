@@ -13,12 +13,13 @@ pytestmark=pytest.mark.skipif(os.environ.get('NETBOX_SYNC_TLS_DOCKER_TEST')!='1'
 ROOT=Path(__file__).parents[1]
 
 
-def test_public_https_and_private_ca_bootstrap(tmp_path):
+@pytest.mark.parametrize('ingress_mode',['standalone','external'])
+def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
     prefix='netbox-sync-tls-smoke-'+uuid.uuid4().hex[:10]
     label='netbox-sync.tls-smoke='+prefix
     image=os.environ.get('NETBOX_SYNC_TLS_TEST_IMAGE','netbox-sync-tls-test:20260908')
     runner=os.environ.get('NETBOX_SYNC_TLS_RUNNER_IMAGE','netbox-sync-tls-tests:20260908')
-    volumes={name:prefix+'-'+name for name in ('tls','ca','http','bootstrap','state')}
+    volumes={name:prefix+'-'+name for name in ('tls','ca','http','bootstrap','state','ingress')}
     containers=[];created_volumes=[];created_network=False
     def docker(*args):
         result=subprocess.run(['docker',*args],text=True,capture_output=True)
@@ -47,10 +48,31 @@ def test_public_https_and_private_ca_bootstrap(tmp_path):
         api=launch('api',['--network','none','--read-only','--cap-drop','ALL','--tmpfs','/tmp',
             '-e','NETBOX_SYNC_PUBLIC_URL=https://sync.example.test',*mount('http','/run/netbox-sync-http'),
             *mount('bootstrap','/run/netbox-sync-bootstrap',True)],image,['python','-m','netbox_sync.web_runtime','serve'])
+        template=ROOT/'deploy/nginx.conf.template'
+        upstream_mount=mount('http','/run/netbox-sync-http',True)
+        if ingress_mode=='external':
+            docker('run','--rm','--network','none','--user','0:0','--label',label,
+                   *mount('ingress','/ingress'),image,'python','-c',
+                   "import os; os.chmod('/ingress',0o750); os.chown('/ingress',10001,10001)")
+            inner=launch('inner',['--network','none','--user','10001:10001','--read-only',
+                '--cap-drop','ALL','--tmpfs','/tmp','-e','NETBOX_SYNC_PUBLIC_HOST=sync.example.test',
+                *mount('http','/run/netbox-sync-http',True),*mount('ingress','/run/netbox-sync-ingress'),
+                '--mount',f'type=bind,source={ROOT / "deploy/nginx.external-ingress.conf.template"},target=/etc/netbox-sync/nginx.conf.template,readonly',
+                '--entrypoint','/bin/sh'],'nginx:stable-alpine',
+                ['-ec', "envsubst '$NETBOX_SYNC_PUBLIC_HOST' < /etc/netbox-sync/nginx.conf.template > /tmp/nginx.conf; exec nginx -c /tmp/nginx.conf -g 'daemon off;'"])
+            inner_info=json.loads(docker('inspect',inner))[0]
+            assert inner_info['HostConfig']['NetworkMode']=='none'
+            assert not inner_info['HostConfig']['PortBindings']
+            assert '/run/netbox-sync-tls' not in {m['Destination'] for m in inner_info['Mounts']}
+            # Ephemeral test-only outer TLS fixture; no deployable shared ingress is shipped.
+            template=tmp_path/'outer-test.conf.template'
+            template.write_text((ROOT/'deploy/nginx.conf.template').read_text().replace(
+                '/run/netbox-sync-http/api.sock','/run/netbox-sync-ingress/upstream.sock'))
+            upstream_mount=mount('ingress','/run/netbox-sync-ingress',True)
         proxy=launch('proxy',['--network',prefix,'--user','10001:10001','--read-only','--cap-drop','ALL','--tmpfs','/tmp',
             '-p','127.0.0.1::8443','-p','127.0.0.1::8080',
-            '-e','NETBOX_SYNC_PUBLIC_HOST=sync.example.test',*mount('http','/run/netbox-sync-http',True),*mount('tls','/run/netbox-sync-tls',True),
-            '--mount',f'type=bind,source={ROOT / "deploy/nginx.conf.template"},target=/etc/netbox-sync/nginx.conf.template,readonly',
+            '-e','NETBOX_SYNC_PUBLIC_HOST=sync.example.test',*upstream_mount,*mount('tls','/run/netbox-sync-tls',True),
+            '--mount',f'type=bind,source={template},target=/etc/netbox-sync/nginx.conf.template,readonly',
             '--entrypoint','/bin/sh'], 'nginx:stable-alpine', ['-ec', "envsubst '$NETBOX_SYNC_PUBLIC_HOST' < /etc/netbox-sync/nginx.conf.template > /tmp/nginx.conf; exec nginx -c /tmp/nginx.conf -g 'daemon off;'"])
         info=json.loads(docker('inspect',proxy))[0]
         tls_port=int(info['NetworkSettings']['Ports']['8443/tcp'][0]['HostPort'])
@@ -92,6 +114,24 @@ def test_public_https_and_private_ca_bootstrap(tmp_path):
         assert not json.loads(docker('inspect',api))[0]['HostConfig']['PortBindings']
         docker('exec',api,'python','-m','netbox_sync.web_runtime','health')
         docker('exec',api,'python','-c',"import socket; s=socket.socket(); assert s.connect_ex(('127.0.0.1',8000)) != 0")
+        if ingress_mode=='external':
+            # An unrelated local UID cannot even connect, regardless of forged headers.
+            docker('run','--rm','--network','none','--user','10002:10002','--cap-drop','ALL','--label',label,
+                   *mount('ingress','/run/netbox-sync-ingress',True),image,'python','-c',
+                   "import socket; s=socket.socket(socket.AF_UNIX); assert s.connect_ex('/run/netbox-sync-ingress/upstream.sock')==13")
+            # A trusted socket peer still cannot supply the wrong authority or scheme.
+            for host,scheme in (('evil.example.test','https'),('sync.example.test','http')):
+                docker('run','--rm','--network','none','--user','10001:10001','--cap-drop','ALL','--label',label,
+                       *mount('ingress','/run/netbox-sync-ingress',True),image,'python','-c',
+                       "import socket; s=socket.socket(socket.AF_UNIX); s.connect('/run/netbox-sync-ingress/upstream.sock'); "
+                       + 's.sendall(' + repr(('GET /api/v1/bootstrap HTTP/1.0\r\nHost: '+host
+                       +'\r\nX-Forwarded-Proto: '+scheme+'\r\n\r\n').encode())
+                       + "); assert s.recv(4096).split()[1] in (b'403',b'421')")
+            docker('restart',inner)
+            for _ in range(30):
+                if request('GET','/api/v1/bootstrap').status_code==200:break
+                time.sleep(.1)
+            else:raise AssertionError('external socket did not recover after restart')
         # Invalid operator material must prevent all nginx listeners, including health.
         docker('stop',proxy)
         docker('run','--rm','--network','none','--user','0:0','--label',label,

@@ -144,8 +144,10 @@ def test_tracked_systemd_path_has_exactly_one_shared_lock():
     assert combined.count('/usr/bin/flock') == 1
     assert '/run/netbox-sync/apply.lock' in wrapper
     assert '--remove-orphans' not in wrapper
-    assert 'compose.production.yml' in wrapper
-    assert '--env-file' in wrapper
+    assert 'deploy/compose.py' in wrapper
+    command = install.compose_command(Path('/opt/netbox-sync'), '--profile', 'scheduled', 'run', '--rm', '--no-deps', 'netbox-sync-scheduler')
+    assert str(Path('/opt/netbox-sync/current/compose.production.yml')) in command
+    assert '--env-file' in command
     timer = (ROOT / 'deploy/systemd/netbox-sync.timer').read_text(encoding='utf-8')
     assert 'OnUnitActiveSec=60s' in timer
     assert 'AccuracySec=5s' in timer
