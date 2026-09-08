@@ -90,12 +90,12 @@ def test_corporate_tls_files_and_restore_stay_outside_application_root(tmp_path)
     prepared=install.PreparedDeployment(root,root/'current',root/'config','test')
     install.configure_tls(prepared,'https://sync.example.test',settings)
     assert install.resolve_tls_settings(root)==settings
-    before=(directory/'ssl.key').read_bytes()
+    before={p.name:(p.read_bytes(),p.stat().st_mode,p.stat().st_mtime_ns) for p in directory.iterdir()}
     stage=tmp_path/'stage';stage.mkdir();install.initialize_tls_layout(stage)
     (stage/'config').mkdir()
     for name in ('api.env','compose.env'):(stage/'config'/name).write_text('')
     backup._extend_tls_restored_configuration(stage,root)
-    assert (directory/'ssl.key').read_bytes()==before
+    assert {p.name:(p.read_bytes(),p.stat().st_mode,p.stat().st_mtime_ns) for p in directory.iterdir()}==before
     assert not (stage/'secrets/tls/ssl.key').exists()
     assert install.read_compose_values(stage)['NETBOX_SYNC_TLS_DIR']==str(directory)
     (directory/'dhparam.pem').write_text('invalid DH parameters')

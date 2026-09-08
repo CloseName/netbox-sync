@@ -878,6 +878,23 @@ def _extend_tls_restored_configuration(stage, root):
     if not public_url:return  # Restoring an older supported HTTP release, not a TLS upgrade.
     incoming=_read_env(stage/'config/api.env').get('NETBOX_SYNC_PUBLIC_URL','')
     if incoming and incoming!=public_url:raise BackupError('restored public URL differs from prepared target')
+    source_config = stage/'config/compose.env'
+    source_values = _read_env(source_config)
+    incoming_mode = install.ingress_mode_from_config(source_config)
+    incoming_layout = source_values.get('NETBOX_SYNC_TLS_LAYOUT', 'legacy')
+    if incoming_layout not in ('legacy', 'corporate'):
+        raise BackupError('restored TLS layout is invalid')
+    for key in ('NETBOX_SYNC_TLS_LAYOUT', 'NETBOX_SYNC_TLS_DIR'):
+        if sum(line.startswith(key + '=') for line in source_config.read_text().splitlines()) > 1:
+            raise BackupError('restored TLS configuration is ambiguous')
+    if incoming_layout == 'corporate':
+        # Validate metadata lexically only: never access a source-host TLS path.
+        directory = source_values.get('NETBOX_SYNC_TLS_DIR', '')
+        if not re.fullmatch(r'/[A-Za-z0-9_./-]+', directory) or '..' in PurePosixPath(directory).parts:
+            raise BackupError('restored operator TLS directory is invalid')
+    old_without_tls = (not incoming and not (stage/'secrets/tls').exists()
+                       and not any(key.startswith('NETBOX_SYNC_TLS_') for key in source_values))
+    unbundled_tls = incoming_mode == 'external' or incoming_layout == 'corporate' or old_without_tls
     settings = install.resolve_tls_settings(root)
     if settings[1] == 'corporate':
         # Public TLS lives outside the backup root. Never restore keys into /etc;
@@ -892,21 +909,24 @@ def _extend_tls_restored_configuration(stage, root):
         install.configure_ingress(prepared,mode)
         install.configure_tls(prepared,public_url,settings)
         return
+    mode = install.resolve_ingress_mode(root)
     for name in ('tls','ca'):
         if not (stage/'secrets'/name).exists():
+            if name == 'tls':
+                if mode == 'standalone' and not unbundled_tls:
+                    raise BackupError('restored legacy TLS directory is missing')
+                (stage/'secrets/tls').mkdir(mode=0o750)
+                if os.name == 'posix':os.chown(stage/'secrets/tls',0,10001)
+                continue
             shutil.copytree(root/'secrets'/name,stage/'secrets'/name)
             if os.name=='posix':
-                gid=10001 if name=='tls' else 0
-                os.chown(stage/'secrets'/name,0,gid)
-                for path in (stage/'secrets'/name).iterdir():os.chown(path,0,gid)
-    mode = install.resolve_ingress_mode(root)
+                os.chown(stage/'secrets'/name,0,0)
+                for path in (stage/'secrets'/name).iterdir():os.chown(path,0,0)
     if mode == 'standalone':
-        # An external-mode bundle intentionally has no server certificate. Use the
-        # prepared target pair only when both incoming files are absent; partial
-        # material is ambiguous and must still fail validation.
-        incoming_mode = install.ingress_mode_from_config(stage/'config/compose.env')
+        # Only source configurations that intentionally omit public TLS may use
+        # the prepared target pair. Never fill a partial archived legacy pair.
         names = ('fullchain.pem', 'privkey.pem')
-        if incoming_mode == 'external' and not any((stage/'secrets/tls'/n).exists() for n in names):
+        if unbundled_tls and not any((stage/'secrets/tls'/n).exists() for n in names):
             install.validate_tls_material(root,public_url)
             for name in names:
                 target = stage/'secrets/tls'/name

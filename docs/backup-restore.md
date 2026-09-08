@@ -257,7 +257,9 @@ validates the prepared target TLS selection without writing to the operator dire
 
 Prepare a fresh HTTPS target using the [runbook](clean-install-tls-runbook.md) before
 restore. Public URLs must match; a different hostname fails before DB restore. Old
-bundles lacking TLS/CA retain the prepared target's supplied material. Host paths are
+pre-TLS bundles (no public URL, TLS settings or TLS directory) retain the prepared
+target's supplied material. Merely missing files in a TLS-enabled legacy bundle
+does not identify it as a pre-TLS backup. Host paths are
 rewritten for the target, files are validated before DB restore, and API post-restore
 diagnostics use the Unix socket. No TLS private material is put in env files.
 
@@ -268,3 +270,17 @@ See [the ingress contract](external-ingress.md).
 
 New backups record deployment identity. Restore requires explicit `--root`, including
 `--check`; recorded paths never select the destination. See [path contracts](deployment-paths.md).
+
+For a standalone legacy target, an external-ingress or explicit corporate-layout
+source intentionally omits public TLS from the bundle. When both archived legacy
+filenames are absent, restore validates and copies the prepared target pair into
+staging. It never reads the source-host TLS directory or uses manifest paths as
+write destinations. Unknown/ambiguous layouts and invalid corporate directory
+metadata fail closed. A partial pair is never repaired through this fallback;
+a legacy standalone source must contain its complete expected pair.
+
+Corporate targets retain their operator-owned material; restore validates it in
+place without changing contents, modes or modification times. Target layout wins.
+Public URL equality, hostname, expiry, key match and protection checks still apply.
+Old v1 manifests without deployment identity remain supported: this decision uses
+the verified archived configuration, not the optional identity metadata.
