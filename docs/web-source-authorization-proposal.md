@@ -1,3 +1,5 @@
+> Approved architecture: implementation and current acceptance status: [contract](local-admin-policy.md), [evidence and pending gate](local-admin-policy-review.md). The original review below is retained as historical context.
+
 # Веб-настройка источников: решение по авторизации и политике
 
 Статус: **предложение для архитектурного решения, не реализация и не разрешение на расширение доступа**. База ревью: c1e8b1d. UI-исправления и доказательства: 9a0ba95, [отчёт](ux-hardening-review.md). Этот документ не вводит вход, пользователей, endpoint управления политикой или новые разрешённые назначения.

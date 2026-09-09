@@ -7,6 +7,14 @@ use legacy paths, naming migration, old env files or cleanup commands. NetBox re
 external. Read [TLS boundaries](tls.md) and [both ingress modes](external-ingress.md) before executing. Stop at every failed gate;
 do not bypass certificate verification or manually fabricate installer config.
 
+## Administrator enrollment before NetBox onboarding
+
+New authenticated releases require a root-issued, one-time administrator invitation
+before business APIs or Bootstrap can be used. Follow steps 4–5 of the
+[local admin runbook](local-admin-upgrade-runbook.md) after a successful fresh install;
+skip its upgrade/backup steps on an empty host. No visitor is made administrator
+automatically. The pending release gate in that runbook still applies.
+
 ## 1. Host and release prerequisites
 
 Use a trusted administrative shell. Supply the full 40-character commit from the
@@ -316,4 +324,4 @@ For the confirmed field-preparation flow and existing-container naming upgrade, 
 
 See [production source probe boundary and upgrade](source-probe-deployment.md) and [provider access preparation](source-access.md).
 
-See [shared UI hardening and destination-policy dependency](ux-hardening-audit.md) before interpreting a policy denial as an authentication failure. Online policy management is not available without server authorization; this update preserves existing env restrictions.
+See [shared UI hardening and destination-policy dependency](ux-hardening-audit.md) before interpreting a policy denial as an authentication failure. Local administrator authorization and web destination policy are described in [the current contract](local-admin-policy.md). Existing env restrictions remain until explicit root selection of a managed ceiling.

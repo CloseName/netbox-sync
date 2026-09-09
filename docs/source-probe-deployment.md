@@ -161,38 +161,14 @@ They do not touch the VM, use live credentials, validate a live hypervisor or pe
 real systemd/reboot acceptance. The controlled SOAP endpoint models connection
 operations; complete Discovery privilege acceptance remains a separate operator gate.
 
-## Destination policy: authorization dependency
+## Destination policy and local administrator
 
-Opening the panel and completing onboarding are not authentication. Current API
-Host/Origin/CSRF checks and READY gating do not establish an administrator principal.
-Therefore this release does **not** open all public egress, add a policy editor,
-expose internal allowlists, or migrate env restrictions into an unauthenticated API.
-The requested fully online public-source workflow remains incomplete pending a
-server-enforced identity/administrative permission contract and a reviewed durable
-policy store. No localStorage role or hidden-button permission is introduced.
-
-Effective policy is unchanged on upgrade: no explicit allow entries means RFC1918;
-with explicit allow hosts/suffixes/CIDRs only matching addresses pass. Explicit deny
-CIDRs win. Public IPv4 still requires explicit operator opt-in. Existing env files
-are preserved by installer merging and included by the existing backup/restore path;
-Test Connection does not modify them. There is no new online migration in this change.
-The same service name on separate sources never implies shared credentials.
-
-Input is a bare ASCII hostname or canonical IPv4. Every A/AAAA answer is checked;
-only an approved IPv4 is selected. IPv6-only destinations are unsupported; a mixed
-answer set fails closed if any answer violates policy. The selected IPv4 and port
-are pinned for the disposable child's lifetime while TLS validates the original
-hostname. Re-resolution/redirects/alternate ports are not permitted. Protected
-localhost, host/gateway.docker.internal and kubernetes.default.svc cannot be made
-allowed by exact-name entries. Deployments must retain explicit deny rules for their
-own infrastructure: this application policy is not automatic topology discovery or
-an L3 firewall and applies to onboarding **probe**, not subsequent discovery/apply.
-
-The form distinguishes invalid address, denied destination, DNS resolution failure,
-connection failure, timeout, TLS and authentication using local EN/RU messages selected
-by closed codes. Provider exception text and secret values are not rendered. When
-policy denies a source, the operator sees the dependency and next step; the UI does
-not misrepresent it as a bad password or offer unauthorized policy editing.
+The accepted follow-up implements server identity and the separate auth/policy
+worker. See [the current contract](local-admin-policy.md), including the route
+permissions, one-time host ceiling transition, exact web exceptions and stale
+receipt fences. The process/transport guarantees above still apply. Origin/CSRF
+and Bootstrap READY alone cannot authorize a probe or policy change. See
+[review evidence](local-admin-policy-review.md) for the pending upgrade gate.
 
 ## Diagnosing a reported old frontend without guessing cache
 

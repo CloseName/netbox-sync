@@ -381,3 +381,12 @@ place without changing contents, modes or modification times. Target layout wins
 Public URL equality, hostname, expiry, key match and protection checks still apply.
 Old v1 manifests without deployment identity remain supported: this decision uses
 the verified archived configuration, not the optional identity metadata.
+
+## Local administrator state
+
+Migration 0006 adds identity, sessions, policy and audit to the protected DB dump.
+Restore preserves identities/rules/audit but revokes sessions/invitations/receipts,
+and requires root reapproval of managed policy under the target host baseline.
+An already-enrolled target is not a fresh restore destination. See
+[the current auth contract](local-admin-policy.md#backup-and-restore) and
+[pending release evidence](local-admin-policy-review.md).

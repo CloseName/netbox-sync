@@ -1,3 +1,5 @@
+> Historical review; subsequent local admin implementation: [contract](local-admin-policy.md), [evidence and pending gate](local-admin-policy-review.md). The original review below is retained as historical context.
+
 # UI follow-up review of c1e8b1d
 
 Review date: 2026-09-09. Starting branch main; HEAD c1e8b1df8503bb617c621fcf412a134e1aabd1ca, clean before this review. Existing commits preserved; no backend, migrations, grants, Compose or host installation changes. No VM, push or deployment.

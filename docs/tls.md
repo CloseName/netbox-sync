@@ -47,7 +47,7 @@ an upstream mutation. The UI uses same-origin relative URLs and polling, not Web
 
 TLS is not operator authentication. The product still has no LDAPS/RBAC/login.
 Restrict 80/443 to the trusted operator network using the deployment infrastructure;
-do not expose the unauthenticated control interface to the public Internet. Docker
+use the [local administrator access boundary](local-admin-policy.md) and keep deployment exposure bounded to the intended operator network. Docker
 published-port firewall policy must be reviewed at the host/upstream boundary.
 
 ## Public URL and DNS

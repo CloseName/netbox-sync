@@ -159,10 +159,10 @@ transaction across sources or across all NetBox HTTP writes. A failure after the
 first write can leave partial progress; future run history must report this.
 
 Web apply needs explicit operation/scope and a server-side confirmation tied to
-fresh plan, source and target. Authentication is deferred, not authorization or
-confirmation checks. Reserve a request-principal dependency and middleware seam
-for OIDC/LDAP/reverse-proxy auth. Until authentication exists, any API must bind to
-loopback/private trusted access only; write APIs require a separate security review.
+fresh plan, source and target. The [local administrator/auth-policy worker](local-admin-policy.md) now enforces HTTP identity and permissions in addition to
+confirmation checks. OIDC/LDAP bindings and multi-role access are a future stage.
+API remains on its private Unix boundary behind the configured TLS ingress;
+identity does not remove Origin/CSRF or operation confirmation checks.
 
 ## Database ownership
 
@@ -227,10 +227,11 @@ WEB-1: minimal FastAPI health/read-only source DTOs and application adapter,
 React/TypeScript shell, development Compose roles and integration tests. No
 Sync Now/write controls until confirmation and lock/lease behavior are tested.
 Then add durable jobs/history, source scheduling, protected secrets and the
-remaining Web v1 workflows incrementally. Auth integration comes later.
+remaining Web v1 workflows incrementally. Local administrator integration is now
+described in [the auth/policy contract](local-admin-policy.md).
 
 Before production cutover: test migration on a restored copy, reconcile actual
-server Compose/registry configuration, review unauthenticated exposure, and approve
+server Compose/registry configuration, review authenticated operator exposure, and approve
 scheduler ownership. Portable zero-source startup is provided by the foundation but
 still requires a disposable Debian rehearsal. Python metadata now matches the actual
 3.10+ syntax contract, and the fresh requirements include pyVmomi. See

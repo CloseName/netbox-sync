@@ -127,3 +127,10 @@ Deployment roots are operator-selected: `--root /srv/example-sync` supports the 
 installer/systemd/backup lifecycle. Public standalone TLS can use
 `--tls-dir /etc/example-sync/cert` with `ssl.crt`, `ssl.key`, `dhparam.pem`.
 See [deployment path contracts](docs/deployment-paths.md) and the ROOT-variable runbook.
+
+### Local administrator and web destination policy
+
+See the [authentication/policy contract](docs/local-admin-policy.md),
+[upgrade and enrollment runbook](docs/local-admin-upgrade-runbook.md), and
+[review evidence with the pending upgrade gate](docs/local-admin-policy-review.md).
+Business APIs require a server session; Origin/CSRF and Bootstrap READY are not login.

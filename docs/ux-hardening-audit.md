@@ -1,3 +1,5 @@
+> Follow-up: local admin and destination policy now implemented; release gate pending: [contract](local-admin-policy.md), [evidence and pending gate](local-admin-policy-review.md). The original review below is retained as historical context.
+
 # UX hardening audit — baseline 36c727d
 
 This is a repository and disposable-browser audit. No VM, real hypervisor or live

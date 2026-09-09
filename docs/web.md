@@ -468,7 +468,7 @@ ssh -N -L 18001:127.0.0.1:8001 operator@netbox-sync-server
 
 Open http://127.0.0.1:18001 and select Sources. Locally, run the API and Vite as
 above, supplying only a disposable registry connection if testing data access.
-This remains unauthenticated: never expose it publicly. Source addresses and
+Business APIs now require the [local administrator session](local-admin-policy.md); this legacy development example is not the supported TLS deployment path. Source addresses and
 target metadata are operationally sensitive even without credentials.
 
 ## WEB-2 tests
