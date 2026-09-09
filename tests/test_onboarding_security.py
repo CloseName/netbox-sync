@@ -265,7 +265,7 @@ def test_secret_layout_never_falls_back_on_permission_error(tmp_path):
 
 def test_cancellation_revokes_token_without_registry_or_broker_writes():
     from fastapi.testclient import TestClient
-    from netbox_sync.api.app import create_app
+    from tests.auth_support import authenticated_app as create_app
     from netbox_sync.api.settings import ApiSettings
     from tests.test_onboarding import service, HEADERS
     instance, registry, secrets = service()

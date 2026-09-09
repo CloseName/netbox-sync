@@ -218,7 +218,7 @@ def test_provisioning_is_pending_and_existing_fields_are_not_recreated(setup):
 
 def test_setup_api_origin_and_secret_redaction(monkeypatch,caplog):
     from fastapi.testclient import TestClient
-    from netbox_sync.api.app import create_app
+    from tests.auth_support import authenticated_app as create_app
     from netbox_sync.api.settings import ApiSettings
     from netbox_sync.api.bootstrap import BootstrapClient
     observed=[]

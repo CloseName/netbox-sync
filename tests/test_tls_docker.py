@@ -17,9 +17,9 @@ ROOT=Path(__file__).parents[1]
 def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
     prefix='netbox-sync-tls-smoke-'+uuid.uuid4().hex[:10]
     label='netbox-sync.tls-smoke='+prefix
-    image=os.environ.get('NETBOX_SYNC_TLS_TEST_IMAGE','netbox-sync-tls-test:20260908')
-    runner=os.environ.get('NETBOX_SYNC_TLS_RUNNER_IMAGE','netbox-sync-tls-tests:20260908')
-    volumes={name:prefix+'-'+name for name in ('tls','ca','http','bootstrap','state','ingress','lock')}
+    image=os.environ.get('NETBOX_SYNC_TLS_TEST_IMAGE','netbox-sync-auth:review')
+    runner=os.environ.get('NETBOX_SYNC_TLS_RUNNER_IMAGE','netbox-sync-auth-tests:review')
+    volumes={name:prefix+'-'+name for name in ('tls','ca','http','bootstrap','state','ingress','lock','auth')}
     containers=[];created_volumes=[];created_network=False
     environment=os.environ.copy()
     environment.update(NETBOX_SYNC_COMPOSE_PROJECT=prefix,NETBOX_SYNC_IMAGE=image,
@@ -33,7 +33,9 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
         'networks':{'netbox-sync-egress':{'external':True,'name':prefix}},
         'services':{'netbox-sync-api':{'environment':{'NETBOX_SYNC_PUBLIC_URL':'https://sync.example.test'}}}}
     fixtures['volumes'].update({'netbox-sync-http-socket':{'external':True,'name':volumes['http']},
+        'netbox-sync-auth-socket':{'external':True,'name':volumes['auth']},
         'netbox-sync-bootstrap-socket':{'external':True,'name':volumes['bootstrap']}})
+    fixtures['services']['netbox-sync-auth-worker']={'environment':{'NETBOX_SYNC_AUTH_WRITER_DSN':'postgresql://postgres@auth-db/postgres','NETBOX_SYNC_REGISTRY_SCHEMA':'netbox_sync'}}
     fixture.write_text(json.dumps(fixtures))
     ports=tmp_path/'ports.yml'
     ports.write_text('services:\n  netbox-sync-proxy:\n    ports: !override ["127.0.0.1::8443", "127.0.0.1::8080"]\n')
@@ -51,7 +53,7 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
         return (result.stdout+result.stderr).strip() if args[0]=='logs' else result.stdout.strip()
     def mount(name,path,ro=False):return ['--mount',f'type=volume,source={volumes[name]},target={path}'+(',readonly' if ro else '')]
     def launch(name,arguments,selected_image,command):
-        service={'bootstrap':'netbox-sync-bootstrap-worker','api':'netbox-sync-api','inner':'netbox-sync-proxy'}.get(name)
+        service={'bootstrap':'netbox-sync-bootstrap-worker','api':'netbox-sync-api','auth':'netbox-sync-auth-worker','inner':'netbox-sync-proxy'}.get(name)
         if name=='proxy' and ingress_mode!='external':service='netbox-sync-proxy'
         if service:
             compose_run('up','-d','--no-deps','--no-build',service)
@@ -59,7 +61,7 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
             container=compose_run('ps','-q',service)
             info=json.loads(docker('inspect',container))[0]
             assert info['HostConfig']['ReadonlyRootfs'] and info['HostConfig']['CapDrop']==['ALL']
-            assert info['HostConfig']['Tmpfs']=={'/tmp':'size=64m,mode=1777'}
+            assert info['HostConfig']['Tmpfs']==({'/tmp':'size=64m,mode=1777','/run/netbox-sync-auth-admin':'size=1m,mode=0700'} if service=='netbox-sync-auth-worker' else {'/tmp':'size=64m,mode=1777'})
             if service!='netbox-sync-proxy':assert not info['HostConfig']['PortBindings']
             return container
         full=prefix+'-'+('outer-proxy' if name=='proxy' and ingress_mode=='external' else name)
@@ -83,6 +85,19 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
         api=launch('api',['--network','none','--read-only','--cap-drop','ALL','--tmpfs','/tmp',
             '-e','NETBOX_SYNC_PUBLIC_URL=https://sync.example.test',*mount('http','/run/netbox-sync-http'),
             *mount('bootstrap','/run/netbox-sync-bootstrap',True)],image,['python','-m','netbox_sync.web_runtime','serve'])
+        auth_db=launch('auth-db',['--network',prefix+'_netbox-sync-db','--network-alias','auth-db',
+            '--tmpfs','/var/lib/postgresql/data','-e','POSTGRES_HOST_AUTH_METHOD=trust'],
+            'postgres:16-bookworm',[])
+        for _ in range(40):
+            check=subprocess.run(['docker','exec',auth_db,'pg_isready','-U','postgres'],capture_output=True)
+            if check.returncode==0:break
+            time.sleep(.25)
+        else:raise AssertionError('Disposable auth DB unavailable')
+        docker('run','--rm','--network',prefix+'_netbox-sync-db','--label',label,
+               '-e','NETBOX_SYNC_REGISTRY_DSN=postgresql://postgres@auth-db/postgres',
+               '-e','NETBOX_SYNC_REGISTRY_SCHEMA=netbox_sync',image,
+               'python','-c',"from alembic import command; from alembic.config import Config; command.upgrade(Config('alembic.ini'),'head')")
+        auth=launch('auth',[],image,[])
         if ingress_mode=='corporate':
             docker('run','--rm','--network','none','--user','0:0','--label',label,*mount('tls','/tls'),runner,
                 'python','-c',"import shutil,os,subprocess; from pathlib import Path; "
@@ -125,13 +140,19 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
                     headers={'Host':'sync.example.test',**kwargs.pop('headers',{})},timeout=55,allow_redirects=False,**kwargs)
         for _ in range(60):
             try:
-                response=request('GET','/api/v1/bootstrap')
+                response=request('GET','/api/v1/health')
                 if response.status_code==200:break
                 last='HTTP '+str(response.status_code)+' '+response.text[:100]
             except requests.RequestException as error:last=str(error)
             time.sleep(.25)
         else:raise AssertionError('Public HTTPS/Bootstrap did not start: '+last+' '+docker('logs',proxy)+docker('logs',api))
-        assert response.json()['status']=='FRESH'
+        assert request('GET','/api/v1/bootstrap').status_code==401
+        invitation=json.loads(docker('exec',auth,'python','-m','netbox_sync.auth_worker','invite'))['invitation']
+        headers={'Origin':'https://sync.example.test','X-NetBox-Sync-CSRF':'same-origin'}
+        enrolled=request('POST','/api/v1/auth/enroll',headers=headers,
+            json={'username':'admin','password':'fixture-password-at-least-15','invitation':invitation})
+        assert enrolled.status_code==200
+        assert request('GET','/api/v1/bootstrap').json()['status']=='FRESH'
         redirect=session.get(f'http://127.0.0.1:{http_port}/setup',headers={'Host':'sync.example.test'},allow_redirects=False)
         assert redirect.status_code==308 and redirect.headers['Location']=='https://sync.example.test/setup'
         for path in ('/','/setup','/sources','/sources/test-source','/sources/add','/runs','/runs/test-run-id','/diagnostics','/system'):
@@ -236,6 +257,8 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
         health=subprocess.run(['docker','exec',proxy,'wget','-q','--spider','http://127.0.0.1:8081/health'],capture_output=True)
         assert health.returncode!=0
     finally:
+        if 'auth_db' in locals():
+            docker('rm','-f',auth_db);containers.remove(auth_db)
         if composed:compose_run("down", "--volumes")
         for name in reversed(containers):
             info=json.loads(docker('inspect',name))[0]

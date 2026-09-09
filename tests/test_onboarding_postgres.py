@@ -2,6 +2,7 @@
 
 import base64
 import os
+import secrets
 import uuid
 from pathlib import Path
 
@@ -83,7 +84,8 @@ def test_registration_role_insert_select_only(registry_database):
     _writer, reader, dsn, schema = registry_database
     role = 'netbox_sync_test_role_' + uuid.uuid4().hex
     with psycopg.connect(dsn) as connection:
-        connection.execute(sql.SQL('CREATE ROLE {} LOGIN').format(sql.Identifier(role)))
+        password = secrets.token_urlsafe(32)
+        connection.execute(sql.SQL('CREATE ROLE {} LOGIN PASSWORD {}').format(sql.Identifier(role), sql.Literal(password)))
         connection.execute(sql.SQL('GRANT USAGE ON SCHEMA {} TO {}').format(
             sql.Identifier(schema), sql.Identifier(role)))
         connection.execute(sql.SQL('GRANT SELECT ON {}, {} TO {}').format(
@@ -94,7 +96,7 @@ def test_registration_role_insert_select_only(registry_database):
                    'token_id_key, token_secret_provider, token_secret_key, legacy_identity_owner, settings')
         connection.execute(sql.SQL('GRANT INSERT ({}) ON {} TO {}').format(
             sql.SQL(columns), sql.Identifier(schema, 'sources'), sql.Identifier(role)))
-    role_dsn = make_conninfo(dsn, user=role)
+    role_dsn = make_conninfo(dsn, user=role, password=password)
     try:
         service = SourceOnboardingService({'proxmox': lambda _: None}, EphemeralOnboardingStore(),
                                            RegistrationRegistry(role_dsn, schema), FakeSecrets())

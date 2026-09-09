@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from psycopg import sql
 
-from netbox_sync.api.app import create_app
+from tests.auth_support import authenticated_app as create_app
 from netbox_sync.api.settings import ApiSettings
 from netbox_sync.source_registry import SourceRegistry
 from tests.sample_data import sample_source_config

@@ -40,6 +40,8 @@ from .run_reader import PostgresRunReader
 from .worker_health import WorkerHealthClient
 from .lifecycle_client import LifecycleClient, LifecycleRequestError
 from .operation_dto import LifecycleDTO, RemovalDTO
+from .auth import AuthClient, COOKIE, PUBLIC, permission, routes as auth_routes
+from ..auth_policy import AuthError
 from .schedule_client import ScheduleRequestError, ScheduleWorkerClient
 
 LOGGER = logging.getLogger('netbox_sync.api')
@@ -48,11 +50,19 @@ LOGGER = logging.getLogger('netbox_sync.api')
 def _error(request, status, code, message):
     request.state.error_code = code
     dto = ErrorDTO(error=ErrorDetailDTO(code=code, message=message, request_id=request.state.request_id))
-    return JSONResponse(status_code=status, content=dto.model_dump(mode='json'))
+    return JSONResponse(status_code=status, content=dto.model_dump(mode='json'), headers={'Cache-Control':'no-store', 'X-Request-ID':request.state.request_id})
 
 
-def _install_boundaries(app, settings):
+def _install_boundaries(app, settings, auth_client):
     from ..local_control import ControlError
+
+    @app.exception_handler(AuthError)
+    async def auth_error(request, exc):
+        status = {'AUTH_REQUIRED':401, 'AUTH_DENIED':403, 'AUTH_INVALID':401,
+                  'AUTH_RATE_LIMITED':429, 'ENROLLMENT_INVALID':409,
+                  'POLICY_CONFLICT':409, 'POLICY_INVALID':422,
+                  'POLICY_HOST_MANAGED':403, 'PROBE_RECEIPT_INVALID':409}.get(exc.code,503)
+        return _error(request, status, exc.code, 'Authentication or policy request rejected')
 
     @app.exception_handler(ControlError)
     async def control_error(request, exc):
@@ -186,16 +196,21 @@ def _install_boundaries(app, settings):
                             or request.headers.get('x-forwarded-proto')!='https'):
                         return _error(request,403,'API_WRITE_FORBIDDEN','Public HTTPS boundary required')
                     request.scope['scheme']='https'
-            if request.method in ('POST', 'PATCH') and (
-                    request.url.path.startswith('/api/v1/bootstrap/') or request.url.path in (
-                        '/api/v1/sources', '/api/v1/sources/test-connection',
-                        '/api/v1/sources/cancel-onboarding',
-                    ) or (
-                        request.url.path.startswith('/api/v1/sources/')
-                        and request.url.path.endswith(('/discovery', '/sync-plan',
-                                                       '/sync-confirmations', '/sync', '/schedule',
-                                                       '/operations/plan', '/operations/discovery', '/remove'))
-                    )):
+            if request.url.path.startswith('/api/v1/') and (request.method, request.url.path) not in PUBLIC:
+                from starlette.concurrency import run_in_threadpool
+                try:
+                    request.state.principal = await run_in_threadpool(
+                        auth_client.call, 'authorize', session=request.cookies.get(COOKIE),
+                        permission=('source.read' if permission(request.method, request.url.path)=='unmapped.deny'
+                                    else permission(request.method, request.url.path)))
+                    if permission(request.method, request.url.path)=='unmapped.deny':
+                        known_path = request.url.path=='/api/v1/health' or any(
+                            permission(method,request.url.path)!='unmapped.deny' for method in ('GET','POST','PATCH'))
+                        return _error(request,405 if known_path else 404,
+                            'API_METHOD_NOT_ALLOWED' if known_path else 'API_NOT_FOUND', 'Endpoint not available')
+                except AuthError as exc:
+                    return await auth_error(request, exc)
+            if request.method not in ('GET', 'HEAD', 'OPTIONS') and request.url.path.startswith('/api/v1/'):
                 origin = urlsplit(request.headers.get('origin', ''))
                 host = request.headers.get('host', '')
                 if (host not in ((public_authority(settings.public_url),) if settings.public_url else settings.allowed_write_hosts) or origin.netloc != host
@@ -256,7 +271,7 @@ def _install_boundaries(app, settings):
 
 def create_app(settings=None, service=None, source_service=None, onboarding_service=None,
                discovery_client=None, apply_client=None, run_service=None,
-               diagnostics_service=None, schedule_service=None):
+               diagnostics_service=None, schedule_service=None, auth_client=None):
     """Construct without DB access; all environment reading is confined to bootstrap."""
     if not LOGGER.handlers:
         LOGGER.addHandler(logging.StreamHandler())
@@ -270,6 +285,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         PostgresHealthProbe(settings), netbox_configured=bootstrap_ready if settings.bootstrap_socket else settings.netbox_configured,
     )
     source_service = source_service or SourceVisibilityService(ActiveSourceReader(settings))
+    onboarding_injected = onboarding_service is not None
     onboarding_service = onboarding_service or SourceOnboardingService(
         {'proxmox': partial(test_proxmox, policy=settings.egress_policy, probe_socket=settings.probe_socket),
          'esxi': partial(test_esxi, policy=settings.egress_policy, probe_socket=settings.probe_socket)}, EphemeralOnboardingStore(),
@@ -290,7 +306,9 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         ScheduleWorkerClient(settings.schedule_socket), settings.diagnostics_stale_seconds)
     app = FastAPI(title='NetBox Sync', version=application_version(),
                   docs_url=None, redoc_url=None, openapi_url=None, debug=False)
-    _install_boundaries(app, settings)
+    auth_client = auth_client or AuthClient(settings.auth_socket)
+    _install_boundaries(app, settings, auth_client)
+    app.include_router(auth_routes(auth_client))
     router = APIRouter(prefix='/api/v1')
 
     @router.get('/health', response_model=LivenessDTO)
@@ -427,19 +445,39 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
             raise
 
     @router.post('/sources/test-connection', response_model=ConnectionResult)
-    def connection_test(request: ConnectionRequest):
-        token = onboarding_service.test_connection(request.credentials())
+    def connection_test(request: ConnectionRequest, http: Request):
+        session = http.cookies.get(COOKIE)
+        policy = auth_client.call('policy', session=session)
+        from ..probe_worker import remote_test_authorized
+        if settings.probe_socket:
+            remote_test_authorized(settings.probe_socket, request.credentials(), session, policy['revision'])
+            token = onboarding_service.accept_checked_credentials(request.credentials())
+        elif onboarding_injected:
+            token = onboarding_service.test_connection(request.credentials())
+        else:
+            # Explicit in-process adapter injection is only for tests. Production
+            # has a required remote probe; no API egress fallback.
+            raise AuthError('AUTH_UNAVAILABLE')
+        try:
+            auth_client.call('receipt.issue', session=session, receipt=token,
+                             destination=request.address, provider=request.source_type, revision=policy['revision'])
+        except AuthError:
+            onboarding_service.cancel(token)
+            raise
         return ConnectionResult(onboarding_token=token)
 
     @router.post('/sources', response_model=SourceDTO, status_code=201)
-    def register_source(request: RegistrationRequest):
+    def register_source(request: RegistrationRequest, http: Request):
+        auth_client.call('receipt.consume', session=http.cookies.get(COOKIE),
+                         receipt=request.onboarding_token, destination=request.address, provider=request.source_type)
         onboarding_service.register(request.command())
         return SourceDTO.from_view(source_view({
             **request.model_dump(), 'enabled': True, 'sync_enabled': False, 'legacy_identity_owner': False,
         }))
 
     @router.post('/sources/cancel-onboarding', response_model=CancellationResult)
-    def cancel_onboarding(request: CancellationRequest):
+    def cancel_onboarding(request: CancellationRequest, http: Request):
+        auth_client.call('receipt.cancel', session=http.cookies.get(COOKIE), receipt=request.onboarding_token)
         onboarding_service.cancel(request.onboarding_token)
         return CancellationResult()
 
@@ -454,6 +492,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
             raise ValueError('Frontend build is unavailable')
         app.mount('/assets', StaticFiles(directory=root / 'assets'), name='assets')
 
+        @app.get('/policy', include_in_schema=False)
         @app.get('/setup', include_in_schema=False)
         @app.get('/sources', include_in_schema=False)
         @app.get('/sources/add', include_in_schema=False)

@@ -8,7 +8,7 @@ from netbox_sync.bootstrap_state import BootstrapStore, runtime_netbox
 from netbox_sync.local_control import ControlError
 from netbox_sync.api.bootstrap import BootstrapClient
 from netbox_sync.api.settings import ApiSettings
-from netbox_sync.api.app import create_app
+from tests.auth_support import authenticated_app as create_app
 
 def success():
     from netbox_sync.bootstrap_probe import FIELDS

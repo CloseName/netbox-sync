@@ -46,7 +46,7 @@ def receive(connection, deadline):
     return raw
 
 
-def serve(path, handler, allowed_uid=10001, concurrent=False):
+def serve(path, handler, allowed_uid=10001, concurrent=False, additional_uids=()):
     import fcntl
     import signal
     if concurrent:
@@ -73,13 +73,13 @@ def serve(path, handler, allowed_uid=10001, concurrent=False):
             with connection:
                 connection.settimeout(5)
                 _, uid, _ = struct.unpack('3i', connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
-                if concurrent and uid == allowed_uid:
+                if concurrent and uid in (allowed_uid, *additional_uids):
                     if os.fork():
                         continue
                     server.close()
                     signal.signal(signal.SIGCHLD, signal.SIG_DFL)
                 try:
-                    if uid != allowed_uid:
+                    if uid not in (allowed_uid, *additional_uids):
                         raise ControlError('PEER_NOT_AUTHORIZED')
                     payload = json.loads(receive(connection, time.monotonic() + 5))
                     if not isinstance(payload, dict):
@@ -94,7 +94,7 @@ def serve(path, handler, allowed_uid=10001, concurrent=False):
                     connection.sendall(json.dumps(response).encode() + b'\n')
                 except OSError:
                     pass
-                if concurrent and uid == allowed_uid:
+                if concurrent and uid in (allowed_uid, *additional_uids):
                     os._exit(0)
 
 
@@ -105,3 +105,8 @@ SAFE_CODES = frozenset({
     'SOURCE_APPLY_UNCONFIRMED', 'LIFECYCLE_UNAVAILABLE', 'REQUEST_INVALID',
     'BOOTSTRAP_CONFLICT', 'BOOTSTRAP_NOT_READY', 'BOOTSTRAP_INVALID', 'BOOTSTRAP_BUSY',
 })
+
+# Auth/policy uses the same closed transport error channel, never exception text.
+SAFE_CODES = SAFE_CODES | frozenset({'AUTH_REQUIRED','AUTH_DENIED','AUTH_INVALID',
+    'AUTH_RATE_LIMITED','AUTH_UNAVAILABLE','ENROLLMENT_INVALID','POLICY_CONFLICT',
+    'POLICY_INVALID','POLICY_HOST_MANAGED','PROBE_RECEIPT_INVALID'})

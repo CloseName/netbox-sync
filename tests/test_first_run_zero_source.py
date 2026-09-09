@@ -32,6 +32,7 @@ def test_zero_source_processes_boot_without_netbox_or_provider_secrets(tmp_path)
                 stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,preexec_fn=drop if uid is not None else None)
             processes.append(process)
         try:
+            start('netbox_sync.auth_worker',{'NETBOX_SYNC_AUTH_WRITER_DSN':deployment.connection_info('auth_writer',env)})
             start('netbox_sync.secret_broker',{},['--socket',str(sockets['broker']),'--secret-root',str(sources),'--allowed-uid','10001'])
             start('netbox_sync.bootstrap_worker',{'NETBOX_SYNC_BOOTSTRAP_SOCKET':str(sockets['bootstrap']),
                 'NETBOX_SYNC_NETBOX_STATE_DIR':str(netbox),'NETBOX_SYNC_APPLY_LOCK_PATH':str(root/'apply.lock')})
@@ -60,14 +61,23 @@ def test_zero_source_processes_boot_without_netbox_or_provider_secrets(tmp_path)
                      'NETBOX_SYNC_REGISTRATION_DSN':deployment.connection_info('registration_writer',env)}
             api_env.update({'NETBOX_SYNC_'+name.upper()+'_SOCKET':str(path) for name,path in sockets.items()})
             start('uvicorn',api_env,['netbox_sync.api.app:create_app','--factory','--host','127.0.0.1','--port',str(port),'--no-access-log'],uid=10001)
+            cookie=''
             def get(path):
-                with urllib.request.urlopen(f'http://127.0.0.1:{port}'+path,timeout=2) as response:return json.load(response)
+                request=urllib.request.Request(f'http://127.0.0.1:{port}'+path,headers={'Cookie':cookie})
+                with urllib.request.urlopen(request,timeout=2) as response:return json.load(response)
             for _ in range(100):
                 assert processes[-1].poll() is None,'API exited'
-                try:state=get('/api/v1/bootstrap');break
+                try:state=get('/api/v1/health');break
                 except OSError:time.sleep(.05)
             else:raise AssertionError('API did not start')
-            assert state['status']=='FRESH'
+            with pytest.raises(urllib.error.HTTPError) as denied:get('/api/v1/bootstrap')
+            assert denied.value.code==401
+            from netbox_sync.local_control import request
+            from netbox_sync.auth_worker import ADMIN_SOCKET, SOCKET
+            invitation=request(ADMIN_SOCKET,{'action':'invite'})['result']['invitation']
+            session=request(SOCKET,dict(action='enroll',invitation=invitation,username='admin',password='test-only-password-9284'))['result']['session']
+            cookie='__Host-netbox-sync-session='+session
+            assert get('/api/v1/bootstrap')['status']=='FRESH'
             assert get('/api/v1/sources')['sources']==[]
             assert get('/api/v1/system/health')['status']=='degraded'
             assert list(sources.iterdir())==[] and not (netbox/'bootstrap.json').exists()

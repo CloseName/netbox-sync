@@ -136,6 +136,10 @@ class SourceOnboardingService:
         tester(credentials)
         return self._pending.issue(credentials)
 
+    def accept_checked_credentials(self, credentials):
+        """Retain credentials only after the trusted probe transport succeeded."""
+        return self._pending.issue(credentials)
+
     def cancel(self, token):
         """Revoke only ephemeral onboarding state; no registry or broker operation."""
         self._pending.discard(token)

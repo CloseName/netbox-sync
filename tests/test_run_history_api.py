@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi.testclient import TestClient
 
-from netbox_sync.api.app import create_app
+from tests.auth_support import authenticated_app as create_app
 from netbox_sync.api.settings import ApiSettings
 from netbox_sync.application.runs import RunHistoryService
 from netbox_sync.run_history import ActionCounts, RunStatus, RunTrigger, SyncRun

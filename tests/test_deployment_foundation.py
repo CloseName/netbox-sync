@@ -50,7 +50,7 @@ def test_canonical_compose_has_private_bundled_postgres_and_one_app_image():
     assert 'internal: true' in text
     assert 'x-app: &app' in text
     assert text.count('dockerfile: Dockerfile.web') == 1
-    assert text.count('container_name:') == 10
+    assert text.count('container_name:') == 11
     assert 'container_name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}-postgres' in text
     assert 'name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}' in text
     for service in ('netbox-sync-api', 'netbox-sync-discovery-worker',
@@ -333,7 +333,7 @@ def test_upgrade_stops_timer_and_acquires_shared_lock_before_prepare(tmp_path, m
                         lambda *_args, **_kwargs: events.append('activated'))
     monkeypatch.setattr(install, 'run', lambda command, **_kwargs: events.append(command[-1]))
     assert install.main(['--root', str(tmp_path), '--source', str(tmp_path),
-                         '--release-id', 'new', '--no-start']) == 0
+                         '--release-id', 'new', '--no-start', '--acknowledge-admin-enrollment']) == 0
     assert events[:4] == ['timer-stopped', 'lock-acquired', 'migrated', 'activated']
     assert events[-1] == 'lock-released'
 
@@ -377,7 +377,7 @@ def test_prepare_failure_keeps_timer_stopped_and_never_activates(tmp_path, monke
                         lambda *_args, **_kwargs: events.append('activated'))
     monkeypatch.setattr(install, 'run', lambda command, **_kwargs: events.append(command[-1]))
     assert install.main(['--root', str(tmp_path), '--source', str(tmp_path),
-                         '--release-id', 'new']) == 1
+                         '--release-id', 'new', '--acknowledge-admin-enrollment']) == 1
     assert events == ['timer-stopped', 'lock-acquired', 'lock-released']
     assert (tmp_path / 'current').resolve() == old.resolve()
 
@@ -476,7 +476,7 @@ def test_database_role_matrix_is_complete_and_has_no_secret_literals():
     assert set(deployment.DATABASE_ROLES) == {
         'owner', 'web_reader', 'registration_writer', 'discovery_reader',
         'apply_registry_reader', 'registry_reader', 'run_writer', 'schedule_writer',
-        'operation_writer', 'lifecycle_writer',
+        'operation_writer', 'lifecycle_writer', 'auth_writer',
     }
     source = (ROOT / 'netbox_sync/deployment.py').read_text(encoding='utf-8')
     assert 'DELETE' not in source

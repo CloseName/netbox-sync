@@ -24,13 +24,26 @@ def main():
         if info.st_uid!=0:raise SystemExit('HTTP socket directory owner is invalid')
         os.chmod(root,0o750)
         os.chown(root,10001,10001)
-    elif action in ('health','diagnostics'):
+    elif action=='diagnostics':
+        # Host/operator machine command, never an anonymous HTTP identity.
+        # Uses the existing read-only API role and Unix worker health contracts.
+        try:
+            from .api.settings import ApiSettings
+            from .api.lifecycle_adapters import ActiveSourceReader
+            from .application.sources import SourceVisibilityService
+            from .api.run_reader import PostgresRunReader
+            from .api.worker_health import WorkerHealthClient
+            from .application.diagnostics import DiagnosticsService
+            settings=ApiSettings.from_environment()
+            DiagnosticsService(SourceVisibilityService(ActiveSourceReader(settings)),
+                PostgresRunReader(settings),WorkerHealthClient(settings.discovery_socket),
+                WorkerHealthClient(settings.apply_socket),settings.diagnostics_stale_seconds).check()
+        except Exception:
+            raise SystemExit(1) from None
+    elif action=='health':
         connection=UnixHTTPConnection('localhost',timeout=2)
         try:
             headers={}
-            if action=='diagnostics':
-                from .tls_config import public_authority
-                headers={'Host':public_authority(os.environ['NETBOX_SYNC_PUBLIC_URL']),'X-Forwarded-Proto':'https'}
             connection.request('GET','/api/v1/'+action,headers=headers)
             if connection.getresponse().status!=200:raise SystemExit(1)
         finally:connection.close()

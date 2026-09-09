@@ -27,6 +27,7 @@ dependencies = [
     "psycopg[binary]>=3.2,<4",
     "pyvmomi>=8.0.3.0.1,<9",
     "requests>=2.32",
+    "argon2-cffi>=23.1,<26",
 ]
 
 [project.urls]

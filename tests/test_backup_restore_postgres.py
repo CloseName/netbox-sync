@@ -112,6 +112,16 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
         expected_tombstone = connection.execute('SELECT * FROM netbox_sync.source_tombstones').fetchall()
         expected = _snapshot(connection)
 
+    from netbox_sync.auth_store import AuthStore
+    auth = AuthStore(TEST_DSN, 'netbox_sync')
+    invitation = auth.call({'action':'invite'}, root=True)['invitation']
+    session = auth.call(dict(action='enroll', invitation=invitation, username='admin', password='test-only-password-9284'))['session']
+    auth.call({'action':'managed','ceiling':'public-ipv4'}, root=True)
+    auth.call(dict(action='policy.update',session=session,host='source.example.test',expected_revision=1,request_id='backup-policy'))
+    with psycopg.connect(TEST_DSN) as connection:
+        saved_auth = connection.execute('SELECT value FROM netbox_sync.auth_state').fetchone()[0]
+        saved_audit = connection.execute('SELECT event FROM netbox_sync.auth_audit ORDER BY id').fetchall()
+
     tool = backup.DatabaseTool(
         tmp_path, 'external', {'NETBOX_SYNC_BACKUP_DSN': TEST_DSN})
     dump = tmp_path / 'database.dump'
@@ -143,6 +153,19 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
                            "'netbox_sync.sync_runs', 'SELECT')")
             assert cursor.fetchone() == (True,)
 
+    with psycopg.connect(TEST_DSN) as connection:
+        assert connection.execute('SELECT value FROM netbox_sync.auth_state').fetchone()[0] == saved_auth
+        assert connection.execute('SELECT event FROM netbox_sync.auth_audit ORDER BY id').fetchall() == saved_audit
+    tool.revoke_restored_auth()
+    from netbox_sync.auth_policy import AuthError
+    with pytest.raises(AuthError, match='AUTH_REQUIRED'):
+        auth.call(dict(action='authorize',session=session))
+    with psycopg.connect(TEST_DSN) as connection:
+        restored_auth=connection.execute('SELECT value FROM netbox_sync.auth_state').fetchone()[0]
+        assert restored_auth['principal']==saved_auth['principal']
+        assert restored_auth['allowed_hosts']==saved_auth['allowed_hosts']
+        assert restored_auth['sessions']=={} and restored_auth['invitation'] is None
+        assert restored_auth['mode']=='legacy' and restored_auth['ceiling'] is None
     tool.reconcile_operations()
     with psycopg.connect(deployment.connection_info('bootstrap', environment)) as connection:
         assert connection.execute('SELECT status,safe_error_code,result FROM netbox_sync.source_operations').fetchone() == ('FAILED','OPERATION_INTERRUPTED',None)

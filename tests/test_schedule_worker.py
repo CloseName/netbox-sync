@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from netbox_sync.api.app import create_app
+from tests.auth_support import authenticated_app as create_app
 from netbox_sync.api.schedule_client import ScheduleRequestError, ScheduleWorkerClient
 from netbox_sync.api.settings import ApiSettings
 from netbox_sync.application.schedules import ScheduleView

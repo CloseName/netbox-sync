@@ -32,6 +32,7 @@ ROLE_USERS = {
     'schedule_writer': 'netbox_sync_schedule_writer',
     'operation_writer': 'netbox_sync_operation_writer',
     'lifecycle_writer': 'netbox_sync_lifecycle_writer',
+    'auth_writer': 'netbox_sync_auth_writer',
 }
 PASSWORD_NAMES = ('postgres_bootstrap', *ROLE_USERS)
 RELEASE_PATTERN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$')
@@ -42,7 +43,7 @@ IGNORED_NAMES = frozenset({
     '.venv', 'venv', '.idea', '.vscode',
 })
 CONFIG_NAMES = ('compose.env', 'api.env', 'discovery.env', 'apply.env',
-                'schedule.env', 'scheduler.env', 'broker.env')
+                'schedule.env', 'scheduler.env', 'broker.env', 'auth.env')
 ENV_KEY_PATTERN = re.compile(r'^[A-Z][A-Z0-9_]*$')
 LEGACY_ENV_SUFFIXES = frozenset({
     'APPLY_LOCK_DIR', 'APPLY_NB_API_URL', 'APPLY_NB_TOKEN_FILE',
@@ -303,7 +304,7 @@ def migrate_legacy_environment(root, *, apply=False):
     migrated = 0
     for filename in CONFIG_NAMES:
         path = root / 'config' / filename
-        if filename == 'broker.env' and not path.exists():
+        if filename in ('broker.env', 'auth.env') and not path.exists():
             continue  # UI-6 adds this file after validating/translating an older bundle.
         if path.is_symlink() or not path.is_file() or path.stat().st_size > 1024 * 1024:
             raise InstallError(f'invalid config path: {filename}')
@@ -410,6 +411,7 @@ def _configuration_values(root, image):
             'NB_API_URL': '', 'NB_API_TOKEN_FILE': '',
             'NETBOX_SYNC_WRITE_HOSTS': '127.0.0.1:8000,localhost:8000',
         },
+        'auth.env': {**common, 'NETBOX_SYNC_AUTH_WRITER_DSN': dsns['auth_writer']},
         'broker.env': {
             **common, 'NETBOX_SYNC_LIFECYCLE_WRITER_DSN': dsns['lifecycle_writer'],
             'NETBOX_SYNC_APPLY_LOCK_PATH': '/run/netbox-sync-lock/apply.lock',
@@ -446,6 +448,27 @@ def generate_configuration(root, image, *, destination=None):
     destination = destination or root / 'config'
     ensure_directory(destination, 0o700)
     values = _configuration_values(root, image)
+    api_path = root / 'config/api.env'
+    if api_path.exists():
+        previous = dict(line.split('=', 1) for line in api_path.read_text().splitlines()
+                        if '=' in line and not line.lstrip().startswith('#'))
+        values['auth.env']['NETBOX_SYNC_REGISTRY_SCHEMA'] = previous.get('NETBOX_SYNC_REGISTRY_SCHEMA', 'netbox_sync')
+        for key, value in previous.items():
+            if key.startswith('NETBOX_SYNC_ONBOARDING_'):
+                values['auth.env'][key] = value
+        template = previous.get('NETBOX_SYNC_REGISTRY_DSN', '')
+        if template:
+            password = ensure_secret(root/'secrets/infrastructure/auth_writer_password')
+            if template.startswith(('postgresql://', 'postgres://')):
+                from urllib.parse import urlsplit, urlunsplit
+                parts = urlsplit(template)
+                host = parts.netloc.rsplit('@', 1)[-1]
+                values['auth.env']['NETBOX_SYNC_AUTH_WRITER_DSN'] = urlunsplit((
+                    parts.scheme, 'netbox_sync_auth_writer:' + quote(password, safe='') + '@' + host,
+                    parts.path, parts.query, parts.fragment))
+            else:
+                values['auth.env']['NETBOX_SYNC_AUTH_WRITER_DSN'] = (
+                    template + " user=netbox_sync_auth_writer password='" + password + "'")
     for name in CONFIG_NAMES:
         replacements = ({'NETBOX_SYNC_IMAGE': image,
                          'NETBOX_SYNC_CONFIG_DIR': str(destination)}
@@ -533,7 +556,7 @@ def prepare_stack(prepared):
 
 
 def _runtime_services():
-    return ('netbox-sync-probe-worker', 'netbox-sync-proxy', 'netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker', 'netbox-sync-discovery-worker',
+    return ('netbox-sync-auth-worker', 'netbox-sync-probe-worker', 'netbox-sync-proxy', 'netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker', 'netbox-sync-discovery-worker',
             'netbox-sync-apply-worker', 'netbox-sync-schedule-worker')
 
 
@@ -561,7 +584,11 @@ def start_runtime(prepared, *, overrides=()):
             proxy = run(compose_command(prepared.root, 'exec', '-T', 'netbox-sync-proxy',
                 'wget', '-q', '--spider', 'http://127.0.0.1:8081/health',
                 release=prepared.release, config=prepared.root/'config', overrides=overrides),check=False)
-            if health.returncode == 0 and proxy.returncode == 0:
+            auth = run(compose_command(prepared.root, 'exec', '-T', '--user', '0',
+                'netbox-sync-auth-worker', 'python', '-m', 'netbox_sync.auth_worker', 'status',
+                release=prepared.release, config=prepared.root/'config', overrides=overrides),
+                check=False, capture_output=True)
+            if health.returncode == 0 and proxy.returncode == 0 and auth.returncode == 0:
                 return
         time.sleep(2)
     raise InstallError('application services did not become ready')
@@ -619,7 +646,8 @@ def quiesce_uncertain_runtime(prepared):
     """Best-effort stop of write entrypoints after a partial runtime activation."""
     run(compose_command(
         prepared.root, 'stop', 'netbox-sync-api', 'netbox-sync-apply-worker',
-        'netbox-sync-schedule-worker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker', release=prepared.release,
+        'netbox-sync-schedule-worker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker',
+        'netbox-sync-auth-worker', release=prepared.release,
         config=prepared.root / 'config'), check=False)
 
 
@@ -886,6 +914,8 @@ def parse_args(argv=None):
     parser.add_argument('--init-tls-layout', action='store_true', help='Create TLS/CA directories only; no certificates or deployment')
     parser.add_argument('--check-tls', action='store_true', help='Validate public URL and operator TLS/CA files only')
     parser.add_argument('--check', action='store_true', help='validate only; make no changes')
+    parser.add_argument('--acknowledge-admin-enrollment', action='store_true',
+                        help='Acknowledge root-only administrator enrollment after an upgrade from anonymous Web access')
     parser.add_argument('--prepare-only', action='store_true')
     parser.add_argument('--no-start', action='store_true')
     parser.add_argument('--no-systemd', action='store_true')
@@ -937,6 +967,9 @@ def main(argv=None):
             validate_tls_material(root,public_url,tls_settings)
         else:
             validate_netbox_ca(root)
+        if current_release(root) is not None and not (root/'config/auth.env').exists() and not args.acknowledge_admin_enrollment:
+            print('Upgrade requires --acknowledge-admin-enrollment; prepare root-only enrollment after activation', file=sys.stderr)
+            return 1
         prepared = prepare_layout(root, args.source.resolve(), args.release_id, image)
         configure_tls(prepared,public_url,tls_settings)
         configure_ingress(prepared,mode)

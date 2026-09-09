@@ -11,6 +11,7 @@ from ..application.scheduling import stale_threshold
 class ApiSettings:
     """Reuse registry conventions; no source or NetBox credential resolution."""
 
+    auth_socket: str = '/run/netbox-sync-auth/worker.sock'
     public_url: str = ''
     registry_dsn: str = field(default='', repr=False)
     registry_schema: str = ''

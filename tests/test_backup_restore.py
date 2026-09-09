@@ -57,6 +57,9 @@ class FakeDatabase:
         if not dump.read_bytes().startswith(b'PGDMP'):
             raise backup.BackupError('dump unreadable')
 
+    def revoke_restored_auth(self):
+        self.auth_revoked = True
+
     def reconcile_operations(self):
         self.operations_reconciled = True
 
@@ -512,6 +515,8 @@ def test_fresh_database_restore_requires_live_maintenance_boundary(monkeypatch,
         'DROP TABLE IF EXISTS netbox_sync.source_tombstones; '
         'DROP TABLE IF EXISTS netbox_sync.source_operations; '
         'DROP TABLE IF EXISTS netbox_sync.schema_meta; '
+        'DROP TABLE IF EXISTS netbox_sync.auth_state; '
+        'DROP TABLE IF EXISTS netbox_sync.auth_audit; '
         'DROP TABLE IF EXISTS netbox_sync.alembic_version; '
         'DROP FUNCTION IF EXISTS netbox_sync.guard_source_credential_refs(); '
         'DROP SCHEMA netbox_sync')

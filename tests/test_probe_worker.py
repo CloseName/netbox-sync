@@ -16,7 +16,9 @@ def credentials():
 def test_handler_drops_child_identity_and_passes_only_ephemeral_payload(monkeypatch):
     execute = Mock()
     monkeypatch.setattr(worker, 'run_connection_test', execute)
-    payload = {'credentials': asdict(credentials()), 'policy': asdict(EgressPolicy())}
+    from netbox_sync.api.auth import AuthClient
+    monkeypatch.setattr(AuthClient, 'call', lambda *a, **k: {'effective':asdict(EgressPolicy())})
+    payload = {'credentials': asdict(credentials()), 'session':'unit-session', 'revision':0}
     assert worker.handle(payload) == {'success': True}
     assert execute.call_args.kwargs == {'child_uid': 10001}
 
@@ -80,11 +82,10 @@ def test_real_socket_authorizes_api_uid_rejects_root_and_survives_restart():
                         time.sleep(.02)
                 else: raise AssertionError('Worker listener unavailable')
                 response = peer_request(path, {'unexpected': True})
-                assert response.returncode != 0 and 'CONTROL_REQUEST_INVALID' in response.stderr
+                assert response.returncode != 0 and 'AUTH_REQUIRED' in response.stderr
                 payload = {'credentials': asdict(credentials()) | {'address': '127.0.0.1'}, 'policy': asdict(EgressPolicy())}
                 response = peer_request(path, payload)
-                assert response.returncode == 0
-                assert json.loads(response.stdout)['result'] == {'error': 'SOURCE_DESTINATION_DENIED'}
+                assert response.returncode != 0 and 'AUTH_REQUIRED' in response.stderr
                 assert set(p.name for p in root.iterdir()) == {'worker.sock'}
             finally:
                 process.terminate()

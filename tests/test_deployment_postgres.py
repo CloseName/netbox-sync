@@ -53,7 +53,7 @@ def test_clean_bootstrap_migrate_grants_and_idempotency(tmp_path):
     with psycopg.connect(deployment.connection_info('bootstrap', env)) as connection:
         with connection.cursor() as cursor:
             cursor.execute("SELECT version_num FROM netbox_sync.alembic_version")
-            assert cursor.fetchone() == ('0005_source_tombstones',)
+            assert cursor.fetchone() == ('0006_auth_policy',)
             cursor.execute("SELECT count(*) FROM netbox_sync.sources")
             assert cursor.fetchone() == (0,)
             cursor.execute("SELECT rolname FROM pg_roles WHERE rolname = ANY(%s)",
@@ -185,3 +185,20 @@ def test_ui6_writers_have_only_the_required_capabilities(tmp_path):
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 with psycopg.connect(deployment.connection_info(key, env)) as connection:
                     connection.execute(statement)
+
+
+def test_auth_writer_and_existing_roles_remain_separated(tmp_path):
+    env=_environment(tmp_path)
+    deployment.bootstrap_roles(env);deployment.migrate(env);deployment.apply_grants(env)
+    with psycopg.connect(deployment.connection_info('auth_writer',env)) as c:
+        c.execute('SELECT value FROM netbox_sync.auth_state FOR UPDATE')
+        c.execute('UPDATE netbox_sync.auth_state SET value=value WHERE id=1')
+        c.execute("INSERT INTO netbox_sync.auth_audit(event) VALUES ('{}')")
+    for statement in ('SELECT * FROM netbox_sync.sources','SELECT * FROM netbox_sync.sync_runs',
+                      'DELETE FROM netbox_sync.auth_state','UPDATE netbox_sync.auth_state SET id=1',
+                      'UPDATE netbox_sync.auth_audit SET event=event','SELECT * FROM netbox_sync.auth_audit'):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            with psycopg.connect(deployment.connection_info('auth_writer',env)) as c:c.execute(statement)
+    for key in ('web_reader','registration_writer','registry_reader','operation_writer','lifecycle_writer'):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            with psycopg.connect(deployment.connection_info(key,env)) as c:c.execute('SELECT * FROM netbox_sync.auth_state')

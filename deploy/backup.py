@@ -31,7 +31,7 @@ RESTORE_BOOTSTRAP_FILE = 'postgres_bootstrap_password_next'
 FORMAT_VERSION = 1
 ALEMBIC_CHAIN = (
     '0001_registry_baseline', '0002_sync_run_history', '0003_netbox_sync_naming',
-    '0004_source_operations', '0005_source_tombstones')
+    '0004_source_operations', '0005_source_tombstones', '0006_auth_policy')
 ALEMBIC_HEAD = ALEMBIC_CHAIN[-1]
 PRODUCT = 'NetBox Sync'
 DATABASE_NAME = 'netbox_sync'
@@ -52,12 +52,12 @@ VALID_BROKER_XATTR_SETS = frozenset({
     frozenset(BROKER_XATTRS),
 })
 PAYLOAD_FILES = ('database.dump', 'state.tar', 'manifest.json')
-FOUNDATION_TABLES = ('alembic_version', 'schema_meta', 'source_operations',
+FOUNDATION_TABLES = ('alembic_version', 'auth_audit', 'auth_state', 'schema_meta', 'source_operations',
                      'source_tombstones', 'sources', 'sync_runs')
 SAFE_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
 SAFE_SCHEMA = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,62}$')
 MAINTENANCE_SERVICES = (
-    'netbox-sync-proxy', 'netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker', 'netbox-sync-discovery-worker',
+    'netbox-sync-auth-worker', 'netbox-sync-proxy', 'netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker', 'netbox-sync-discovery-worker',
     'netbox-sync-apply-worker', 'netbox-sync-schedule-worker')
 HOST_LOCAL_COMPOSE_KEYS = (
     'NETBOX_SYNC_COMPOSE_PROJECT', 'NETBOX_SYNC_IMAGE', 'NETBOX_SYNC_CONFIG_DIR',
@@ -488,6 +488,9 @@ class DatabaseTool:
             f'(SELECT count(*) FROM {SCHEMA_NAME}.source_tombstones)')
         if values != ['0|0']:
             raise BackupError('fresh restore target contains operation or tombstone rows')
+        auth = self.query(f"SELECT value->'principal' = 'null'::jsonb FROM {SCHEMA_NAME}.auth_state WHERE id=1")
+        if auth != ['t']:
+            raise BackupError('fresh restore target already has an administrative identity')
 
     def validate_foundation_target(self):
         """Reject unknown schemas even when their application tables are empty."""
@@ -496,6 +499,13 @@ class DatabaseTool:
             f"FROM pg_tables WHERE schemaname='{SCHEMA_NAME}'")
         if values != [','.join(FOUNDATION_TABLES)]:
             raise BackupError('fresh restore target is not an exact Foundation schema')
+
+    def revoke_restored_auth(self):
+        # Durable identities/policy/audit survive; old capabilities do not.
+        cleared = json.dumps({'sessions': {}, 'invitation': None, 'receipts': {}, 'attempts': [],
+                              'mode': 'legacy', 'ceiling': None, 'changes': {}})
+        self.query(f"UPDATE {SCHEMA_NAME}.auth_state SET value=value || '{cleared}'::jsonb")
+        self.query(f"INSERT INTO {SCHEMA_NAME}.auth_audit(event) VALUES ('{{\"action\":\"restore.requires_policy_approval\"}}'::jsonb)")
 
     def reconcile_operations(self):
         """Restored process/confirmation state cannot authorize resumption or apply."""
@@ -707,8 +717,10 @@ def verify_bundle(bundle, database=None, require_complete=True):
     if archived_payload != archived:
         raise BackupError('backup archive and manifest file sets differ')
     config_sets = [{f'config/{name}' for name in CONFIG_FILES}]
+    if manifest['alembic_revision'] in ALEMBIC_CHAIN[:-1]:
+        config_sets.append({f'config/{name}' for name in CONFIG_FILES if name != 'auth.env'})
     if manifest['alembic_revision'] in ALEMBIC_CHAIN[:3]:
-        config_sets.append({f'config/{name}' for name in CONFIG_FILES if name != 'broker.env'})
+        config_sets.append({f'config/{name}' for name in CONFIG_FILES if name not in ('broker.env', 'auth.env')})
     if set(manifest['config_files']) not in config_sets:
         raise BackupError('backup canonical configuration list is invalid')
     if not set(manifest['config_files']).issubset(archived):
@@ -937,6 +949,21 @@ def _extend_ui6_restored_configuration(stage):
     })
 
 
+def _extend_auth_restored_configuration(stage):
+    config = stage / 'config'
+    if (config/'auth.env').exists():
+        return
+    api = _read_env(config/'api.env')
+    _, _, make_conninfo = _libpq()
+    password = install.ensure_secret(stage/'secrets/infrastructure/auth_writer_password')
+    install.write_config(config/'auth.env', {
+        'NETBOX_SYNC_REGISTRY_SCHEMA': api['NETBOX_SYNC_REGISTRY_SCHEMA'],
+        'NETBOX_SYNC_AUTH_WRITER_DSN': make_conninfo(api['NETBOX_SYNC_REGISTRY_DSN'],
+            user='netbox_sync_auth_writer', password=password),
+        **{k:v for k,v in api.items() if k.startswith('NETBOX_SYNC_ONBOARDING_')},
+    })
+
+
 def _extend_bootstrap_restored_configuration(stage):
     """Older bundles enter first-run explicitly; never infer readiness from env."""
     config = stage / 'config'
@@ -1070,6 +1097,13 @@ def _publish_restored_state(root, restored):
 
 def _preserve_host_local_config(root, restored):
     """Keep the new host's deployment identity while restoring portable config."""
+    target_auth = _read_env(root / 'config/auth.env')
+    keys = ('NETBOX_SYNC_ONBOARDING_ALLOWED_CIDRS','NETBOX_SYNC_ONBOARDING_DENIED_CIDRS',
+            'NETBOX_SYNC_ONBOARDING_ALLOWED_HOSTS','NETBOX_SYNC_ONBOARDING_ALLOWED_SUFFIXES')
+    limits = {key:target_auth.get(key, '') for key in keys}
+    auth_path = restored/'config/auth.env'
+    install._atomic_write(auth_path, install._merged_config(auth_path, limits, limits))
+
     current = _read_env(root / 'config/compose.env')
     values = {key: current[key] for key in HOST_LOCAL_COMPOSE_KEYS if key in current}
     incoming = restored / 'config/compose.env'
@@ -1101,7 +1135,7 @@ def restore_fresh(root, bundle, database, *, no_systemd=False, check_only=False)
     root, bundle = root.resolve(), bundle.resolve()
     database.preflight(maintenance=not check_only, no_systemd=no_systemd, restore=True)
     manifest = verify_bundle(bundle, database)
-    if 'config/broker.env' not in manifest['config_files']:
+    if any('config/'+name not in manifest['config_files'] for name in ('broker.env', 'auth.env')):
         _libpq()  # Old-format adaptation must not fail after maintenance begins.
     _require_gnu_tar()
     _compatible(manifest, database.postgres_major())
@@ -1123,6 +1157,7 @@ def restore_fresh(root, bundle, database, *, no_systemd=False, check_only=False)
         # Older bundles do not contain the new role secrets or broker env file.
         # Extend only the staged restored state, after its exact metadata was verified.
         _extend_ui6_restored_configuration(stage)
+        _extend_auth_restored_configuration(stage)
         _extend_bootstrap_restored_configuration(stage)
         _extend_tls_restored_configuration(stage,root)
         database.restore_fresh(
@@ -1130,6 +1165,7 @@ def restore_fresh(root, bundle, database, *, no_systemd=False, check_only=False)
         _run_deployment_tool(root, 'netbox-sync-migrate', postgres_mode=database.mode)
         _run_deployment_tool(root, 'netbox-sync-db-grants', postgres_mode=database.mode)
         database.reconcile_operations()
+        database.revoke_restored_auth()
         restored = database.metadata()
         if (restored['source_count'], restored['run_count']) != (
                 manifest['source_count'], manifest['run_count']):
@@ -1232,7 +1268,7 @@ def main(argv=None):
             restore_fresh(root, args.bundle, database, no_systemd=args.no_systemd,
                           check_only=args.check)
             print('restore check succeeded' if args.check else
-                  'fresh restore completed; runtime and timer remain stopped')
+                  'fresh restore completed; runtime checked; timer remains stopped')
     except PreflightError as exc:
         print(f'BACKUP_PREFLIGHT_FAILED: {exc}', file=sys.stderr)
         return 1

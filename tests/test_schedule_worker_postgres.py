@@ -1,5 +1,6 @@
 """Disposable PostgreSQL proof for the column-limited schedule writer."""
 
+import secrets
 import uuid
 
 import psycopg
@@ -23,7 +24,8 @@ def test_schedule_writer_column_privileges_and_optimistic_update():
     try:
         with psycopg.connect(dsn) as connection:
             cursor = connection.cursor()
-            cursor.execute(sql.SQL('CREATE ROLE {} LOGIN').format(sql.Identifier(role)))
+            password = secrets.token_urlsafe(32)
+            cursor.execute(sql.SQL('CREATE ROLE {} LOGIN PASSWORD {}').format(sql.Identifier(role),sql.Literal(password)))
             cursor.execute(sql.SQL('GRANT USAGE ON SCHEMA {} TO {}').format(
                 sql.Identifier(schema), sql.Identifier(role)))
             cursor.execute(sql.SQL('GRANT SELECT (source_instance, sync_enabled, '
@@ -34,7 +36,7 @@ def test_schedule_writer_column_privileges_and_optimistic_update():
                 sql.Identifier(schema), sql.Identifier(role)))
             cursor.execute(sql.SQL('CREATE TABLE {}.sync_runs (id INTEGER)').format(
                 sql.Identifier(schema)))
-        role_dsn = make_conninfo(dsn, user=role)
+        role_dsn = make_conninfo(dsn, user=role, password=password)
         store = ScheduleStore(role_dsn, schema)
         result = store.update(dict(source_instance='pve-infra-test', sync_enabled=False,
                                    sync_interval_seconds=300, expected_sync_enabled=True,

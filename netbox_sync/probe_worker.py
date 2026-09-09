@@ -12,6 +12,14 @@ CODES = frozenset({ErrorCode.SOURCE_DNS_FAILED, ErrorCode.SOURCE_TIMEOUT, ErrorC
 
 
 def handle(payload):
+    if set(payload) == {'credentials', 'session', 'revision'}:
+        from .api.auth import AuthClient
+        policy = AuthClient('/run/netbox-sync-auth/worker.sock').call('probe.authorize',
+            session=payload['session'], revision=payload['revision'])
+        payload = {'credentials': payload['credentials'], 'policy': policy['effective']}
+    else:
+        # No unauthenticated policy-bearing RPC in the production handler.
+        raise ControlError('AUTH_REQUIRED')
     if set(payload) != {'credentials', 'policy'}:
         raise ControlError('CONTROL_REQUEST_INVALID')
     try:
@@ -40,6 +48,24 @@ def remote_test(path, credentials, policy):
     except Exception:
         raise OnboardingError(ErrorCode.SOURCE_CONNECTION_FAILED) from None
     raise OnboardingError(code)
+
+
+def remote_test_authorized(path, credentials, session, revision):
+    from .auth_policy import AuthError, CODES as AUTH_CODES
+    try:
+        result = request(path, {'credentials': asdict(credentials), 'session': session,
+                              'revision': revision}, timeout=PROBE_DEADLINE + 3)['result']
+    except ControlError as exc:
+        if exc.code in AUTH_CODES:
+            raise AuthError(exc.code) from None
+        raise OnboardingError(ErrorCode.SOURCE_CONNECTION_FAILED) from None
+    if result == {'success': True}:
+        return
+    try:
+        code = ErrorCode(result['error'])
+    except Exception:
+        code = ErrorCode.SOURCE_CONNECTION_FAILED
+    raise OnboardingError(code if code in CODES else ErrorCode.SOURCE_CONNECTION_FAILED)
 
 
 if __name__ == '__main__':

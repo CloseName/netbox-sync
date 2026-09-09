@@ -126,10 +126,13 @@ def test_invalid_schema_fails_before_connection_use():
 
 def test_ui6_revisions_form_one_forward_only_chain():
     operations = _revision('0004_source_operations')
-    lifecycle = _revision('head')
+    lifecycle = _revision('0005_source_tombstones')
+    auth = _revision('head')
+    assert auth.revision == '0006_auth_policy'
+    assert auth.down_revision == lifecycle.revision
     assert operations.down_revision == '0003_netbox_sync_naming'
     assert lifecycle.revision == '0005_source_tombstones'
     assert lifecycle.down_revision == operations.revision
-    for revision in (operations, lifecycle):
+    for revision in (operations, lifecycle, auth):
         with pytest.raises(RuntimeError):
             revision.downgrade('netbox_sync_test')

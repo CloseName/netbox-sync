@@ -30,10 +30,10 @@ DATABASE_ROLES = {
     key: f'netbox_sync_{key}' for key in (
         'owner', 'web_reader', 'registration_writer', 'discovery_reader',
         'apply_registry_reader', 'registry_reader', 'run_writer', 'schedule_writer',
-        'operation_writer', 'lifecycle_writer')
+        'operation_writer', 'lifecycle_writer', 'auth_writer')
 }
 LEGACY_DATABASE_ROLES = {key: f'infra_sync_{key}' for key in DATABASE_ROLES
-                         if key not in {'operation_writer', 'lifecycle_writer'}}
+                         if key not in {'operation_writer', 'lifecycle_writer', 'auth_writer'}}
 NAMING_CONFIRMATION = 'RENAME_INFRA_SYNC_DATABASE_TO_NETBOX_SYNC'
 PASSWORD_FILES = {
     'bootstrap': 'postgres_bootstrap_password',
@@ -400,6 +400,14 @@ def apply_grants(environ=None):
             _grant_columns(cursor, 'UPDATE', sources,
                            ('sync_enabled', 'sync_interval_seconds'),
                            DATABASE_ROLES['schedule_writer'])
+
+            auth_role = sql.Identifier(DATABASE_ROLES['auth_writer'])
+            cursor.execute(sql.SQL('GRANT SELECT, UPDATE (value) ON {} TO {}').format(
+                sql.Identifier(schema, 'auth_state'), auth_role))
+            cursor.execute(sql.SQL('GRANT INSERT ON {} TO {}').format(
+                sql.Identifier(schema, 'auth_audit'), auth_role))
+            cursor.execute(sql.SQL('GRANT USAGE ON SEQUENCE {} TO {}').format(
+                sql.Identifier(schema, 'auth_audit_id_seq'), auth_role))
 
             operations = sql.Identifier(schema, 'source_operations')
             tombstones = sql.Identifier(schema, 'source_tombstones')

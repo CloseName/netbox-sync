@@ -1,6 +1,7 @@
 """Opt-in disposable PostgreSQL coverage for durable run history."""
 
 from datetime import datetime, timedelta, timezone
+import secrets
 import uuid
 
 from alembic import command
@@ -105,7 +106,8 @@ def test_narrow_run_writer_can_only_insert_and_finalize_history(history_database
     role = 'netbox_sync_test_run_writer_' + uuid.uuid4().hex
     table = sql.Identifier(repository.schema, 'sync_runs')
     with psycopg.connect(dsn) as connection:
-        connection.execute(sql.SQL('CREATE ROLE {} LOGIN').format(sql.Identifier(role)))
+        password = secrets.token_urlsafe(32)
+        connection.execute(sql.SQL('CREATE ROLE {} LOGIN PASSWORD {}').format(sql.Identifier(role), sql.Literal(password)))
         connection.execute(sql.SQL('GRANT USAGE ON SCHEMA {} TO {}').format(
             sql.Identifier(repository.schema), sql.Identifier(role)))
         connection.execute(sql.SQL('GRANT SELECT ON {} TO {}').format(
@@ -120,7 +122,7 @@ def test_narrow_run_writer_can_only_insert_and_finalize_history(history_database
             blocked_count, ignored_count, unsupported_count, retain_only_count,
             error_code, error_message_safe) ON {} TO {}''').format(
                 table, sql.Identifier(role)))
-    writer = RunRepository(lambda: psycopg.connect(make_conninfo(dsn, user=role)),
+    writer = RunRepository(lambda: psycopg.connect(make_conninfo(dsn, user=role, password=password)),
                            repository.schema)
     try:
         started = writer.start_run('pve-test', 'proxmox', 'manual', 'web/manual')
@@ -133,7 +135,7 @@ def test_narrow_run_writer_can_only_insert_and_finalize_history(history_database
                           sql.SQL("UPDATE {} SET value='2'").format(
                               sql.Identifier(repository.schema, 'schema_meta'))):
             with pytest.raises(psycopg.errors.InsufficientPrivilege), psycopg.connect(
-                    make_conninfo(dsn, user=role)) as connection:
+                    make_conninfo(dsn, user=role, password=password)) as connection:
                 connection.execute(statement)
     finally:
         with psycopg.connect(dsn) as connection:
