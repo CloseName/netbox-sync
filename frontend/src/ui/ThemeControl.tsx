@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { applyTheme, readTheme, themeKey, themePreference } from "./theme";
-export function ThemeControl() {
+export function ThemeControl({language="en"}:{language?:"en"|"ru"}) {
   const [preference, setPreference] = useState(readTheme);
   useEffect(() => {
     applyTheme(preference);
@@ -19,7 +19,7 @@ export function ThemeControl() {
   }, []);
   return (
     <label className="theme-control">
-      Theme
+      {language==="ru"?"Тема":"Theme"}
       <select
         value={preference}
         onChange={(event) => {
@@ -33,9 +33,9 @@ export function ThemeControl() {
           }
         }}
       >
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
-        <option value="system">System</option>
+        <option value="light">{language==="ru"?"Светлая":"Light"}</option>
+        <option value="dark">{language==="ru"?"Тёмная":"Dark"}</option>
+        <option value="system">{language==="ru"?"Системная":"System"}</option>
       </select>
     </label>
   );
