@@ -140,11 +140,21 @@ class BrokerSecretStore:
             self._operations.pop(receipt.key, None)
 
 
-def test_proxmox(credentials, policy=None):
+def test_proxmox(credentials, policy=None, probe_socket=""):
     """Run an isolated bounded version GET with mandatory egress validation."""
-    run_connection_test(credentials, policy)
+    if probe_socket:
+        from ..probe_worker import remote_test
+        from .egress import EgressPolicy
+        remote_test(probe_socket, credentials, policy or EgressPolicy())
+    else:
+        run_connection_test(credentials, policy)
 
 
-def test_esxi(credentials, policy=None):
+def test_esxi(credentials, policy=None, probe_socket=""):
     """Run an isolated bounded version probe and ephemeral SOAP session."""
-    run_connection_test(credentials, policy)
+    if probe_socket:
+        from ..probe_worker import remote_test
+        from .egress import EgressPolicy
+        remote_test(probe_socket, credentials, policy or EgressPolicy())
+    else:
+        run_connection_test(credentials, policy)

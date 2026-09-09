@@ -268,8 +268,8 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
     )
     source_service = source_service or SourceVisibilityService(ActiveSourceReader(settings))
     onboarding_service = onboarding_service or SourceOnboardingService(
-        {'proxmox': partial(test_proxmox, policy=settings.egress_policy),
-         'esxi': partial(test_esxi, policy=settings.egress_policy)}, EphemeralOnboardingStore(),
+        {'proxmox': partial(test_proxmox, policy=settings.egress_policy, probe_socket=settings.probe_socket),
+         'esxi': partial(test_esxi, policy=settings.egress_policy, probe_socket=settings.probe_socket)}, EphemeralOnboardingStore(),
         LifecycleRegistrationRegistry(settings.registration_dsn, settings.registry_schema),
         BrokerSecretStore(settings.broker_socket),
     )

@@ -103,7 +103,7 @@ def execute(credentials, policy):
             probe_esxi(credentials, host, context)
 
 
-def run_connection_test(credentials, policy=None, popen=subprocess.Popen):
+def run_connection_test(credentials, policy=None, popen=subprocess.Popen, *, child_uid=None):
     """Kill/reap probe on whole-operation timeout, including DNS and initial TLS probe."""
     # Credentials use stdin only, never argv/environment/disk. No production DSN
     # or broker configuration is inherited by the disposable child.
@@ -111,10 +111,11 @@ def run_connection_test(credentials, policy=None, popen=subprocess.Popen):
                if key in ('PATH', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL')}
     environ['PYTHONDONTWRITEBYTECODE'] = '1'
     payload = json.dumps({'credentials': asdict(credentials), 'policy': asdict(policy or EgressPolicy())}).encode()
+    identity = {} if child_uid is None else {'user': child_uid, 'group': child_uid, 'extra_groups': []}
     try:
         with popen([sys.executable, '-B', '-m', 'netbox_sync.api.connection_probe'],
                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                   env=environ) as process:
+                   env=environ, **identity) as process:
             try:
                 output, _ = process.communicate(payload, timeout=PROBE_DEADLINE)
             except subprocess.TimeoutExpired:

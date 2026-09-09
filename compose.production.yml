@@ -86,7 +86,10 @@ services:
     user: "10001:10001"
     command: [python, -m, netbox_sync.web_runtime, serve]
     env_file: ${NETBOX_SYNC_CONFIG_DIR:-./deploy/examples}/api.env
+    environment:
+      NETBOX_SYNC_PROBE_SOCKET: /run/netbox-sync-probe/worker.sock
     volumes:
+      - netbox-sync-probe-socket:/run/netbox-sync-probe:ro
       - netbox-sync-http-socket:/run/netbox-sync-http
       - netbox-sync-broker-socket:/run/netbox-sync-broker:ro
       - netbox-sync-lifecycle-socket:/run/netbox-sync-lifecycle:ro
@@ -102,6 +105,18 @@ services:
       timeout: 3s
       retries: 3
       start_period: 15s
+
+  # The API stays DB-only. This isolated service can only perform ephemeral probes.
+  netbox-sync-probe-worker:
+    container_name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}-probe-worker
+    <<: *app
+    user: "0:0"
+    command: [python, -m, netbox_sync.probe_worker]
+    networks: [netbox-sync-probe-egress]
+    cap_add: [SETUID, SETGID, CHOWN, KILL]
+    volumes:
+      - netbox-sync-probe-socket:/run/netbox-sync-probe
+    restart: unless-stopped
 
   netbox-sync-secret-broker:
     container_name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}-secret-broker
@@ -263,6 +278,7 @@ services:
     restart: "no"
 
 volumes:
+  netbox-sync-probe-socket:
   netbox-sync-http-socket:
   netbox-sync-postgres:
     name: ${NETBOX_SYNC_POSTGRES_VOLUME:-netbox-sync-postgres-data}
@@ -274,6 +290,7 @@ volumes:
   netbox-sync-schedule-socket:
 
 networks:
+  netbox-sync-probe-egress:
   netbox-sync-db:
     internal: true
   netbox-sync-egress:

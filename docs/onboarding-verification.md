@@ -146,7 +146,7 @@ No naming migration is required for a canonical `netbox-sync` installation.
    with new container names while retaining their project/network/volume identities.
    The external socket remains `$ROOT/ingress/upstream.sock`; outer ingress owns public TLS.
 
-4. Verify nine running canonical containers, unchanged PostgreSQL volume and healthy API,
+4. Verify ten running canonical containers (including the isolated source probe worker), unchanged PostgreSQL volume and healthy API,
    new `current` release, timer enabled/active and HTTPS onboarding through shared ingress.
    Saved read/apply credentials should remain saved. Review/create missing fields with
    a separate short-lived setup token; verify its revocation status, revalidate and Finish.

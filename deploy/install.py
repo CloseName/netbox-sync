@@ -533,7 +533,7 @@ def prepare_stack(prepared):
 
 
 def _runtime_services():
-    return ('netbox-sync-proxy', 'netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker', 'netbox-sync-discovery-worker',
+    return ('netbox-sync-probe-worker', 'netbox-sync-proxy', 'netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker', 'netbox-sync-discovery-worker',
             'netbox-sync-apply-worker', 'netbox-sync-schedule-worker')
 
 

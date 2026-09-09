@@ -1,0 +1,48 @@
+"""Ephemeral source probe only: no DB, persistent credentials or host control."""
+from dataclasses import asdict
+from .local_control import serve, request, ControlError
+from .application.onboarding import PendingCredentials, OnboardingError
+from .application.observability import ErrorCode
+from .api.connection_probe import run_connection_test, PROBE_DEADLINE
+from .api.egress import EgressPolicy
+
+CODES = frozenset({ErrorCode.SOURCE_TIMEOUT, ErrorCode.SOURCE_TLS_FAILED,
+    ErrorCode.SOURCE_AUTH_FAILED, ErrorCode.SOURCE_DESTINATION_DENIED,
+    ErrorCode.SOURCE_CONNECTION_FAILED})
+
+
+def handle(payload):
+    if set(payload) != {'credentials', 'policy'}:
+        raise ControlError('CONTROL_REQUEST_INVALID')
+    try:
+        credentials = PendingCredentials(**payload['credentials'])
+        policy = EgressPolicy(**payload['policy'])
+        if credentials.source_type not in ('esxi', 'proxmox') or not isinstance(credentials.verify_ssl, bool):
+            raise ValueError()
+        run_connection_test(credentials, policy, child_uid=10001)
+        return {'success': True}
+    except OnboardingError as exc:
+        return {'error': exc.code.value if exc.code in CODES else ErrorCode.SOURCE_CONNECTION_FAILED.value}
+    except Exception:
+        return {'error': ErrorCode.SOURCE_CONNECTION_FAILED.value}
+
+
+def remote_test(path, credentials, policy):
+    try:
+        response = request(path, {'credentials': asdict(credentials), 'policy': asdict(policy)},
+                           timeout=PROBE_DEADLINE + 3)
+        result = response['result']
+        if result == {'success': True}:
+            return
+        code = ErrorCode(result['error'])
+        if set(result) != {'error'} or code not in CODES:
+            raise ValueError()
+    except Exception:
+        raise OnboardingError(ErrorCode.SOURCE_CONNECTION_FAILED) from None
+    raise OnboardingError(code)
+
+
+if __name__ == '__main__':
+    # Serial processing bounds concurrent children; request/read and probe deadlines
+    # are enforced independently. SO_PEERCRED allows only the API UID.
+    serve('/run/netbox-sync-probe/worker.sock', handle, allowed_uid=10001)

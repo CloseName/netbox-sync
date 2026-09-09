@@ -50,7 +50,7 @@ def test_canonical_compose_has_private_bundled_postgres_and_one_app_image():
     assert 'internal: true' in text
     assert 'x-app: &app' in text
     assert text.count('dockerfile: Dockerfile.web') == 1
-    assert text.count('container_name:') == 9
+    assert text.count('container_name:') == 10
     assert 'container_name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}-postgres' in text
     assert 'name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}' in text
     for service in ('netbox-sync-api', 'netbox-sync-discovery-worker',
