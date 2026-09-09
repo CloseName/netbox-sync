@@ -289,11 +289,16 @@ sync_compose exec -T netbox-sync-bootstrap-worker python -c \
 
 Expected additional CA only if the approved bundle was installed; invalid material
 must fail. This checks configuration, not live chain trust. The definitive container
-connection gate is the Web **Test connection and prerequisites** operation below.
+connection gate is the Web **Access check** operation below.
 
 Open `https://netbox-sync-test.indeed-id.hq`. Expect Welcome with no sources. Enter
 `https://netbox-test.indeed-id.hq` and distinct read/apply tokens, save, then test.
-Expected VALIDATED with all custom-field checks satisfied; Finish yields READY.
+Missing fields are expected on a clean NetBox. Review **Prepare NetBox**, provide a
+separate short-lived setup token, confirm the fixed create-only plan, then recheck access
+and Finish. Existing compatible fields are preserved; conflicts/provisioning or uncertain
+writes block completion. Revoke the setup token manually if the UI cannot confirm its
+revocation. See [contract and token lifecycle](prerequisite-contract.md).
+Successful independent validation permits Finish, which yields READY.
 Failure must remain gated with a safe error, never skip validation. No NetBox objects,
 VLANs/Prefixes, sources, provider tokens or infrastructure are created automatically.
 Do not begin source/provider rehearsal until this first-run gate passes. Real
@@ -301,3 +306,5 @@ Debian/systemd/reboot and real NetBox acceptance must be recorded separately fro
 repository automation; this runbook has not been executed on the VM by the agent.
 
 For a partial activation failure at proxy creation, see the [tmpfs recovery gates](proxy-tmpfs-recovery.md) before any retry.
+
+For the confirmed field-preparation flow and existing-container naming upgrade, see [onboarding verification and upgrade procedure](onboarding-verification.md).

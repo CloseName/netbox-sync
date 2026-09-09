@@ -36,12 +36,14 @@ need no env editing. This remains a pre-RBAC interface for a trusted operator ne
 1. Any application route enters Welcome while setup is incomplete. `/setup` is also
    a direct production SPA route. Unavailable state never unlocks the normal UI.
 2. Enter the NetBox HTTPS origin (no userinfo, path, query, or fragment) and two
-   distinct tokens. Save connection clears both password inputs. The checkbox makes
-   replacement of existing credentials deliberate.
-3. Test connection and prerequisites. Errors distinguish DNS/network, TLS, rejected
-   token, missing permissions, incompatible response and missing custom fields.
-4. Correct tokens or the listed NetBox fields, then validate again. No automatic
-   prerequisite writes occur; a partial set of fields remains incomplete.
+   distinct tokens. Save and check clears both password inputs. A saved connection is
+   collapsed; use Replace credentials to deliberately replace both values.
+3. Review separate network, TLS, authentication, preliminary permission and prerequisite
+   evidence. Missing fields on a clean NetBox are an expected preparation step.
+4. Review the fixed preparation plan. A separate temporary setup token and explicit
+   confirmation authorize creation of missing compatible fields only. Conflicts and
+   provisioning block readiness. Reconcile an uncertain result before any new attempt.
+   See [prerequisite contract and token lifecycle](prerequisite-contract.md).
 5. Review the destination and Finish within five minutes of successful validation.
    Finish is idempotent. It changes readiness only; it performs no synchronization.
 6. Normal Overview/Sources shows zero sources. Add Source remains the sole source
@@ -66,7 +68,7 @@ read-only evidence, **not proof of every object-specific change permission or of
 absence of account-level delete rights**. The operator must review permissions; actual
 planning/apply retain their existing target, scope and stale-plan guards.
 
-The exact managed custom-field contract is `bootstrap_probe.FIELDS`, audited against
+The exact managed custom-field contract is `prerequisites.FIELDS` (versioned contract; `bootstrap_probe.FIELDS` is a compatibility import), audited against
 `netbox_metadata`, `netbox_vm_metadata`, `netbox_lxc_metadata` and
 `netbox_vm_interface_metadata`:
 
@@ -126,6 +128,7 @@ endpoint reports configuration readiness separately from live connectivity evide
 | Secret broker, UID 0 | Local source-file create/rollback and owned-file cleanup; no DSN or apply-lock mount | Literal `network_mode: none` |
 | Lifecycle worker, UID 0 | Existing lifecycle_writer only; source gates/tombstones; broker socket and shared apply lock; no provider/NetBox files | Internal DB bridge only by default |
 | Bootstrap worker, UID 0 | Only NetBox state, its own socket and shared apply lock; no DB roles or provider files | Egress bridge for validation |
+| Preparation child, UID 10001 | Explicit ephemeral setup token on stdin; no root-file access | Fixed custom-field create and exact setup-token revocation only |
 | Validation child, UID 10001 | Explicit stdin payload, no inherited DSNs; no root-file access | Bounded GET/OPTIONS probe |
 | Discovery/apply supervisors | Existing privileges; read selected bootstrap token immediately before child execution | Existing DB/egress bridges |
 

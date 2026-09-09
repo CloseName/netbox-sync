@@ -68,7 +68,7 @@ was not applied; the existing group configuration passed without capability expa
 
 The clean Debian/systemd/reboot rehearsal and UI-6 real Proxmox/ESXi acceptance remain
 pending on the upcoming explicitly authorized disposable VM. Repository tests do not
-replace that acceptance. NetBox prerequisite creation is deliberately manual and visible.
+replace that acceptance. The original manual prerequisite boundary is being extended by the fixed-contract preparation flow; see [prerequisite contract](prerequisite-contract.md). Its new Docker/Linux evidence is recorded separately in [onboarding verification](onboarding-verification.md); the historical results above do not validate that extension.
 Read-only GET/OPTIONS evidence cannot prove every object-level PATCH permission or the
 absence of delete rights; operator permission review remains required. LDAPS/RBAC,
 automatic certificate issuance and IPv6-only NetBox validation are outside this stage.
