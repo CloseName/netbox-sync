@@ -32,6 +32,9 @@ class FakeDatabase:
         self.restore_calls = 0
         self.restored_schema = None
 
+    def preflight(self, **_kwargs):
+        pass
+
     def metadata(self):
         return {
             'postgres_major': self.major, 'alembic_revision': self.revision,
@@ -716,3 +719,84 @@ def test_manifest_rejects_unsafe_identity_before_restore(bundle_setup):
     backup._write_checksums(bundle)
     with pytest.raises(backup.BackupError, match='recorded deployment path'):
         backup.verify_bundle(bundle, database)
+
+
+def test_host_contract_does_not_import_application():
+    import subprocess
+    import sys
+    result = subprocess.run([sys.executable, '-S', '-c',
+        "import sys; from deploy import backup; "
+        "assert 'netbox_sync' not in sys.modules; "
+        "assert 'psycopg' not in sys.modules; "
+        "assert backup.main(['--help']) is None"],
+        cwd=ROOT, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert 'preflight' in result.stdout
+    assert backup.PASSWORD_FILES == deployment.PASSWORD_FILES
+    assert backup.RESTORE_BOOTSTRAP_FILE == deployment.RESTORE_BOOTSTRAP_FILE
+
+
+def test_missing_optional_libpq_has_actionable_secret_free_error(monkeypatch):
+    import builtins
+    original = builtins.__import__
+    def missing(name, *args, **kwargs):
+        if name.startswith('psycopg'):
+            raise ModuleNotFoundError('must not reveal this detail')
+        return original(name, *args, **kwargs)
+    monkeypatch.setattr(builtins, '__import__', missing)
+    with pytest.raises(backup.PreflightError, match='isolated host-tools') as result:
+        backup._libpq()
+    assert 'must not reveal' not in str(result.value)
+
+
+def test_preflight_failure_precedes_any_backup_maintenance(bundle_setup, monkeypatch):
+    root, database = bundle_setup
+    def unavailable(**_kwargs):
+        raise backup.PreflightError('PostgreSQL client unavailable: pg_dump')
+    database.preflight = unavailable
+    monkeypatch.setattr(backup, 'Maintenance', lambda *a, **k: pytest.fail('maintenance started'))
+    with pytest.raises(backup.PreflightError, match='pg_dump'):
+        backup.create_backup(root, root / 'backups', database)
+    assert list((root / 'backups').iterdir()) == []
+
+
+def test_old_restore_checks_optional_dependency_before_maintenance(tmp_path, monkeypatch):
+    database = FakeDatabase()
+    monkeypatch.setattr(backup, 'verify_bundle', lambda *a: {'config_files': []})
+    def unavailable():
+        raise backup.PreflightError('isolated host-tools dependencies required')
+    monkeypatch.setattr(backup, '_libpq', unavailable)
+    monkeypatch.setattr(backup, 'Maintenance', lambda *a, **k: pytest.fail('maintenance started'))
+    with pytest.raises(backup.PreflightError, match='isolated host-tools'):
+        backup.restore_fresh(tmp_path, tmp_path / 'bundle', database)
+
+
+def test_preflight_reports_missing_host_executable_without_mutation(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(backup, '_require_gnu_tar', lambda: None)
+    monkeypatch.setattr(backup.os, 'name', 'posix')
+    monkeypatch.setattr(backup.shutil, 'which', lambda name: None)
+    # Call the boundary directly: Path's host flavour must remain unchanged on Windows.
+    tool = backup.DatabaseTool(tmp_path)
+    with pytest.raises(backup.PreflightError, match='docker'):
+        tool.preflight()
+
+
+def test_cli_preflight_error_is_actionable_and_does_not_leak(tmp_path, monkeypatch, capsys):
+    class Unavailable:
+        def preflight(self, **kwargs):
+            raise backup.PreflightError('Docker Linux Engine is unavailable.')
+    monkeypatch.setattr(backup, 'DatabaseTool', lambda *a: Unavailable())
+    assert backup.main(['--root', str(tmp_path), 'preflight']) == 1
+    assert 'BACKUP_PREFLIGHT_FAILED: Docker Linux Engine is unavailable.' in capsys.readouterr().err
+
+
+def test_external_verify_preflight_does_not_require_live_db_or_docker(tmp_path, monkeypatch):
+    tool = backup.DatabaseTool(tmp_path, 'external', {'NETBOX_SYNC_BACKUP_DSN': 'dbname=fixture'})
+    monkeypatch.setattr(backup.os, 'name', 'posix')
+    monkeypatch.setattr(tool, '_environment', lambda: {})
+    monkeypatch.setattr(tool, 'metadata', lambda: pytest.fail('offline verification read live DB'))
+    monkeypatch.setattr(backup.subprocess, 'run', lambda *a, **k: pytest.fail('unexpected host command'))
+    calls = []
+    monkeypatch.setattr(tool, '_run', lambda executable, *a, **k: calls.append(executable))
+    tool.preflight()
+    assert calls == ['pg_restore']

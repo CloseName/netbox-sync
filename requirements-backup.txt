@@ -1,0 +1,2 @@
+# Optional isolated host tools: external PostgreSQL or pre-UI-6 restore only.
+psycopg[binary]==3.3.5

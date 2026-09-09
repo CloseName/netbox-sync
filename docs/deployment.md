@@ -63,9 +63,11 @@ existing password. Do not copy secrets into a release directory.
 
 ## Fresh Debian foundation
 
-Prerequisites are Python 3.10+, Docker Engine with Compose v2, systemd, OpenSSL, `flock` and
+Prerequisites are Python 3.10+, Docker Engine with Compose v2, systemd, OpenSSL, GNU tar, `flock` and
 `install`. The installer itself uses only the Python standard library; database and
-migration code runs inside the application image.
+migration code runs inside the application image. Bundled backup/verify/inspect and
+current-format restore also use only host stdlib; see [host backup preflight and
+pre-upgrade recovery](backup-restore.md#host-dependencies-and-preflight).
 
 Use the exact [DNS/TLS clean-install runbook](clean-install-tls-runbook.md).
 [HTTPS and CA trust](tls.md) define required material, permissions and upgrades.

@@ -17,14 +17,15 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from psycopg import pq
-from psycopg.conninfo import conninfo_to_dict, make_conninfo
-
 if __package__ in (None, ''):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from deploy import install
-from netbox_sync.deployment import PASSWORD_FILES, RESTORE_BOOTSTRAP_FILE
+# Reuse the installer's stdlib-only role contract. Importing netbox_sync.deployment
+# would execute the application package (provider SDKs, psycopg, Alembic, SQLAlchemy).
+PASSWORD_FILES = {'bootstrap': 'postgres_bootstrap_password',
+                  **{role: role + '_password' for role in install.ROLE_USERS}}
+RESTORE_BOOTSTRAP_FILE = 'postgres_bootstrap_password_next'
 
 
 FORMAT_VERSION = 1
@@ -94,6 +95,24 @@ def _compose_command(root, *arguments, mode='bundled'):
 
 def _utc_now():
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+
+
+class PreflightError(BackupError):
+    """Only fixed, secret-free prerequisite diagnostics may use this exception."""
+
+
+def _libpq():
+    # Required only for external DSN parsing and pre-UI-6 restore adaptation.
+    # Keep libpq's parser: never replace it with an incomplete custom DSN parser.
+    try:
+        from psycopg import pq
+        from psycopg.conninfo import conninfo_to_dict, make_conninfo
+    except ImportError as exc:
+        raise PreflightError(
+            'This operation requires isolated host-tools dependencies. Prepare the '
+            'venv described in docs/backup-restore.md and use its Python; '
+            'bundled create/verify/inspect need only Python standard library.') from exc
+    return pq, conninfo_to_dict, make_conninfo
 
 
 def _application_version():
@@ -273,6 +292,61 @@ class DatabaseTool:
         if mode == 'external' and not self.environ.get('NETBOX_SYNC_BACKUP_DSN', '').strip():
             raise BackupError('external PostgreSQL backup DSN is not configured')
 
+    def preflight(self, *, maintenance=False, no_systemd=False, restore=False):
+        """Read-only dependency/transport checks, before any maintenance mutation."""
+        if maintenance or restore:
+            try:
+                _require_gnu_tar()
+            except (BackupError, OSError) as exc:
+                raise PreflightError('GNU tar is required on the backup/restore host.') from exc
+        if sys.version_info < (3, 10) or os.name != 'posix':
+            raise PreflightError('Python 3.10+ on a Linux host is required.')
+        if self.mode == 'external':
+            self._environment()  # dependency and libpq DSN validation; never print it
+        needs_stack = self.mode == 'bundled' or maintenance or restore
+        required = ['docker'] if needs_stack else []
+        if restore:
+            required.append('openssl')
+        if maintenance and not no_systemd:
+            required.append('systemctl')
+        for executable in required:
+            if shutil.which(executable) is None:
+                raise PreflightError('Required host executable is missing: ' + executable)
+        checks = [(['docker', 'compose', 'version'], 'Docker Compose is unavailable.'),
+                  (['docker', 'info', '--format', '{{.OSType}}'], 'Docker Linux Engine is unavailable.'),
+                  (_compose_command(self.root, 'config', '--quiet', mode=self.mode),
+                   'Installed Compose configuration is invalid or unavailable.')] if needs_stack else []
+        if maintenance:
+            import fcntl  # POSIX shared apply lock; checked before stopping the timer
+            if not no_systemd:
+                install.validate_systemd_root(self.root)
+                checks.append((['systemctl', 'show', 'netbox-sync.timer',
+                                '--property=LoadState', '--value'],
+                               'Cannot query the installed systemd timer.'))
+        for command, message in checks:
+            try:
+                result = subprocess.run(command, capture_output=True, check=False, timeout=30)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                raise PreflightError(message) from exc
+            if result.returncode:
+                raise PreflightError(message)
+            if command[:2] == ['docker', 'info'] and result.stdout.strip() != b'linux':
+                raise PreflightError('Docker must target the Linux Engine.')
+            if command[0] == 'systemctl' and result.stdout.strip() != b'loaded':
+                raise PreflightError('The installed netbox-sync.timer unit is not loaded.')
+        clients = ('psql', 'pg_dump', 'pg_restore') if maintenance or restore else ('pg_restore',)
+        for executable in clients:
+            try:
+                self._run(executable, ('--version',), text=True)
+            except (BackupError, OSError) as exc:
+                raise PreflightError('PostgreSQL client unavailable: ' + executable +
+                                     '; check the running bundled postgres service or external client installation.') from exc
+        if maintenance or restore:
+            try:
+                self.metadata()
+            except (BackupError, OSError) as exc:
+                raise PreflightError('Cannot read the installed database metadata; check PostgreSQL availability and credentials.') from exc
+
     def _command(self, executable, *arguments):
         if self.mode == 'bundled':
             return _compose_command(
@@ -286,6 +360,7 @@ class DatabaseTool:
     def _environment(self):
         environment = self.environ.copy()
         if self.mode == 'external':
+            pq, conninfo_to_dict, _ = _libpq()
             dsn = environment.pop('NETBOX_SYNC_BACKUP_DSN')
             try:
                 settings = conninfo_to_dict(dsn)
@@ -308,6 +383,7 @@ class DatabaseTool:
     def _restore_connection_arguments(self):
         if self.mode != 'external':
             return '--username', 'netbox_sync_bootstrap', '--dbname', DATABASE_NAME
+        _, conninfo_to_dict, _ = _libpq()
         try:
             database = conninfo_to_dict(self.environ['NETBOX_SYNC_BACKUP_DSN']).get('dbname')
         except Exception as exc:  # pylint: disable=broad-exception-caught
@@ -751,7 +827,7 @@ def create_backup(  # pylint: disable=too-many-arguments
         root, output, database, *, release_id=None, no_systemd=False, now=None):
     """Create, verify and atomically publish one standard backup directory."""
     root, output = root.resolve(), output.resolve()
-    _require_gnu_tar()
+    database.preflight(maintenance=True, no_systemd=no_systemd)
     _validate_canonical_files(root)
     if output == root / 'config' or output == root / 'secrets' \
             or root / 'config' in output.parents or root / 'secrets' in output.parents:
@@ -846,6 +922,7 @@ def _extend_ui6_restored_configuration(stage):
     schema = discovery.get('NETBOX_SYNC_REGISTRY_SCHEMA')
     if schema != SCHEMA_NAME:
         raise BackupError('restored lifecycle schema is unsupported')
+    _, _, make_conninfo = _libpq()
     dsns = {}
     for role in ('operation_writer','lifecycle_writer'):
         password = install.ensure_secret(stage / 'secrets/infrastructure' / PASSWORD_FILES[role])
@@ -1022,7 +1099,10 @@ def _start_restored_runtime(root, postgres_mode):
 def restore_fresh(root, bundle, database, *, no_systemd=False, check_only=False):
     """Verify or restore a bundle into a Foundation-only empty destination."""
     root, bundle = root.resolve(), bundle.resolve()
+    database.preflight(maintenance=not check_only, no_systemd=no_systemd, restore=True)
     manifest = verify_bundle(bundle, database)
+    if 'config/broker.env' not in manifest['config_files']:
+        _libpq()  # Old-format adaptation must not fail after maintenance begins.
     _require_gnu_tar()
     _compatible(manifest, database.postgres_major())
     _validate_canonical_files(root)
@@ -1094,6 +1174,7 @@ def parse_args(argv=None):
     parser.add_argument('--postgres-mode', choices=('bundled', 'external'), default='bundled')
     parser.add_argument('--no-systemd', action='store_true', help=argparse.SUPPRESS)
     commands = parser.add_subparsers(dest='command', required=True)
+    commands.add_parser('preflight', help='Read-only bundled/external backup readiness check')
     create = commands.add_parser('create')
     create.add_argument('--output', type=Path)
     verify = commands.add_parser('verify')
@@ -1128,16 +1209,21 @@ def main(argv=None):
                                      sort_keys=True))
             return 0
         database = DatabaseTool(root, args.postgres_mode)
-        if args.command == 'create':
+        if args.command == 'preflight':
+            database.preflight(maintenance=True, no_systemd=args.no_systemd)
+            print('backup preflight succeeded; no services or timer changed')
+        elif args.command == 'create':
             if os.name != 'posix' or getattr(os, 'geteuid', lambda: -1)() != 0:
                 raise BackupError('backup creation requires root on the supported Debian host')
             bundle = create_backup(root, args.output or root / 'backups', database,
                                    no_systemd=args.no_systemd)
             print(f'backup complete: {bundle}')
         elif args.command == 'verify':
+            database.preflight()
             verify_bundle(args.bundle, database)
             print('backup verification succeeded')
         elif args.command == 'inspect':
+            database.preflight()
             print(json.dumps(inspect_bundle(args.bundle, database), sort_keys=True, indent=2))
         elif args.command == 'restore':
             if (not args.check and
@@ -1147,6 +1233,9 @@ def main(argv=None):
                           check_only=args.check)
             print('restore check succeeded' if args.check else
                   'fresh restore completed; runtime and timer remain stopped')
+    except PreflightError as exc:
+        print(f'BACKUP_PREFLIGHT_FAILED: {exc}', file=sys.stderr)
+        return 1
     except (BackupError, install.InstallError, OSError, subprocess.SubprocessError) as exc:
         code = _failure_code(args.command, exc)
         print(f'{code}: backup/restore operation failed safely; '

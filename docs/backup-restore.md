@@ -13,6 +13,101 @@ corporate backup system, and move that encrypted copy off the NetBox Sync VM. Ne
 Sync does not invent an encryption format and does not delete or retain old backups
 automatically.
 
+## Host dependencies and preflight
+
+Bundled PostgreSQL `create`, `verify`, `inspect`, `list`, and current-format restore
+run with Debian Python 3.10+ standard library only. Do not install the application,
+provider SDKs, Alembic or SQLAlchemy on the host. The installer checks GNU tar and
+OpenSSL as well as Docker/Compose and util-linux. PostgreSQL `psql`, `pg_dump` and
+`pg_restore` run in the **installed** bundled `postgres` container, with no published
+DB port. GNU tar preserves owners/modes/xattrs; Python `fcntl` uses the existing
+shared apply lock. Docker CLI/Compose and a reachable Linux daemon are required;
+systemctl coordinates the real installed timer for maintenance. OpenSSL and Python
+ssl validate TLS on restore. Application migration/role tooling runs only in the
+existing dedicated tool containers. No Docker socket is added to app containers.
+
+`preflight` is read-only and uses the selected root's current Compose configuration.
+It checks tools, Compose/daemon, DB clients/connectivity/metadata, and the loaded
+systemd timer before maintenance. `create` and `restore` repeat their checks before
+stopping anything. A known prerequisite failure prints `BACKUP_PREFLIGHT_FAILED`
+with a fixed actionable diagnostic; database exceptions, DSNs and secrets remain
+redacted. This is a point-in-time check, not a promise against later runtime failure.
+
+Only external-PostgreSQL DSN parsing and adaptation of pre-UI-6 restore bundles
+(missing `config/broker.env`) need psycopg/libpq. Keep its real DSN parser; do not
+replace it with shell parsing. For either advanced path prepare an isolated venv:
+
+```sh
+# Debian operator preparation; no global pip and no --break-system-packages.
+sudo apt-get install python3-venv
+: "${TOOLS:?Set the full reviewed code directory, normally ROOT/current}"
+VENV="$ROOT/state/backup-libpq-v1"
+sudo python3 -m venv "$VENV"
+sudo "$VENV/bin/python" -m pip install -r "$TOOLS/requirements-backup.txt"
+# Use "$VENV/bin/python" instead of python3 for the backup commands below.
+```
+
+Here `TOOLS` is the reviewed code directory (normally `$ROOT/current`, or the
+pre-upgrade tool directory below). This environment is operator-owned, excluded
+from backup, and is not mounted into any service. Preparation failure is a stop
+condition. Older bundles remain supported; missing optional dependencies fail
+before their restore maintenance window. External PostgreSQL additionally needs
+compatible host `psql`, `pg_dump`, `pg_restore` and the protected maintenance DSN.
+
+## Backup release 6639c38 before upgrading it
+
+The original host script in `6639c38` imports psycopg unconditionally, then imports
+`netbox_sync.deployment` for two constants. Python executes `netbox_sync/__init__.py`
+first, transitively loading pynetbox, proxmoxer, pyvmomi, requests/urllib3 and
+psycopg, then deployment's Alembic/SQLAlchemy.
+Installing only psycopg would therefore not fix the complete host dependency chain.
+The repaired tool obtains the password contract from the stdlib installer and loads
+libpq only for the two advanced cases above.
+
+Use the **reviewed repaired tool** against the **old active installation**. Do not
+run `install.py`, including `--prepare-only`: preparation builds/provisions the DB
+and can stop the timer. Do not modify `current`, generate config, rotate credentials,
+change container names or replace a volume to make this backup. The tool selects
+Compose files through the old `current`, so maintenance resumes the old services.
+It records the active old release ID, not the repair tool's commit. On an unpackaged
+host `application_version` may be `unpackaged`; the exact active release is authoritative.
+
+After this fix has been reviewed and published (or its full trusted Git commit has
+been securely delivered to the existing checkout), run in **bash** as an operator:
+
+```bash
+set -euo pipefail
+ROOT=/netbox-sync-test
+: "${FIX_COMMIT:?Set the reviewed full host-backup-fix commit}"
+[[ "$FIX_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+test "$(git -C "$ROOT/repo" rev-parse "$FIX_COMMIT^{commit}")" = "$FIX_COMMIT"
+test "$(sudo readlink -f "$ROOT/current")" = "$ROOT/releases/6639c38b7b9fcf535624e06ecf91fa0ac7db3d6b"
+TOOLS="$ROOT/state/backup-tools-$FIX_COMMIT"
+sudo test ! -e "$TOOLS"
+sudo install -d -o root -g root -m 0755 "$TOOLS"
+git -C "$ROOT/repo" archive "$FIX_COMMIT" | sudo tar --no-same-owner -xf - -C "$TOOLS"
+sudo python3 "$TOOLS/deploy/backup.py" --root "$ROOT" preflight
+sudo python3 "$TOOLS/deploy/compose.py" --root "$ROOT" ps --status running --services
+systemctl is-active netbox-sync.timer || test "$?" -eq 3
+sudo python3 "$TOOLS/deploy/backup.py" --root "$ROOT" create
+# Set exactly the complete bundle path printed by create; never pick an old bundle by guess.
+: "${BUNDLE:?Set the newly created full backup directory path}"
+sudo python3 "$TOOLS/deploy/backup.py" --root "$ROOT" verify "$BUNDLE"
+sudo python3 "$TOOLS/deploy/backup.py" --root "$ROOT" inspect "$BUNDLE"
+sudo readlink -f "$ROOT/current"
+sudo python3 "$TOOLS/deploy/compose.py" --root "$ROOT" ps --status running --services
+systemctl is-active netbox-sync.timer || test "$?" -eq 3
+```
+
+Stop on any failure; do not proceed to upgrade. If `TOOLS` already exists, verify
+its provenance rather than overwriting it. Compare the before/after service list,
+timer state and `current`; inspect must report release `6639c38...` and revision
+`0005_source_tombstones`. Keep the complete protected bundle and its encrypted
+off-host copy. No env file or private key needs to be printed. The checkout must
+contain the entire reviewed commit; copying only `backup.py` into the old release
+is unsupported. This recovery path is specifically exercised against `6639c38`;
+it is not an unreviewed promise for arbitrary future/older installations.
+
 ## Persistent-state inventory
 
 The required state is:
@@ -20,13 +115,13 @@ The required state is:
 - a logical custom-format dump of database `netbox_sync`, including schema
   `netbox_sync`, `schema_meta`, `sources`, `sync_runs`, `alembic_version`, indexes,
   constraints and every application schema object;
-- `${ROOT}/config`: the seven canonical env files, preserved byte-for-byte,
+- `${ROOT}/config`: the canonical env files, preserved byte-for-byte,
   including unknown operator keys;
 - `${ROOT}/secrets/infrastructure`: the bootstrap and fixed runtime-role
   password files;
 - `${ROOT}/secrets/sources`: exact logical filenames and broker xattrs;
-- `${ROOT}/secrets/netbox`: separate read and apply token files when
-  configured;
+- `${ROOT}/secrets/netbox`: onboarding `bootstrap.json`, control state and separate read/apply token files
+  when configured;
 - a manifest identifying the active immutable release and deployment/database
   metadata.
 
@@ -76,15 +171,17 @@ directory and never touches a previous backup.
 
 ## Create, inspect, and verify
 
-Run from the active release as root:
+For a release containing the host-backup fix, run from the active release as root
+(use the recovery section above before updating an older installation):
 
 ```sh
 cd ${ROOT}/current
-sudo python deploy/backup.py create
-sudo python deploy/backup.py create --output /protected/backup-target
-sudo python deploy/backup.py verify ${ROOT}/backups/netbox-sync-backup-TIMESTAMP
-sudo python deploy/backup.py inspect ${ROOT}/backups/netbox-sync-backup-TIMESTAMP
-sudo python deploy/backup.py list
+sudo python3 deploy/backup.py --root "$ROOT" preflight
+sudo python3 deploy/backup.py --root "$ROOT" create
+sudo python3 deploy/backup.py --root "$ROOT" create --output /protected/backup-target
+sudo python3 deploy/backup.py --root "$ROOT" verify ${ROOT}/backups/netbox-sync-backup-TIMESTAMP
+sudo python3 deploy/backup.py --root "$ROOT" inspect ${ROOT}/backups/netbox-sync-backup-TIMESTAMP
+sudo python3 deploy/backup.py --root "$ROOT" list
 ```
 
 `inspect` and `list` expose only timestamp, application/release, source/run counts,
@@ -110,7 +207,7 @@ value without putting it in argv or source control:
 
 ```sh
 sudo --preserve-env=NETBOX_SYNC_BACKUP_DSN \
-  python deploy/backup.py --postgres-mode external create
+  "$VENV/bin/python" "$TOOLS/deploy/backup.py" --root "$ROOT" --postgres-mode external create
 ```
 
 The maintenance DSN must dump all NetBox Sync objects. Restore also requires permission
@@ -125,8 +222,8 @@ and no source/history/operation/tombstone rows. First perform a no-write check:
 
 ```sh
 cd ${ROOT}/current
-sudo python deploy/backup.py --root "$ROOT" restore /protected/netbox-sync-backup-TIMESTAMP --check
-sudo python deploy/backup.py --root "$ROOT" restore /protected/netbox-sync-backup-TIMESTAMP
+sudo python3 deploy/backup.py --root "$ROOT" restore /protected/netbox-sync-backup-TIMESTAMP --check
+sudo python3 deploy/backup.py --root "$ROOT" restore /protected/netbox-sync-backup-TIMESTAMP
 ```
 
 Restore verifies format, checksums, archive paths/types, xattr contract, dump

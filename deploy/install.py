@@ -125,9 +125,12 @@ def validate_prerequisites(*, require_systemd=True):
     """Verify required host tools without writing host state."""
     if sys.version_info < (3, 10):
         raise InstallError('Python 3.10 or newer is required')
-    for executable in ('docker', 'install', 'flock'):
+    for executable in ('docker', 'install', 'flock', 'tar', 'openssl'):
         if shutil.which(executable) is None:
             raise InstallError(f'required executable is missing: {executable}')
+    tar = run(['tar', '--version'], check=False, capture_output=True)
+    if tar.returncode or 'GNU tar' not in tar.stdout:
+        raise InstallError('GNU tar is required for supported backup/restore')
     result = run(['docker', 'compose', 'version'], check=False)
     if result.returncode:
         raise InstallError('Docker Compose v2 is required')

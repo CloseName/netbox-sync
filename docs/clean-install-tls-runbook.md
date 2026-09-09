@@ -44,6 +44,11 @@ sudo ss -ltnp '( sport = :80 or sport = :443 or sport = :8000 or sport = :5432 )
 
 Expected: Debian, Python >=3.10, rootful Docker/Compose v2-compatible plugin,
 systemd PID1, OpenSSL with `x509 -checkhost`, GNU tar, util-linux, Git/curl/CA trust.
+The installer checks GNU tar/OpenSSL for the supported backup path. No host pip
+installation is needed for bundled backup; after activation run
+`sudo python3 "$ROOT/current/deploy/backup.py" --root "$ROOT" preflight`.
+For an existing installation predating this fix, use the [pre-upgrade backup
+procedure](backup-restore.md#backup-release-6639c38-before-upgrading-it) first.
 Host time must be correct. No unrelated host account should use numeric ID 10001.
 Standalone requires free 80/443. External mode reserves those ports for the separately
 managed shared ingress, which may already be running. No Sync backend/database port
