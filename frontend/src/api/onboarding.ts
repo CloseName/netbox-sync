@@ -12,7 +12,7 @@ export const connectionMessages = {
   SOURCE_TIMEOUT: ['The source connection timed out. Check reachability and retry.', 'Источник не ответил вовремя. Проверьте доступность и повторите проверку.'],
   SOURCE_TLS_FAILED: ['TLS verification failed. Check certificate, hostname and trusted CA.', 'Ошибка проверки TLS. Проверьте сертификат, имя узла и доверенный центр сертификации.'],
   SOURCE_AUTH_FAILED: ['Authentication was rejected. Check username and password or token.', 'Источник отклонил вход. Проверьте пользователя и пароль или API-токен.'],
-  SOURCE_DESTINATION_DENIED: ['The destination is blocked by policy. Ask the operator to review the allowlist.', 'Адрес запрещён политикой доступа. Попросите оператора проверить разрешённые назначения.'],
+  SOURCE_DESTINATION_DENIED: ['The destination is blocked by policy. Review the separate destination permission below.', 'Адрес запрещён политикой доступа. Проверьте отдельное разрешение назначения ниже.'],
 } as const;
 export class SourceConnectionError extends Error {
   readonly code: keyof typeof connectionMessages;

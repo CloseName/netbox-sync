@@ -1,3 +1,4 @@
+import {DestinationPermission} from "../components/DestinationPermission";
 import {OperationFeedback} from "../ui/OperationFeedback";
 import {tr} from "../ui/i18n";
 import {useLanguage} from "../ui/language";
@@ -211,6 +212,7 @@ export function AddSourcePage() {
           {connectionCode?connectionMessages[connectionCode][language==='ru'?1:0]:tr(error)}
         </p>
       )}
+      {connectionCode==='SOURCE_DESTINATION_DENIED'&&<DestinationPermission host={connection.address} done={()=>{setConnectionCode(null);setError(t('Destination allowed. Re-enter credentials and test the connection.','Назначение разрешено. Введите учётные данные и повторите проверку подключения.'));}}/>}
       {busy && <OperationFeedback operation={token?t('Registering source','Регистрация источника'):t('Testing source connection','Проверка подключения источника')} phase="sending" started={started}/>}
       {!token ? (
         <form onSubmit={test} className="source-form" autoComplete="off">
@@ -285,7 +287,7 @@ export function AddSourcePage() {
               </label>
             </div>
             <SourceAccessHelp provider={type} language={language}/>
-            <details className="source-access-help"><summary>{t('If access is blocked by policy','Если доступ запрещён политикой')}</summary><p>{t('The server checks every resolved address before authentication. A policy denial is not a password error. Existing deployment restrictions remain in force; Test Connection does not change them.', 'Сервер проверяет все полученные адреса до входа. Запрет политики не означает ошибку пароля. Действующие ограничения установки сохраняются; проверка подключения их не изменяет.')}</p><p>{t('Ask the deployment operator to review a denied source. Online policy management requires server-side administrator authorization, which is not implemented yet. Completing onboarding does not grant that permission.', 'При запрете источника обратитесь к оператору установки. Управление политикой через панель требует серверной проверки прав администратора, которая пока не реализована. Завершение настройки не даёт этого разрешения.')}</p></details>
+            <details className="source-access-help"><summary>{t('If access is blocked by policy','Если доступ запрещён политикой')}</summary><p>{t('The server checks every resolved address before authentication. A policy denial is not a password error. Existing deployment restrictions remain in force; Test Connection does not change them.', 'Сервер проверяет все полученные адреса до входа. Запрет политики не означает ошибку пароля. Действующие ограничения установки сохраняются; проверка подключения их не изменяет.')}</p><p>{t('For a denied public destination, use the separate permission action below the error. The server checks administrator permissions; host-managed limits may require a one-time transition by the host operator.', 'Для запрещённого публичного назначения используйте отдельное разрешение под сообщением об ошибке. Сервер проверяет права администратора; ограничения сервера могут требовать однократного перехода, выполняемого его оператором.')}</p></details>
             <button className="primary" disabled={busy}>
               {busy ? tr("Testing…") : tr("Test Connection")}
             </button>

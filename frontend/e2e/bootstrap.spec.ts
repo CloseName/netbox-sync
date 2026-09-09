@@ -1,4 +1,4 @@
-import {test,expect,type BrowserContext} from '@playwright/test';
+import {test,expect,type BrowserContext} from './auth-fixture';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 // Derive every visual fixture from the production Python contract; no second field list.

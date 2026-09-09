@@ -1,11 +1,12 @@
 // Adapt the existing deterministic provider fixtures to the durable operation API.
 // Provider completion updates shared mock state after the start response is returned.
-import { test as base, expect } from '@playwright/test';
+import { test as base, expect, installAuthFixture } from './auth-fixture';
 import { randomUUID } from 'node:crypto';
 export { expect };
-export * from '@playwright/test';
+export * from './auth-fixture';
 const installed = new WeakSet();
 export function installOperationFixtures(page: any) {
+    installAuthFixture(page);
     if (installed.has(page)) return; installed.add(page);
     const entries: {url:any;handler:any}[] = [];
     const matches = (pattern: any, url: string) => pattern instanceof RegExp ? pattern.test(url) : new RegExp('^'+pattern.replace(/[.+?^${}()|[\]\\]/g,'\\$&').replace(/\*\*/g,'@@').replace(/\*/g,'[^/]*').replace(/@@/g,'.*')+'$').test(url);

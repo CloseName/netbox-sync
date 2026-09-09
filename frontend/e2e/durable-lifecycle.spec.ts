@@ -1,4 +1,4 @@
-import {test, expect} from '@playwright/test';
+import {test, expect} from './auth-fixture';
 import {randomUUID} from 'node:crypto';
 import {source, diagnostics, run} from '../tests/fixtures.mjs';
 const url='http://127.0.0.1:5179';

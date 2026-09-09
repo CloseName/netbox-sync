@@ -1,3 +1,4 @@
+import {DestinationPolicyPage} from "./pages/DestinationPolicyPage";
 import {tr} from "./ui/i18n";
 import {useLanguage} from "./ui/language";
 import {LanguageControl} from "./ui/LanguageControl";
@@ -83,6 +84,7 @@ export function App() {
             </NavLink>
           ))}
           <p className="nav-section">{tr("System")}</p>
+          <NavLink to="/policy">{tr("Source destinations")}</NavLink>
           <NavLink to="/system">{tr("System health")}{" "}</NavLink>
           <Link to="/setup">{tr("NetBox connection")}{" "}</Link>
         </nav>
@@ -112,6 +114,7 @@ export function App() {
             />
             <Route path="/runs" element={<RunRoute />} />
             <Route path="/runs/:runId" element={<RunRoute />} />
+            <Route path="/policy" element={<DestinationPolicyPage />} />
             <Route path="/system" element={<SystemHealthPage />} />
             <Route path="/diagnostics" element={<DiagnosticsPage />} />
             <Route

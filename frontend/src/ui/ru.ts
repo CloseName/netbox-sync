@@ -197,6 +197,7 @@ export const ru: Record<string,string> = {
   "Review and confirm sync": "Проверить и подтвердить синхронизацию",
   "Review plan": "Просмотреть план",
   "Review run history": "Проверить историю запусков",
+  "Source destinations": "Назначения источников",
   "Review source details": "Проверьте параметры источника",
   "Row technical details": "Технические подробности строки",
   "Rows per page": "Строк на странице",
