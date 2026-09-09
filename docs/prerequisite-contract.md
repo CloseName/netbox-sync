@@ -43,6 +43,22 @@ The plan expires after five minutes and is bound to configuration revision, publ
 URL, reconciliation and exact create definitions. The worker refreshes evidence before
 writes and rechecks each field before its POST. No field update or rollback delete exists.
 
+Immediately before each POST, the executor re-reads the specific field. A compatible
+active field is reconciled without writing it. A conflict stops the operation with
+`CONFLICT` and expected/actual property evidence. A provisioning field stops it with
+`WAITING`. Neither case sends that POST or any subsequent POST. A known pre-dispatch
+read/validation failure returns `RECHECK_REQUIRED`; its current uncertain marker is
+cleared because the isolated child confirmed it did not dispatch. Unknown child outcomes,
+crashes and lost responses still preserve the uncertain marker. Existing definitions and
+previously created fields are never modified or deleted. After operator correction or
+NetBox provisioning completion, refresh and explicitly confirm a new fenced plan.
+
+The UI displays the full shared contract with ready/create/conflict counts, collapsible
+non-blocking groups and always-visible conflict explanations. Technical keys remain in
+field details. EN/RU screenshots and browser fixtures are generated from the production
+Python contract, not a separate list. Older saved plans without detailed evidence require
+refresh; additional evidence changes the digest and cannot silently reuse old confirmation.
+
 An uncertain POST is journaled before dispatch and is never blindly retried. Refreshing
 the plan resolves it only after the field is observed. If it remains absent, an operator
 must investigate NetBox; there is deliberately no force-retry switch. Existing created

@@ -238,3 +238,66 @@ def test_setup_api_origin_and_secret_redaction(monkeypatch,caplog):
     assert observed[-1][1]['setup_token']==body['setup_token']
     result=client.post(path,json={**body,'confirm':'SENTINEL-INVALID-SECRET'},headers=headers)
     assert result.status_code==422 and 'SENTINEL' not in result.text+caplog.text
+
+
+@pytest.mark.parametrize('race_status,expected',[('ready','PREPARED'),('conflict','CONFLICT'),('provisioning','WAITING')])
+def test_field_created_between_plan_check_and_post(setup,executor,monkeypatch,race_status,expected):
+    store,remote,control=setup
+    module,session,queries,identity,value=executor
+    injected=False
+    original_post=session.post
+    def post(url,**kwargs):
+        result=original_post(url,**kwargs)
+        remote.rows.append(row(kwargs['json']['name'],len(remote.rows)+1))
+        return result
+    monkeypatch.setattr(session,'post',post)
+    monkeypatch.setattr(module,'fields',lambda *args:reconcile(remote.rows))
+    original=control.execute
+    def execute(request):
+        nonlocal injected
+        if request['action']=='create':
+            if request['name']=='cpu_model' and not injected:
+                injected=True
+                remote.rows.append(row('cpu_model',4,**({'type':'integer'} if race_status=='conflict' else {'status':'provisioning'} if race_status=='provisioning' else {})))
+            return module.operate({**value,'action':'create','name':request['name']})
+        return original(request)
+    control.execute=execute
+    result=control.apply(confirm(store,control))['preparation']
+    assert result['status']==expected
+    assert result['uncertain'] is None
+    sent=[kwargs['json']['name'] for method,url,kwargs in session.calls if method=='POST']
+    assert 'cpu_model' not in sent
+    if race_status!='ready':
+        assert sent==list(FIELDS)[:3]  # No current or subsequent POST after observation.
+        assert next(f for f in result['fields'] if f['name']=='cpu_model')['status']==race_status
+        with pytest.raises(ControlError):control.apply(confirm(store,control))
+        remote.rows[3]=row('cpu_model',4)  # Explicit operator correction / NetBox provisioning completion.
+        assert control.apply(confirm(store,control))['preparation']['status']=='PREPARED'
+    assert len(remote.rows)==16
+
+
+@pytest.mark.parametrize('status',['unknown',None])
+def test_unknown_pre_post_state_fails_closed(executor,monkeypatch,status):
+    module,session,queries,identity,value=executor
+    monkeypatch.setattr(module,'fields',lambda *args:[{'name':'cpu_model','status':status}])
+    assert module.operate({**value,'action':'create','name':'cpu_model'})=={'code':'NOT_SENT'}
+    assert not session.calls
+
+
+def test_pre_post_observation_failure_is_not_uncertain_post(setup):
+    store,remote,control=setup
+    original=control.execute
+    control.execute=lambda value: {'code':'NOT_SENT'} if value['action']=='create' else original(value)
+    result=control.apply(confirm(store,control))['preparation']
+    assert result['status']=='RECHECK_REQUIRED' and result['uncertain'] is None
+    control.execute=original
+    assert control.apply(confirm(store,control))['preparation']['status']=='PREPARED'
+
+
+
+def test_conflict_evidence_reports_actual_models_and_type():
+    field=reconcile([row('sync_identities',type='text',object_types=['ipam.prefix'])])[0]
+    details={item['property']:item for item in field['mismatch_details']}
+    assert details['type']=={'property':'type','expected':'json','actual':'text'}
+    assert details['models']['actual']=='ipam.prefix'
+    assert 'dcim.device' in details['models']['expected']

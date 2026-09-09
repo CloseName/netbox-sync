@@ -43,6 +43,13 @@ class Translation(BaseModel):
     ru: str
 
 
+class FieldDifference(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    property: str
+    expected: str
+    actual: str
+
+
 class PreparationField(BaseModel):
     model_config = ConfigDict(extra='forbid')
     name: str
@@ -50,6 +57,7 @@ class PreparationField(BaseModel):
     models: list[str]
     status: Literal['missing','ready','conflict','provisioning']
     differences: list[str]
+    mismatch_details: list[FieldDifference] = Field(default_factory=list)
     id: int | None
     label: Translation
     purpose: Translation
@@ -58,7 +66,7 @@ class PreparationField(BaseModel):
 class PreparationState(BaseModel):
     model_config = ConfigDict(extra='forbid')
     version: int | None = None
-    status: Literal['PLANNED','RUNNING','UNCERTAIN','CANCELLED','STALE','TOKEN_REJECTED','EXPIRED','REJECTED','PREPARED','WAITING']
+    status: Literal['PLANNED','RUNNING','UNCERTAIN','CANCELLED','STALE','TOKEN_REJECTED','EXPIRED','REJECTED','PREPARED','WAITING','CONFLICT','RECHECK_REQUIRED']
     fields: list[PreparationField] = Field(default_factory=list)
     digest: str | None = None
     planned_at: float | None = None

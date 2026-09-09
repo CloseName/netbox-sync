@@ -18,6 +18,7 @@ def fields(session, url, token):
 
 
 def operate(value):
+    post_sent = False
     try:
         url, token, action = value['url'], value['token'], value['action']
         parsed = urlsplit(url)
@@ -41,8 +42,12 @@ def operate(value):
                     return {'token_id': row['id']}
                 except Exception:return {'token_id': None}
             if action == 'create' and value.get('name') in FIELDS:
-                current = next(f for f in fields(session, url, token) if f['name'] == value['name'])
-                if current['status'] != 'missing':return {'code': 'RECONCILE'}
+                observed = fields(session, url, token)
+                current = next(f for f in observed if f['name'] == value['name'])
+                if current['status'] != 'missing':
+                    code = {'ready':'RECONCILE', 'conflict':'CONFLICT', 'provisioning':'WAITING'}.get(current['status'], 'NOT_SENT')
+                    return {'code': code, 'fields': observed} if code != 'NOT_SENT' else {'code': code}
+                post_sent = True
                 with session.post(url + '/api/extras/custom-fields/', json=definition(value['name']),
                     headers={'Authorization': authorization(token)}, timeout=(3, 5), allow_redirects=False, stream=True) as response:
                     if response.status_code == 201:return {'code': 'CREATED'}
@@ -55,8 +60,8 @@ def operate(value):
                 with session.delete(endpoint, headers={'Authorization': authorization(token)},
                     timeout=(3, 5), allow_redirects=False, stream=True) as response:
                     return {'code': 'CONFIRMED' if response.status_code == 204 else 'UNCONFIRMED'}
-    except ProbeError as error:return {'code': error.code}
-    except Exception:return {'code': 'UNCERTAIN'}
+    except ProbeError as error:return {'code': 'NOT_SENT' if value.get('action') == 'create' and not post_sent else error.code}
+    except Exception:return {'code': 'NOT_SENT' if value.get('action') == 'create' and not post_sent else 'UNCERTAIN'}
     return {'code': 'INVALID'}
 
 

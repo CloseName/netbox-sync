@@ -1,5 +1,7 @@
 """TEST-ONLY external NetBox stand-in for disposable Docker HTTPS smoke."""
 import json
+from pathlib import Path
+from netbox_sync.prerequisites import definition
 import os
 import socket
 import time
@@ -11,6 +13,7 @@ PREPARE = os.environ.get('TEST_PREPARATION') == '1'
 ROWS = []
 UNCERTAIN = False
 REVOKED = False
+POSTS = []
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*_):pass
     def reply(self,value,status=200):
@@ -21,7 +24,14 @@ class Handler(BaseHTTPRequestHandler):
         if '/users/tokens/' in self.path:
             row={'id':91,'key':'ABCDEFGHIJKL','version':2}
             self.reply({'count':1,'next':None,'results':[row]} if '?' in self.path else row)
-        elif '/custom-fields/' in self.path and PREPARE:self.reply({'next':None,'results':ROWS})
+        elif '/custom-fields/' in self.path and PREPARE:
+            race = os.environ.get('TEST_RACE')
+            if race and len(ROWS)==3 and self.headers.get('Authorization')=='Bearer nbt_ABCDEFGHIJKL.SETUPSECRET':
+                ROWS.append({**definition('cpu_model'),'id':4,'status':'provisioning' if race=='provisioning' else 'active',
+                             'type':'integer' if race=='conflict' else 'text'})
+            if race and Path('/tmp/resolve-race').exists() and len(ROWS)>=4:
+                ROWS[3]={**definition('cpu_model'),'id':4,'status':'active'}
+            self.reply({'next':None,'results':ROWS})
         elif '/custom-fields/' in self.path:
             self.reply(dict(next=None,results=[dict(name=n,type=k,object_types=list(m)) for n,(k,m) in FIELDS.items()]))
         else:self.reply(dict(count=0,results=[]))
@@ -29,6 +39,8 @@ class Handler(BaseHTTPRequestHandler):
         global UNCERTAIN
         if self.path!='/api/extras/custom-fields/' or self.headers.get('Authorization')!='Bearer nbt_ABCDEFGHIJKL.SETUPSECRET':return self.reply({},403)
         value=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+        POSTS.append(value['name'])
+        Path('/tmp/observed-posts.json').write_text(json.dumps(POSTS))
         if any(row['name']==value['name'] for row in ROWS):return self.reply({},400)
         if value['name']=='sync_identities':time.sleep(1)
         ROWS.append({**value,'id':len(ROWS)+1,'status':{'value':'active'}})

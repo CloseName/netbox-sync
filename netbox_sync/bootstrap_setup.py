@@ -97,6 +97,13 @@ class Preparation:
                 # Durable marker BEFORE POST. Crash/timeout never permits a blind retry.
                 save(uncertain=field['name'])
                 result = self.execute({'action':'create', 'url':value['url'], 'token':token, 'name':field['name']})
+                if result.get('code') in ('CONFLICT', 'WAITING', 'NOT_SENT'):
+                    # Trusted child observed the blocker before dispatching POST.
+                    updates = {'status': 'RECHECK_REQUIRED' if result['code'] == 'NOT_SENT' else result['code'],
+                               'uncertain': None}
+                    if result.get('fields') is not None:updates['fields'] = result['fields']
+                    save(**updates)
+                    raise Stop()
                 if result.get('code') not in ('CREATED','RECONCILE','REJECTED'):
                     save(status='UNCERTAIN');raise Stop()
                 if result['code']=='REJECTED':

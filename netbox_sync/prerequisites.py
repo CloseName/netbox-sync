@@ -1,6 +1,7 @@
 """Versioned fixed NetBox prerequisite contract. No operator-supplied definitions."""
 import hashlib
 import json
+import re
 
 VERSION = 1
 FIELDS = {
@@ -68,6 +69,30 @@ def choice(value):
     return value.get('value') if isinstance(value, dict) else value
 
 
+def mismatch_details(differences, row, kind, models, count):
+    """Bounded operator evidence, never raw validation regex/schema or response bodies."""
+    row = row or {}
+    known_types = {'text','longtext','integer','decimal','boolean','date','datetime','url','json','select','multiselect','object','multiobject'}
+    actual_type = choice(row.get('type'))
+    actual_models = row.get('object_types')
+    valid_models = (isinstance(actual_models,list) and len(actual_models)<=32 and
+                    all(isinstance(m,str) and len(m)<=96 and re.fullmatch(r'[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*',m) for m in actual_models))
+    model_text = (', '.join(sorted(actual_models)) or 'none') if valid_models else 'unrecognized'
+    pairs = {
+        'type': (kind, actual_type if isinstance(actual_type,str) and actual_type in known_types else 'unrecognized'),
+        'models': (', '.join(models), model_text),
+        'duplicate': ('1', str(count)),
+        'required': ('false', 'true' if row.get('required') is True else 'unrecognized'),
+        'unique': ('false', 'true' if row.get('unique') is True else 'unrecognized'),
+        'lifecycle': ('active', 'deleting' if choice(row.get('status')) == 'deleting' else 'unrecognized'),
+    }
+    for key in ('validation_minimum','validation_maximum'):
+        value = row.get(key)
+        pairs[key] = ('none', str(value)[:40] if type(value) in (int,float) else 'unrecognized')
+    for key in ('validation_regex','validation_schema'):pairs[key] = ('none','configured')
+    return [{'property': key, 'expected': pairs[key][0], 'actual': pairs[key][1]} for key in differences]
+
+
 def reconcile(rows):
     result = []
     for name, (kind, models) in FIELDS.items():
@@ -90,7 +115,7 @@ def reconcile(rows):
             if lifecycle == 'provisioning':status = 'provisioning'
             elif lifecycle != 'active':status = 'conflict';differences.append('lifecycle')
         result.append({'name': name, 'type': kind, 'models': list(models), 'status': status,
-                       'differences': differences, 'id': row['id'] if row and type(row.get('id')) is int and row['id'] > 0 else None,
+                       'differences': differences, 'mismatch_details': mismatch_details(differences, row, kind, models, len(matches)), 'id': row['id'] if row and type(row.get('id')) is int and row['id'] > 0 else None,
                        'label': {'en': LABELS[name][0], 'ru': LABELS[name][1]},
                        'purpose': {'en': PURPOSES[name][0], 'ru': PURPOSES[name][1]}})
     return result

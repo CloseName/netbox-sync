@@ -75,7 +75,7 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
                *mount('http','/run/netbox-sync-http'),image,'python','-m','netbox_sync.web_runtime','init')
         docker('run','--rm','--network','none','--user','0:0','--label',label,*mount('state','/state'),image,
                'python','-c',"import os; os.chmod('/state',0o700)")
-        netbox=launch('netbox',['--network',prefix,'--network-alias','netbox.example.test','-e','TEST_PREPARATION=1','-e','TEST_REVOKE_DENIED='+('1' if ingress_mode=='external' else '0'),*mount('tls','/tls',True)],runner,['python','-m','tests.mock_netbox_https'])
+        netbox=launch('netbox',['--network',prefix,'--network-alias','netbox.example.test','-e','TEST_RACE='+({'standalone':'ready','corporate':'conflict','external':'provisioning'}[ingress_mode]),'-e','TEST_PREPARATION=1','-e','TEST_REVOKE_DENIED='+('1' if ingress_mode=='external' else '0'),*mount('tls','/tls',True)],runner,['python','-m','tests.mock_netbox_https'])
         bootstrap=launch('bootstrap',['--network',prefix,'--user','0:0','--read-only','--tmpfs','/tmp',
             '--cap-drop','ALL','--cap-add','CHOWN','--cap-add','SETUID','--cap-add','SETGID',
             *mount('bootstrap','/run/netbox-sync-bootstrap'),*mount('state','/var/lib/netbox-sync/netbox'),
@@ -158,13 +158,25 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
         with ThreadPoolExecutor(max_workers=1) as pool:
             first=pool.submit(request,'POST','/api/v1/bootstrap/prerequisites-apply',headers=headers,json=operation)
             for _ in range(40):
-                state=request('GET','/api/v1/bootstrap').json()
-                if state['preparation']['status']=='RUNNING':break
+                response=request('GET','/api/v1/bootstrap')
+                assert response.status_code in (200,409,423),response.text
+                if response.status_code==200 and response.json()['preparation']['status']=='RUNNING':break
                 time.sleep(.05)
             else:raise AssertionError('execution never entered RUNNING')
             duplicate=request('POST','/api/v1/bootstrap/prerequisites-apply',headers=headers,json=operation)
             assert duplicate.status_code in (409,423),duplicate.text
             result=first.result().json()['preparation']
+        if ingress_mode!='standalone':
+            assert result['status']==('CONFLICT' if ingress_mode=='corporate' else 'WAITING')
+            assert result['uncertain'] is None
+            from netbox_sync.prerequisites import FIELDS
+            observed=json.loads(docker('exec',netbox,'cat','/tmp/observed-posts.json'))
+            assert observed==list(FIELDS)[:3],observed
+            assert result['fields'][3]['status']==('conflict' if ingress_mode=='corporate' else 'provisioning')
+            docker('exec',netbox,'python','-c',"from pathlib import Path; Path('/tmp/resolve-race').touch()")
+            plan=request('POST','/api/v1/bootstrap/prerequisites-plan',headers=headers,json={'revision':1}).json()['preparation']
+            assert sum(f['status']=='ready' for f in plan['fields'])==4
+            result=request('POST','/api/v1/bootstrap/prerequisites-apply',headers=headers,json={**operation,'digest':plan['digest']}).json()['preparation']
         assert result['status']=='UNCERTAIN' and result['uncertain']=='cpu_vendor'
         assert result['local_secret']=='NOT_STORED'
         docker('restart',bootstrap)
