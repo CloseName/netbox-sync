@@ -1,3 +1,4 @@
+import {tr} from "../ui/i18n";
 import { useState } from "react";
 import type { DiscoveryResult } from "../api/discovery";
 import { Badge, Timestamp } from "../ui/primitives";
@@ -30,14 +31,14 @@ export function DiscoveryReview({
   return (
     <div>
       <p role="status">
-        Discovery received <Timestamp value={received} />
-        {previous ? " · Previous evidence while discovery runs" : ""}
+        {tr("Discovery received")}{" "}<Timestamp value={received} />
+        {previous ? tr(" · Previous evidence while discovery runs") : ""}
       </p>
       <dl className="sync-summary">
         {[...new Set(result.items.map((item) => item.classification))].map(
           (value) => (
             <div key={value}>
-              <dt>{labels[value]} rows</dt>
+              <dt>{tr(labels[value])} {tr("rows")}{" "}</dt>
               <dd>
                 {
                   result.items.filter((item) => item.classification === value)
@@ -50,41 +51,39 @@ export function DiscoveryReview({
       </dl>
       <div className="sync-filters">
         <label>
-          Classification
-          <select
+          {tr("Classification")}{" "}<select
             value={classification}
             onChange={(e) => setClassification(e.target.value)}
           >
-            <option value="">All classifications</option>
+            <option value="">{tr("All classifications")}{" "}</option>
             {Object.entries(labels).map(([value, label]) => (
               <option value={value} key={value}>
-                {label}
+                {tr(label)}
               </option>
             ))}
           </select>
         </label>
         <label>
-          Discovery object kind
-          <select value={kind} onChange={(e) => setKind(e.target.value)}>
-            <option value="">All kinds</option>
+          {tr("Discovery object kind")}{" "}<select value={kind} onChange={(e) => setKind(e.target.value)}>
+            <option value="">{tr("All kinds")}{" "}</option>
             {[...new Set(result.items.map((item) => item.object_kind))].map(
               (value) => (
                 <option key={value} value={value}>
-                  {kindLabel(value)}
+                  {tr(kindLabel(value))}
                 </option>
               ),
             )}
           </select>
         </label>
       </div>
-      {!rows.length && <p>No discovered rows in this view.</p>}
+      {!rows.length && <p>{tr("No discovered rows in this view.")}{" "}</p>}
       <div className="plan-rows">
         {rows.map((item, i) => (
           <details className="plan-row" key={i}>
             <summary>
               <span className="plan-object">
                 <strong>{item.name}</strong>
-                <span>{kindLabel(item.object_kind)}</span>
+                <span>{tr(kindLabel(item.object_kind))}</span>
               </span>
               <Badge
                 value={{
@@ -105,35 +104,34 @@ export function DiscoveryReview({
               <span className="plan-reason">{item.reason}</span>
             </summary>
             <div className="plan-row-body">
-              <p>NetBox match: {item.matched_object_name ?? "Not provided"}</p>
+              <p>{tr("NetBox match:")}{" "}{item.matched_object_name ?? tr("Not provided")}</p>
               {["CONFLICT", "REVIEW_REQUIRED"].includes(
                 item.classification,
               ) && (
                 <p className="sync-attention">
-                  Attention: {item.reason}. No automatic adoption.
-                </p>
+                  {tr("Attention:")}{" "}{item.reason}{tr(". No automatic adoption.")}{" "}</p>
               )}
               <details>
-                <summary>Discovery technical details</summary>
+                <summary>{tr("Discovery technical details")}{" "}</summary>
                 <dl className="source-facts">
                   <div>
-                    <dt>External ID</dt>
+                    <dt>{tr("External ID")}{" "}</dt>
                     <dd>
                       <code>{item.external_id}</code>
                     </dd>
                   </div>
                   <div>
-                    <dt>Reason code</dt>
+                    <dt>{tr("Reason code")}{" "}</dt>
                     <dd>
                       <code>{item.reason_code}</code>
                     </dd>
                   </div>
                   <div>
-                    <dt>Match ID</dt>
-                    <dd>{item.matched_object_id ?? "Not provided"}</dd>
+                    <dt>{tr("Match ID")}{" "}</dt>
+                    <dd>{item.matched_object_id ?? tr("Not provided")}</dd>
                   </div>
                   <div>
-                    <dt>Future action classification</dt>
+                    <dt>{tr("Future action classification")}{" "}</dt>
                     <dd>{item.future_action}</dd>
                   </div>
                 </dl>
@@ -143,9 +141,7 @@ export function DiscoveryReview({
         ))}
       </div>
       <p className="muted">
-        Build plan performs a fresh read. It does not reuse this discovery
-        snapshot.
-      </p>
+        {tr("Build plan performs a fresh read. It does not reuse this discovery snapshot.")}{" "}</p>
     </div>
   );
 }

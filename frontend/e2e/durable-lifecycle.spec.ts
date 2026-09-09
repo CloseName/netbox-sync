@@ -39,13 +39,13 @@ test('two browsers share Plan and Discovery; close, reopen, deduplicate and isol
   await server.attach(a);await server.attach(b);
   try{
     const first=await a.newPage();await first.goto(url+'/sources/source-1/sync');await first.getByRole('button',{name:'Build plan',exact:true}).click();
-    const second=await b.newPage();await second.goto(url+'/sources/source-1/sync');await expect(second.getByText(/Planning in progress/)).toBeVisible();
+    const second=await b.newPage();await second.goto(url+'/sources/source-1/sync');await expect(second.getByText(/Build plan.*Execution confirmed by the server/)).toBeVisible();
     await expect(second.getByRole('button',{name:'Build plan',exact:true})).toBeDisabled();
     const original=server.slots.get('source-1PLAN').operation_id;
     const duplicate=await second.evaluate(async()=>{const response=await fetch('/api/v1/sources/source-1/operations/plan',{method:'POST',headers:{'Content-Type':'application/json','X-NetBox-Sync-CSRF':'same-origin'},body:'{}'});return response.json();});
     expect(duplicate.operation_id).toBe(original);expect(server.calls.filter(c=>c==='source-1PLAN')).toHaveLength(1);
     await second.getByRole('button',{name:'Run discovery',exact:true}).click();
-    await first.reload();await expect(first.getByText(/Discovering source/)).toBeVisible();
+    await first.reload();await expect(first.getByText(/Run discovery.*Execution confirmed by the server/)).toBeVisible();
     await expect(first.getByRole('button',{name:'Run discovery',exact:true})).toBeDisabled();
     const discoveryId=server.slots.get('source-1DISCOVERY').operation_id;
     const duplicateDiscovery=await first.evaluate(async()=>{const response=await fetch('/api/v1/sources/source-1/operations/discovery',{method:'POST',headers:{'Content-Type':'application/json','X-NetBox-Sync-CSRF':'same-origin'},body:'{}'});return response.json();});
@@ -77,7 +77,7 @@ for(const width of [1440,1024,768])test(`Durable operation states at ${width}`,a
   const server=backend();await server.attach(context);await page.setViewportSize({width,height:900});
   await page.goto(url+'/sources/source-1/sync');await page.getByRole('button',{name:'Build plan',exact:true}).click();
   await page.getByRole('button',{name:'Run discovery',exact:true}).click();await page.reload();
-  await expect(page.getByText(/Discovering source/)).toBeVisible();await expect(page.getByText(/Planning in progress/)).toBeVisible();
+  await expect(page.getByText(/Run discovery.*Execution confirmed by the server/)).toBeVisible();await expect(page.getByText(/Build plan.*Execution confirmed by the server/)).toBeVisible();
   await page.screenshot({path:info.outputPath('operations-running.png'),fullPage:true});
   server.complete('source-1','PLAN');server.complete('source-1','DISCOVERY');await page.reload();
   await expect(page.getByText('Plan ready for review.')).toBeVisible();await page.screenshot({path:info.outputPath('operations-ready.png'),fullPage:true});

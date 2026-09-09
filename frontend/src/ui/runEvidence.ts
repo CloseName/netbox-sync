@@ -1,3 +1,4 @@
+import {tr} from "./i18n.ts";
 import type { Diagnostics, DiagnosticRun } from "../api/diagnostics";
 import type { SyncRun } from "../api/runs";
 export const staleExplanation =
@@ -45,8 +46,8 @@ export function planActions(run: SyncRun) {
     Object.entries(run.actions)
       .filter(([, n]) => n > 0)
       .map(
-        ([key, n]) => `${actionLabels[key as keyof SyncRun["actions"]]} ${n}`,
+        ([key, n]) => `${tr(actionLabels[key as keyof SyncRun["actions"]])} ${n}`,
       )
-      .join(" · ") || "No plan actions recorded"
+      .join(" · ") || tr("No plan actions recorded")
   );
 }

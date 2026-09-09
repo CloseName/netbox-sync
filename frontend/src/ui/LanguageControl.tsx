@@ -1,0 +1,2 @@
+import {useLanguage} from './language';
+export function LanguageControl(){const [language,setLanguage]=useLanguage();return <label className="language-control">{language==='ru'?'Язык':'Language'}<select aria-label="Language / Язык" value={language} onChange={event=>setLanguage(event.target.value==='ru'?'ru':'en')}><option value="en">English</option><option value="ru">Русский</option></select></label>;}

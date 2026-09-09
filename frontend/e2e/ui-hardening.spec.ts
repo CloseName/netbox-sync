@@ -694,3 +694,24 @@ for (const scenario of ["exact", "foreign source", "unavailable history"]) {
     await expect(skip).toBeInViewport();
   });
 }
+
+for(const theme of themes)for(const width of [1440,390])test(`shared RU full-page gallery ${theme} ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:960});await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});
+ const f=await fixture(page,{long:true});
+ await page.goto('/');await page.getByLabel('Language / Язык').focus();await page.getByLabel('Language / Язык').selectOption('ru');
+ await expect(page.getByLabel('Language / Язык')).toBeFocused();
+ for(const [route,name] of [['/','overview'],['/sources','sources'],['/sources/source-1','source'],['/sources/source-1/schedule','schedule'],['/sources/source-1/configuration','configuration'],['/runs','runs'],['/runs/'+runId,'run'],['/diagnostics','diagnostics'],['/system','system'],['/sources/add','add']]){
+  await page.goto(route);await expect(page.getByRole('heading',{level:1})).toBeVisible();await overflow(page);
+  await expect(page.locator('html')).toHaveAttribute('lang','ru');
+  await expect(page.getByRole('status').filter({hasText:/^Загрузка/})).toHaveCount(0);
+  await page.screenshot({path:`test-results/ux-ru-${theme}-${width}-${name}.png`,fullPage:true});
+ }
+ await page.goto('/sources/source-1/sync');await page.getByRole('button',{name:'Построить план',exact:true}).click();
+ await expect(page.locator('.plan-row').first()).toBeVisible();await overflow(page);
+ await page.screenshot({path:`test-results/ux-ru-${theme}-${width}-plan.png`,fullPage:true});
+ f.state.outcome='PARTIALLY_APPLIED';await page.getByRole('button',{name:'Проверить и подтвердить синхронизацию'}).click();
+ await page.getByRole('dialog').getByRole('button',{name:'Синхронизировать с NetBox',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'Частично применено',exact:true})).toBeVisible();
+ await page.screenshot({path:`test-results/ux-ru-${theme}-${width}-partial.png`,fullPage:true});
+ await page.reload();await expect(page.locator('html')).toHaveAttribute('lang','ru');
+});

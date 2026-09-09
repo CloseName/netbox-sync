@@ -134,14 +134,20 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
         assert response.json()['status']=='FRESH'
         redirect=session.get(f'http://127.0.0.1:{http_port}/setup',headers={'Host':'sync.example.test'},allow_redirects=False)
         assert redirect.status_code==308 and redirect.headers['Location']=='https://sync.example.test/setup'
-        for path in ('/','/setup','/sources','/sources/test-source','/sources/add','/runs','/runs/test-run-id','/diagnostics'):
+        for path in ('/','/setup','/sources','/sources/test-source','/sources/add','/runs','/runs/test-run-id','/diagnostics','/system'):
             result=request('GET',path);assert result.status_code==200 and '<div id="root">' in result.text
         for path in ('/api/nonexistent','/assets/missing.js','/unknown-frontend-route'):assert request('GET',path).status_code==404
         import re
         assets=re.findall(r'(?:src|href)="(/assets/[^"]+)"',request('GET','/').text)
         assert len(assets)>=2
         for path in assets:
-            asset=request('GET',path);assert asset.status_code==200 and len(asset.content)>1000
+            asset=request('GET',path);assert asset.status_code==200
+            assert 'text/html' not in asset.headers.get('Content-Type','')
+            assert len(asset.content)>(1000 if path.endswith(('.js','.css')) else 100)
+        html=request('GET','/');assert 'no-store' in html.headers['Cache-Control']
+        assert re.search(r'name="netbox-sync-ui-build" content="ui-[a-f0-9]{16}"',html.text)
+        for path in ('/assets/brand/mark.svg','/assets/brand/logo-light.svg','/assets/brand/logo-dark.svg','/assets/brand/icon-16.png','/assets/brand/icon-32.png','/assets/InterVariable.woff2'):
+            asset=request('GET',path);assert asset.status_code==200 and 'text/html' not in asset.headers.get('Content-Type','')
         assert request('GET','/',headers={'Host':'evil.example.test'}).status_code==421
         headers={'Origin':'https://sync.example.test','X-NetBox-Sync-CSRF':'same-origin'}
         payload=dict(revision=0,url='https://netbox.example.test:8443',read_token='TEST-READ-TOKEN',apply_token='TEST-APPLY-TOKEN',replace_credentials=False)

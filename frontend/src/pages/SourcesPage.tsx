@@ -1,3 +1,5 @@
+import {useLanguage} from "../ui/language";
+import {tr} from "../ui/i18n";
 import { useCallback, useEffect, useState } from "react";
 import { Link, NavLink, useLocation, useParams } from "react-router-dom";
 import { fetchSource, SourceNotFoundError } from "../api/sources";
@@ -47,10 +49,11 @@ function RunEvidence({
       <Timestamp value={run.started_at} />
     </>
   ) : (
-    <>No run recorded</>
+    <>{tr("No run recorded")}{" "}</>
   );
 }
 export function SourcesPage() {
+  const [language]=useLanguage();
   const { sourceInstance = "", "*": suffix = "" } = useParams();
   const tab = suffix
     ? sourceTabs.find((item) => item.toLowerCase() === suffix)
@@ -81,23 +84,23 @@ export function SourcesPage() {
   const concern = attention(evidence);
   const base = sourcePath(sourceInstance);
   useEffect(() => {
-    document.title = `${detail?.name ?? sourceInstance}${tab && tab !== "Overview" ? " / " + tab : ""} | NetBox Sync`;
-  }, [detail?.name, sourceInstance, tab]);
+    document.title = `${detail?.name ?? sourceInstance}${tab && tab !== "Overview" ? " / " + tr(tab) : ""} | NetBox Sync`;
+  }, [detail?.name, sourceInstance, tab, language]);
   if (removed?.source_instance === sourceInstance) return <RemovedSource value={removed} />;
   if (source.failure instanceof SourceNotFoundError) return <RemovedSourceLookup source={sourceInstance} />;
   if (!tab)
     return (
       <main>
-        <h1>Page not found</h1>
-        <Link to={base}>Open source overview</Link>
+        <h1>{tr("Page not found")}{" "}</h1>
+        <Link to={base}>{tr("Open source overview")}{" "}</Link>
       </main>
     );
   return (
     <main className="source-workspace">
-      <nav aria-label="Breadcrumb">
+      <nav aria-label={tr("Breadcrumb")}>
         <ol className="breadcrumbs">
           <li>
-            <Link to="/sources">Sources</Link>
+            <Link to="/sources">{tr("Sources")}{" "}</Link>
           </li>
           <li>
             {tab === "Overview" ? (
@@ -110,26 +113,26 @@ export function SourcesPage() {
           </li>
           {tab !== "Overview" && (
             <li>
-              <span aria-current="page">{tab}</span>
+              <span aria-current="page">{tr(tab)}</span>
             </li>
           )}
         </ol>
       </nav>
-      <Link to={from}>Back to sources</Link>
+      <Link to={from}>{tr("Back to sources")}{" "}</Link>
       {source.loading && !detail && (
-        <LoadingState label="Loading source configuration…" />
+        <LoadingState label={tr("Loading source configuration…")} />
       )}
       {source.error && (
         <>
           <h1>
             {source.failure instanceof SourceNotFoundError
-              ? "Source not found"
-              : "Source unavailable"}
+              ? tr("Source not found")
+              : tr("Source unavailable")}
           </h1>
           <Alert retry={source.refresh}>
             {source.failure instanceof SourceNotFoundError
-              ? "This source does not exist in the registry."
-              : "Source configuration could not be loaded. Retry without leaving this route."}
+              ? tr("This source does not exist in the registry.")
+              : tr("Source configuration could not be loaded. Retry without leaving this route.")}
           </Alert>
         </>
       )}
@@ -139,7 +142,7 @@ export function SourcesPage() {
             <PageHeader
               title={detail.name}
               description={
-                detail.type === "proxmox" ? "Proxmox VE" : "VMware ESXi"
+                detail.type === "proxmox" ? tr("Proxmox VE") : tr("VMware ESXi")
               }
               actions={
                 tab === "Overview" ? (
@@ -148,18 +151,17 @@ export function SourcesPage() {
                     to={base + "/sync"}
                     state={{ from }}
                   >
-                    Open Sync
-                  </Link>
+                    {tr("Open Sync")}{" "}</Link>
                 ) : undefined
               }
             />
             <p className="muted source-identity">
-              <code>{detail.source_instance}</code> · Site {detail.site_slug} /{" "}
+              <code>{detail.source_instance}</code> {tr("· Site")}{" "}{detail.site_slug} /{" "}
               {detail.cluster_name}
             </p>
             <dl className="source-header-signals">
               <div>
-                <dt>Source</dt>
+                <dt>{tr("Source")}{" "}</dt>
                 <dd>
                   <Badge
                     value={{
@@ -171,18 +173,18 @@ export function SourcesPage() {
                 </dd>
               </div>
               <div>
-                <dt>Automatic sync</dt>
+                <dt>{tr("Automatic sync")}{" "}</dt>
                 <dd>
                   {schedule.data
                     ? schedule.data.sync_enabled
-                      ? "On"
-                      : "Off"
-                    : "Unavailable"}
-                  {schedule.error && schedule.data && " (last loaded)"}
+                      ? tr("On")
+                      : tr("Off")
+                    : tr("Unavailable")}
+                  {schedule.error && schedule.data && tr(" (last loaded)")}
                 </dd>
               </div>
               <div>
-                <dt>Last run</dt>
+                <dt>{tr("Last run")}{" "}</dt>
                 <dd>
                   {evidence ? (
                     <RunEvidence
@@ -199,41 +201,41 @@ export function SourcesPage() {
                       }
                     />
                   ) : (
-                    "Unavailable"
+                    tr("Unavailable")
                   )}
                 </dd>
               </div>
               <div>
-                <dt>Last successful sync</dt>
+                <dt>{tr("Last successful sync")}{" "}</dt>
                 <dd>
                   {evidence ? (
                     <Timestamp value={evidence.latest_success_at} />
                   ) : (
-                    "Unavailable"
+                    tr("Unavailable")
                   )}
                 </dd>
               </div>
               <div>
-                <dt>Attention</dt>
+                <dt>{tr("Attention")}{" "}</dt>
                 <dd>
                   {concern ? (
                     <Link to={base + "/diagnostics"} state={{ from }}>
-                      {concern.label}
+                      {tr(concern.label)}
                     </Link>
                   ) : evidence ? (
                     evidence.status === "UNKNOWN" ? (
-                      "Not verified"
+                      tr("Not verified")
                     ) : (
-                      "None reported"
+                      tr("None reported")
                     )
                   ) : (
-                    "Unavailable"
+                    tr("Unavailable")
                   )}
                 </dd>
               </div>
             </dl>
           </header>
-          <nav className="source-tabs" aria-label="Source sections">
+          <nav className="source-tabs" aria-label={tr("Source sections")}>
             {sourceTabs.map((item) => (
               <NavLink
                 key={item}
@@ -249,19 +251,17 @@ export function SourcesPage() {
           </nav>
           {schedule.error && tab !== "Schedule" && (
             <Alert>
-              Schedule unavailable.{" "}
+              {tr("Schedule unavailable.")}{" "}{" "}
               <Link to={base + "/schedule"} state={{ from }}>
-                Open schedule to retry
-              </Link>
+                {tr("Open schedule to retry")}{" "}</Link>
             </Alert>
           )}
           {diagnostics.error && (
             <Alert retry={diagnostics.refresh}>
-              Diagnostics unavailable.
-              {diagnostics.data && (
+              {tr("Diagnostics unavailable.")}{" "}{diagnostics.data && (
                 <>
                   {" "}
-                  Could not refresh. Showing data from{" "}
+                  {tr("Could not refresh. Showing data from")}{" "}{" "}
                   <Timestamp value={diagnostics.data.generated_at} />.
                 </>
               )}
@@ -269,13 +269,13 @@ export function SourcesPage() {
           )}
           {tab === "Overview" && (
             <>
-              <h2>Source overview</h2>
+              <h2>{tr("Source overview")}{" "}</h2>
               <div className="source-panels">
                 <section className="source-panel">
-                  <h3>Recent activity</h3>
+                  <h3>{tr("Recent activity")}{" "}</h3>
                   <dl className="source-facts">
                     <div>
-                      <dt>Last run</dt>
+                      <dt>{tr("Last run")}{" "}</dt>
                       <dd>
                         {evidence ? (
                           <RunEvidence
@@ -292,78 +292,72 @@ export function SourcesPage() {
                             }
                           />
                         ) : (
-                          "Unavailable"
+                          tr("Unavailable")
                         )}
                       </dd>
                     </div>
                     <div>
-                      <dt>Last success</dt>
+                      <dt>{tr("Last success")}{" "}</dt>
                       <dd>
                         {evidence ? (
                           <Timestamp value={evidence.latest_success_at} />
                         ) : (
-                          "Unavailable"
+                          tr("Unavailable")
                         )}
                       </dd>
                     </div>
                     <div>
-                      <dt>Diagnostics</dt>
+                      <dt>{tr("Diagnostics")}{" "}</dt>
                       <dd>
                         <Badge value={healthStatus(evidence?.status)} />
                       </dd>
                     </div>
                   </dl>
                   <Link to={base + "/runs"} state={{ from }}>
-                    View source runs
-                  </Link>
+                    {tr("View source runs")}{" "}</Link>
                 </section>
                 <section className="source-panel">
-                  <h3>Schedule summary</h3>
+                  <h3>{tr("Schedule summary")}{" "}</h3>
                   {schedule.data ? (
                     <ScheduleSummary
                       schedule={schedule.data}
                       evidence={evidence}
                     />
                   ) : (
-                    <p>Schedule unavailable.</p>
+                    <p>{tr("Schedule unavailable.")}{" "}</p>
                   )}
                   <Link to={base + "/schedule"} state={{ from }}>
-                    Manage schedule
-                  </Link>
+                    {tr("Manage schedule")}{" "}</Link>
                 </section>
                 <section className="source-panel">
-                  <h3>NetBox target</h3>
+                  <h3>{tr("NetBox target")}{" "}</h3>
                   <dl className="source-facts">
                     <div>
-                      <dt>Site</dt>
+                      <dt>{tr("Site")}{" "}</dt>
                       <dd>{detail.site_slug}</dd>
                     </div>
                     <div>
-                      <dt>Cluster</dt>
+                      <dt>{tr("Cluster")}{" "}</dt>
                       <dd>{detail.cluster_name}</dd>
                     </div>
                   </dl>
                   <Link to={base + "/configuration"} state={{ from }}>
-                    View configuration
-                  </Link>
+                    {tr("View configuration")}{" "}</Link>
                 </section>
                 <section className="source-panel">
-                  <h3>Attention</h3>
+                  <h3>{tr("Attention")}{" "}</h3>
                   <p>
-                    {concern?.label ??
+                    {tr(concern?.label ??
                       (evidence
                         ? evidence.status === "UNKNOWN"
                           ? "Not verified"
                           : "No attention reported in this evidence."
-                        : "Source evidence unavailable.")}
+                        : "Source evidence unavailable."))}
                   </p>
                   <p className="muted">
-                    Registry configuration and recorded activity do not verify
-                    provider connectivity or authentication.
-                  </p>
+                    {tr("Registry configuration and recorded activity do not verify provider connectivity or authentication.")}{" "}</p>
                   <Link to={base + "/diagnostics"} state={{ from }}>
-                    View source diagnostics
-                  </Link>
+                    {tr("View source diagnostics")}{" "}</Link>
                 </section>
               </div>
             </>
@@ -390,36 +384,35 @@ export function SourcesPage() {
           {tab === "Diagnostics" && (
             <section className="source-panel">
               <div className="page-heading">
-                <h2>Source diagnostics</h2>
+                <h2>{tr("Source diagnostics")}{" "}</h2>
                 <button
                   disabled={diagnostics.loading}
                   onClick={diagnostics.refresh}
                 >
-                  Refresh evidence
-                </button>
+                  {tr("Refresh evidence")}{" "}</button>
               </div>
               {diagnostics.loading && (
-                <LoadingState label="Loading evidence…" />
+                <LoadingState label={tr("Loading evidence…")} />
               )}
               <dl className="source-facts">
                 <div>
-                  <dt>Diagnostic status</dt>
+                  <dt>{tr("Diagnostic status")}{" "}</dt>
                   <dd>
                     <Badge value={healthStatus(evidence?.status)} />
                   </dd>
                 </div>
                 <div>
-                  <dt>Scheduled activity (at evidence time)</dt>
+                  <dt>{tr("Scheduled activity (at evidence time)")}{" "}</dt>
                   <dd>
                     {evidence ? (
                       <Badge value={scheduleStates[evidence.scheduler_state]} />
                     ) : (
-                      "Unavailable"
+                      tr("Unavailable")
                     )}
                   </dd>
                 </div>
                 <div>
-                  <dt>Last run</dt>
+                  <dt>{tr("Last run")}{" "}</dt>
                   <dd>
                     {evidence ? (
                       <RunEvidence
@@ -436,28 +429,28 @@ export function SourcesPage() {
                         }
                       />
                     ) : (
-                      "Unavailable"
+                      tr("Unavailable")
                     )}
                   </dd>
                 </div>
                 <div>
-                  <dt>Last success</dt>
+                  <dt>{tr("Last success")}{" "}</dt>
                   <dd>
                     {evidence ? (
                       <Timestamp value={evidence.latest_success_at} />
                     ) : (
-                      "Unavailable"
+                      tr("Unavailable")
                     )}
                   </dd>
                 </div>
                 <div>
-                  <dt>Evidence timestamp</dt>
+                  <dt>{tr("Evidence timestamp")}{" "}</dt>
                   <dd>
                     <Timestamp value={diagnostics.data?.generated_at} />
                   </dd>
                 </div>
               </dl>
-              <h3>Attention</h3>
+              <h3>{tr("Attention")}{" "}</h3>
               {diagnostics.data && (
                 <DiagnosticAttention
                   data={diagnostics.data}
@@ -465,19 +458,17 @@ export function SourcesPage() {
                 />
               )}
               <p className="muted">
-                Evidence is derived from persisted activity. It does not prove
-                source connectivity or a live scheduler heartbeat.
-              </p>
-              <Link to="/diagnostics">Open system diagnostics</Link>
+                {tr("Evidence is derived from persisted activity. It does not prove source connectivity or a live scheduler heartbeat.")}{" "}</p>
+              <Link to="/diagnostics">{tr("Open system diagnostics")}{" "}</Link>
               <details>
-                <summary>Technical details</summary>
+                <summary>{tr("Technical details")}{" "}</summary>
                 <p>
-                  Source: <code>{sourceInstance}</code>
+                  {tr("Source:")}{" "}<code>{sourceInstance}</code>
                 </p>
-                <p>Diagnostic status: {evidence?.status ?? "UNAVAILABLE"}</p>
+                <p>{tr("Diagnostic status:")}{" "}{evidence?.status ?? "UNAVAILABLE"}</p>
                 <p>
-                  Warning codes:{" "}
-                  {evidence?.warnings.join(", ") || "None available"}
+                  {tr("Warning codes:")}{" "}{" "}
+                  {evidence?.warnings.join(", ") || tr("None available")}
                 </p>
               </details>
             </section>
@@ -507,20 +498,16 @@ function SourceRuns({
   return (
     <section className="source-panel">
       <div className="page-heading">
-        <h2>Source runs</h2>
+        <h2>{tr("Source runs")}{" "}</h2>
         <button disabled={resource.loading} onClick={resource.refresh}>
-          Refresh runs
-        </button>
+          {tr("Refresh runs")}{" "}</button>
       </div>
       <p className="muted">
-        Latest 50 runs for this source. Action counts describe the recorded
-        plan, not confirmed applied changes.
-      </p>
+        {tr("Latest 50 runs for this source. Action counts describe the recorded plan, not confirmed applied changes.")}{" "}</p>
       {resource.loading && <LoadingState />}
       {resource.error && (
         <Alert retry={resource.refresh}>
-          Source history unavailable.
-          {resource.data && " Showing previously loaded runs."}
+          {tr("Source history unavailable.")}{" "}{resource.data && tr(" Showing previously loaded runs.")}
         </Alert>
       )}
       {resource.data &&
@@ -529,11 +516,11 @@ function SourceRuns({
             <table>
               <thead>
                 <tr>
-                  <th>Outcome</th>
-                  <th>Trigger</th>
-                  <th>Started</th>
-                  <th>Duration</th>
-                  <th>Plan action counts</th>
+                  <th>{tr("Outcome")}{" "}</th>
+                  <th>{tr("Trigger")}{" "}</th>
+                  <th>{tr("Started")}{" "}</th>
+                  <th>{tr("Duration")}{" "}</th>
+                  <th>{tr("Plan action counts")}{" "}</th>
                 </tr>
               </thead>
               <tbody>
@@ -549,7 +536,7 @@ function SourceRuns({
                         />
                       </Link>
                     </td>
-                    <td>{run.trigger}</td>
+                    <td>{tr(run.trigger)}</td>
                     <td>
                       <Timestamp value={run.started_at} />
                     </td>
@@ -561,7 +548,7 @@ function SourceRuns({
                           ([action, count]) =>
                             `${action.replaceAll("_", " ")}: ${count}`,
                         )
-                        .join(" · ") || "No actions recorded"}
+                        .join(" · ") || tr("No actions recorded")}
                     </td>
                   </tr>
                 ))}
@@ -569,7 +556,7 @@ function SourceRuns({
             </table>
           </div>
         ) : (
-          <p>No runs recorded for this source.</p>
+          <p>{tr("No runs recorded for this source.")}{" "}</p>
         ))}
     </section>
   );
@@ -620,19 +607,17 @@ function SourceConfiguration({
   ] as const;
   return (
     <>
-      <h2>Configuration</h2>
+      <h2>{tr("Configuration")}{" "}</h2>
       <p className="muted">
-        Read-only source configuration. Credentials and stable identity are
-        protected.
-      </p>
+        {tr("Read-only source configuration. Credentials and stable identity are protected.")}{" "}</p>
       <div className="source-panels">
         {groups.map(([title, fields]) => (
-          <section className="source-panel" key={title}>
-            <h3>{title}</h3>
+          <section className="source-panel" key={tr(title)}>
+            <h3>{tr(title)}</h3>
             <dl className="source-facts">
               {fields.map(([label, value]) => (
-                <div key={label}>
-                  <dt>{label}</dt>
+                <div key={tr(label)}>
+                  <dt>{tr(label)}</dt>
                   <dd>{value}</dd>
                 </div>
               ))}
@@ -641,20 +626,20 @@ function SourceConfiguration({
         ))}
       </div>
       <p>
-        <Link to={scheduleLink}>Manage automatic sync schedule</Link>
+        <Link to={scheduleLink}>{tr("Manage automatic sync schedule")}{" "}</Link>
       </p>
       <details className="source-panel">
-        <summary>Advanced identity</summary>
+        <summary>{tr("Advanced identity")}{" "}</summary>
         <dl className="source-facts">
           <div>
-            <dt>Stable source ID</dt>
+            <dt>{tr("Stable source ID")}{" "}</dt>
             <dd>
               <code>{s.source_instance}</code>
             </dd>
           </div>
           <div>
-            <dt>Legacy identity owner</dt>
-            <dd>{s.legacy_identity_owner ? "Yes" : "No"}</dd>
+            <dt>{tr("Legacy identity owner")}{" "}</dt>
+            <dd>{s.legacy_identity_owner ? tr("Yes") : tr("No")}</dd>
           </div>
         </dl>
       </details>

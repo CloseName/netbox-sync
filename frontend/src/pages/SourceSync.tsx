@@ -1,3 +1,5 @@
+import {OperationFeedback} from "../ui/OperationFeedback";
+import {tr} from "../ui/i18n";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Source } from "../api/sources";
@@ -16,18 +18,6 @@ import { sourcePath, runPath } from "../ui/routes";
 import { PlanReview, PlanSummary } from "../components/PlanReview";
 import { DiscoveryReview } from "../components/DiscoveryReview";
 type Phase = "idle" | "planning" | "validating" | "applying";
-function Elapsed({ start }: { start: number }) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-  return (
-    <span aria-live="off">
-      Elapsed {Math.max(0, Math.floor((now - start) / 1000))} s
-    </span>
-  );
-}
 export function SourceSync({
   detail,
   active = true,
@@ -203,21 +193,21 @@ export function SourceSync({
   const applying = phase === "validating" || phase === "applying";
   return (
     <section className="sync-workspace" aria-labelledby="sync-title">
-      <h2 id="sync-title">Sync</h2>
-      <p>Build plan → Review → Sync to NetBox → Result</p>
+      <h2 id="sync-title">{tr("Sync")}{" "}</h2>
+      <p>{tr("Build plan → Review → Sync to NetBox → Result")}{" "}</p>
       <p className="muted">
-        {detail.name} → Site {detail.site_slug} / {detail.cluster_name}
+        {detail.name} {tr("→ Site")}{" "}{detail.site_slug} / {detail.cluster_name}
       </p>
-      {operationError && <p role="alert">{operationError} <button onClick={() => setRefreshOperations(value=>value+1)}>Reload operations</button></p>}
-      {!loaded && !operationError && <p role="status">Loading operation state...</p>}
-      {planOperation && <p className="muted">Started <Timestamp value={planOperation.started_at} />{planOperation.status === 'READY' && <> Built <Timestamp value={planOperation.finished_at} /></>}</p>}
+      {operationError && <p role="alert">{tr(operationError)} <button onClick={() => setRefreshOperations(value=>value+1)}>{tr("Reload operations")}{" "}</button></p>}
+      {!loaded && !operationError && <p role="status">{tr("Loading operation state...")}{" "}</p>}
+      {planOperation && <p className="muted">{tr("Started")}{" "}<Timestamp value={planOperation.started_at} />{planOperation.status === 'READY' && <> {tr("Built")}{" "}<Timestamp value={planOperation.finished_at} /></>}</p>}
       <div className="page-actions">
         <button
           className="primary"
           disabled={!loaded || phase !== "idle" || confirmOpen || !detail.enabled}
           onClick={buildPlan}
         >
-          {plan ? "Rebuild plan" : "Build plan"}
+          {plan ? tr("Rebuild plan") : tr("Build plan")}
         </button>
         <button
           disabled={
@@ -225,41 +215,24 @@ export function SourceSync({
           }
           onClick={discover}
         >
-          Run discovery
-        </button>
+          {tr("Run discovery")}{" "}</button>
       </div>
       {!detail.enabled && (
         <p className="sync-attention">
-          Source disabled. Planning, discovery and manual sync are unavailable
-          for this source.
-        </p>
+          {tr("Source disabled. Planning, discovery and manual sync are unavailable for this source.")}{" "}</p>
       )}
-      {phase !== "idle" && (
-        <div className="sync-pending">
-          <p role="status">
-            {phase === "planning"
-              ? "Planning in progress"
-              : phase === "validating"
-                ? "Preparing / validating reviewed plan"
-                : "Submitting / applying reviewed plan"}{" "}
-            for {detail.name}.
-          </p>
-          <Elapsed start={started} />
-        </div>
-      )}
+      {phase !== 'idle' && !applying && <OperationFeedback operation={phase==='planning'?tr('Build plan'):phase==='validating'?tr('Preparing / validating reviewed plan'):tr('Sync to NetBox')} phase={operationError?'uncertain':phase==='planning'&&planOperation?.status==='RUNNING'?'running':'sending'} started={started}/>}
       <div ref={feedback} tabIndex={-1}>
         {planningError && (
           <div className="source-error" role="alert">
-            <strong>{planOperation?.status === 'STALE' ? 'Plan is no longer current.' : 'Plan could not be built.'}</strong>
-            <p>{planningError.message}</p>
+            <strong>{planOperation?.status === 'STALE' ? tr("Plan is no longer current.") : tr("Plan could not be built.")}</strong>
+            <p>{tr(planningError.message)}</p>
             <details>
-              <summary>Technical details</summary>
+              <summary>{tr("Technical details")}{" "}</summary>
               <code>{planningError.code}</code>
             </details>
             <p>
-              This was a read-only planning request. Build a new plan to try
-              planning again.
-            </p>
+              {tr("This was a read-only planning request. Build a new plan to try planning again.")}{" "}</p>
           </div>
         )}
         {result && (
@@ -271,37 +244,32 @@ export function SourceSync({
                 : "source-panel")
             }
             role={result.state === "SUCCEEDED" ? "status" : "alert"}
-            aria-label="Sync result"
+            aria-label={tr("Sync result")}
             data-state={result.state}
           >
             <h3>
               <Badge value={result.status} />
             </h3>
-            <p>{result.message}</p>
+            <p>{tr(result.message)}</p>
             {["FAILED", "OUTCOME_UNCERTAIN", "PARTIALLY_APPLIED"].includes(
               result.state,
             ) && (
               <p>
-                No automatic retry. Review recorded history and source
-                diagnostics before continuing.
-              </p>
+                {tr("No automatic retry. Review recorded history and source diagnostics before continuing.")}{" "}</p>
             )}
             <div className="page-actions">
               {result.runId && (
                 <Link className="button" to={runPath(result.runId)}>
-                  Open run
-                </Link>
+                  {tr("Open run")}{" "}</Link>
               )}
               <Link to={sourcePath(selected) + "/runs"}>
-                Source run history
-              </Link>
+                {tr("Source run history")}{" "}</Link>
               <Link to={sourcePath(selected) + "/diagnostics"}>
-                Source diagnostics
-              </Link>
+                {tr("Source diagnostics")}{" "}</Link>
             </div>
             {result.code && (
               <details>
-                <summary>Technical details</summary>
+                <summary>{tr("Technical details")}{" "}</summary>
                 <code>{result.code}</code>
               </details>
             )}
@@ -310,15 +278,13 @@ export function SourceSync({
       </div>
       {!plan && phase !== "planning" && !planningError && (
         <div className="source-panel">
-          <h3>No plan yet</h3>
+          <h3>{tr("No plan yet")}{" "}</h3>
           <p>
-            Build a plan to review the proposed changes. Discovery is an
-            optional, separate inspection.
-          </p>
+            {tr("Build a plan to review the proposed changes. Discovery is an optional, separate inspection.")}{" "}</p>
         </div>
       )}
       {usable && phase === "idle" && (
-        <p role="status">Plan ready for review.</p>
+        <p role="status">{tr("Plan ready for review.")}{" "}</p>
       )}
       {plan && (
         <PlanReview
@@ -331,9 +297,7 @@ export function SourceSync({
       {plan && (
         <div className="sync-action-bar">
           <p>
-            Missing objects are retained in NetBox. No deletes. Only the
-            reviewed plan is submitted.
-          </p>
+            {tr("Missing objects are retained in NetBox. No deletes. Only the reviewed plan is submitted.")}{" "}</p>
           <button
             ref={confirmButton}
             className="primary"
@@ -345,8 +309,7 @@ export function SourceSync({
             }
             onClick={() => setConfirmOpen(true)}
           >
-            Review and confirm sync
-          </button>
+            {tr("Review and confirm sync")}{" "}</button>
         </div>
       )}
       <details
@@ -354,20 +317,13 @@ export function SourceSync({
         open={discoveryOpen}
         onToggle={(e) => setDiscoveryOpen(e.currentTarget.open)}
       >
-        <summary>Discovery · optional read-only inspection</summary>
+        <summary>{tr("Discovery · optional read-only inspection")}{" "}</summary>
         <p>
-          Inspect discovered objects and how they match NetBox. No NetBox
-          changes are made.
-        </p>
-        {discovering && (
-          <div className="sync-pending">
-            <p role="status">Discovering source {detail.name}…</p>
-            <Elapsed start={discoveryStarted} />
-          </div>
-        )}
+          {tr("Inspect discovered objects and how they match NetBox. No NetBox changes are made.")}{" "}</p>
+        {discovering && <OperationFeedback operation={tr('Run discovery')} phase={operationError?'uncertain':operations.some(row=>row.operation_kind==='DISCOVERY'&&row.status==='RUNNING')?'running':'sending'} started={discoveryStarted}/>}
         {discoveryError && (
           <p role="alert" className="source-error">
-            {discoveryError}
+            {tr(discoveryError)}
           </p>
         )}
         {discovery && (
@@ -379,9 +335,7 @@ export function SourceSync({
         )}
         {!discovery && !discovering && (
           <p>
-            Run discovery to inspect matching and classification evidence
-            independently of planning.
-          </p>
+            {tr("Run discovery to inspect matching and classification evidence independently of planning.")}{" "}</p>
         )}
       </details>
       <dialog
@@ -415,27 +369,26 @@ export function SourceSync({
           if (!applying) closeDialog();
         }}
       >
-        <h2 id="confirm-title">Sync changes to NetBox</h2>
+        <h2 id="confirm-title">{tr("Sync changes to NetBox")}{" "}</h2>
         <p id="confirm-description">
-          Confirm the complete reviewed plan for this source.
-        </p>
+          {tr("Confirm the complete reviewed plan for this source.")}{" "}</p>
         {plan && (
           <>
             <dl className="source-facts">
               <div>
-                <dt>Source</dt>
+                <dt>{tr("Source")}{" "}</dt>
                 <dd>
                   {detail.name} <code>{selected}</code>
                 </dd>
               </div>
               <div>
-                <dt>Target</dt>
+                <dt>{tr("Target")}{" "}</dt>
                 <dd>
                   {detail.site_slug} / {detail.cluster_name}
                 </dd>
               </div>
               <div>
-                <dt>Plan received</dt>
+                <dt>{tr("Plan received")}{" "}</dt>
                 <dd>
                   <Timestamp value={plan.received} />
                 </dd>
@@ -445,37 +398,24 @@ export function SourceSync({
           </>
         )}
         <p>
-          Review rows are isolated, not automatically adopted or applied as
-          normal updates. The plan is checked again before sync; changes to the
-          source or NetBox can invalidate it.
-        </p>
+          {tr("Review rows are isolated, not automatically adopted or applied as normal updates. The plan is checked again before sync; changes to the source or NetBox can invalidate it.")}{" "}</p>
         <ul>
-          <li>Missing objects are retained. No deletes.</li>
-          <li>Only this reviewed plan is submitted.</li>
-          <li>No automatic retry after an uncertain outcome.</li>
+          <li>{tr("Missing objects are retained. No deletes.")}{" "}</li>
+          <li>{tr("Only this reviewed plan is submitted.")}{" "}</li>
+          <li>{tr("No automatic retry after an uncertain outcome.")}{" "}</li>
         </ul>
         {applying && (
           <div className="sync-pending">
-            <p role="status">
-              {phase === "validating"
-                ? "Preparing / validating"
-                : "Submitting / applying"}{" "}
-              for {detail.name}.
-            </p>
-            <Elapsed start={started} />
+            <OperationFeedback operation={phase==='validating'?tr('Preparing / validating reviewed plan'):tr('Sync to NetBox')} phase="sending" started={started}/>
             <p>
-              Leaving a page does not cancel work already accepted by the
-              backend.
-            </p>
+              {tr("Leaving a page does not cancel work already accepted by the backend.")}{" "}</p>
           </div>
         )}
         <div className="page-actions">
           <button ref={cancelButton} disabled={applying} onClick={closeDialog}>
-            Cancel
-          </button>
+            {tr("Cancel")}{" "}</button>
           <button className="primary" disabled={applying} onClick={submit}>
-            Sync to NetBox
-          </button>
+            {tr("Sync to NetBox")}{" "}</button>
         </div>
       </dialog>
     </section>

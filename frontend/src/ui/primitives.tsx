@@ -1,10 +1,11 @@
+import {tr} from "./i18n";
 import type { ReactNode } from "react";
 import type { Status } from "./status";
 import { exactTime, relativeTime } from "./format";
 export function Badge({ value, code }: { value: Status; code?: string }) {
   return (
     <span className={`badge badge-${value.tone}`} title={code}>
-      <span aria-hidden="true">{value.icon}</span> {value.label}
+      <span aria-hidden="true">{value.icon}</span> {tr(value.label)}
     </span>
   );
 }
@@ -15,7 +16,7 @@ export function Timestamp({ value }: { value: string | null | undefined }) {
       <span className="sr-only"> ({exactTime(value)})</span>
     </time>
   ) : (
-    <>Not recorded</>
+    <>{tr("Not recorded")}{" "}</>
   );
 }
 export function PageHeader({
@@ -60,7 +61,7 @@ export function LoadingState({
 }) {
   return (
     <div role="status">
-      <span>{label}</span>
+      <span>{tr(label)}</span>
       {table && (
         <div aria-hidden="true" className="skeleton">
           {[1, 2, 3, 4, 5].map((n) => (
@@ -83,7 +84,7 @@ export function Alert({
   return (
     <div className={`alert alert-${tone}`} role="alert">
       <div>{children}</div>
-      {retry && <button onClick={retry}>Retry</button>}
+      {retry && <button onClick={retry}>{tr("Retry")}{" "}</button>}
     </div>
   );
 }
@@ -101,7 +102,7 @@ export function Pagination({
   const pages = Math.max(1, Math.ceil(total / size));
   return (
     <div className="pagination">
-      <label htmlFor="page-size">Rows per page</label>
+      <label htmlFor="page-size">{tr("Rows per page")}{" "}</label>
       <select
         id="page-size"
         value={size}
@@ -112,24 +113,22 @@ export function Pagination({
         ))}
       </select>
       <span>
-        {total ? (page - 1) * size + 1 : 0}–{Math.min(page * size, total)} of{" "}
+        {total ? (page - 1) * size + 1 : 0}–{Math.min(page * size, total)} {tr("of")}{" "}{" "}
         {total}
       </span>
       <button
         disabled={page <= 1}
         onClick={() => change("page", String(page - 1))}
       >
-        Previous
-      </button>
+        {tr("Previous")}{" "}</button>
       <span>
-        Page {page} of {pages}
+        {tr("Page")}{" "}{page} {tr("of")}{" "}{pages}
       </span>
       <button
         disabled={page >= pages}
         onClick={() => change("page", String(page + 1))}
       >
-        Next
-      </button>
+        {tr("Next")}{" "}</button>
     </div>
   );
 }

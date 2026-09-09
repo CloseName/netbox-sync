@@ -1,3 +1,4 @@
+import {tr} from "../ui/i18n";
 import { Link } from "react-router-dom";
 import { fetchSources } from "../api/sources";
 import { fetchDiagnostics } from "../api/diagnostics";
@@ -54,15 +55,14 @@ export function OverviewPage() {
   return (
     <main>
       <PageHeader
-        title="Overview"
-        description="Synchronization activity and the evidence behind it."
+        title={tr("Overview")}
+        description={tr("Synchronization activity and the evidence behind it.")}
         actions={
           <button
             disabled={sources.loading || diagnostics.loading || runs.loading}
             onClick={refresh}
           >
-            Refresh
-          </button>
+            {tr("Refresh")}{" "}</button>
         }
       />
       <ResourceNotice
@@ -72,7 +72,7 @@ export function OverviewPage() {
       />
       <section
         className="panel overview-summary"
-        aria-label="Overall diagnostics"
+        aria-label={tr("Overall diagnostics")}
       >
         {data ? (
           <>
@@ -80,21 +80,21 @@ export function OverviewPage() {
               value={healthStatus(data.overall_status)}
               code={data.overall_status}
             />
-            <p>{overviewReason(data)}</p>
+            <p>{tr(overviewReason(data))}</p>
             <small>
-              Checked <Timestamp value={data.generated_at} />
+              {tr("Checked")}{" "}<Timestamp value={data.generated_at} />
             </small>
-            <Link to="/diagnostics">Open diagnostics →</Link>
+            <Link to="/diagnostics">{tr("Open diagnostics →")}{" "}</Link>
           </>
         ) : diagnostics.loading ? (
-          <LoadingState label="Loading diagnostic summary…" />
+          <LoadingState label={tr("Loading diagnostic summary…")} />
         ) : (
-          <p>Overall diagnostics unavailable.</p>
+          <p>{tr("Overall diagnostics unavailable.")}{" "}</p>
         )}
       </section>
       <div className="summary-panels">
         <section className="panel">
-          <h2>Sources</h2>
+          <h2>{tr("Sources")}{" "}</h2>
           <ResourceNotice
             resource={sources}
             name="Sources"
@@ -103,10 +103,9 @@ export function OverviewPage() {
           {sources.data ? (
             <>
               <Link className="metric" to="/sources">
-                {sources.data.length} registered
-              </Link>
+                {sources.data.length} {tr("registered")}{" "}</Link>
               {diagnostics.loading && !data ? (
-                <LoadingState label="Loading source diagnostic states…" />
+                <LoadingState label={tr("Loading source diagnostic states…")} />
               ) : (
                 <div className="status-counts">
                   {[
@@ -122,7 +121,7 @@ export function OverviewPage() {
                     ).length;
                     return (
                       <Link key={status} to={`/sources?health=${status}`}>
-                        {healthStatus(status).label}: {count}
+                        {tr(healthStatus(status).label)}: {count}
                       </Link>
                     );
                   })}
@@ -132,55 +131,52 @@ export function OverviewPage() {
           ) : sources.loading ? (
             <LoadingState />
           ) : (
-            <p>Source count unavailable.</p>
+            <p>{tr("Source count unavailable.")}{" "}</p>
           )}
         </section>
         <section className="panel">
-          <h2>Activity</h2>
+          <h2>{tr("Activity")}{" "}</h2>
           {runs.data ? (
             <>
               <p>
                 <Link to="/runs">
-                  {running?.length} records marked as running in the latest{" "}
-                  {runs.data.length} runs
-                </Link>
+                  {running?.length} {tr("records marked as running in the latest")}{" "}{" "}
+                  {runs.data.length} {tr("runs")}{" "}</Link>
               </p>
-              <p className="muted">Recorded status; not a live worker check.</p>
+              <p className="muted">{tr("Recorded status; not a live worker check.")}{" "}</p>
             </>
           ) : runs.loading ? (
             <LoadingState />
           ) : (
-            <p>Recent activity unavailable.</p>
+            <p>{tr("Recent activity unavailable.")}{" "}</p>
           )}
           {data && data.components.run_history.status === "HEALTHY" ? (
             <p>
               <Link to="/diagnostics">
-                Completion unconfirmed: {data.stale_runs.length} returned run records
-              </Link>
+                {tr("Completion unconfirmed:")}{" "}{data.stale_runs.length} {tr("returned run records")}{" "}</Link>
               <small>
-                Diagnostic selection is limited to 100; not a global total.
-              </small>
+                {tr("Diagnostic selection is limited to 100; not a global total.")}{" "}</small>
             </p>
           ) : (
-            <p>Stale record evidence unavailable.</p>
+            <p>{tr("Stale record evidence unavailable.")}{" "}</p>
           )}
         </section>
       </div>
       <div className="overview-grid">
         <section className="panel">
-          <h2>Needs attention</h2>
+          <h2>{tr("Needs attention")}{" "}</h2>
           {data &&
             Object.entries(data.components)
               .filter(([, c]) => ["UNAVAILABLE", "DEGRADED"].includes(c.status))
               .map(([key, c]) => (
                 <p key={key}>
                   <Link to="/diagnostics">
-                    {key.replaceAll("_", " ")}: {healthStatus(c.status).label}
+                    {key.replaceAll("_", " ")}: {tr(healthStatus(c.status).label)}
                   </Link>
                 </p>
               ))}
           {!sources.data || !usable ? (
-            <p>Source attention cannot be fully evaluated.</p>
+            <p>{tr("Source attention cannot be fully evaluated.")}{" "}</p>
           ) : attention.length ? (
             <ul className="activity-list">
               {attention.map((row) => (
@@ -188,32 +184,31 @@ export function OverviewPage() {
                   <Link to={sourcePath(row.source.source_instance)}>
                     {row.source.name}
                   </Link>
-                  <span>{row.attention!.label}</span>
+                  <span>{tr(row.attention!.label)}</span>
                 </li>
               ))}
             </ul>
           ) : (
-            <p>No source attention items reported.</p>
+            <p>{tr("No source attention items reported.")}{" "}</p>
           )}
           {data?.stale_runs.slice(0, 3).map((w) => (
             <p key={w.run_id ?? w.source_instance}>
               {w.run_id ? (
                 <Link to={runPath(w.run_id)}>
-                  Completion unconfirmed: {w.source_instance}
+                  {tr("Completion unconfirmed:")}{" "}{w.source_instance}
                 </Link>
               ) : (
-                "Completion unconfirmed"
+                tr("Completion unconfirmed")
               )}
             </p>
           ))}
           <Link to="/sources?attention=yes">
-            View sources needing attention →
-          </Link>
+            {tr("View sources needing attention →")}{" "}</Link>
         </section>
         <section className="panel">
-          <h2>Next expected</h2>
+          <h2>{tr("Next expected")}{" "}</h2>
           {!usable ? (
-            <p>Schedule evidence unavailable.</p>
+            <p>{tr("Schedule evidence unavailable.")}{" "}</p>
           ) : expected.length ? (
             <ul className="activity-list">
               {expected.map((s) => (
@@ -228,16 +223,14 @@ export function OverviewPage() {
               ))}
             </ul>
           ) : (
-            <p>No next expected runs reported.</p>
+            <p>{tr("No next expected runs reported.")}{" "}</p>
           )}
           <p className="muted">
-            Expected times are derived from configuration and history; start
-            times are not guaranteed.
-          </p>
+            {tr("Expected times are derived from configuration and history; start times are not guaranteed.")}{" "}</p>
         </section>
       </div>
       <section className="panel">
-        <h2>Recent runs</h2>
+        <h2>{tr("Recent runs")}{" "}</h2>
         <ResourceNotice
           resource={runs}
           name="Run history"
@@ -249,19 +242,18 @@ export function OverviewPage() {
               className="scroll-region"
               tabIndex={0}
               role="region"
-              aria-label="Recent runs"
+              aria-label={tr("Recent runs")}
             >
               <table>
                 <caption className="sr-only">
-                  Latest eight recorded runs
-                </caption>
+                  {tr("Latest eight recorded runs")}{" "}</caption>
                 <thead>
                   <tr>
-                    <th scope="col">Source</th>
-                    <th scope="col">Started</th>
-                    <th scope="col">Trigger</th>
-                    <th scope="col">Outcome</th>
-                    <th scope="col">Duration</th>
+                    <th scope="col">{tr("Source")}{" "}</th>
+                    <th scope="col">{tr("Started")}{" "}</th>
+                    <th scope="col">{tr("Trigger")}{" "}</th>
+                    <th scope="col">{tr("Outcome")}{" "}</th>
+                    <th scope="col">{tr("Duration")}{" "}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -279,7 +271,7 @@ export function OverviewPage() {
                           <Timestamp value={run.started_at} />
                         </Link>
                       </td>
-                      <td>{run.trigger}</td>
+                      <td>{tr(run.trigger)}</td>
                       <td>
                         <Badge
                           value={runStatus(
@@ -296,16 +288,16 @@ export function OverviewPage() {
               </table>
             </div>
           ) : (
-            <EmptyState title="No runs have been recorded yet.">
-              <Link to="/sources">Open Sources</Link>
+            <EmptyState title={tr("No runs have been recorded yet.")}>
+              <Link to="/sources">{tr("Open Sources")}{" "}</Link>
             </EmptyState>
           )
         ) : runs.loading ? (
-          <LoadingState table label="Loading recent runs…" />
+          <LoadingState table label={tr("Loading recent runs…")} />
         ) : (
-          <p>No run data available.</p>
+          <p>{tr("No run data available.")}{" "}</p>
         )}
-        <Link to="/runs">Open run history →</Link>
+        <Link to="/runs">{tr("Open run history →")}{" "}</Link>
       </section>
     </main>
   );

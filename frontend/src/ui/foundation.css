@@ -1756,3 +1756,38 @@ button.danger {
 .access-command button { margin-inline-end: .5rem; }
 .access-notice { border-inline-start: 3px solid var(--border); padding-inline-start: .75rem; }
 .access-language { max-width: 14rem; margin-block: 1rem; }
+
+/* Shared operator typography and compact surfaces; no external font requests. */
+@font-face { font-family: Inter; src: url('/assets/InterVariable.woff2') format('woff2'); font-style: normal; font-weight: 100 900; font-display: swap; }
+:root { --space-1: .375rem; --space-2: .75rem; --space-3: 1rem; --space-4: 1.5rem; --form-width: 54rem; }
+body, .setup-workspace { font-family: Inter, system-ui, sans-serif; }
+.brand-lockup { display: inline-flex; align-items: center; gap: .5rem; white-space: nowrap; font-size: 1.1rem; color: inherit; }
+.brand-lockup img { flex: 0 0 auto; }
+.language-control { display: inline-flex; align-items: center; gap: .4rem; font-size: .9rem; }
+.language-control select { width: auto; }
+.app-header { flex-wrap: wrap; gap: .75rem; }
+.app-header > .muted { display: none; }
+.app-brand { margin-inline-end: auto; }
+.add-source-workspace, .setup-workspace { max-width: var(--form-width); margin-inline: auto; }
+.setup-workspace { font-size: 1rem; margin-block: 1.5rem; }
+.setup-intro { margin-block: 1.5rem; }
+.setup-panel { padding: var(--space-4); background: var(--surface); }
+.setup-toolbar { flex-wrap: wrap; gap: .75rem; }
+.setup-toolbar .brand-lockup { margin-inline-end: auto; }
+@media(max-width:640px) { .setup-panel { padding: var(--space-3); } .app-header { gap: .5rem; } }
+
+.operation-feedback { margin-block: var(--space-2); padding: var(--space-2) var(--space-3); border-inline-start: 3px solid var(--accent); background: var(--accent-soft); border-radius: var(--radius); }
+.operation-feedback p { margin: 0 0 .3rem; }
+.operation-uncertain { background: var(--warning-bg); border-color: var(--warning); }
+.activity-indicator { display:inline-block; width:.9rem; height:.9rem; margin-inline-end:.5rem; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:busy-turn 1s linear infinite; }
+@keyframes busy-turn { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .activity-indicator { animation:none; border-style:dotted; } }
+
+/* Main instructions remain readable; dense tables keep their existing scale. */
+.setup-panel, .bootstrap-form, .onboarding-form { font-size: 16px; line-height: 1.5; }
+
+.app-header .theme-control { margin-inline-start: 0; }
+
+.badge { overflow-wrap: normal; word-break: normal; }
+.language-control select { color:var(--nav-text); background:var(--nav-hover); border-color:var(--nav-muted); }
+.setup-toolbar .language-control select { color:var(--text); background:var(--surface); border-color:var(--border); }

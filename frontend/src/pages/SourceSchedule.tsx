@@ -1,3 +1,4 @@
+import {tr} from "../ui/i18n";
 import { useEffect, useRef, useState } from "react";
 import {
   ScheduleRequestError,
@@ -32,15 +33,15 @@ export function ScheduleSummary({
   return (
     <dl className="source-facts">
       <div>
-        <dt>Automatic sync</dt>
-        <dd>{schedule.sync_enabled ? "On" : "Off"}</dd>
+        <dt>{tr("Automatic sync")}{" "}</dt>
+        <dd>{schedule.sync_enabled ? tr("On") : tr("Off")}</dd>
       </div>
       <div>
-        <dt>Frequency</dt>
-        <dd>Every {interval(schedule.sync_interval_seconds)}</dd>
+        <dt>{tr("Frequency")}{" "}</dt>
+        <dd>{tr("Every")}{" "}{interval(schedule.sync_interval_seconds)}</dd>
       </div>
       <div>
-        <dt>Scheduled activity</dt>
+        <dt>{tr("Scheduled activity")}{" "}</dt>
         <dd>
           <Badge
             value={scheduleStates[schedule.scheduler_state]}
@@ -49,7 +50,7 @@ export function ScheduleSummary({
         </dd>
       </div>
       <div>
-        <dt>Last scheduled run</dt>
+        <dt>{tr("Last scheduled run")}{" "}</dt>
         <dd>
           {last ? (
             <>
@@ -58,23 +59,21 @@ export function ScheduleSummary({
             </>
           ) : schedule.last_scheduled_run_at ? (
             <>
-              <Timestamp value={schedule.last_scheduled_run_at} /> · Outcome
-              unavailable
-            </>
+              <Timestamp value={schedule.last_scheduled_run_at} /> {tr("· Outcome unavailable")}{" "}</>
           ) : evidence ? (
-            "No scheduled run recorded"
+            tr("No scheduled run recorded")
           ) : (
-            "Unavailable"
+            tr("Unavailable")
           )}
         </dd>
       </div>
       <div>
-        <dt>Next expected</dt>
+        <dt>{tr("Next expected")}{" "}</dt>
         <dd>
           {schedule.next_expected_at ? (
             <Timestamp value={schedule.next_expected_at} />
           ) : (
-            "Not scheduled"
+            tr("Not scheduled")
           )}
         </dd>
       </div>
@@ -199,12 +198,11 @@ export function SourceSchedule({
       className="source-panel schedule-panel"
       aria-labelledby="schedule-title"
     >
-      <h2 id="schedule-title">Schedule</h2>
-      {resource.loading && <LoadingState label="Loading schedule…" />}
+      <h2 id="schedule-title">{tr("Schedule")}{" "}</h2>
+      {resource.loading && <LoadingState label={tr("Loading schedule…")} />}
       {resource.error && (
         <Alert retry={!editing ? resource.refresh : undefined}>
-          Schedule unavailable.
-          {resource.data && " Showing the last loaded schedule."}
+          {tr("Schedule unavailable.")}{" "}{resource.data && tr(" Showing the last loaded schedule.")}
         </Alert>
       )}
       {schedule && (
@@ -223,18 +221,16 @@ export function SourceSchedule({
                     setPhase("editing");
                   }}
                 >
-                  Edit schedule
-                </button>
+                  {tr("Edit schedule")}{" "}</button>
                 <button disabled={resource.loading} onClick={resource.refresh}>
-                  Refresh schedule
-                </button>
+                  {tr("Refresh schedule")}{" "}</button>
               </div>
             </>
           )}
           {editing && (
-            <form onSubmit={save} aria-label="Edit schedule" noValidate>
+            <form onSubmit={save} aria-label={tr("Edit schedule")} noValidate>
               <fieldset disabled={phase === "saving" || reloadPending}>
-                <legend>Automatic sync</legend>
+                <legend>{tr("Automatic sync")}{" "}</legend>
                 <label className="schedule-toggle">
                   <input
                     autoFocus
@@ -242,14 +238,13 @@ export function SourceSchedule({
                     checked={enabled}
                     onChange={(e) => setEnabled(e.target.checked)}
                   />{" "}
-                  Automatic sync
-                </label>
+                  {tr("Automatic sync")}{" "}</label>
                 <p>
                   {enabled
-                    ? "After saving, this source can be picked up by the scheduler on a future scheduler cycle."
-                    : "Future automatic runs are disabled. A run that has already started is not cancelled."}
+                    ? tr("After saving, this source can be picked up by the scheduler on a future scheduler cycle.")
+                    : tr("Future automatic runs are disabled. A run that has already started is not cancelled.")}
                 </p>
-                <label htmlFor="schedule-preset">Frequency</label>
+                <label htmlFor="schedule-preset">{tr("Frequency")}{" "}</label>
                 <select
                   id="schedule-preset"
                   value={draft.preset}
@@ -263,15 +258,15 @@ export function SourceSchedule({
                 >
                   {schedulePresets.map((value) => (
                     <option key={value} value={value}>
-                      Every {interval(value)}
+                      {tr("Every")}{" "}{interval(value)}
                     </option>
                   ))}
-                  <option value="custom">Custom</option>
+                  <option value="custom">{tr("Custom")}{" "}</option>
                 </select>
                 {draft.preset === "custom" && (
                   <div className="schedule-custom">
                     <div>
-                      <label htmlFor="schedule-amount">Custom interval</label>
+                      <label htmlFor="schedule-amount">{tr("Custom interval")}{" "}</label>
                       <input
                         id="schedule-amount"
                         inputMode="decimal"
@@ -285,7 +280,7 @@ export function SourceSchedule({
                       />
                     </div>
                     <div>
-                      <label htmlFor="schedule-unit">Unit</label>
+                      <label htmlFor="schedule-unit">{tr("Unit")}{" "}</label>
                       <select
                         id="schedule-unit"
                         value={draft.unit}
@@ -296,9 +291,9 @@ export function SourceSchedule({
                           })
                         }
                       >
-                        <option value="seconds">Seconds</option>
-                        <option value="minutes">Minutes</option>
-                        <option value="hours">Hours</option>
+                        <option value="seconds">{tr("Seconds")}{" "}</option>
+                        <option value="minutes">{tr("Minutes")}{" "}</option>
+                        <option value="hours">{tr("Hours")}{" "}</option>
                       </select>
                     </div>
                   </div>
@@ -308,19 +303,15 @@ export function SourceSchedule({
                   className={invalid ? "source-error" : "muted"}
                 >
                   {invalid
-                    ? "Enter an exact whole-second interval from 1 minute to 24 hours. The stored value has not been changed."
-                    : "Allowed: 1 minute to 24 hours, with exact whole-second precision."}
+                    ? tr("Enter an exact whole-second interval from 1 minute to 24 hours. The stored value has not been changed.")
+                    : tr("Allowed: 1 minute to 24 hours, with exact whole-second precision.")}
                 </p>
                 {baseline &&
                   (baseline.sync_interval_seconds < 60 ||
                     baseline.sync_interval_seconds > 86400) && (
                     <p className="alert alert-warning">
-                      Stored frequency: every{" "}
-                      {interval(baseline.sync_interval_seconds)}. Registration
-                      accepts a wider range than schedule updates. Choose a
-                      supported value explicitly to save, or cancel to preserve
-                      it.
-                    </p>
+                      {tr("Stored frequency: every")}{" "}{" "}
+                      {interval(baseline.sync_interval_seconds)}{tr(". Registration accepts a wider range than schedule updates. Choose a supported value explicitly to save, or cancel to preserve it.")}{" "}</p>
                   )}
               </fieldset>
               <div className="page-actions">
@@ -334,7 +325,7 @@ export function SourceSchedule({
                   }
                   type="submit"
                 >
-                  {phase === "saving" ? "Saving…" : "Save schedule"}
+                  {phase === "saving" ? tr("Saving…") : tr("Save schedule")}
                 </button>
                 <button
                   type="button"
@@ -344,16 +335,14 @@ export function SourceSchedule({
                     setMessage("");
                   }}
                 >
-                  Cancel
-                </button>
+                  {tr("Cancel")}{" "}</button>
                 {phase === "conflict" && (
                   <button
                     type="button"
                     disabled={reloadPending}
                     onClick={reloadLatest}
                   >
-                    Reload latest schedule
-                  </button>
+                    {tr("Reload latest schedule")}{" "}</button>
                 )}
               </div>
             </form>
@@ -366,19 +355,15 @@ export function SourceSchedule({
           tabIndex={-1}
           role={phase === "error" || phase === "conflict" ? "alert" : "status"}
         >
-          {message}
+          {tr(message)}
         </p>
       )}
       {!sourceEnabled && (
         <p className="alert alert-warning">
-          Source disabled. Automatic runs cannot start while the source is
-          disabled, even if automatic sync is configured on.
-        </p>
+          {tr("Source disabled. Automatic runs cannot start while the source is disabled, even if automatic sync is configured on.")}{" "}</p>
       )}
       <p className="muted">
-        Next expected is an estimate, not a guaranteed start. Schedule state is
-        derived from persisted runs, not a live scheduler heartbeat.
-      </p>
+        {tr("Next expected is an estimate, not a guaranteed start. Schedule state is derived from persisted runs, not a live scheduler heartbeat.")}{" "}</p>
     </section>
   );
 }

@@ -8,6 +8,7 @@ export const navigation = [
   { to: "/diagnostics", label: "Diagnostics" },
 ];
 export function breadcrumbs(pathname: string) {
+  if(pathname === "/system")return [{label:"System health",to:"/system"}];
   const parts = pathname.split("/").filter(Boolean);
   const section = navigation.find((item) => item.to === "/" + parts[0]);
   if (!parts.length) return [{ label: "Overview", to: "/" }];

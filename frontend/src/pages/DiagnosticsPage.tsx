@@ -1,3 +1,4 @@
+import {tr} from "../ui/i18n";
 import { Link } from "react-router-dom";
 import { fetchDiagnostics } from "../api/diagnostics";
 import { useResource } from "../ui/useResource";
@@ -20,24 +21,23 @@ export function DiagnosticsPage() {
   return (
     <main className="operations-workspace">
       <PageHeader
-        title="Diagnostics"
-        description="Checks and recorded activity, with evidence for investigation."
+        title={tr("Diagnostics")}
+        description={tr("Checks and recorded activity, with evidence for investigation.")}
         actions={
           <button disabled={resource.loading} onClick={resource.refresh}>
-            Refresh
-          </button>
+            {tr("Refresh")}{" "}</button>
         }
       />
       <ResourceFeedback
         resource={resource}
-        label="diagnostics"
+        label={tr("diagnostics")}
         evidenceAt={data?.generated_at}
       />
       {data && (
         <>
           <section
             className="diagnostic-summary source-panel"
-            aria-label="System assessment"
+            aria-label={tr("System assessment")}
           >
             <div>
               <h2>
@@ -46,14 +46,14 @@ export function DiagnosticsPage() {
                   code={data.overall_status}
                 />
               </h2>
-              <p>{aggregateReason(data)}</p>
+              <p>{tr(aggregateReason(data))}</p>
             </div>
             <p>
-              Snapshot <Timestamp value={data.generated_at} />
+              {tr("Snapshot")}{" "}<Timestamp value={data.generated_at} />
             </p>
           </section>
           <section className="source-panel">
-            <h2>Component checks</h2>
+            <h2>{tr("Component checks")}{" "}</h2>
             <div className="diagnostic-components">
               {(Object.keys(componentLabels) as ComponentKey[]).map((key) => {
                 const c = data.components[key];
@@ -64,53 +64,53 @@ export function DiagnosticsPage() {
                     className="diagnostic-component"
                   >
                     <div>
-                      <h3>{componentLabels[key]}</h3>
+                      <h3>{tr(componentLabels[key])}</h3>
                       <Badge value={healthStatus(c.status)} code={c.status} />
                     </div>
                     <div>
-                      <p>{componentReason(key, c)}</p>
+                      <p>{tr(componentReason(key, c))}</p>
                       {key === "scheduler" && (
                         <small>
-                          Last recorded activity:{" "}
+                          {tr("Last recorded activity:")}{" "}{" "}
                           <Timestamp value={c.last_seen_at} />
                         </small>
                       )}
                       <details>
-                        <summary>Technical details</summary>
+                        <summary>{tr("Technical details")}{" "}</summary>
                         <dl className="technical-facts">
                           <div>
-                            <dt>Recorded status</dt>
+                            <dt>{tr("Recorded status")}{" "}</dt>
                             <dd>{c.status}</dd>
                           </div>
                           <div>
-                            <dt>Checked at</dt>
+                            <dt>{tr("Checked at")}{" "}</dt>
                             <dd>
                               <Timestamp value={c.checked_at} />
                             </dd>
                           </div>
                           <div>
-                            <dt>Last response</dt>
+                            <dt>{tr("Last response")}{" "}</dt>
                               <dd><Timestamp value={c.last_seen_at} /></dd>
                             </div>
                             <div>
-                              <dt>Last success</dt>
+                              <dt>{tr("Last success")}{" "}</dt>
                             <dd>
                               <Timestamp value={c.last_success_at} />
                             </dd>
                           </div>
                           <div>
-                            <dt>Next expected</dt>
+                            <dt>{tr("Next expected")}{" "}</dt>
                             <dd>
                               <Timestamp value={c.next_expected_at} />
                             </dd>
                           </div>
                           <div>
-                            <dt>Safe code</dt>
-                            <dd>{c.safe_code ?? "None reported"}</dd>
+                            <dt>{tr("Safe code")}{" "}</dt>
+                            <dd>{c.safe_code ?? tr("None reported")}</dd>
                           </div>
                           {c.safe_message && (
                             <div>
-                              <dt>Safe message</dt>
+                              <dt>{tr("Safe message")}{" "}</dt>
                               <dd>{c.safe_message}</dd>
                             </div>
                           )}
@@ -118,7 +118,7 @@ export function DiagnosticsPage() {
                       </details>
                     </div>
                     <div className="muted">
-                      Checked <Timestamp value={c.checked_at} />
+                      {tr("Checked")}{" "}<Timestamp value={c.checked_at} />
                     </div>
                   </article>
                 );
@@ -126,29 +126,25 @@ export function DiagnosticsPage() {
             </div>
           </section>
           <section className="source-panel">
-            <h2>Attention</h2>
+            <h2>{tr("Attention")}{" "}</h2>
             <DiagnosticAttention data={data} />
           </section>
           <section className="source-panel">
-            <h2>Source evidence</h2>
+            <h2>{tr("Source evidence")}{" "}</h2>
             <p className="muted">
-              Derived from configuration and persisted runs. This does not
-              verify source connectivity or a live scheduler heartbeat.
-            </p>
+              {tr("Derived from configuration and persisted runs. This does not verify source connectivity or a live scheduler heartbeat.")}{" "}</p>
             {!diagnosticsUsable(data) ? (
               <p>
-                Source evidence unavailable. Registry and run history checks
-                must both succeed.
-              </p>
+                {tr("Source evidence unavailable. Registry and run history checks must both succeed.")}{" "}</p>
             ) : data.sources.length === 0 ? (
               <p>
-                No sources configured. <Link to="/sources">Open Sources</Link>
+                {tr("No sources configured.")}{" "}<Link to="/sources">{tr("Open Sources")}{" "}</Link>
               </p>
             ) : (
               <div
                 className="source-table"
                 role="region"
-                aria-label="Source diagnostic evidence"
+                aria-label={tr("Source diagnostic evidence")}
                 tabIndex={0}
               >
                 <table>
@@ -161,8 +157,8 @@ export function DiagnosticsPage() {
                         "Scheduled activity",
                         "Last success",
                       ].map((label) => (
-                        <th key={label} scope="col">
-                          {label}
+                        <th key={tr(label)} scope="col">
+                          {tr(label)}
                         </th>
                       ))}
                     </tr>
@@ -178,8 +174,8 @@ export function DiagnosticsPage() {
                           </Link>
                           <small>
                             {s.source_type === "proxmox"
-                              ? "Proxmox VE"
-                              : "VMware ESXi"}
+                              ? tr("Proxmox VE")
+                              : tr("VMware ESXi")}
                           </small>
                         </td>
                         <td>
@@ -205,7 +201,7 @@ export function DiagnosticsPage() {
                               </small>
                             </>
                           ) : (
-                            "No runs recorded"
+                            tr("No runs recorded")
                           )}
                         </td>
                         <td>
@@ -215,7 +211,7 @@ export function DiagnosticsPage() {
                             <Badge value={scheduleStates[s.scheduler_state]} />
                           </Link>
                           <small>
-                            Last scheduled:{" "}
+                            {tr("Last scheduled:")}{" "}{" "}
                             <Timestamp value={s.last_scheduled_run_at} />
                           </small>
                         </td>

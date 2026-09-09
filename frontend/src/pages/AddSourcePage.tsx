@@ -1,3 +1,6 @@
+import {OperationFeedback} from "../ui/OperationFeedback";
+import {tr} from "../ui/i18n";
+import {useLanguage} from "../ui/language";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
@@ -9,7 +12,6 @@ import {
   testConnection,
 } from "../api/onboarding";
 import { SourceAccessHelp } from "../components/SourceAccessHelp";
-import type { Language } from "../components/SourceAccessHelp";
 import type { Source } from "../api/sources";
 
 import { Link } from "react-router-dom";
@@ -37,7 +39,7 @@ const fields = [
 ] as const;
 
 export function AddSourcePage() {
-  const [language, setLanguage] = useState<Language>(() => navigator.language.startsWith("ru") ? "ru" : "en");
+  const [language] = useLanguage();
   const t = (en: string, ru: string) => language === "ru" ? ru : en;
   const [type, setType] = useState<"proxmox" | "esxi">("proxmox");
   const [connection, setConnection] = useState({
@@ -46,7 +48,9 @@ export function AddSourcePage() {
   });
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false); const [started,setStarted]=useState(0);
   const [error, setError] = useState("");
+  const [connectionCode,setConnectionCode]=useState<keyof typeof connectionMessages|null>(null);
   const [created, setCreated] = useState<Source | null>(null);
 
   const workspace = useRef<HTMLElement>(null);
@@ -61,9 +65,10 @@ export function AddSourcePage() {
     }
   }, [error, token, created]);
   async function changeConnection() {
-    if (busy) return;
+    if (inFlight.current) return;
+    inFlight.current=true; setStarted(Date.now());
     setBusy(true);
-    setError("");
+    setError(""); setConnectionCode(null);
     try {
       await cancelOnboarding(token);
       setToken("");
@@ -72,17 +77,18 @@ export function AddSourcePage() {
         "Could not invalidate the previous test. Retry before changing connection values.",
       );
     } finally {
-      setBusy(false);
+      inFlight.current=false; setBusy(false);
     }
   }
 
   async function test(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy) return;
+    if (inFlight.current) return;
+    inFlight.current=true; setStarted(Date.now());
     const form = event.currentTarget;
     const data = new FormData(form);
     setBusy(true);
-    setError("");
+    setError(""); setConnectionCode(null);
     try {
       const tokenValue = await testConnection({
         source_type: type,
@@ -95,23 +101,25 @@ export function AddSourcePage() {
       });
       setToken(tokenValue);
     } catch (failure) {
+      if(failure instanceof SourceConnectionError)setConnectionCode(failure.code);
       setError(
         failure instanceof SourceConnectionError ? connectionMessages[failure.code][language === 'ru' ? 1 : 0] :
         t("Connection test failed. Re-enter credentials to retry; nothing was registered.", "Проверка подключения не завершена. Введите данные повторно; источник не зарегистрирован."),
       );
     } finally {
       form.reset();
-      setBusy(false);
+      inFlight.current=false; setBusy(false);
     }
   }
 
   async function register(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy) return;
+    if (inFlight.current) return;
     const data = new FormData(event.currentTarget);
     if (data.get("confirm") !== "on") return;
+    inFlight.current=true; setStarted(Date.now());
     setBusy(true);
-    setError("");
+    setError(""); setConnectionCode(null);
     try {
       const metadata = Object.fromEntries(
         fields.map((field) => [field, String(data.get(field))]),
@@ -132,7 +140,7 @@ export function AddSourcePage() {
       );
     } finally {
       setToken("");
-      setBusy(false);
+      inFlight.current=false; setBusy(false);
     }
   }
 
@@ -140,43 +148,40 @@ export function AddSourcePage() {
     return (
       <main className="add-source-workspace" ref={workspace}>
         <PageHeader
-          title="Source registered"
-          description="Automatic sync is off. Review the source before planning a sync."
+          title={tr("Source registered")}
+          description={tr("Automatic sync is off. Review the source before planning a sync.")}
         />
         <section className="source-panel registration-result">
           <h2>{created.name}</h2>
           <dl className="source-facts">
             <div>
-              <dt>Source ID</dt>
+              <dt>{tr("Source ID")}{" "}</dt>
               <dd>
                 <code>{created.source_instance}</code>
               </dd>
             </div>
             <div>
-              <dt>Address</dt>
+              <dt>{tr("Address")}{" "}</dt>
               <dd>{created.address}</dd>
             </div>
             <div>
-              <dt>Source</dt>
-              <dd>Enabled</dd>
+              <dt>{tr("Source")}{" "}</dt>
+              <dd>{tr("Enabled")}{" "}</dd>
             </div>
             <div>
-              <dt>Automatic sync</dt>
-              <dd>Off</dd>
+              <dt>{tr("Automatic sync")}{" "}</dt>
+              <dd>{tr("Off")}{" "}</dd>
             </div>
           </dl>
           <p className="muted">
-            Credentials are protected. Connection was tested during
-            registration, not continuously.
-          </p>
+            {tr("Credentials are protected. Connection was tested during registration, not continuously.")}{" "}</p>
           <div className="page-actions">
             <Link
               className="button primary"
               to={sourcePath(created.source_instance)}
             >
-              Open source
-            </Link>
-            <Link to="/sources">View sources</Link>
+              {tr("Open source")}{" "}</Link>
+            <Link to="/sources">{tr("View sources")}{" "}</Link>
           </div>
         </section>
       </main>
@@ -184,7 +189,7 @@ export function AddSourcePage() {
 
   const metadataField = (field: (typeof fields)[number]) => (
     <label key={field}>
-      {fieldLabels[field]}
+      {tr(fieldLabels[field])}
       <input
         name={field}
         required
@@ -198,27 +203,22 @@ export function AddSourcePage() {
   return (
     <main className="add-source-workspace" ref={workspace}>
       <PageHeader
-        title="Add source"
-        description="Test connection, review source details, then register. No discovery or synchronization will run."
+        title={tr("Add source")}
+        description={tr("Test connection, review source details, then register. No discovery or synchronization will run.")}
       />
       {error && (
         <p role="alert" tabIndex={-1} className="source-error">
-          {error}
+          {connectionCode?connectionMessages[connectionCode][language==='ru'?1:0]:tr(error)}
         </p>
       )}
-      {busy && (
-        <p role="status">
-          {token ? "Registering source…" : "Checking connection…"}
-        </p>
-      )}
+      {busy && <OperationFeedback operation={token?t('Registering source','Регистрация источника'):t('Testing source connection','Проверка подключения источника')} phase="sending" started={started}/>}
       {!token ? (
         <form onSubmit={test} className="source-form" autoComplete="off">
-          <fieldset disabled={busy}>
-            <legend>Connection</legend>
+          <fieldset disabled={busy} aria-busy={busy}>
+            <legend>{tr("Connection")}{" "}</legend>
             <div className="form-grid">
               <label>
-                Source type
-                <select
+                {tr("Source type")}{" "}<select
                   value={type}
                   onChange={(event) => {
                     const nextType = event.target.value as typeof type;
@@ -226,13 +226,12 @@ export function AddSourcePage() {
                     setType(nextType);
                   }}
                 >
-                  <option value="proxmox">Proxmox VE</option>
-                  <option value="esxi">VMware ESXi</option>
+                  <option value="proxmox">{tr("Proxmox VE")}{" "}</option>
+                  <option value="esxi">{tr("VMware ESXi")}{" "}</option>
                 </select>
               </label>
               <label>
-                Hostname or IPv4 address
-                <input
+                {tr("Hostname or IPv4 address")}{" "}<input
                   required
                   value={connection.address}
                   pattern="[^/@%?#:\\\\ ]+"
@@ -256,30 +255,25 @@ export function AddSourcePage() {
                   })
                 }
               />{" "}
-              Verify TLS certificate
-            </label>
-            <label className="access-language">Language / Язык
-              <select value={language} onChange={event => setLanguage(event.target.value as Language)}><option value="en">English</option><option value="ru">Русский</option></select>
-            </label>
+              {tr("Verify TLS certificate")}{" "}</label>
             <h2>{t('Source credentials', 'Доступ к источнику')}</h2>
             <p className="muted">
               {t('Credentials apply only to this source and are cleared from the form after testing.', 'Данные доступа относятся только к этому источнику и удаляются из формы после проверки.')}
             </p>
             <div className="form-grid">
               <label>
-                {type === "proxmox" ? "Token user (user@realm)" : "Username"}
+                {type === "proxmox" ? tr("Token user (user@realm)") : tr("Username")}
                 <input name="username" required aria-describedby="source-user-hint" />
                 <small id="source-user-hint">{type === 'proxmox' ? t('User including realm, e.g. netbox-sync@pve.', 'Пользователь вместе с realm, например netbox-sync@pve.') : t('Local ESXi user, e.g. netbox-sync.', 'Локальный пользователь ESXi, например netbox-sync.')}</small>
               </label>
               {type === "proxmox" && (
                 <label>
-                  Token name (without user prefix)
-                  <input name="token_id" required aria-describedby="source-token-hint" />
+                  {tr("Token name (without user prefix)")}{" "}<input name="token_id" required aria-describedby="source-token-hint" />
                   <small id="source-token-hint">{t('Token name only, e.g. netbox-sync; not user@realm!token.', 'Только имя токена, например netbox-sync; не user@realm!token.')}</small>
                 </label>
               )}
               <label>
-                {type === "proxmox" ? "Token secret" : "Password"}
+                {type === "proxmox" ? tr("Token secret") : tr("Password")}
                 <input
                   name="secret"
                   type="password"
@@ -291,51 +285,48 @@ export function AddSourcePage() {
               </label>
             </div>
             <SourceAccessHelp provider={type} language={language}/>
+            <details className="source-access-help"><summary>{t('If access is blocked by policy','Если доступ запрещён политикой')}</summary><p>{t('The server checks every resolved address before authentication. A policy denial is not a password error. Existing deployment restrictions remain in force; Test Connection does not change them.', 'Сервер проверяет все полученные адреса до входа. Запрет политики не означает ошибку пароля. Действующие ограничения установки сохраняются; проверка подключения их не изменяет.')}</p><p>{t('Ask the deployment operator to review a denied source. Online policy management requires server-side administrator authorization, which is not implemented yet. Completing onboarding does not grant that permission.', 'При запрете источника обратитесь к оператору установки. Управление политикой через панель требует серверной проверки прав администратора, которая пока не реализована. Завершение настройки не даёт этого разрешения.')}</p></details>
             <button className="primary" disabled={busy}>
-              {busy ? "Testing…" : "Test Connection"}
+              {busy ? tr("Testing…") : tr("Test Connection")}
             </button>
           </fieldset>
         </form>
       ) : (
         <form onSubmit={register} className="source-form">
           <section className="source-panel">
-            <h2 tabIndex={-1}>Review source details</h2>
+            <h2 tabIndex={-1}>{tr("Review source details")}{" "}</h2>
             <p>
-              Connection test succeeded. Credentials have been cleared from the
-              form.
-            </p>
+              {tr("Connection test succeeded. Credentials have been cleared from the form.")}{" "}</p>
             <p>
-              {type === "proxmox" ? "Proxmox VE" : "VMware ESXi"} ·{" "}
-              {connection.address} · TLS verification{" "}
-              {connection.verify_ssl ? "on" : "off"}.
+              {type === "proxmox" ? tr("Proxmox VE") : tr("VMware ESXi")} ·{" "}
+              {connection.address} {tr("· TLS verification")}{" "}{" "}
+              {connection.verify_ssl ? tr("on") : tr("off")}.
             </p>
             <button type="button" disabled={busy} onClick={changeConnection}>
-              Change connection and re-test
-            </button>
+              {tr("Change connection and re-test")}{" "}</button>
           </section>
-          <fieldset disabled={busy}>
-            <legend>Identity</legend>
+          <fieldset disabled={busy} aria-busy={busy}>
+            <legend>{tr("Identity")}{" "}</legend>
             <div className="form-grid">
               {fields.slice(0, 2).map(metadataField)}
             </div>
           </fieldset>
-          <fieldset disabled={busy}>
-            <legend>NetBox target</legend>
+          <fieldset disabled={busy} aria-busy={busy}>
+            <legend>{tr("NetBox target")}{" "}</legend>
             <div className="form-grid">
               {fields.slice(2, 4).map(metadataField)}
             </div>
           </fieldset>
-          <fieldset disabled={busy}>
-            <legend>Provider mapping</legend>
+          <fieldset disabled={busy} aria-busy={busy}>
+            <legend>{tr("Provider mapping")}{" "}</legend>
             <div className="form-grid">
               {fields.slice(4).map(metadataField)}
             </div>
           </fieldset>
-          <fieldset disabled={busy}>
-            <legend>Automatic sync</legend>
+          <fieldset disabled={busy} aria-busy={busy}>
+            <legend>{tr("Automatic sync")}{" "}</legend>
             <label>
-              Configured interval (seconds)
-              <input
+              {tr("Configured interval (seconds)")}{" "}<input
                 name="interval"
                 type="number"
                 min={1}
@@ -346,15 +337,11 @@ export function AddSourcePage() {
               />
             </label>
             <p className="muted">
-              This stores the frequency only. Automatic sync stays off until you
-              enable it in Schedule.
-            </p>
+              {tr("This stores the frequency only. Automatic sync stays off until you enable it in Schedule.")}{" "}</p>
             <label className="checkbox-label">
-              <input name="confirm" type="checkbox" required /> Register a new
-              source with automatic sync OFF.
-            </label>
+              <input name="confirm" type="checkbox" required /> {tr("Register a new source with automatic sync OFF.")}{" "}</label>
             <button className="primary" disabled={busy}>
-              {busy ? "Registering…" : "Register Source"}
+              {busy ? tr("Registering…") : tr("Register Source")}
             </button>
           </fieldset>
         </form>

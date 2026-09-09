@@ -1,18 +1,19 @@
+import {language} from "./language.ts";
 export function interval(seconds: number): string {
   const hours = Math.floor(seconds / 3600),
     minutes = Math.floor((seconds % 3600) / 60),
     rest = seconds % 60;
   return (
-    [hours && `${hours} h`, minutes && `${minutes} min`, rest && `${rest} s`]
+    [hours && `${hours} ${language()==="ru"?"ч":"h"}`, minutes && `${minutes} ${language()==="ru"?"мин":"min"}`, rest && `${rest} ${language()==="ru"?"с":"s"}`]
       .filter(Boolean)
-      .join(" ") || "0 s"
+      .join(" ") || (language()==="ru"?"0 с":"0 s")
   );
 }
 export function duration(ms: number | null): string {
-  return ms === null ? "Not recorded" : interval(Math.round(ms / 1000));
+  return ms === null ? (language()==="ru"?"Не записано":"Not recorded") : interval(Math.round(ms / 1000));
 }
 export function exactTime(value: string): string {
-  return new Date(value).toLocaleString(undefined, { timeZoneName: "short" });
+  return new Date(value).toLocaleString(language(), { timeZoneName: "short" });
 }
 export function relativeTime(value: string, now = Date.now()): string {
   const seconds = Math.round((new Date(value).getTime() - now) / 1000);
@@ -33,7 +34,7 @@ export function relativeTime(value: string, now = Date.now()): string {
         : unit === "minute"
           ? 60
           : 1;
-  return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(
+  return new Intl.RelativeTimeFormat(language(), { numeric: "auto" }).format(
     Math.round(seconds / scale),
     unit,
   );

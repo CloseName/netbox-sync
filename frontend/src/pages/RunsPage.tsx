@@ -1,3 +1,4 @@
+import {tr} from "../ui/i18n";
 import { useCallback, useState } from "react";
 import {
   Link,
@@ -61,8 +62,8 @@ function RunHistory() {
   return (
     <main className="operations-workspace">
       <PageHeader
-        title="Run history"
-        description="Recorded manual and scheduled synchronization outcomes."
+        title={tr("Run history")}
+        description={tr("Recorded manual and scheduled synchronization outcomes.")}
       />
       <form
         className="run-filters"
@@ -72,8 +73,7 @@ function RunHistory() {
         }}
       >
         <label>
-          Source ID
-          <input
+          {tr("Source ID")}{" "}<input
             name="source"
             value={source}
             onChange={(e) =>
@@ -81,46 +81,42 @@ function RunHistory() {
             }
           />
         </label>
-        <button type="submit">Filter source</button>
+        <button type="submit">{tr("Filter source")}{" "}</button>
         <label>
-          Provider
-          <select
+          {tr("Provider")}{" "}<select
             value={params.get("source_type") ?? ""}
             onChange={(e) => update("source_type", e.target.value)}
           >
-            <option value="">All providers</option>
-            <option value="proxmox">Proxmox VE</option>
-            <option value="esxi">VMware ESXi</option>
+            <option value="">{tr("All providers")}{" "}</option>
+            <option value="proxmox">{tr("Proxmox VE")}{" "}</option>
+            <option value="esxi">{tr("VMware ESXi")}{" "}</option>
           </select>
         </label>
         <label>
-          Outcome
-          <select
+          {tr("Outcome")}{" "}<select
             value={params.get("status") ?? ""}
             onChange={(e) => update("status", e.target.value)}
           >
-            <option value="">All outcomes</option>
+            <option value="">{tr("All outcomes")}{" "}</option>
             {Object.entries(runStates).map(([k, v]) => (
               <option value={k} key={k}>
-                {v.label}
+                {tr(v.label)}
               </option>
             ))}
           </select>
         </label>
         <label>
-          Trigger
-          <select
+          {tr("Trigger")}{" "}<select
             value={params.get("trigger") ?? ""}
             onChange={(e) => update("trigger", e.target.value)}
           >
-            <option value="">All triggers</option>
-            <option value="manual">Manual</option>
-            <option value="scheduled">Scheduled</option>
+            <option value="">{tr("All triggers")}{" "}</option>
+            <option value="manual">{tr("Manual")}{" "}</option>
+            <option value="scheduled">{tr("Scheduled")}{" "}</option>
           </select>
         </label>
         <button type="button" onClick={clear}>
-          Clear filters
-        </button>
+          {tr("Clear filters")}{" "}</button>
       </form>
       <RunResults
         key={query.toString()}
@@ -148,8 +144,7 @@ function RunResults({ query, clear }: { query: string; clear: () => void }) {
     <>
       <div className="evidence-toolbar">
         <p className="muted">
-          {planExplanation} Newest first; up to 50 runs per request.
-        </p>
+          {tr(planExplanation)} {tr("Newest first; up to 50 runs per request.")}{" "}</p>
         <button
           disabled={runs.loading || diagnostics.loading}
           onClick={() => {
@@ -157,33 +152,26 @@ function RunResults({ query, clear }: { query: string; clear: () => void }) {
             diagnostics.refresh();
           }}
         >
-          Refresh
-        </button>
+          {tr("Refresh")}{" "}</button>
       </div>
-      <ResourceFeedback resource={runs} label="history" table />
+      <ResourceFeedback resource={runs} label={tr("history")} table />
       <ResourceFeedback
         resource={diagnostics}
-        label="diagnostic evidence"
+        label={tr("diagnostic evidence")}
         evidenceAt={diagnostics.data?.generated_at}
       />
       {diagnostics.data && (
         <p className="muted">
-          Stale evidence: <Timestamp value={diagnostics.data.generated_at} />.
-          Up to 100 oldest stale runs; absence from this sample does not confirm
-          completion.
-        </p>
+          {tr("Stale evidence:")}{" "}<Timestamp value={diagnostics.data.generated_at} />{tr(". Up to 100 oldest stale runs; absence from this sample does not confirm completion.")}{" "}</p>
       )}
       {diagnostics.data &&
         diagnostics.data.components.run_history.status !== "HEALTHY" && (
           <p className="muted">
-            Stale assessment unavailable: the run history check did not succeed.
-          </p>
+            {tr("Stale assessment unavailable: the run history check did not succeed.")}{" "}</p>
         )}
       {diagnostics.error && (
         <p className="muted">
-          Recorded outcomes remain visible; diagnostic attention may be
-          incomplete.
-        </p>
+          {tr("Recorded outcomes remain visible; diagnostic attention may be incomplete.")}{" "}</p>
       )}
       {runs.data && (
         <>
@@ -197,20 +185,20 @@ function RunResults({ query, clear }: { query: string; clear: () => void }) {
             <EmptyState
               title={
                 cursor
-                  ? "No older runs were returned."
+                  ? tr("No older runs were returned.")
                   : filtered
-                    ? "No runs match these filters."
-                    : "No runs have been recorded yet."
+                    ? tr("No runs match these filters.")
+                    : tr("No runs have been recorded yet.")
               }
             >
               {filtered ? (
-                <button onClick={clear}>Clear filters</button>
+                <button onClick={clear}>{tr("Clear filters")}{" "}</button>
               ) : (
-                !cursor && <Link to="/sources">Open Sources</Link>
+                !cursor && <Link to="/sources">{tr("Open Sources")}{" "}</Link>
               )}
             </EmptyState>
           )}
-          <nav className="pagination" aria-label="Run history pages">
+          <nav className="pagination" aria-label={tr("Run history pages")}>
             {cursor && (
               <button
                 onClick={() => {
@@ -218,13 +206,11 @@ function RunResults({ query, clear }: { query: string; clear: () => void }) {
                   setParams(filters);
                 }}
               >
-                Newest runs
-              </button>
+                {tr("Newest runs")}{" "}</button>
             )}
             <span>
               {runs.data.runs.length}{" "}
-              {runs.data.runs.length === 1 ? "run" : "runs"} in this response
-            </span>
+              {runs.data.runs.length === 1 ? tr("run") : tr("runs")} {tr("in this response")}{" "}</span>
             <button
               disabled={!runs.data.next_cursor || runs.loading}
               onClick={() => {
@@ -234,8 +220,7 @@ function RunResults({ query, clear }: { query: string; clear: () => void }) {
                 }
               }}
             >
-              Older runs
-            </button>
+              {tr("Older runs")}{" "}</button>
           </nav>
         </>
       )}
@@ -255,7 +240,7 @@ function RunTable({
     <div
       className="source-table run-table"
       role="region"
-      aria-label="Run history table"
+      aria-label={tr("Run history table")}
       tabIndex={0}
     >
       <table>
@@ -306,11 +291,11 @@ function RunTable({
                   </Link>
                   <small>
                     {run.source_type === "proxmox"
-                      ? "Proxmox VE"
-                      : "VMware ESXi"}
+                      ? tr("Proxmox VE")
+                      : tr("VMware ESXi")}
                   </small>
                 </td>
-                <td>{run.trigger === "manual" ? "Manual" : "Scheduled"}</td>
+                <td>{run.trigger === "manual" ? tr("Manual") : tr("Scheduled")}</td>
                 <td>
                   <Link to={runPath(run.run_id)} state={{ runsQuery: context }}>
                     <Badge value={runStatus(run.status, stale)} />
@@ -320,7 +305,7 @@ function RunTable({
                   {duration(run.duration_ms)}
                 </td>
                 <td className="optional-actions">{planActions(run)}</td>
-                <td>{runAttention(run, stale)}</td>
+                <td>{tr(runAttention(run, stale))}</td>
               </tr>
             );
           })}
@@ -343,8 +328,8 @@ function RunDetail({ id }: { id: string }) {
   return (
     <main className="operations-workspace">
       <PageHeader
-        title="Run details"
-        description="Recorded outcome and supporting evidence."
+        title={tr("Run details")}
+        description={tr("Recorded outcome and supporting evidence.")}
         actions={
           <button
             disabled={run.loading || diagnostics.loading}
@@ -353,63 +338,62 @@ function RunDetail({ id }: { id: string }) {
               diagnostics.refresh();
             }}
           >
-            Refresh
-          </button>
+            {tr("Refresh")}{" "}</button>
         }
       />
       <p>
-        <Link to={"/runs" + (query ? "?" + query : "")}>Back to runs</Link>
+        <Link to={"/runs" + (query ? "?" + query : "")}>{tr("Back to runs")}{" "}</Link>
       </p>
-      <ResourceFeedback resource={run} label="run" />
+      <ResourceFeedback resource={run} label={tr("run")} />
       {data && (
         <>
           <section className="source-panel">
-            <h2>Outcome</h2>
+            <h2>{tr("Outcome")}{" "}</h2>
             <dl className="source-facts">
               <div>
-                <dt>Outcome</dt>
+                <dt>{tr("Outcome")}{" "}</dt>
                 <dd>
                   <Badge value={runStatus(data.status, !!stale)} />
                 </dd>
               </div>
               <div>
-                <dt>Source</dt>
+                <dt>{tr("Source")}{" "}</dt>
                 <dd>
                   <Link to={sourcePath(data.source_instance)}>
                     {data.source_instance}
                   </Link>
                   <small>
                     {data.source_type === "proxmox"
-                      ? "Proxmox VE"
-                      : "VMware ESXi"}
+                      ? tr("Proxmox VE")
+                      : tr("VMware ESXi")}
                   </small>
                 </dd>
               </div>
               <div>
-                <dt>Trigger</dt>
-                <dd>{data.trigger === "manual" ? "Manual" : "Scheduled"}</dd>
+                <dt>{tr("Trigger")}{" "}</dt>
+                <dd>{data.trigger === "manual" ? tr("Manual") : tr("Scheduled")}</dd>
               </div>
               <div>
-                <dt>Started</dt>
+                <dt>{tr("Started")}{" "}</dt>
                 <dd>
                   <Timestamp value={data.started_at} />
                 </dd>
               </div>
               <div>
-                <dt>Duration</dt>
+                <dt>{tr("Duration")}{" "}</dt>
                 <dd>{duration(data.duration_ms)}</dd>
               </div>
               <div>
-                <dt>Attention</dt>
-                <dd>{runAttention(data, !!stale)}</dd>
+                <dt>{tr("Attention")}{" "}</dt>
+                <dd>{tr(runAttention(data, !!stale))}</dd>
               </div>
             </dl>
             {stale && (
               <div className="evidence-note">
-                <p>{staleExplanation}</p>
+                <p>{tr(staleExplanation)}</p>
                 {stale.age_seconds !== null && (
                   <p>
-                    Age at diagnostic snapshot: {interval(stale.age_seconds)}.
+                    {tr("Age at diagnostic snapshot:")}{" "}{interval(stale.age_seconds)}.
                   </p>
                 )}
                 <p>{stale.safe_message}</p>
@@ -419,71 +403,68 @@ function RunDetail({ id }: { id: string }) {
               data.status,
             ) && (
               <p className="evidence-note">
-                Verify the final state before planning another sync. Recorded
-                plan counts do not confirm what was applied.
-              </p>
+                {tr("Verify the final state before planning another sync. Recorded plan counts do not confirm what was applied.")}{" "}</p>
             )}
           </section>
           <section className="source-panel">
-            <h2>Plan actions</h2>
-            <p className="muted">{planExplanation}</p>
+            <h2>{tr("Plan actions")}{" "}</h2>
+            <p className="muted">{tr(planExplanation)}</p>
             <dl className="source-facts">
               {Object.entries(actionLabels).map(([key, label]) => (
                 <div key={key}>
-                  <dt>{label}</dt>
+                  <dt>{tr(label)}</dt>
                   <dd>{data.actions[key as keyof SyncRun["actions"]]}</dd>
                 </div>
               ))}
             </dl>
           </section>
           <section className="source-panel">
-            <h2>Result message</h2>
+            <h2>{tr("Result message")}{" "}</h2>
             <p>
               {data.error_message_safe ||
                 "No additional result message was recorded."}
             </p>
-            <h3>Recorded lifecycle</h3>
+            <h3>{tr("Recorded lifecycle")}{" "}</h3>
             <ol className="run-lifecycle">
               <li>
-                Started: <Timestamp value={data.started_at} />
+                {tr("Started:")}{" "}<Timestamp value={data.started_at} />
               </li>
               <li>
                 {data.finished_at ? (
                   <>
-                    Finished: <Timestamp value={data.finished_at} />
+                    {tr("Finished:")}{" "}<Timestamp value={data.finished_at} />
                   </>
                 ) : stale ? (
-                  "Completion unconfirmed"
+                  tr("Completion unconfirmed")
                 ) : (
-                  "Completion timestamp not recorded"
+                  tr("Completion timestamp not recorded")
                 )}
               </li>
             </ol>
           </section>
           <section className="source-panel">
-            <h2>Diagnostic evidence</h2>
+            <h2>{tr("Diagnostic evidence")}{" "}</h2>
             <ResourceFeedback
               resource={diagnostics}
               evidenceAt={diagnostics.data?.generated_at}
-              label="diagnostic evidence"
+              label={tr("diagnostic evidence")}
             />
             {diagnostics.data && (
               <p>
-                Snapshot: <Timestamp value={diagnostics.data.generated_at} />.{" "}
+                {tr("Snapshot:")}{" "}<Timestamp value={diagnostics.data.generated_at} />.{" "}
                 {stale
-                  ? "This run appears in the stale evidence."
-                  : "No matching stale evidence in this bounded snapshot; this does not establish completion."}
+                  ? tr("This run appears in the stale evidence.")
+                  : tr("No matching stale evidence in this bounded snapshot; this does not establish completion.")}
               </p>
             )}
             <p>
               <Link to={sourcePath(data.source_instance) + "/diagnostics"}>
-                Open source diagnostics
-              </Link>{" "}
-              · <Link to="/diagnostics">View system diagnostics</Link>
+                {tr("Open source diagnostics")}{" "}</Link>{" "}
+              · <Link to="/diagnostics">{tr("View system diagnostics")}{" "}</Link>
             </p>
           </section>
           <details className="source-panel">
-            <summary>Technical details</summary>
+            <summary>{tr("Technical details")}{" "}</summary>
             <dl className="technical-facts">
               {Object.entries({
                 "Run ID": data.run_id,
@@ -495,9 +476,9 @@ function RunDetail({ id }: { id: string }) {
                 "Finished timestamp": data.finished_at,
                 "Created by": data.created_by,
               }).map(([label, value]) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd>{value ?? "Not recorded"}</dd>
+                <div key={tr(label)}>
+                  <dt>{tr(label)}</dt>
+                  <dd>{value ?? tr("Not recorded")}</dd>
                 </div>
               ))}
             </dl>

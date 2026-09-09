@@ -253,7 +253,7 @@ test("source route remount isolates late discovery results", async ({
   await page
     .getByRole("button", { name: "Run discovery", exact: true })
     .click();
-  await expect(page.getByText(/Discovering source/)).toBeVisible();
+  await expect(page.getByText(/Run discovery.*Execution confirmed by the server/)).toBeVisible();
   await page.getByRole("link", { name: "Back to sources" }).click();
   await page.getByRole("link", { name: "Source 002", exact: true }).click();
   await finish();

@@ -124,7 +124,7 @@ test("empty and independent discovery pending/result", async ({ page }) => {
   await page
     .getByRole("button", { name: "Run discovery", exact: true })
     .click();
-  await expect(page.getByText(/Discovering source Source 001/)).toBeVisible();
+  await expect(page.getByText(/Run discovery.*Execution confirmed by the server/)).toBeVisible();
   await page.screenshot({
     path: "test-results/ui3-discovery-pending.png",
     fullPage: true,
@@ -401,7 +401,7 @@ test("duplicate clicks do not duplicate planning or apply", async ({
       button.click();
     });
   await expect(
-    page.getByRole("dialog").getByText(/Submitting \/ applying/),
+    page.getByRole("dialog").getByText(/Sync to NetBox.*Waiting for server acknowledgement/),
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toBeVisible();

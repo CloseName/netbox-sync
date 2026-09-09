@@ -1,3 +1,4 @@
+import {tr} from "./i18n";
 import type { Resource } from "./useResource";
 import { Alert, LoadingState, Timestamp } from "./primitives";
 export function ResourceFeedback<T>({
@@ -14,10 +15,10 @@ export function ResourceFeedback<T>({
   return (
     <>
       {resource.loading && !resource.data && (
-        <LoadingState label={`Loading ${label}...`} table={table} />
+        <LoadingState label={`${tr("Loading")} ${tr(label)}…`} table={table} />
       )}
       {resource.loading && resource.data && (
-        <p role="status">Refreshing {label}…</p>
+        <p role="status">{tr("Refreshing")}{" "}{tr(label)}…</p>
       )}
       {resource.error && (
         <Alert
@@ -26,11 +27,11 @@ export function ResourceFeedback<T>({
         >
           {resource.data ? (
             <>
-              Could not refresh {label}. Showing data from{" "}
+              {tr("Could not refresh")}{" "}{tr(label)}{tr(". Showing data from")}{" "}{" "}
               <Timestamp value={evidenceAt ?? resource.received} />.
             </>
           ) : (
-            <>{label[0].toUpperCase() + label.slice(1)} could not be loaded.</>
+            <>{tr(label[0].toUpperCase() + label.slice(1))} {tr("could not be loaded.")}{" "}</>
           )}
         </Alert>
       )}

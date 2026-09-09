@@ -1,3 +1,4 @@
+import {tr} from "./i18n";
 import { Link } from "react-router-dom";
 import type { Diagnostics } from "../api/diagnostics";
 import { diagnosticsUsable } from "./operations";
@@ -36,12 +37,12 @@ export function DiagnosticAttention({
   const any = warnings.length + sources.length + components.length > 0;
   return (
     <div className="diagnostic-attention">
-      <p className="muted">{coverage(data)}</p>
+      <p className="muted">{tr(coverage(data))}</p>
       {!any ? (
         <p>
           {diagnosticsUsable(data)
-            ? "No attention items reported in this snapshot."
-            : "No source assessment available. Review component evidence."}
+            ? tr("No attention items reported in this snapshot.")
+            : tr("No source assessment available. Review component evidence.")}
         </p>
       ) : (
         <ul className="attention-rows">
@@ -49,16 +50,14 @@ export function DiagnosticAttention({
             <li key={key}>
               <div>
                 <strong>
-                  {componentLabels[key as keyof typeof componentLabels]} needs
-                  attention
-                </strong>
+                  {tr(componentLabels[key as keyof typeof componentLabels])} {tr("needs attention")}{" "}</strong>
                 <p>
                   {c.safe_message ||
                     "This check could not confirm availability."}
                 </p>
               </div>
               <Timestamp value={c.checked_at} />
-              <a href={"#component-" + key}>View check</a>
+              <a href={"#component-" + key}>{tr("View check")}{" "}</a>
             </li>
           ))}
           {warnings.map((w, i) => (
@@ -66,29 +65,28 @@ export function DiagnosticAttention({
               <div>
                 <strong>
                   {w.warning_code === "STALE_RUNNING"
-                    ? "Completion unconfirmed"
-                    : "Scheduled activity later than expected"}
+                    ? tr("Completion unconfirmed")
+                    : tr("Scheduled activity later than expected")}
                 </strong>
                 <p>
                   {w.source_instance ?? "Source not supplied"}
                   {w.trigger ? " · " + w.trigger : ""}
                 </p>
                 {w.warning_code === "STALE_RUNNING" && (
-                  <p>{staleExplanation}</p>
+                  <p>{tr(staleExplanation)}</p>
                 )}
                 <details>
-                  <summary>Evidence</summary>
+                  <summary>{tr("Evidence")}{" "}</summary>
                   <p>{w.safe_message}</p>
-                  <p>Safe code: {w.warning_code}</p>
-                  {w.run_id && <p>Run ID: {w.run_id}</p>}
+                  <p>{tr("Safe code:")}{" "}{w.warning_code}</p>
+                  {w.run_id && <p>{tr("Run ID:")}{" "}{w.run_id}</p>}
                 </details>
               </div>
               <div>
                 {w.age_seconds !== null ? (
                   <>
-                    {interval(w.age_seconds)} at snapshot
-                    <small>
-                      Started <Timestamp value={w.started_at} />
+                    {interval(w.age_seconds)} {tr("at snapshot")}{" "}<small>
+                      {tr("Started")}{" "}<Timestamp value={w.started_at} />
                     </small>
                   </>
                 ) : (
@@ -103,7 +101,7 @@ export function DiagnosticAttention({
                 )}
               </div>
               <div className="evidence-links">
-                {w.run_id && <Link to={runPath(w.run_id)}>Open run</Link>}
+                {w.run_id && <Link to={runPath(w.run_id)}>{tr("Open run")}{" "}</Link>}
                 {w.source_instance && (
                   <Link
                     to={
@@ -114,8 +112,8 @@ export function DiagnosticAttention({
                     }
                   >
                     {w.warning_code === "SCHEDULED_ACTIVITY_DELAYED"
-                      ? "Open schedule"
-                      : "Source diagnostics"}
+                      ? tr("Open schedule")
+                      : tr("Source diagnostics")}
                   </Link>
                 )}
               </div>
@@ -128,18 +126,17 @@ export function DiagnosticAttention({
                   {s.latest_run &&
                   !["SUCCEEDED", "RUNNING"].includes(s.latest_run.status)
                     ? runStatus(s.latest_run.status).label
-                    : "Source needs attention"}
+                    : tr("Source needs attention")}
                 </strong>
                 <p>{s.source_instance}</p>
               </div>
               <Timestamp value={s.latest_run?.started_at} />
               <div className="evidence-links">
                 {s.latest_run && (
-                  <Link to={runPath(s.latest_run.run_id)}>Open run</Link>
+                  <Link to={runPath(s.latest_run.run_id)}>{tr("Open run")}{" "}</Link>
                 )}
                 <Link to={sourcePath(s.source_instance) + "/diagnostics"}>
-                  Source diagnostics
-                </Link>
+                  {tr("Source diagnostics")}{" "}</Link>
               </div>
             </li>
           ))}

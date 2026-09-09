@@ -465,6 +465,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         @app.get('/sources/{source_instance}', include_in_schema=False)
         @app.get('/runs', include_in_schema=False)
         @app.get('/runs/{run_id}', include_in_schema=False)
+        @app.get('/system', include_in_schema=False)
         @app.get('/diagnostics', include_in_schema=False)
         @app.get('/', include_in_schema=False)
         def frontend():

@@ -24,6 +24,7 @@ function elements(node) {
 }
 
 function setup(context) {
+  context.mock.method(React, 'useSyncExternalStore', (_subscribe,snapshot) => snapshot());
   context.mock.method(React, "useRef", () => ({current: null}));
   context.mock.method(React, "useEffect", () => {});
   const state = [];

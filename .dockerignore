@@ -14,3 +14,9 @@ frontend/dist
 secrets
 **/privkey.pem
 **/*.key
+
+# Local test evidence and Python caches are not release inputs.
+**/__pycache__
+**/*.py[cod]
+frontend/test-results
+frontend/playwright-report

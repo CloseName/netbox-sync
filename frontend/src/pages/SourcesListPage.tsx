@@ -1,3 +1,4 @@
+import {tr} from "../ui/i18n";
 import { SourceFilters } from "../ui/SourceFilters";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { fetchSources } from "../api/sources";
@@ -62,7 +63,7 @@ export function SourcesListPage() {
       }
     >
       <button className="sort-button" onClick={() => sort(key)}>
-        {label}{" "}
+        {tr(label)}{" "}
         {result.query.sort === key
           ? result.query.direction === "asc"
             ? "↑"
@@ -74,19 +75,17 @@ export function SourcesListPage() {
   return (
     <main>
       <PageHeader
-        title="Sources"
-        description="Source configuration and synchronization evidence."
+        title={tr("Sources")}
+        description={tr("Source configuration and synchronization evidence.")}
         actions={
           <>
             <button
               disabled={sources.loading || diagnostics.loading}
               onClick={refresh}
             >
-              Refresh
-            </button>
+              {tr("Refresh")}{" "}</button>
             <Link className="button primary" to="/sources/add">
-              Add Source
-            </Link>
+              {tr("Add Source")}{" "}</Link>
           </>
         }
       />
@@ -107,16 +106,16 @@ export function SourcesListPage() {
         clear={() => setParams({})}
       />
       {sources.loading && !sources.data ? (
-        <LoadingState table label="Loading sources…" />
+        <LoadingState table label={tr("Loading sources…")} />
       ) : (
         sources.data &&
         (sources.data.length === 0 ? (
-          <EmptyState title="No sources have been registered.">
-            <Link to="/sources/add">Add Source</Link>
+          <EmptyState title={tr("No sources have been registered.")}>
+            <Link to="/sources/add">{tr("Add Source")}{" "}</Link>
           </EmptyState>
         ) : result.total === 0 ? (
-          <EmptyState title="No sources match these filters.">
-            <button onClick={() => setParams({})}>Clear filters</button>
+          <EmptyState title={tr("No sources match these filters.")}>
+            <button onClick={() => setParams({})}>{tr("Clear filters")}{" "}</button>
           </EmptyState>
         ) : (
           <>
@@ -124,22 +123,21 @@ export function SourcesListPage() {
               className="source-table scroll-region"
               tabIndex={0}
               role="region"
-              aria-label="Sources table"
+              aria-label={tr("Sources table")}
             >
               <table>
                 <caption className="sr-only">
-                  Registered sources with configuration and diagnostic evidence
-                </caption>
+                  {tr("Registered sources with configuration and diagnostic evidence")}{" "}</caption>
                 <thead>
                   <tr>
                     {heading("Source", "name")}
-                    <th scope="col">Provider</th>
-                    <th scope="col">Target</th>
-                    <th scope="col">Sync status</th>
-                    <th scope="col">Schedule</th>
+                    <th scope="col">{tr("Provider")}{" "}</th>
+                    <th scope="col">{tr("Target")}{" "}</th>
+                    <th scope="col">{tr("Sync status")}{" "}</th>
+                    <th scope="col">{tr("Schedule")}{" "}</th>
                     {heading("Last run", "last")}
                     {heading("Attention", "attention")}
-                    <th scope="col">Actions</th>
+                    <th scope="col">{tr("Actions")}{" "}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -158,10 +156,10 @@ export function SourcesListPage() {
                           {s.name !== s.source_instance && (
                             <small>{s.source_instance}</small>
                           )}
-                          {!s.enabled && <small>Source disabled</small>}
+                          {!s.enabled && <small>{tr("Source disabled")}{" "}</small>}
                         </th>
                         <td>
-                          {s.type === "proxmox" ? "Proxmox VE" : "VMware ESXi"}
+                          {s.type === "proxmox" ? tr("Proxmox VE") : tr("VMware ESXi")}
                         </td>
                         <td>
                           {s.site_slug}
@@ -174,26 +172,26 @@ export function SourcesListPage() {
                               code={d.status}
                             />
                           ) : (
-                            <span className="muted">Status unavailable</span>
+                            <span className="muted">{tr("Status unavailable")}{" "}</span>
                           )}
                           {!d && diagnostics.loading && (
-                            <small>Loading diagnostics…</small>
+                            <small>{tr("Loading diagnostics…")}{" "}</small>
                           )}
                         </td>
                         <td>
                           {s.enabled && s.sync_enabled ? (
-                            <>Every {interval(s.sync_interval_seconds)}</>
+                            <>{tr("Every")}{" "}{interval(s.sync_interval_seconds)}</>
                           ) : (
-                            "Automatic sync off"
+                            tr("Automatic sync off")
                           )}
                           {!s.enabled && s.sync_enabled && (
-                            <small>Configured on; source disabled</small>
+                            <small>{tr("Configured on; source disabled")}{" "}</small>
                           )}
                           {d?.next_expected_at &&
                             s.enabled &&
                             s.sync_enabled && (
                               <small className="secondary-cell">
-                                Expected{" "}
+                                {tr("Expected")}{" "}{" "}
                                 <Timestamp value={d.next_expected_at} />
                               </small>
                             )}
@@ -218,20 +216,20 @@ export function SourcesListPage() {
                               </small>
                             </>
                           ) : d ? (
-                            "No recorded run"
+                            tr("No recorded run")
                           ) : (
-                            "Unavailable"
+                            tr("Unavailable")
                           )}
                         </td>
                         <td>
                           {a ? (
                             <Link to={sourcePath(s.source_instance)}>
-                              {a.label}
+                              {tr(a.label)}
                             </Link>
                           ) : d ? (
-                            "None reported"
+                            tr("None reported")
                           ) : (
-                            "Unavailable"
+                            tr("Unavailable")
                           )}
                         </td>
                         <td>
@@ -242,8 +240,7 @@ export function SourcesListPage() {
                               from: location.pathname + location.search,
                             }}
                           >
-                            Open
-                          </Link>
+                            {tr("Open")}{" "}</Link>
                         </td>
                       </tr>
                     ),
@@ -261,10 +258,7 @@ export function SourcesListPage() {
         ))
       )}
       <p className="muted evidence">
-        Sources received <Timestamp value={sources.received} /> · Diagnostics
-        checked <Timestamp value={diagnostics.data?.generated_at} />.
-        Configuration is not a connectivity check.
-      </p>
+        {tr("Sources received")}{" "}<Timestamp value={sources.received} /> {tr("· Diagnostics checked")}{" "}<Timestamp value={diagnostics.data?.generated_at} />{tr(". Configuration is not a connectivity check.")}{" "}</p>
     </main>
   );
 }

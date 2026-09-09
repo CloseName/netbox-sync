@@ -1,3 +1,4 @@
+import {tr} from "../ui/i18n";
 import { useState } from "react";
 import type { SyncPlan, SyncPlanItem } from "../api/sync";
 import {
@@ -25,7 +26,7 @@ export function PlanSummary({ plan }: { plan: SyncPlan }) {
         )
         .map(([action, count]) => (
           <div key={action}>
-            <dt>{countLabels[action as keyof typeof countLabels]}</dt>
+            <dt>{tr(countLabels[action as keyof typeof countLabels])}</dt>
             <dd>{count}</dd>
           </div>
         ))}
@@ -57,7 +58,7 @@ export function PlanReview({
       aria-labelledby="plan-review-title"
     >
       <div className="page-heading">
-        <h3 id="plan-review-title">Review plan</h3>
+        <h3 id="plan-review-title">{tr("Review plan")}{" "}</h3>
         <Badge
           value={{
             label: previous
@@ -71,35 +72,25 @@ export function PlanReview({
         />
       </div>
       <p className="muted">
-        Plan received <Timestamp value={received} />. The plan is checked again
-        before sync.
-      </p>
+        {tr("Plan received")}{" "}<Timestamp value={received} />{tr(". The plan is checked again before sync.")}{" "}</p>
       <PlanSummary plan={plan} />
       <p className="muted">
-        Create and Update count operations, not unique objects. Other counts
-        describe plan rows. Filters change this view only; sync submits the
-        entire reviewed plan.
-      </p>
+        {tr("Create and Update count operations, not unique objects. Other counts describe plan rows. Filters change this view only; sync submits the entire reviewed plan.")}{" "}</p>
       {plan.items.filter(policyRow).map((item, i) => (
         <p className="sync-safety" key={i}>
-          Retention policy: {item.reason}
+          {tr("Retention policy:")}{" "}{item.reason}
         </p>
       ))}
       {!!planCounts(plan.items).REVIEW_REQUIRED && (
         <p className="sync-attention">
-          Review rows remain isolated and are not automatically adopted as
-          normal updates. Other operations may proceed only when the plan
-          permits sync.
-        </p>
+          {tr("Review rows remain isolated and are not automatically adopted as normal updates. Other operations may proceed only when the plan permits sync.")}{" "}</p>
       )}
       {!plan.apply_allowed && (
         <p className="source-error" role="alert">
-          This plan cannot be applied. Resolve the reported conditions and
-          rebuild the plan.
-        </p>
+          {tr("This plan cannot be applied. Resolve the reported conditions and rebuild the plan.")}{" "}</p>
       )}
       <div className="sync-filters">
-        <div className="view-options" role="group" aria-label="Plan view">
+        <div className="view-options" role="group" aria-label={tr("Plan view")}>
           {(["Changes", "Attention", "All"] as PlanView[]).map((value) => (
             <button
               key={value}
@@ -114,32 +105,30 @@ export function PlanReview({
           ))}
         </div>
         <label>
-          Action
-          <select
+          {tr("Action")}{" "}<select
             value={action}
             onChange={(e) => {
               setAction(e.target.value);
               setLimit(50);
             }}
           >
-            <option value="">All actions</option>
+            <option value="">{tr("All actions")}{" "}</option>
             {Object.entries(actionLabels).map(([value, label]) => (
               <option key={value} value={value}>
-                {label}
+                {tr(label)}
               </option>
             ))}
           </select>
         </label>
         <label>
-          Object kind
-          <select
+          {tr("Object kind")}{" "}<select
             value={kind}
             onChange={(e) => {
               setKind(e.target.value);
               setLimit(50);
             }}
           >
-            <option value="">All kinds</option>
+            <option value="">{tr("All kinds")}{" "}</option>
             {[
               ...new Set(
                 plan.items
@@ -148,14 +137,13 @@ export function PlanReview({
               ),
             ].map((value) => (
               <option key={value} value={value}>
-                {kindLabel(value)}
+                {tr(kindLabel(value))}
               </option>
             ))}
           </select>
         </label>
         <label>
-          Search plan
-          <input
+          {tr("Search plan")}{" "}<input
             type="search"
             value={search}
             onChange={(e) => {
@@ -166,11 +154,10 @@ export function PlanReview({
         </label>
       </div>
       <p>
-        {rows.length} rows in this view
-        {rows.length > limit ? ` · showing first ${limit}` : ""}
+        {rows.length} {tr("rows in this view")}{" "}{rows.length > limit ? ` · showing first ${limit}` : ""}
       </p>
       {!rows.length && (
-        <p>No rows in this view. Review the summary or choose All.</p>
+        <p>{tr("No rows in this view. Review the summary or choose All.")}{" "}</p>
       )}
       <div className="plan-rows">
         {rows.slice(0, limit).map((item) => (
@@ -178,10 +165,10 @@ export function PlanReview({
         ))}
       </div>
       {rows.length > limit && (
-        <button onClick={() => setLimit(limit + 50)}>Show 50 more rows</button>
+        <button onClick={() => setLimit(limit + 50)}>{tr("Show 50 more rows")}{" "}</button>
       )}
       <details className="sync-technical">
-        <summary>Plan technical details</summary>
+        <summary>{tr("Plan technical details")}{" "}</summary>
         <dl className="source-facts">
           {Object.entries({
             Digest: plan.digest,
@@ -212,86 +199,82 @@ function PlanRow({ item }: { item: SyncPlanItem }) {
       <summary>
         <span className="plan-object">
           <strong>{item.name}</strong>
-          <span className="muted">{kindLabel(item.object_kind)}</span>
+          <span className="muted">{tr(kindLabel(item.object_kind))}</span>
         </span>
         <Badge value={actionStatus(item.action)} />
         <span className="plan-reason">{item.reason}</span>
-        <span className="muted">Details</span>
+        <span className="muted">{tr("Details")}{" "}</span>
       </summary>
       <div className="plan-row-body">
         {item.action === "CREATE" && (
           <p>
-            Will create managed object. Proposed managed values are shown only
-            when provided.
-          </p>
+            {tr("Will create managed object. Proposed managed values are shown only when provided.")}{" "}</p>
         )}
         {item.action === "UPDATE" && (
-          <p>Changes to managed fields are shown below.</p>
+          <p>{tr("Changes to managed fields are shown below.")}{" "}</p>
         )}
         {item.action === "REVIEW_REQUIRED" && (
           <p className="sync-attention">
-            Needs operator review. No automatic adoption. {item.reason}
+            {tr("Needs operator review. No automatic adoption.")}{" "}{item.reason}
           </p>
         )}
         {item.action === "BLOCKED" && (
-          <p className="source-error">Blocked: {item.reason}</p>
+          <p className="source-error">{tr("Blocked:")}{" "}{item.reason}</p>
         )}
         {fields.length ? (
           <div
             className="managed-diff"
             role="table"
-            aria-label={"Managed fields for " + item.name}
+            aria-label={tr("Managed fields for") + " " + item.name}
           >
             <div className="diff-head" role="row">
-              <span role="columnheader">Field</span>
-              <span role="columnheader">NetBox before</span>
-              <span role="columnheader">Proposed</span>
+              <span role="columnheader">{tr("Field")}{" "}</span>
+              <span role="columnheader">{tr("NetBox before")}{" "}</span>
+              <span role="columnheader">{tr("Proposed")}{" "}</span>
             </div>
             {fields.map((field) => (
               <div role="row" className="diff-row" key={field.field}>
                 <strong role="rowheader">{field.field}</strong>
                 <div role="cell">
-                  <span className="diff-mobile-label">NetBox before</span>
-                  <pre>{fieldText(field.before)}</pre>
+                  <span className="diff-mobile-label">{tr("NetBox before")}{" "}</span>
+                  <pre>{field.before.provided?fieldText(field.before):tr("Not provided")}</pre>
                 </div>
                 <div role="cell">
-                  <span className="diff-mobile-label">Proposed</span>
-                  <pre>{fieldText(field.after)}</pre>
+                  <span className="diff-mobile-label">{tr("Proposed")}{" "}</span>
+                  <pre>{field.after.provided?fieldText(field.after):tr("Not provided")}</pre>
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <p>No managed before/proposed values were provided for this row.</p>
+          <p>{tr("No managed before/proposed values were provided for this row.")}{" "}</p>
         )}
         <p className="muted">
-          Two-way evidence only. Proposed values are not a separate discovered
-          snapshot.
-        </p>
+          {tr("Two-way evidence only. Proposed values are not a separate discovered snapshot.")}{" "}</p>
         <details>
-          <summary>Row technical details</summary>
+          <summary>{tr("Row technical details")}{" "}</summary>
           <dl className="source-facts">
             <div>
-              <dt>External ID</dt>
+              <dt>{tr("External ID")}{" "}</dt>
               <dd>
                 <code>{item.external_id}</code>
               </dd>
             </div>
             <div>
-              <dt>Kind / endpoint</dt>
+              <dt>{tr("Kind / endpoint")}{" "}</dt>
               <dd>
                 <code>{item.object_kind}</code>
               </dd>
             </div>
             <div>
-              <dt>Reason code</dt>
+              <dt>{tr("Reason code")}{" "}</dt>
               <dd>
                 <code>{item.reason_code}</code>
               </dd>
             </div>
             <div>
-              <dt>NetBox match ID</dt>
-              <dd>{item.matched_object_id ?? "Not provided"}</dd>
+              <dt>{tr("NetBox match ID")}{" "}</dt>
+              <dd>{item.matched_object_id ?? tr("Not provided")}</dd>
             </div>
           </dl>
         </details>

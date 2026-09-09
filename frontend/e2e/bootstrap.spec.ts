@@ -17,7 +17,7 @@ async function mock(context:BrowserContext){
    const body=route.request().method()==='POST'?route.request().postDataJSON():null;
    if(body){expect(body.revision).toBe(model.state.revision);
     if(path.endsWith('/configuration'))model.state={...model.state,revision:model.state.revision+1,url:body.url,status:'CONFIGURED',read_token_present:true,apply_token_present:true,safe_code:null};
-    if(path.endsWith('/validate')){const ready=model.state.preparation?.fields.every((f:any)=>f.status==='ready');model.state={...model.state,status:model.fail||!ready?'ATTENTION':'VALIDATED',safe_code:model.fail?'AUTH_FAILED':ready?null:'PREREQUISITES_MISSING',access_checks:['network','tls','read_auth','apply_auth','permissions','prerequisites'].map(name=>({name,status:name==='permissions'?'preliminary':name==='prerequisites'&&!ready?'pending':'passed'}))};}
+    if(path.endsWith('/validate')){const ready=model.state.preparation?.fields.every((f:any)=>f.status==='ready');model.state={...model.state,validated_at:model.fail||!ready?null:Date.now()/1000,status:model.fail||!ready?'ATTENTION':'VALIDATED',safe_code:model.fail?'AUTH_FAILED':ready?null:'PREREQUISITES_MISSING',access_checks:['network','tls','read_auth','apply_auth','permissions','prerequisites'].map(name=>({name,status:name==='permissions'?'preliminary':name==='prerequisites'&&!ready?'pending':'passed'}))};}
     if(path.endsWith('/prerequisites-plan'))model.state.preparation={...model.state.preparation,status:'PLANNED',digest:'a'.repeat(64),fields:model.state.preparation?.fields??fields(model.conflict?'conflict':'missing'),revocation:model.state.preparation?.revocation??'NOT_ATTEMPTED',local_secret:'NOT_STORED'};
     if(path.endsWith('/prerequisites-apply')){expect(body.confirm).toBe(true);expect(body.digest).toBe('a'.repeat(64));expect(body.setup_token).toBe('nbt_ABCDEFGHIJKL.TESTSETUPSECRET');model.state.preparation={...model.state.preparation,status:model.uncertain?'UNCERTAIN':'PREPARED',fields:fields(model.uncertain?'missing':'ready'),uncertain:model.uncertain?'cpu_model':null,revocation:model.uncertain?'UNCONFIRMED':model.revocation,local_secret:'NOT_STORED'};}
     if(path.endsWith('/finish')){if(model.expireFinish){model.expireFinish=false;return route.fulfill({status:409,json:{error:{code:'BOOTSTRAP_NOT_READY'}}});}model.state={...model.state,status:'READY',completed:true};}
@@ -65,7 +65,7 @@ test(`full contract gallery ${language} ${theme} ${width}`,async({page,context},
   model.state={...model.state,revision:1,status:'ATTENTION',url:'https://netbox.example.test',read_token_present:true,apply_token_present:true,
     preparation:{status:scenario==='success'||scenario==='unconfirmed'?'PREPARED':'PLANNED',fields:fields(['success','unconfirmed'].includes(scenario)?'ready':scenario),digest:'a'.repeat(64),local_secret:'NOT_STORED',revocation:scenario==='unconfirmed'?'UNCONFIRMED':scenario==='success'?'CONFIRMED':'NOT_ATTEMPTED'}};
   await page.goto('/setup');
-  await page.getByRole('combobox',{name:'Language',exact:true}).selectOption(language);
+  await page.getByRole('combobox',{name:'Language / Язык',exact:true}).selectOption(language);
   await page.getByRole('combobox',{name:language==='ru'?'Тема':'Theme',exact:true}).selectOption(theme);
   await expect(page.locator('[data-field]')).toHaveCount(16);
   const label=language==='ru'?'Временный токен подготовки':'Temporary setup token';
@@ -110,11 +110,25 @@ test('conflict, uncertain result and auth replacement remain explicit',async({pa
 test('setup theme system, keyboard, narrow zoom and honest unchecked evidence',async({page,context})=>{
  const model=await mock(context);model.state={...model.state,status:'CONFIGURED',revision:1,read_token_present:true,apply_token_present:true,url:'https://netbox.example.test'};
  await page.emulateMedia({colorScheme:'dark'});await page.goto('/setup');await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
- await expect(page.getByText(/Not checked$/)).toHaveCount(6);
+ await expect(page.getByText(/Not checked$/)).toHaveCount(0);
+ await expect(page.getByText('Detailed checks were not recorded in this release. A saved status is not a new access check.')).toBeVisible();
  await page.getByRole('combobox',{name:'Theme',exact:true}).selectOption('light');await page.emulateMedia({colorScheme:'dark'});await expect(page.locator('html')).toHaveAttribute('data-theme','light');
  await page.getByRole('combobox',{name:'Theme',exact:true}).selectOption('system');await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
  await page.setViewportSize({width:780,height:900});await page.evaluate(()=>document.body.style.zoom='2');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.getByRole('button',{name:'Replace credentials',exact:true}).focus();await page.keyboard.press('Enter');
  await expect(page.getByRole('heading',{name:'Connection',exact:true})).toBeFocused();
+});
+
+for(const timestamp of [null,1])test(`historical VALIDATED ${timestamp} cannot finish or invent current checks`,async({page,context})=>{
+ const model=await mock(context);model.state={...model.state,status:'VALIDATED',revision:4,url:'https://netbox.example.test',read_token_present:true,apply_token_present:true,validated_at:timestamp};
+ await page.goto('/setup');
+ await expect(page.getByRole('heading',{name:'Access check',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Finish setup',exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Review preparation plan',exact:true})).toHaveCount(0);
+ await expect(page.getByText(/Not checked$/)).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Check access again',exact:true})).toBeEnabled();
+ model.state.preparation={fields:fields('ready')};
+ await page.getByRole('button',{name:'Check access again',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Review preparation plan',exact:true})).toBeEnabled();
 });
