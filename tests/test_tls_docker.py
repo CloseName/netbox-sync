@@ -19,15 +19,50 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
     label='netbox-sync.tls-smoke='+prefix
     image=os.environ.get('NETBOX_SYNC_TLS_TEST_IMAGE','netbox-sync-tls-test:20260908')
     runner=os.environ.get('NETBOX_SYNC_TLS_RUNNER_IMAGE','netbox-sync-tls-tests:20260908')
-    volumes={name:prefix+'-'+name for name in ('tls','ca','http','bootstrap','state','ingress')}
+    volumes={name:prefix+'-'+name for name in ('tls','ca','http','bootstrap','state','ingress','lock')}
     containers=[];created_volumes=[];created_network=False
+    environment=os.environ.copy()
+    environment.update(NETBOX_SYNC_COMPOSE_PROJECT=prefix,NETBOX_SYNC_IMAGE=image,
+        NETBOX_SYNC_TLS_DIR='smoke-tls',NETBOX_SYNC_CA_DIR='smoke-ca',
+        NETBOX_SYNC_NETBOX_SECRET_DIR='smoke-state',NETBOX_SYNC_APPLY_LOCK_DIR='smoke-lock',
+        NETBOX_SYNC_INGRESS_DIR='smoke-ingress',NETBOX_SYNC_PUBLIC_HOST='sync.example.test',
+        NETBOX_SYNC_TLS_TEMPLATE=str(ROOT/('deploy/nginx.corporate.conf.template' if ingress_mode=='corporate' else 'deploy/nginx.conf.template')),
+        NETBOX_SYNC_POSTGRES_VOLUME=prefix+'-unused-postgres')
+    fixture=tmp_path/'compose-fixture.yml'
+    fixtures={'volumes':{ 'smoke-'+key:{'external':True,'name':value} for key,value in volumes.items()},
+        'networks':{'netbox-sync-egress':{'external':True,'name':prefix}},
+        'services':{'netbox-sync-api':{'environment':{'NETBOX_SYNC_PUBLIC_URL':'https://sync.example.test'}}}}
+    fixtures['volumes'].update({'netbox-sync-http-socket':{'external':True,'name':volumes['http']},
+        'netbox-sync-bootstrap-socket':{'external':True,'name':volumes['bootstrap']}})
+    fixture.write_text(json.dumps(fixtures))
+    ports=tmp_path/'ports.yml'
+    ports.write_text('services:\n  netbox-sync-proxy:\n    ports: !override ["127.0.0.1::8443", "127.0.0.1::8080"]\n')
+    compose=['docker','compose','-p',prefix,'-f',str(ROOT/'compose.production.yml')]
+    compose+=['-f',str(ROOT/'compose.external-ingress.yml')] if ingress_mode=='external' else ['-f',str(ports)]
+    compose+=['-f',str(fixture)]
+    composed=[]
+    def compose_run(*args):
+        result=subprocess.run(compose+list(args),env=environment,text=True,capture_output=True)
+        assert result.returncode==0,result.stderr
+        return result.stdout.strip()
     def docker(*args):
         result=subprocess.run(['docker',*args],text=True,capture_output=True)
         assert result.returncode==0,result.stderr
         return (result.stdout+result.stderr).strip() if args[0]=='logs' else result.stdout.strip()
     def mount(name,path,ro=False):return ['--mount',f'type=volume,source={volumes[name]},target={path}'+(',readonly' if ro else '')]
     def launch(name,arguments,selected_image,command):
-        full=prefix+'-'+name
+        service={'bootstrap':'netbox-sync-bootstrap-worker','api':'netbox-sync-api','inner':'netbox-sync-proxy'}.get(name)
+        if name=='proxy' and ingress_mode!='external':service='netbox-sync-proxy'
+        if service:
+            compose_run('up','-d','--no-deps','--no-build',service)
+            composed.append(service)
+            container=compose_run('ps','-q',service)
+            info=json.loads(docker('inspect',container))[0]
+            assert info['HostConfig']['ReadonlyRootfs'] and info['HostConfig']['CapDrop']==['ALL']
+            assert info['HostConfig']['Tmpfs']=={'/tmp':'size=64m,mode=1777'}
+            if service!='netbox-sync-proxy':assert not info['HostConfig']['PortBindings']
+            return container
+        full=prefix+'-'+('outer-proxy' if name=='proxy' and ingress_mode=='external' else name)
         docker('run','-d','--name',full,'--label',label,*arguments,selected_image,*command)
         containers.append(full);return full
     try:
@@ -40,7 +75,7 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
                *mount('http','/run/netbox-sync-http'),image,'python','-m','netbox_sync.web_runtime','init')
         docker('run','--rm','--network','none','--user','0:0','--label',label,*mount('state','/state'),image,
                'python','-c',"import os; os.chmod('/state',0o700)")
-        netbox=launch('netbox',['--network',prefix,'--network-alias','netbox.example.test',*mount('tls','/tls',True)],runner,['python','-m','tests.mock_netbox_https'])
+        netbox=launch('netbox',['--network',prefix,'--network-alias','netbox.example.test','-e','TEST_PREPARATION=1','-e','TEST_REVOKE_DENIED='+('1' if ingress_mode=='external' else '0'),*mount('tls','/tls',True)],runner,['python','-m','tests.mock_netbox_https'])
         bootstrap=launch('bootstrap',['--network',prefix,'--user','0:0','--read-only','--tmpfs','/tmp',
             '--cap-drop','ALL','--cap-add','CHOWN','--cap-add','SETUID','--cap-add','SETGID',
             *mount('bootstrap','/run/netbox-sync-bootstrap'),*mount('state','/var/lib/netbox-sync/netbox'),
@@ -114,6 +149,37 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
         saved=request('POST','/api/v1/bootstrap/configuration',headers={**headers,'X-Forwarded-Proto':'http','Forwarded':'host=evil.example.test;proto=http'},json=payload)
         assert saved.status_code==200 and saved.json()['status']=='CONFIGURED'
         validated=request('POST','/api/v1/bootstrap/validate',headers=headers,json={'revision':1})
+        assert validated.status_code==200 and validated.json()['safe_code']=='PREREQUISITES_MISSING',validated.text
+        plan=request('POST','/api/v1/bootstrap/prerequisites-plan',headers=headers,json={'revision':1}).json()['preparation']
+        assert len(plan['fields'])==16 and all(f['status']=='missing' for f in plan['fields'])
+        operation={'revision':1,'digest':plan['digest'],'confirm':True,'setup_token':'nbt_ABCDEFGHIJKL.SETUPSECRET'}
+        from concurrent.futures import ThreadPoolExecutor
+        # Two real HTTP callers, one durable execution fence.
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            first=pool.submit(request,'POST','/api/v1/bootstrap/prerequisites-apply',headers=headers,json=operation)
+            for _ in range(40):
+                state=request('GET','/api/v1/bootstrap').json()
+                if state['preparation']['status']=='RUNNING':break
+                time.sleep(.05)
+            else:raise AssertionError('execution never entered RUNNING')
+            duplicate=request('POST','/api/v1/bootstrap/prerequisites-apply',headers=headers,json=operation)
+            assert duplicate.status_code in (409,423),duplicate.text
+            result=first.result().json()['preparation']
+        assert result['status']=='UNCERTAIN' and result['uncertain']=='cpu_vendor'
+        assert result['local_secret']=='NOT_STORED'
+        docker('restart',bootstrap)
+        for _ in range(60):
+            state=request('GET','/api/v1/bootstrap')
+            if state.status_code==200:break
+            time.sleep(.1)
+        plan=request('POST','/api/v1/bootstrap/prerequisites-plan',headers=headers,json={'revision':1}).json()['preparation']
+        assert plan['uncertain'] is None and sum(f['status']=='ready' for f in plan['fields'])==5
+        result=request('POST','/api/v1/bootstrap/prerequisites-apply',headers=headers,json={**operation,'digest':plan['digest']}).json()['preparation']
+        assert result['status']=='PREPARED' and all(f['status']=='ready' for f in result['fields'])
+        assert result['revocation']==('UNCONFIRMED' if ingress_mode=='external' else 'CONFIRMED')
+        docker('exec',bootstrap,'python','-c',"from pathlib import Path; assert 'SETUPSECRET' not in Path('/var/lib/netbox-sync/netbox/bootstrap.json').read_text()")
+        for service in (bootstrap,api,proxy):assert 'SETUPSECRET' not in docker('logs',service)
+        validated=request('POST','/api/v1/bootstrap/validate',headers=headers,json={'revision':1})
         assert validated.status_code==200 and validated.json()['status']=='VALIDATED',validated.text
         assert request('POST','/api/v1/bootstrap/finish',headers=headers,json={'revision':1}).json()['status']=='READY'
         assert 'TEST-READ-TOKEN' not in request('GET','/api/v1/bootstrap').text
@@ -144,11 +210,15 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
                *mount('tls','/tls'),image,'python','-c',
                "from pathlib import Path; Path('/tls/"+('ssl.crt' if ingress_mode=='corporate' else 'fullchain.pem')+"').write_text('invalid certificate')")
         docker('start',proxy)
-        for _ in range(30):
-            if not json.loads(docker('inspect',proxy))[0]['State']['Running']:break
+        for _ in range(60):
+            logs=docker('logs',proxy)
+            if 'cannot load certificate' in logs or 'PEM_read_bio' in logs:break
             time.sleep(.1)
-        else:raise AssertionError('nginx accepted invalid TLS material')
+        else:raise AssertionError('missing nginx invalid-certificate rejection')
+        health=subprocess.run(['docker','exec',proxy,'wget','-q','--spider','http://127.0.0.1:8081/health'],capture_output=True)
+        assert health.returncode!=0
     finally:
+        if composed:compose_run("down", "--volumes")
         for name in reversed(containers):
             info=json.loads(docker('inspect',name))[0]
             assert info['Config']['Labels'].get('netbox-sync.tls-smoke')==prefix

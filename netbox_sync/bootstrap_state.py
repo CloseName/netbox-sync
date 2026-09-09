@@ -86,13 +86,18 @@ class BootstrapStore:
     @staticmethod
     def public(value):
         return {key: value[key] for key in ('revision', 'status', 'url', 'completed', 'safe_code', 'checks', 'validated_at')} | {
-            'read_token_present': bool(value['read_token']), 'apply_token_present': bool(value['apply_token'])}
+            'read_token_present': bool(value['read_token']), 'apply_token_present': bool(value['apply_token']), 'preparation': value.get('preparation'),
+            'access_checks': value.get('access_checks', [])}
 
     def status(self):
         with self.locked():
             value = self.read()
             if value['status'] == 'VALIDATING' and self.clock() - value['validation_started'] > 60:
                 value.update(status='ATTENTION', safe_code='VALIDATION_INTERRUPTED', checks=[])
+                self.write(value)
+            setup = value.get('preparation', {})
+            if setup.get('status') == 'RUNNING' and self.clock() - setup.get('started_at', 0) > 240:
+                setup.update(status='UNCERTAIN', local_secret='NOT_STORED')
                 self.write(value)
             return self.public(value)
 
@@ -122,11 +127,13 @@ class BootstrapStore:
                 raise ControlError('BOOTSTRAP_INVALID')
             if value['read_token'] and not payload['replace_credentials']:
                 raise ControlError('BOOTSTRAP_CONFLICT')
-            if value['status'] == 'VALIDATING':
+            if value['status'] == 'VALIDATING' or value.get('preparation', {}).get('status') == 'RUNNING':
                 raise ControlError('BOOTSTRAP_BUSY')
+            if value.get('preparation') and url != value['url']:
+                raise ControlError('BOOTSTRAP_INVALID')
             value.update(revision=value['revision'] + 1, status='CONFIGURED', url=url,
                          read_token=tokens[0], apply_token=tokens[1], safe_code=None,
-                         checks=[], validated_at=None)
+                         checks=[], access_checks=[], validated_at=None)
             self.write(value)
             return self.public(value)
 
@@ -135,6 +142,7 @@ class BootstrapStore:
             value = self.read()
             if type(revision) is not int or value['revision'] != revision:
                 raise ControlError('BOOTSTRAP_CONFLICT')
+            if value.get('preparation', {}).get('status') == 'RUNNING':raise ControlError('BOOTSTRAP_BUSY')
             if value['status'] == 'VALIDATING' or (value['status'] == 'VALIDATED' and self.clock() - value['validated_at'] <= 300):
                 return self.public(value)
             if not value['read_token']:
@@ -164,6 +172,9 @@ class BootstrapStore:
                 code = 'VALIDATION_UNAVAILABLE'
             if code is not None and code not in allowed:
                 code = 'VALIDATION_UNAVAILABLE'
+            access = result.get('access_checks', []) if isinstance(result, dict) else []
+            allowed_access = {'network','tls','read_auth','apply_auth','permissions','prerequisites'}
+            current['access_checks'] = [c for c in access if isinstance(c, dict) and set(c)=={'name','status'} and c['name'] in allowed_access and c['status'] in ('passed','failed','not_run','preliminary','pending')] if isinstance(access,list) else []
             current.update(status='VALIDATED' if code is None else 'ATTENTION', safe_code=code,
                            checks=checks if valid_checks else [], validated_at=self.clock() if code is None else None)
             self.write(current)

@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 from .bootstrap_state import BootstrapStore
+from .bootstrap_setup import Preparation
 from .discovery_worker import _drop_privileges, _safe_environment
 from .local_control import ControlError, serve
 from .source_lifecycle import apply_lock
@@ -29,6 +30,12 @@ class BootstrapControl:
         action = payload.get('action')
         if action == 'status' and set(payload) == {'action'}:
             return self.store.status()
+        if action in ('prerequisites-plan', 'prerequisites-cancel') and set(payload)=={'action','revision'}:
+            setup = Preparation(self.store)
+            return setup.plan(payload['revision']) if action=='prerequisites-plan' else setup.cancel(payload['revision'])
+        if action == 'prerequisites-apply' and set(payload)=={'action','revision','digest','confirm','setup_token'}:
+            with apply_lock(self.lock_path):
+                return Preparation(self.store).apply(payload)
         if action == 'configure':
             with apply_lock(self.lock_path):
                 return self.store.configure(payload)

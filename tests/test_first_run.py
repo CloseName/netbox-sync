@@ -210,7 +210,9 @@ def test_probe_failure_classes_are_closed(failure,expected):
             if failure=='network':raise requests.exceptions.ConnectionError(SECRET)
             return Response()
     result=probe(PAYLOAD,Session,Policy())
-    assert result==dict(safe_code=expected,checks=[])
+    assert result['safe_code']==expected and result['checks']==[]
+    assert {c['name'] for c in result['access_checks']}=={'network','tls','read_auth','apply_auth','permissions','prerequisites'}
+    assert next(c['status'] for c in result['access_checks'] if c['name']=='apply_auth')=='not_run'
     assert SECRET not in json.dumps(result)
 
 
