@@ -12,13 +12,15 @@ def docker(*args,check=True):
 def test_production_auth_policy(mode):
     project='netbox-sync-probe-test-'+uuid.uuid4().hex[:10]
     volume=project+'-files';host=project+'-host'
-    docker('volume','create',volume)
+    assert docker('volume','inspect',volume,check=False).returncode != 0
+    assert docker('container','inspect',host,check=False).returncode != 0
+    docker('volume','create','--label','com.docker.compose.project='+project,volume)
     mount=docker('volume','inspect',volume,'--format','{{.Mountpoint}}').stdout.strip()
     try:
-        docker('run','--rm','--network','none','--user','0','--mount','type=volume,source='+volume+',target=/fixture',
+        docker('run','--rm','--label','com.docker.compose.project='+project,'--network','none','--user','0','--mount','type=volume,source='+volume+',target=/fixture',
                'netbox-sync-auth:review','python','-c',
                "from pathlib import Path; Path('/fixture/runtime').mkdir(mode=0o750)")
-        docker('run','-d','--name',host,'--mount','type=bind,source='+mount+'/runtime,target=/run/netbox-sync','--mount','type=volume,source='+volume+',target='+mount,
+        docker('run','-d','--name',host,'--label','com.docker.compose.project='+project,'--mount','type=bind,source='+mount+'/runtime,target=/run/netbox-sync','--mount','type=volume,source='+volume+',target='+mount,
                '--mount','type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock',
                '--mount','type=bind,source='+str(ROOT)+',target=/review,readonly',
                'netbox-sync-probe-host:review')
@@ -30,5 +32,5 @@ def test_production_auth_policy(mode):
             for scoped_project in (project,project+'-restore'):
                 for identifier in docker(*listing,'--filter','label=com.docker.compose.project='+scoped_project).stdout.split():
                     docker(*(('rm','-f',identifier) if kind=='container' else (kind,'rm',identifier)),check=False)
-        docker('rm','-f',host,check=False)
-        for name in (project+'-db',project+'-external-db',project+'-restore-db',volume):docker('volume','rm',name,check=False)
+        # Every resource, including the operator host and external DB volume,
+        # is removed only through its exact project ownership label.

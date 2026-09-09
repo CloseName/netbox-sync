@@ -12,12 +12,15 @@ OLD='897de2a79a6781129f84cbbdcaef9b250795deb7'
 def test_pre_auth_upgrade_without_systemd():
     project='netbox-sync-auth-upgrade-'+uuid.uuid4().hex[:10]
     host,volume=project+'-host',project+'-files'
-    docker('volume','create',volume)
+    assert docker('volume','inspect',volume,check=False).returncode != 0
+    assert docker('container','inspect',host,check=False).returncode != 0
+    assert docker('image','inspect',project+':old',check=False).returncode != 0
+    docker('volume','create','--label','com.docker.compose.project='+project,volume)
     mount=docker('volume','inspect',volume,'--format','{{.Mountpoint}}').stdout.strip()
     try:
-        docker('run','--rm','--network','none','--user','0','--mount','type=volume,source='+volume+',target=/fixture',
+        docker('run','--rm','--label','com.docker.compose.project='+project,'--network','none','--user','0','--mount','type=volume,source='+volume+',target=/fixture',
                'netbox-sync-auth:review','python','-c',"from pathlib import Path; Path('/fixture/runtime').mkdir(mode=0o750)")
-        docker('run','-d','--name',host,
+        docker('run','-d','--name',host,'--label','com.docker.compose.project='+project,
                '--mount','type=bind,source='+mount+'/runtime,target=/run/netbox-sync',
                '--mount','type=volume,source='+volume+',target='+mount,
                '--mount','type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock',
@@ -36,6 +39,4 @@ def test_pre_auth_upgrade_without_systemd():
         for kind,listing in [('container',('ps','-aq')),('network',('network','ls','-q')),('volume',('volume','ls','-q'))]:
             for identifier in docker(*listing,'--filter','label=com.docker.compose.project='+project).stdout.split():
                 docker(*(('rm','-f',identifier) if kind=='container' else (kind,'rm',identifier)),check=False)
-        docker('rm','-f',host,check=False)
-        for name in (project+'-db',volume):docker('volume','rm',name,check=False)
         docker('image','rm',project+':old',check=False)

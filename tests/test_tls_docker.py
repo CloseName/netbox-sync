@@ -67,6 +67,8 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
         full=prefix+'-'+('outer-proxy' if name=='proxy' and ingress_mode=='external' else name)
         docker('run','-d','--name',full,'--label',label,*arguments,selected_image,*command)
         containers.append(full);return full
+    for name in volumes.values():
+        assert subprocess.run(['docker','volume','inspect',name],capture_output=True).returncode != 0
     try:
         for name in volumes.values():docker('volume','create','--label',label,name);created_volumes.append(name)
         docker('network','create','--label',label,prefix);created_network=True
@@ -89,7 +91,7 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
             '--tmpfs','/var/lib/postgresql/data','-e','POSTGRES_HOST_AUTH_METHOD=trust'],
             'postgres:16-bookworm',[])
         for _ in range(40):
-            check=subprocess.run(['docker','exec',auth_db,'pg_isready','-U','postgres'],capture_output=True)
+            check=subprocess.run(['docker','exec',auth_db,'pg_isready','-h','127.0.0.1','-U','postgres'],capture_output=True)
             if check.returncode==0:break
             time.sleep(.25)
         else:raise AssertionError('Disposable auth DB unavailable')
@@ -258,6 +260,7 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
         assert health.returncode!=0
     finally:
         if 'auth_db' in locals():
+            assert json.loads(docker('inspect',auth_db))[0]['Config']['Labels'].get('netbox-sync.tls-smoke')==prefix
             docker('rm','-f',auth_db);containers.remove(auth_db)
         if composed:compose_run("down", "--volumes")
         for name in reversed(containers):

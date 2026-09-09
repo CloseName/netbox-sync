@@ -60,6 +60,7 @@ if pgmode == 'bundled':
 else:
     # Create the production networks, without starting bundled PostgreSQL.
     compose('create', '--no-build', 'netbox-sync-api')
+    run(['docker','volume','create','--label','com.docker.compose.project='+project,project+'-external-db'])
     run(['docker', 'run', '-d', '--name', project + '-external-db', '--network', project + '_netbox-sync-egress',
          '--network-alias', 'postgres', '--label', 'com.docker.compose.project=' + project,
          '--mount', 'type=volume,source=' + project + '-external-db,target=/var/lib/postgresql/data',
@@ -239,6 +240,7 @@ success=request(body);assert success['status']==200
 registration['onboarding_token']=success['body']['onboarding_token']
 assert request(registration,'/api/v1/sources')['status']==201
 assert request(None,'/api/v1/sources','GET')['body']['sources'][0]['source_instance']=='auth-test'
+policy_before_restart=request(None,'/api/v1/policy','GET')['body']
 compose('stop','netbox-sync-auth-worker')
 assert request(None,'/api/v1/sources','GET')['status']==503
 compose('up','-d','--no-deps','netbox-sync-auth-worker')
@@ -246,6 +248,7 @@ for _ in range(30):
  if request(None,'/api/v1/auth/me','GET')['status']==200:break
  time.sleep(.3)
 else:raise RuntimeError('Auth state did not survive restart')
+assert request(None,'/api/v1/policy','GET')['body']==policy_before_restart
 
 if pgmode == 'bundled':
     # Supported host CLI, not a manual SQL dump or an app HTTP bypass.
@@ -297,4 +300,31 @@ if pgmode == 'bundled':
 
 assert request({},'/api/v1/auth/logout')['status']==200
 assert request(None,'/api/v1/sources','GET')['status']==401
+# Exercise actual HTTP login and DB-persisted deadlines; only fixture timestamps
+# change, never production timeouts or password/session values in command output.
+def login():
+    global session_cookie
+    response=request(dict(username='admin',password=password),'/api/v1/auth/login')
+    assert response['status']==200
+    session_cookie=response['cookie'].split(';')[0]
+    assert request(None,'/api/v1/sources','GET')['status']==200
+
+def expire_sessions(field):
+    assert field in ('expires','last_seen')
+    target=compose('ps','-q','postgres') if pgmode=='bundled' else project+'-external-db'
+    sql="UPDATE netbox_sync.auth_state SET value=jsonb_set(value,'{sessions}',(SELECT jsonb_object_agg(key,jsonb_set(s.value, '{"+field+"}', '0'::jsonb)) FROM jsonb_each(value->'sessions') s));"
+    run(['docker','exec','-i',target,'psql','-U','netbox_sync_bootstrap','-d','netbox_sync','--set','ON_ERROR_STOP=1'],input=sql)
+
+for deadline in ('last_seen','expires'):
+    login()
+    expire_sessions(deadline)
+    assert request(None,'/api/v1/sources','GET')['status']==401
+login()
+compose('exec','-T','--user','0','netbox-sync-auth-worker','python','-m','netbox_sync.auth_worker','revoke')
+assert request(None,'/api/v1/sources','GET')['status']==401
+login()
+assert request(None,'/api/v1/policy','GET')['body']==policy_before_restart
+assert request({},'/api/v1/auth/logout')['status']==200
+assert request(None,'/api/v1/sources','GET')['status']==401
+print('PASS runtime session idle/absolute expiry, root revocation, fresh login, retained policy',flush=True)
 print('PASS auth policy: direct 401, enrollment/cookie, live CAS permission without recreation, stale receipt refusal, registration, worker outage/restart/logout',flush=True)

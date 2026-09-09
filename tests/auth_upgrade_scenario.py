@@ -27,6 +27,8 @@ install.initialize_ingress_directory(root)
 install._atomic_write(p.config/'compose.env',install._merged_config(p.config/'compose.env',{},
     {'NETBOX_SYNC_COMPOSE_PROJECT':project,'NETBOX_SYNC_POSTGRES_VOLUME':project+'-db',
      'NETBOX_SYNC_APPLY_LOCK_DIR':str(root.parent/'runtime')}))
+inherited_policy={'NETBOX_SYNC_ONBOARDING_ALLOWED_CIDRS':'10.77.0.0/16','NETBOX_SYNC_ONBOARDING_ALLOWED_HOSTS':'retained.example.test','NETBOX_SYNC_ONBOARDING_DENIED_CIDRS':'10.77.3.0/24'}
+install._atomic_write(p.config/'api.env',install._merged_config(p.config/'api.env',inherited_policy))
 install.prepare_stack(p);install.publish_configuration(p);install.activate_release(root,p.release)
 install.start_runtime(p)
 command=install.compose_command(root)
@@ -46,6 +48,9 @@ def snapshot():return {str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).d
 before=snapshot();pg=run([*command,'ps','-q','postgres']);mounts=run(['docker','inspect',pg,'--format','{{json .Mounts}}'])
 rows=db('SELECT row_to_json(s) FROM netbox_sync.sources s');history=db('SELECT row_to_json(s) FROM netbox_sync.sync_runs s')
 run(['python3',str(root/'current/deploy/backup.py'),'--root',str(root),'--no-systemd','create'])
+bundle=next((root/'backups').glob('netbox-sync-backup-*'))
+for action in ('verify','inspect'):
+    run(['python3',str(root/'current/deploy/backup.py'),'--root',str(root),'--no-systemd',action,str(bundle)])
 assert snapshot()==before and (root/'current').resolve().name==OLD
 upgrade=['python3','/review/deploy/install.py','--root',str(root),'--source','/review','--release-id','auth-upgrade','--image','netbox-sync-auth:review','--no-systemd']
 refused=subprocess.run(upgrade,capture_output=True,text=True)
@@ -58,6 +63,8 @@ assert rows==db('SELECT row_to_json(s) FROM netbox_sync.sources s') and history=
 assert run([*command,'ps','-q','postgres'])==pg and run(['docker','inspect',pg,'--format','{{json .Mounts}}'])==mounts
 for path,value in before.items():
     if path!='config/compose.env':assert hashlib.sha256((root/path).read_bytes()).digest()==value,path
+auth_environment=dict(line.split('=',1) for line in (root/'config/auth.env').read_text().splitlines() if '=' in line)
+assert all(auth_environment.get(key)==value for key,value in inherited_policy.items())
 # Unit generation is tested separately; this harness cannot prove timer/reboot behavior.
 invite_dir=root/'state/admin';invite_dir.mkdir(mode=0o700)
 file=invite_dir/'invitation'
