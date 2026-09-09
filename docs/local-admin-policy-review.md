@@ -99,7 +99,7 @@ auth-specific grant 1. These are conditional selections, not 98 unresolved defec
 | test_production_proxy_docker (1) | Dedicated tmpfs test not separately rerun. Exact production proxy tmpfs and delivery tested by three TLS scenarios; no test substitution of tmpfs. |
 | live ESXi (1) | Intentionally absent: no live hypervisor or VM is authorized. Real controlled HTTPS/SOAP is not full live Discovery privilege validation. |
 
-## Final authorized acceptance run — 2026-09-09
+## Final authorized acceptance run - 2026-09-09
 
 The user explicitly approved a temporary **unprivileged** operator container with
 Docker socket access for isolated local resources. Prior automatic rejections of
