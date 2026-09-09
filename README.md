@@ -65,7 +65,7 @@ Follow [Deployment](docs/deployment.md). Existing installations must use the exp
 
 ## Configuration
 
-Sources are registered independently with a stable `source_instance`, provider settings, NetBox target, and logical `SecretReference(provider="file", key="...")` values. Logical source secret filenames and registry references are deliberately not renamed during product migration. Web onboarding creates new source secrets through the broker and registers new sources disabled for sync by default.
+Sources are registered independently with a stable `source_instance`, provider settings, NetBox target, and logical `SecretReference(provider="file", key="...")` values. Logical source secret filenames and registry references are deliberately not renamed during product migration. Web onboarding creates new source secrets through the broker and registers new sources disabled for sync by default. Add Source reads bounded host information and uses searchable existing NetBox catalogs with server-checked per-host mappings; see [host preview and placement](docs/source-onboarding-preview.md).
 
 Provider-specific `PVE_*` variables and existing NetBox-specific `NB_*` variables remain provider/boundary contracts rather than product-global names.
 

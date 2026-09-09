@@ -24,7 +24,7 @@ own its socket and launch the child as UID/GID 10001 with supplementary groups e
 KILL is required for the root parent to kill/reap its different-UID child on the total deadline; the worker has its own PID namespace, with no host PID access.
 Root filesystem remains read-only, no-new-privileges and bounded tmpfs remain set.
 
-Only existing fixed probe operations are available: Proxmox HTTPS/8006 version GET;
+The legacy connection-only operation remains available: Proxmox HTTPS/8006 version GET;
 ESXi HTTPS/443 version GET, SOAP login, RetrieveContent and logout. Credentials move
 through the Unix request and child stdin, never argv/env/log files. Child environment
 is sanitized, stderr discarded, SDK logging disabled, and only closed error codes
@@ -181,3 +181,9 @@ or release/upstream selection issue; an identical fingerprint directs investigat
 to the actual UI state. Browser cache alone is not established by an old screenshot.
 The production smoke checks recognized routes, built JS/CSS/font/brand assets,
 no-store HTML, API/static 404s and TLS/authority enforcement.
+
+## Add Source host preview
+
+The web flow additionally requests bounded host-only information through this same
+worker. See [host preview and catalog placement](source-onboarding-preview.md) for
+exact operations, limits, permissions, catalog worker boundary and upgrade contract.
