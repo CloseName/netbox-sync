@@ -21,7 +21,7 @@ export class SourceConnectionError extends Error {
 
 export interface ConnectionInput {
   source_type: 'proxmox' | 'esxi'; address: string; verify_ssl: boolean;
-  username: string; secret: string; token_id?: string;
+  username: string; secret: string; token_id?: string; preview?: boolean;
 }
 
 export interface RegistrationInput {
@@ -29,6 +29,7 @@ export interface RegistrationInput {
   source_instance: string; name: string; sync_interval_seconds: number;
   site_slug: string; cluster_name: string; platform_slug: string; device_role_slug: string;
   device_type_slug: string; cluster_type_slug: string; confirm_sync_disabled: true;
+  references?: Record<string, CatalogItem>; host_types?: Record<string, CatalogItem>;
 }
 
 async function post(path: string, payload: ConnectionInput | RegistrationInput | { onboarding_token: string }): Promise<unknown> {
@@ -36,7 +37,7 @@ async function post(path: string, payload: ConnectionInput | RegistrationInput |
   try {
     response = await fetch(path, { method: 'POST', cache: 'no-store',
       headers: { 'Content-Type': 'application/json', 'X-NetBox-Sync-CSRF': 'same-origin' },
-      body: JSON.stringify(payload), signal: AbortSignal.timeout(20000) });
+      body: JSON.stringify(payload), signal: AbortSignal.timeout(path==='/api/v1/sources'?40000:20000) });
   } catch { throw new Error('Request failed or timed out. Registration outcome may require operator review.'); }
   if (!response.ok) {
     if (path === '/api/v1/sources/test-connection') {
@@ -45,6 +46,10 @@ async function post(path: string, payload: ConnectionInput | RegistrationInput |
       if (typeof code === 'string' && Object.hasOwn(connectionMessages, code)) {
         throw new SourceConnectionError(code as keyof typeof connectionMessages);
       }
+    }
+    if(path==='/api/v1/sources'){
+      let code='';try{code=(await response.clone().json()).error.code;}catch{}
+      if(code.startsWith('CATALOG_'))throw new CatalogFailure(code);
     }
     if (response.status === 409) {
       let code='';
@@ -80,4 +85,30 @@ export async function registerSource(input: RegistrationInput): Promise<Source> 
   if (!isSource(result) || result.source_instance !== input.source_instance || result.sync_enabled
     || !result.enabled || result.legacy_identity_owner) throw new Error('Unexpected registration result; ask the operator.');
   return result;
+}
+
+export interface CatalogItem { id:number; name:string; slug:string; fingerprint:string;
+ manufacturer:{id:number;name:string}|null; type:{id:number;name:string}|null;
+ scope_type:string|null;scope_id:number|null;site:{id:number;name:string}|null;scope:{id:number;name:string}|null; }
+export interface HostPreview {id:string;name:string|null;manufacturer:string|null;model:string|null;version:string|null;cpu:string|null;memory_bytes:number;}
+export interface SourcePreview {provider:'esxi'|'proxmox';name:string|null;cluster:string|null;hosts:HostPreview[];}
+export interface CatalogPage {items:CatalogItem[];count:number;offset:number;more:boolean;url:string;}
+const catalogCodes=['CATALOG_CHANGED','CATALOG_SELECTION_REQUIRED','CATALOG_HOST_MAPPING_REQUIRED','CATALOG_CLUSTER_SCOPE_MISMATCH','CATALOG_CLUSTER_AMBIGUOUS','CATALOG_PERMISSION_DENIED','CATALOG_AUTH_FAILED','CATALOG_TLS_FAILED','CATALOG_NETWORK_UNREACHABLE','CATALOG_RESPONSE_INVALID','CATALOG_UNAVAILABLE'];
+export class CatalogFailure extends Error {readonly code:string;constructor(code:string){const safe=catalogCodes.includes(code)?code:'CATALOG_UNAVAILABLE';super(safe);this.code=safe;}}
+let activeCatalog=0;const catalogQueue:Array<()=>void>=[];
+export async function catalog(kind:string,search:string,offset:number,signal:AbortSignal):Promise<CatalogPage>{
+ if(activeCatalog>=3)await new Promise<void>(resolve=>catalogQueue.push(resolve));
+ activeCatalog++;
+ try {signal.throwIfAborted();
+ const response=await fetch(`/api/v1/catalog/${kind}?${new URLSearchParams({search,offset:String(offset)})}`,{cache:'no-store',signal});
+ if(!response.ok){let code='CATALOG_UNAVAILABLE';try{code=(await response.json()).error.code;}catch{}throw new CatalogFailure(code);}
+ const value=await response.json();
+ if(!Array.isArray(value.items)||value.items.length>20||!Number.isInteger(value.count)||typeof value.more!=='boolean')throw new CatalogFailure('CATALOG_RESPONSE_INVALID');
+ return value;
+ } finally {activeCatalog--;catalogQueue.shift()?.();}
+}
+export async function inspectConnection(input:ConnectionInput):Promise<{onboarding_token:string;preview:SourcePreview;suggested_source_instance:string}>{
+ const value=await post('/api/v1/sources/test-connection',{...input,preview:true}) as {onboarding_token:string;preview:SourcePreview;suggested_source_instance:string};
+ if(!value||typeof value.onboarding_token!=='string'||!value.preview||!Array.isArray(value.preview.hosts)||!value.preview.hosts.length||value.preview.hosts.length>16)throw new Error('Host information is unavailable; no source was registered.');
+ return value;
 }

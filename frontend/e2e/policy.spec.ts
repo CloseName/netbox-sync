@@ -1,3 +1,4 @@
+import {previewResult} from './source-placement-fixture';
 import {test,expect} from '@playwright/test';
 for(const lang of ['en','ru'])for(const theme of ['light','dark'] as const)for(const width of [1440,390])
 test(`explicit destination permission ${lang} ${theme} ${width}`,async({page})=>{
@@ -16,7 +17,7 @@ test(`explicit destination permission ${lang} ${theme} ${width}`,async({page})=>
    }
    return route.fulfill({json:{revision,mode:'managed',ceiling:'public-ipv4',allowed_hosts:allowed?['esxi.public.example']:[],denied_cidrs:[],effective:{allowed_cidrs:['10.0.0.0/8'],allowed_hosts:allowed?['esxi.public.example']:[],denied_cidrs:[],allowed_suffixes:[]}}});
   }
-  if(path.endsWith('/sources/test-connection')){probes++;return route.fulfill(allowed?{json:{status:'success',onboarding_token:'opaque-test-receipt-12345'}}:{status:422,json:{error:{code:'SOURCE_DESTINATION_DENIED'}}});}
+  if(path.endsWith('/sources/test-connection')){probes++;return route.fulfill(allowed?{json:previewResult}:{status:422,json:{error:{code:'SOURCE_DESTINATION_DENIED'}}});}
   return route.fulfill({status:503,json:{error:{code:'UNAVAILABLE'}}});
  });
  await page.goto('/sources/add');await page.getByLabel('Language / Язык').selectOption(lang);

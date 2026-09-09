@@ -1,3 +1,4 @@
+import {previewResult,installCatalog,selectPlacement} from './source-placement-fixture';
 import {test, expect} from './auth-fixture';
 import {randomUUID} from 'node:crypto';
 import {source, diagnostics, run} from '../tests/fixtures.mjs';
@@ -88,15 +89,16 @@ for(const width of [1440,1024,768])test(`Durable operation states at ${width}`,a
 
 for(const width of [1440,1024,768])test(`Reserved Source ID is explained during registration at ${width}`,async({page,context},info)=>{
   const server=backend();await server.attach(context);await page.setViewportSize({width,height:900});
-  await page.route('**/api/v1/sources/test-connection',route=>route.fulfill({json:{status:'success',onboarding_token:'test-onboarding-token-123456789'}}));
+  await page.route('**/api/v1/sources/test-connection',route=>route.fulfill({json:previewResult}));
   await page.route('**/api/v1/sources',route=>route.request().method()==='POST'?route.fulfill({status:409,json:{error:{code:'SOURCE_ID_RESERVED'}}}):route.fallback());
+  await installCatalog(page);
   await page.goto(url+'/sources/add');
   await page.getByRole('textbox',{name:'Hostname or IPv4 address'}).fill('host.example.test');
   await page.getByLabel('Token user (user@realm)').fill('user@realm');
   await page.getByLabel('Token name (without user prefix)').fill('test-token');
   await page.getByLabel('Token secret').fill('FAKE-SECRET');
   await page.getByRole('button',{name:'Test Connection',exact:true}).click();
-  for(const [label,value] of Object.entries({'Source ID':'source-1','Display name':'Source 001','Site slug':'dc1','Cluster name':'Cluster 1','Platform slug':'linux','Device role slug':'server','Device type slug':'server','Cluster type slug':'cluster'}))await page.getByRole('textbox',{name:label,exact:true}).fill(value);
+  await selectPlacement(page);
   await page.getByRole('checkbox',{name:'Register a new source with automatic sync OFF.'}).check();
   await page.getByRole('button',{name:'Register Source',exact:true}).click();
   await expect(page.getByText('This Source ID was previously used and is reserved by a removed source.')).toBeVisible();

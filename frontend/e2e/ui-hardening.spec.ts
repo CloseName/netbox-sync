@@ -1,3 +1,4 @@
+import {previewResult,installCatalog,selectPlacement} from './source-placement-fixture';
 import { installOperationFixtures } from './operation-fixture';
 import { test, expect, chromium } from "./operation-fixture";
 import { mkdtemp, mkdir, writeFile, rm, realpath } from "node:fs/promises";
@@ -101,7 +102,7 @@ async function fixture(page, options: any = {}) {
       return route.fulfill({ status: 503, json: {} });
     if (p.endsWith("/test-connection"))
       return route.fulfill({
-        json: { status: "success", onboarding_token: "b".repeat(64) },
+        json: previewResult,
       });
     if (p.endsWith("/cancel-onboarding"))
       return route.fulfill({ json: { status: "cancelled" } });
@@ -443,6 +444,7 @@ test("existing Add Source journey clears credentials, focuses review and links r
   page,
 }) => {
   const f = await fixture(page);
+  await installCatalog(page);
   await page.goto("/sources/add");
   await page
     .getByRole("textbox", { name: "Hostname or IPv4 address" })
@@ -457,17 +459,7 @@ test("existing Add Source journey clears credentials, focuses review and links r
     page.getByRole("heading", { name: "Review source details", exact: true }),
   ).toBeFocused();
   await expect(page.locator('input[name="secret"]')).toHaveCount(0);
-  for (const [label, value] of Object.entries({
-    "Source ID": "new-source",
-    "Display name": "New source",
-    "Site slug": "dc1",
-    "Cluster name": "Cluster 1",
-    "Platform slug": "linux",
-    "Device role slug": "server",
-    "Device type slug": "server",
-    "Cluster type slug": "cluster",
-  }))
-    await page.getByRole("textbox", { name: label, exact: true }).fill(value);
+  await selectPlacement(page);
   await page
     .getByRole("checkbox", {
       name: "Register a new source with automatic sync OFF.",
@@ -487,7 +479,7 @@ test("existing Add Source journey clears credentials, focuses review and links r
   expect(writes[1].body.confirm_sync_disabled).toBe(true);
   expect(writes[1].body.secret).toBeUndefined();
   await page.getByRole("link", { name: "Open source", exact: true }).click();
-  await expect(page).toHaveURL(/sources\/new-source$/);
+  await expect(page).toHaveURL(new RegExp("sources/"+previewResult.suggested_source_instance+"$"));
 });
 test("long names, reasons and narrow height preserve dialog controls and reflow", async ({
   page,

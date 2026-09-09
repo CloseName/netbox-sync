@@ -111,3 +111,12 @@ code {
 .auth-panel form { margin-block: 1rem; }
 .auth-panel fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 1rem; }
 .auth-panel fieldset button { justify-self: start; }
+
+/* Host-only onboarding and bounded NetBox catalog choices. */
+.catalog-lookup { min-width: 0; display: grid; align-content: start; gap: .5rem; padding: .8rem 0; }
+.catalog-lookup select, .catalog-lookup input { width: 100%; min-width: 0; max-width: 100%; }
+.catalog-lookup p, .catalog-lookup small, .host-preview dd { overflow-wrap: anywhere; }
+.catalog-pagination, .catalog-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; font-size: .85rem; }
+.catalog-pagination button, .catalog-actions button { padding: .35rem .6rem; }
+.host-preview { padding: .75rem 0; border-bottom: 1px solid var(--border); }
+.host-preview:last-child { border-bottom: 0; }

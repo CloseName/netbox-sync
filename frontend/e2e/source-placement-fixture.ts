@@ -1,0 +1,9 @@
+export const host={id:'host-a',name:'esxi.example.test',manufacturer:'Dell Inc.',model:'PowerEdge R650',version:'8.0 build-1',cpu:'Xeon',memory_bytes:34359738368};
+export const previewResult={status:'success',onboarding_token:'fixture-onboarding-token-12345678',suggested_source_instance:'esxi-aabbccddeeff',preview:{provider:'esxi',name:host.name,cluster:null,hosts:[host]}};
+export function catalogRow(kind:string,id=1){return {id,name:({site:'Test site',cluster:'Test cluster',platform:'VMware ESXi',device_role:'Hypervisor',cluster_type:'VMware ESXi',device_type:'PowerEdge R650'} as Record<string,string>)[kind],slug:kind==='device_type'?'r650':kind,fingerprint:'a'.repeat(64),manufacturer:kind==='device_type'?{id:9,name:'Dell Inc.'}:null,type:kind==='cluster'?{id:1,name:'VMware ESXi'}:null,scope_type:kind==='cluster'?'dcim.site':null,scope_id:kind==='cluster'?1:null,scope:kind==='cluster'?{id:1,name:'Test site'}:null,site:null};}
+export async function installCatalog(page:any){await page.route('**/api/v1/catalog/**',route=>{const kind=new URL(route.request().url()).pathname.split('/').pop()!;return route.fulfill({json:{items:[catalogRow(kind)],count:1,offset:0,more:false,url:'https://netbox.example.test/dcim/sites/'}});});}
+export async function selectPlacement(page:any,lang='en'){
+ for(const label of (lang==='ru'?['Площадка (Site)','Кластер (Cluster)','Платформа (Platform)','Роль устройства (Device role)','Тип кластера (Cluster type)']:['Site','Cluster','Platform','Device role','Cluster type']))await page.getByRole('combobox',{name:label,exact:true}).selectOption('1');
+ for(const locator of await page.getByRole('combobox',{name:lang==='ru'?/^Тип устройства.*для /:/^Device type for /}).all())await locator.selectOption('1');
+ await page.getByRole('button',{name:lang==='ru'?'Проверить регистрацию':'Review registration',exact:true}).click();
+}

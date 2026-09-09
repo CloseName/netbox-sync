@@ -71,7 +71,7 @@ test('test-review-confirm-register clears credentials and keeps sync disabled', 
     const input = JSON.parse(options.body);
     if (calls === 1) {
       assert.equal(input.secret, 'FAKE_SECRET');
-      return Response.json({ status: 'success', onboarding_token: 'opaque-token-0123456789abcdef' });
+      return Response.json({ status: 'success', onboarding_token: 'opaque-token-0123456789abcdef', suggested_source_instance:'new-source',preview:{provider:'proxmox',name:'New',cluster:null,hosts:[{id:'host-a',name:'Host A',model:null,manufacturer:null,version:null,cpu:null,memory_bytes:0}]} });
     }
     assert.equal(input.confirm_sync_disabled, true);
     assert.ok(!('secret' in input));
@@ -82,6 +82,9 @@ test('test-review-confirm-register clears credentials and keeps sync disabled', 
   assert.equal(connectionEvent.currentTarget.cleared, true);
   assert.ok(!JSON.stringify(app.state).includes('FAKE_SECRET'));
   assert.ok(!app.render().some((element) => element.props?.name === 'secret'));
+  const placement=app.render().find(element=>element.props?.setDraft);
+  const row={id:1,name:'Test',slug:'test',fingerprint:'a'.repeat(64)};
+  placement.props.setDraft({...placement.props.draft,source_instance:'new-source',name:'New',references:Object.fromEntries(['site','cluster','platform','device_role','cluster_type'].map(kind=>[kind,row])),host_types:{'host-a':row}});
   const registration = { ...source, interval: '600' };
   await app.render().find((element) => element.type === 'form').props.onSubmit(event(registration));
   assert.equal(calls, 1, 'No registration before confirmation');
@@ -116,7 +119,7 @@ test('in-flight connection controls locked and changing tested values requires r
   assert.ok(elements(fieldset).some((element) => element.type === 'select'));
   assert.ok(elements(fieldset).some((element) => element.props?.name === 'secret'));
   assert.ok(elements(fieldset).some((element) => element.type === 'input' && element.props.type === 'checkbox'));
-  finish(Response.json({ status: 'success', onboarding_token: 'opaque-token-0123456789abcdef' }));
+  finish(Response.json({ status: 'success', onboarding_token: 'opaque-token-0123456789abcdef', suggested_source_instance:'new-source',preview:{provider:'proxmox',name:'New',cluster:null,hosts:[{id:'host-a',name:'Host A',model:null,manufacturer:null,version:null,cpu:null,memory_bytes:0}]} }));
   await pending;
   assert.ok(JSON.stringify(app.state).includes('opaque-token'));
   await app.render().find((element) => element.type === 'button' && element.props.type === 'button').props.onClick();

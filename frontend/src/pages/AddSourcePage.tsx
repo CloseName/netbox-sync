@@ -1,3 +1,6 @@
+import {SourcePlacement} from '../components/SourcePlacement';
+import type {Placement} from '../components/SourcePlacement';
+import type {SourcePreview} from '../api/onboarding';
 import {DestinationPermission} from "../components/DestinationPermission";
 import {OperationFeedback} from "../ui/OperationFeedback";
 import {tr} from "../ui/i18n";
@@ -10,7 +13,8 @@ import {
   SourceIdReservedError,
   SourceConnectionError,
   connectionMessages,
-  testConnection,
+  inspectConnection,
+  CatalogFailure,
 } from "../api/onboarding";
 import { SourceAccessHelp } from "../components/SourceAccessHelp";
 import type { Source } from "../api/sources";
@@ -18,42 +22,27 @@ import type { Source } from "../api/sources";
 import { Link } from "react-router-dom";
 import { PageHeader } from "../ui/primitives";
 import { sourcePath } from "../ui/routes";
-const fieldLabels = {
-  source_instance: "Source ID",
-  name: "Display name",
-  site_slug: "Site slug",
-  cluster_name: "Cluster name",
-  platform_slug: "Platform slug",
-  device_role_slug: "Device role slug",
-  device_type_slug: "Device type slug",
-  cluster_type_slug: "Cluster type slug",
-};
-const fields = [
-  "source_instance",
-  "name",
-  "site_slug",
-  "cluster_name",
-  "platform_slug",
-  "device_role_slug",
-  "device_type_slug",
-  "cluster_type_slug",
-] as const;
-
+// In-memory non-secret draft survives an auth-boundary remount; no token or password.
+let remembered: {type:'proxmox'|'esxi';connection:{address:string;verify_ssl:boolean};draft:Placement;preview:SourcePreview|null}|null=null;
 export function AddSourcePage() {
   const [language] = useLanguage();
   const t = (en: string, ru: string) => language === "ru" ? ru : en;
-  const [type, setType] = useState<"proxmox" | "esxi">("proxmox");
-  const [connection, setConnection] = useState({
+  const [type, setType] = useState<"proxmox" | "esxi">(remembered?.type??"proxmox");
+  const [connection, setConnection] = useState(remembered?.connection??{
     address: "",
     verify_ssl: true,
   });
   const [token, setToken] = useState("");
+  const [preview,setPreview]=useState<SourcePreview|null>(remembered?.preview??null);
+  const [review,setReview]=useState(false);
+  const [draft,setDraft]=useState<Placement>(remembered?.draft??{source_instance:'',name:'',interval:600,references:{},host_types:{}});
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false); const [started,setStarted]=useState(0);
   const [error, setError] = useState("");
   const [connectionCode,setConnectionCode]=useState<keyof typeof connectionMessages|null>(null);
   const [created, setCreated] = useState<Source | null>(null);
 
+  useEffect(()=>{remembered=created?null:{type,connection,draft,preview};},[type,connection,draft,preview,created]);
   const workspace = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!error && !token && !created) return;
@@ -91,7 +80,7 @@ export function AddSourcePage() {
     setBusy(true);
     setError(""); setConnectionCode(null);
     try {
-      const tokenValue = await testConnection({
+      const result = await inspectConnection({
         source_type: type,
         ...connection,
         username: String(data.get("username")),
@@ -100,7 +89,8 @@ export function AddSourcePage() {
           ? { token_id: String(data.get("token_id")) }
           : {}),
       });
-      setToken(tokenValue);
+      setToken(result.onboarding_token);setPreview(result.preview);setReview(false);
+      setDraft(d=>({...d,source_instance:d.source_instance||result.suggested_source_instance,name:d.name||result.preview.name||connection.address,host_types:Object.fromEntries(Object.entries(d.host_types).filter(([id])=>result.preview.hosts.some(h=>h.id===id&&preview?.hosts.some(old=>old.id===id&&old.model===h.model&&old.manufacturer===h.manufacturer))))}));
     } catch (failure) {
       if(failure instanceof SourceConnectionError)setConnectionCode(failure.code);
       setError(
@@ -119,28 +109,32 @@ export function AddSourcePage() {
     const data = new FormData(event.currentTarget);
     if (data.get("confirm") !== "on") return;
     inFlight.current=true; setStarted(Date.now());
+    let selectionRejected=false;
     setBusy(true);
     setError(""); setConnectionCode(null);
     try {
-      const metadata = Object.fromEntries(
-        fields.map((field) => [field, String(data.get(field))]),
-      ) as Record<(typeof fields)[number], string>;
+      const refs=draft.references;const firstType=Object.values(draft.host_types)[0];
+      const metadata={source_instance:draft.source_instance,name:draft.name,site_slug:refs.site.slug,
+        cluster_name:refs.cluster.name,platform_slug:refs.platform.slug,device_role_slug:refs.device_role.slug,
+        device_type_slug:firstType.slug,cluster_type_slug:refs.cluster_type.slug,references:refs,host_types:draft.host_types};
       const result = await registerSource({
         ...metadata,
         source_type: type,
         ...connection,
         onboarding_token: token,
-        sync_interval_seconds: Number(data.get("interval")),
+        sync_interval_seconds: draft.interval,
         confirm_sync_disabled: true,
       });
       setCreated(result);
     } catch (failure) {
+      if(failure instanceof CatalogFailure){selectionRejected=true;setReview(false);}
       setError(
+        failure instanceof CatalogFailure?t('NetBox selection changed or could not be verified. Refresh the lists and review the site, cluster and host device types; nothing was registered.','Выбор NetBox изменился или не прошёл проверку. Обновите списки, проверьте площадку, кластер и типы устройств хостов; источник не зарегистрирован.'):
         failure instanceof SourceIdReservedError ? failure.message :
         "Registration failed or outcome is uncertain. Ask the operator before retrying.",
       );
     } finally {
-      setToken("");
+      if(!selectionRejected)setToken("");
       inFlight.current=false; setBusy(false);
     }
   }
@@ -188,24 +182,11 @@ export function AddSourcePage() {
       </main>
     );
 
-  const metadataField = (field: (typeof fields)[number]) => (
-    <label key={field}>
-      {tr(fieldLabels[field])}
-      <input
-        name={field}
-        required
-        maxLength={1024}
-        pattern={
-          field === "source_instance" ? "[a-z0-9][a-z0-9._-]{1,62}" : undefined
-        }
-      />
-    </label>
-  );
   return (
     <main className="add-source-workspace" ref={workspace}>
       <PageHeader
         title={tr("Add source")}
-        description={tr("Test connection, review source details, then register. No discovery or synchronization will run.")}
+        description={t('Connect → read host information → choose NetBox placement → register. No VM inventory scan or NetBox writes.','Подключение → сведения о хостах → размещение в NetBox → регистрация. Без обхода виртуальных машин и записи в NetBox.')}
       />
       {error && (
         <p role="alert" tabIndex={-1} className="source-error">
@@ -213,7 +194,7 @@ export function AddSourcePage() {
         </p>
       )}
       {connectionCode==='SOURCE_DESTINATION_DENIED'&&<DestinationPermission host={connection.address} done={()=>{setConnectionCode(null);setError(t('Destination allowed. Re-enter credentials and test the connection.','Назначение разрешено. Введите учётные данные и повторите проверку подключения.'));}}/>}
-      {busy && <OperationFeedback operation={token?t('Registering source','Регистрация источника'):t('Testing source connection','Проверка подключения источника')} phase="sending" started={started}/>}
+      {busy && <OperationFeedback operation={token?t('Registering source','Регистрация источника'):t('Checking connection and reading host information','Проверяем подключение и получаем сведения о хостах')} phase="sending" started={started}/>}
       {!token ? (
         <form onSubmit={test} className="source-form" autoComplete="off">
           <fieldset disabled={busy} aria-busy={busy}>
@@ -307,45 +288,20 @@ export function AddSourcePage() {
             <button type="button" disabled={busy} onClick={changeConnection}>
               {tr("Change connection and re-test")}{" "}</button>
           </section>
-          <fieldset disabled={busy} aria-busy={busy}>
-            <legend>{tr("Identity")}{" "}</legend>
-            <div className="form-grid">
-              {fields.slice(0, 2).map(metadataField)}
-            </div>
-          </fieldset>
-          <fieldset disabled={busy} aria-busy={busy}>
-            <legend>{tr("NetBox target")}{" "}</legend>
-            <div className="form-grid">
-              {fields.slice(2, 4).map(metadataField)}
-            </div>
-          </fieldset>
-          <fieldset disabled={busy} aria-busy={busy}>
-            <legend>{tr("Provider mapping")}{" "}</legend>
-            <div className="form-grid">
-              {fields.slice(4).map(metadataField)}
-            </div>
-          </fieldset>
-          <fieldset disabled={busy} aria-busy={busy}>
-            <legend>{tr("Automatic sync")}{" "}</legend>
-            <label>
-              {tr("Configured interval (seconds)")}{" "}<input
-                name="interval"
-                type="number"
-                min={1}
-                max={2147483647}
-                step={1}
-                defaultValue={600}
-                required
-              />
-            </label>
-            <p className="muted">
-              {tr("This stores the frequency only. Automatic sync stays off until you enable it in Schedule.")}{" "}</p>
+          {preview&&!review&&<fieldset disabled={busy}><SourcePlacement preview={preview} draft={draft} setDraft={setDraft} language={language}/>
+          {Object.keys(draft.references).length!==5||preview.hosts.some(h=>!draft.host_types[h.id])?<p role="status">{t('Choose all five placement objects and a device type for each host to continue.','Для продолжения выберите все пять объектов размещения и тип устройства для каждого хоста.')}</p>:null}
+          <button type="button" className="primary" disabled={Object.keys(draft.references).length!==5||preview.hosts.some(h=>!draft.host_types[h.id])||!draft.name.trim()} onClick={event=>{if(event.currentTarget.form?.reportValidity())setReview(true);}}>{t('Review registration','Проверить регистрацию')}</button></fieldset>}
+          {review&&<fieldset disabled={busy}><legend>{t('Confirm registration','Подтверждение регистрации')}</legend>
+          <h2>{draft.name}</h2><dl className="source-facts">{Object.entries(draft.references).map(([kind,row])=><div key={kind}><dt>{({site:t('Site','Площадка'),cluster:t('Cluster','Кластер'),platform:t('Platform','Платформа'),device_role:t('Device role','Роль устройства'),cluster_type:t('Cluster type','Тип кластера')} as Record<string,string>)[kind]}</dt><dd>{row.name}</dd></div>)}</dl>
+          {preview?.hosts.map(h=><p key={h.id}>{h.name||h.id} → {draft.host_types[h.id]?.manufacturer?.name} / {draft.host_types[h.id]?.name}</p>)}
+          <p>{t('Only the source and protected credentials will be saved. NetBox infrastructure objects and automatic synchronization remain unchanged.','Сохранятся только источник и защищённые данные доступа. Инфраструктурные объекты NetBox и автоматическая синхронизация не изменяются.')}</p>
+          <button type="button" onClick={()=>setReview(false)}>{t('Back to placement','Вернуться к размещению')}</button>
             <label className="checkbox-label">
               <input name="confirm" type="checkbox" required /> {tr("Register a new source with automatic sync OFF.")}{" "}</label>
             <button className="primary" disabled={busy}>
               {busy ? tr("Registering…") : tr("Register Source")}
             </button>
-          </fieldset>
+          </fieldset>}
         </form>
       )}
     </main>
