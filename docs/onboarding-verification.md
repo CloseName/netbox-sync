@@ -4,6 +4,36 @@ Date: 2026-09-09. Base commit: `6639c38b7b9fcf535624e06ecf91fa0ac7db3d6b`.
 All execution was local, isolated testing. No push, deployment, live VM connection,
 provider mutation or modification of unrelated containers/volumes was performed.
 
+## Architectural review follow-up
+
+Review base: `f09be3c8314127c03dee63382eb3e4e52089ae5c`. The results below are
+focused follow-up checks; the broader original results remain historical evidence.
+
+Before the fix, the new race regression observed `WAITING` for an actual conflict and
+12 additional POSTs after a provisioning field. The executor and orchestration now
+stop on both observations. Race injection occurs after the initial digest check, just
+before creation of `cpu_model`. The only POSTs before a blocker are `sync_identities`,
+`sync_original_names`, and `hypervisor_version`; neither `cpu_model` nor later fields
+is POSTed. After an explicit NetBox correction and a fresh plan, preparation completes.
+Compatible concurrent creation continues without duplicate creation. Unknown pre-dispatch
+state fails closed; lost-response journal/restart/digest/revision checks remain intact.
+
+- Focused Linux backend and real Unix-socket transport: **59 passed**, no skips.
+- Full-contract onboarding Playwright: **13 passed**. Five states × EN/RU × light/dark
+  × desktop/390px produce 40 screenshots; all fixtures contain 16 production-contract
+  fields. Tests expand every list, inspect technical keys and exercise 200% reflow.
+- TypeScript and Vite production build passed.
+- Production Compose Bootstrap smoke: **3 passed** (89.06 seconds), covering
+  standalone/corporate/external with ready/conflict/provisioning races,
+  exact POST counts, restart, uncertain response, safe continuation and token revocation.
+- Unrelated naming/database suites were deliberately not repeated.
+
+The screenshots live under `frontend/test-results/bootstrap-full-contract-gallery-*`.
+The five variants are missing, partial (6 ready / 10 missing), conflict, success and
+unconfirmed revocation. Conflicts remain visible while non-blocking groups are collapsed.
+A Russian 200% layout overflow discovered by this gallery was fixed with a container-width
+step grid. Footer implementation slogans and unnecessary Russian credential jargon were removed.
+
 ## Evidence
 
 - Docker Desktop 4.89.0; Linux Engine 29.7.2; Compose 5.5.0.

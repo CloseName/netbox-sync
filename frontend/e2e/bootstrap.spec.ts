@@ -1,5 +1,14 @@
 import {test,expect,type BrowserContext} from '@playwright/test';
-const field=(status='missing')=>({name:'cpu_model',type:'text',models:['dcim.device'],status,differences:status==='conflict'?['type']:[],label:{en:'Host CPU model',ru:'Модель CPU хоста'},purpose:{en:'Observed physical host hardware.',ru:'Обнаруженное оборудование физического хоста.'}});
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+// Derive every visual fixture from the production Python contract; no second field list.
+const plans=JSON.parse(execFileSync(process.env.PYTHON??'python',['-X','utf8','-c',`
+import json
+from netbox_sync.prerequisites import FIELDS,definition,reconcile
+rows=[dict(definition(name),id=i+1,status='active') for i,name in enumerate(FIELDS)]
+print(json.dumps(dict(missing=reconcile([]),partial=reconcile(rows[:6]),ready=reconcile(rows),conflict=reconcile([dict(rows[0],type='text')]))))
+`],{cwd:fileURLToPath(new URL('../../',import.meta.url)),encoding:'utf8'}));
+const fields=(status='missing')=>structuredClone(plans[status]);
 async function mock(context:BrowserContext){
  const model={fail:false,conflict:false,expireFinish:false,uncertain:false,revocation:'CONFIRMED',state:{revision:0,status:'FRESH',url:'',completed:false,read_token_present:false,apply_token_present:false,safe_code:null,checks:[],validated_at:null,preparation:null} as any};
  await context.route('**/api/v1/**',async route=>{
@@ -9,8 +18,8 @@ async function mock(context:BrowserContext){
    if(body){expect(body.revision).toBe(model.state.revision);
     if(path.endsWith('/configuration'))model.state={...model.state,revision:model.state.revision+1,url:body.url,status:'CONFIGURED',read_token_present:true,apply_token_present:true,safe_code:null};
     if(path.endsWith('/validate')){const ready=model.state.preparation?.fields.every((f:any)=>f.status==='ready');model.state={...model.state,status:model.fail||!ready?'ATTENTION':'VALIDATED',safe_code:model.fail?'AUTH_FAILED':ready?null:'PREREQUISITES_MISSING',access_checks:['network','tls','read_auth','apply_auth','permissions','prerequisites'].map(name=>({name,status:name==='permissions'?'preliminary':name==='prerequisites'&&!ready?'pending':'passed'}))};}
-    if(path.endsWith('/prerequisites-plan'))model.state.preparation={...model.state.preparation,status:'PLANNED',digest:'a'.repeat(64),fields:model.state.preparation?.fields??[field(model.conflict?'conflict':'missing')],revocation:model.state.preparation?.revocation??'NOT_ATTEMPTED',local_secret:'NOT_STORED'};
-    if(path.endsWith('/prerequisites-apply')){expect(body.confirm).toBe(true);expect(body.digest).toBe('a'.repeat(64));expect(body.setup_token).toBe('nbt_ABCDEFGHIJKL.TESTSETUPSECRET');model.state.preparation={...model.state.preparation,status:model.uncertain?'UNCERTAIN':'PREPARED',fields:[field(model.uncertain?'missing':'ready')],uncertain:model.uncertain?'cpu_model':null,revocation:model.uncertain?'UNCONFIRMED':model.revocation,local_secret:'NOT_STORED'};}
+    if(path.endsWith('/prerequisites-plan'))model.state.preparation={...model.state.preparation,status:'PLANNED',digest:'a'.repeat(64),fields:model.state.preparation?.fields??fields(model.conflict?'conflict':'missing'),revocation:model.state.preparation?.revocation??'NOT_ATTEMPTED',local_secret:'NOT_STORED'};
+    if(path.endsWith('/prerequisites-apply')){expect(body.confirm).toBe(true);expect(body.digest).toBe('a'.repeat(64));expect(body.setup_token).toBe('nbt_ABCDEFGHIJKL.TESTSETUPSECRET');model.state.preparation={...model.state.preparation,status:model.uncertain?'UNCERTAIN':'PREPARED',fields:fields(model.uncertain?'missing':'ready'),uncertain:model.uncertain?'cpu_model':null,revocation:model.uncertain?'UNCONFIRMED':model.revocation,local_secret:'NOT_STORED'};}
     if(path.endsWith('/finish')){if(model.expireFinish){model.expireFinish=false;return route.fulfill({status:409,json:{error:{code:'BOOTSTRAP_NOT_READY'}}});}model.state={...model.state,status:'READY',completed:true};}
    }
    return route.fulfill({json:model.state});
@@ -49,26 +58,50 @@ for(const width of [1440,768,390])test(`confirmed onboarding across browsers at 
  await expect(page.getByRole('heading',{name:'Welcome to NetBox Sync'})).toHaveCount(0);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
-for(const theme of ['light','dark'])test(`onboarding visual states ${theme}`,async({page,context},info)=>{
- const model=await mock(context);await page.goto('/setup');await page.getByRole('combobox',{name:'Theme',exact:true}).selectOption(theme);
- await page.screenshot({path:info.outputPath(`setup-connection-${theme}.png`),fullPage:true});
- await connect(page);await page.getByRole('button',{name:'Review preparation plan',exact:true}).click();
- await page.screenshot({path:info.outputPath(`setup-plan-${theme}.png`),fullPage:true});
- model.revocation='UNCONFIRMED';await page.getByLabel('Temporary setup token',{exact:true}).fill('nbt_ABCDEFGHIJKL.TESTSETUPSECRET');
- await page.getByRole('checkbox').check();await page.getByRole('button',{name:'Create missing fields',exact:true}).click();
- await expect(page.getByRole('alert')).toContainText('revocation is not confirmed');
- await page.screenshot({path:info.outputPath(`setup-result-${theme}.png`),fullPage:true});
- await page.getByRole('combobox',{name:'Language',exact:true}).selectOption('ru');
- await expect(page.getByRole('heading',{name:'Подготовка NetBox',exact:true})).toBeVisible();
- await expect(page.getByRole('alert')).toContainText('Отзыв setup-token не подтверждён');
- await page.screenshot({path:info.outputPath(`setup-result-ru-${theme}.png`),fullPage:true});
+for(const language of ['en','ru'])for(const theme of ['light','dark'])for(const width of [1280,390])
+test(`full contract gallery ${language} ${theme} ${width}`,async({page,context},info)=>{
+ const model=await mock(context);await page.setViewportSize({width,height:1000});
+ for(const scenario of ['missing','partial','conflict','success','unconfirmed']){
+  model.state={...model.state,revision:1,status:'ATTENTION',url:'https://netbox.example.test',read_token_present:true,apply_token_present:true,
+    preparation:{status:scenario==='success'||scenario==='unconfirmed'?'PREPARED':'PLANNED',fields:fields(['success','unconfirmed'].includes(scenario)?'ready':scenario),digest:'a'.repeat(64),local_secret:'NOT_STORED',revocation:scenario==='unconfirmed'?'UNCONFIRMED':scenario==='success'?'CONFIRMED':'NOT_ATTEMPTED'}};
+  await page.goto('/setup');
+  await page.getByRole('combobox',{name:'Language',exact:true}).selectOption(language);
+  await page.getByRole('combobox',{name:language==='ru'?'Тема':'Theme',exact:true}).selectOption(theme);
+  await expect(page.locator('[data-field]')).toHaveCount(16);
+  const label=language==='ru'?'Временный токен подготовки':'Temporary setup token';
+  if(scenario==='missing'||scenario==='partial'){
+    await expect(page.getByLabel(label,{exact:true})).toBeVisible();
+    await expect(page.getByRole('button',{name:language==='ru'?'Создать недостающие поля':'Create missing fields',exact:true})).toBeVisible();
+  }
+  if(scenario==='conflict'){
+    await expect(page.locator('.setup-field-conflict')).toContainText(language==='ru'?'Тип: ожидается JSON, фактически: Текст':'Type: expected JSON, found Text');
+    await expect(page.getByLabel(label,{exact:true})).toHaveCount(0);
+    await expect(page.locator('.setup-plan-blocker')).toBeVisible();
+  }
+  if(scenario==='unconfirmed')await expect(page.getByRole('alert')).toContainText(language==='ru'?'Отзыв временного токена не подтверждён':'revocation is not confirmed');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:info.outputPath(`setup-${scenario}-${language}-${theme}-${width}.png`),fullPage:true});
+  await page.getByRole('button',{name:language==='ru'?'Просмотреть все поля плана':'Review all field details',exact:true}).click();
+  await expect(page.locator('[data-field]:visible')).toHaveCount(16);
+  if(scenario==='missing'){
+    await page.locator('[data-field]').first().getByText(language==='ru'?'Технические подробности':'Technical details',{exact:true}).click();
+    await expect(page.locator('[data-field]').first().locator('code')).toHaveText(plans.missing[0].name);
+  }
+ }
+ if(width===1280){
+  await page.setViewportSize({width:780,height:1000});await page.evaluate(()=>document.body.style.zoom='2');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.getByRole('button',{name:language==='ru'?'Обновить состояние настройки':'Reload setup state',exact:true}).focus();
+  await page.keyboard.press('Enter');
+ }
 });
+
 test('conflict, uncertain result and auth replacement remain explicit',async({page,context})=>{
  const model=await mock(context);model.fail=true;await page.goto('/setup');await connect(page);
  await expect(page.getByText('NetBox rejected a token.')).toBeVisible();
  await page.getByRole('button',{name:'Replace credentials',exact:true}).click();model.fail=false;await connect(page);
  model.conflict=true;await page.getByRole('button',{name:'Review preparation plan',exact:true}).click();
- await expect(page.getByText('Conflict — review in NetBox')).toBeVisible();await expect(page.getByLabel('Temporary setup token',{exact:true})).toHaveCount(0);
+ await expect(page.getByText('Type: expected JSON, found Text')).toBeVisible();await expect(page.getByLabel('Temporary setup token',{exact:true})).toHaveCount(0);
  model.conflict=false;model.state.preparation=null;await page.getByRole('button',{name:'Refresh preparation plan',exact:true}).click();
  model.uncertain=true;await page.getByLabel('Temporary setup token',{exact:true}).fill('nbt_ABCDEFGHIJKL.TESTSETUPSECRET');await page.getByRole('checkbox').check();
  await page.getByRole('button',{name:'Create missing fields',exact:true}).click();await expect(page.getByRole('alert').first()).toContainText('A write is uncertain');

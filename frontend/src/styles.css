@@ -91,3 +91,17 @@ code {
 .setup-toolbar .theme-control { color:var(--text); font-size:16px; }
 .setup-toolbar .theme-control select { color:var(--text); background:var(--surface-muted); }
 .setup-workspace [role="alert"] { color:var(--warning); background:var(--warning-bg); border-left:3px solid var(--warning); padding:16px; border-radius:var(--radius); }
+
+.setup-plan-counts { font-weight:600; }
+.setup-plan-group { margin:12px 0; border:1px solid var(--border); border-radius:var(--radius); }
+.setup-plan-group>summary { cursor:pointer; padding:12px 16px; font-weight:600; }
+.setup-plan-group .setup-fields { margin:0 12px 12px; }
+.setup-plan-blocker { border-left:3px solid var(--danger); padding:0 12px; margin:16px 0; }
+.setup-plan-blocker h3 { color:var(--danger); font-size:17px; }
+.setup-field-conflict { color:var(--danger); background:var(--danger-bg); padding:8px 12px; border-radius:var(--radius); }
+.setup-field-conflict p { margin:4px 0; }
+.setup-field-models { color:var(--muted); font-size:14px; }
+
+.setup-workspace { overflow-wrap:anywhere; }
+.setup-progress { grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr)); }
+.setup-workspace button { min-width:0; }
