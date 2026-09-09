@@ -4,6 +4,7 @@
 import argparse
 import contextlib
 import hashlib
+import json
 import os
 import re
 import runpy
@@ -484,7 +485,7 @@ def _wait_for_postgres(root, release, config):
     """Wait for the bundled database without exposing connection material."""
     for _attempt in range(60):
         status = run(compose_command(
-            root, 'exec', '-T', 'postgres', 'pg_isready', '-U',
+            root, 'exec', '-T', 'postgres', 'pg_isready', '-h', '127.0.0.1', '-U',
             'netbox_sync_bootstrap', '-d', 'netbox_sync', release=release, config=config),
                      check=False)
         if status.returncode == 0:
@@ -493,9 +494,32 @@ def _wait_for_postgres(root, release, config):
     raise InstallError('bundled PostgreSQL did not become healthy')
 
 
+class ContainerNameConflict(InstallError):
+    pass
+
+
+def validate_container_names(prepared):
+    """A canonical name is not authority to adopt somebody else's container."""
+    values = dict(line.split('=', 1) for line in (prepared.config / 'compose.env').read_text().splitlines()
+                  if '=' in line and not line.startswith('#'))
+    project = values.get('NETBOX_SYNC_COMPOSE_PROJECT', 'netbox-sync')
+    if not re.fullmatch(r'[a-z0-9][a-z0-9_-]*', project):
+        raise InstallError('invalid Compose project identity')
+    names = run(['docker', 'ps', '-a', '--format', '{{.Names}}'], capture_output=True).stdout.splitlines()
+    for service in ('postgres', *_runtime_services()):
+        name = project + '-' + service.removeprefix('netbox-sync-')
+        if name not in names:continue
+        response = run(['docker', 'inspect', '--format', '{{json .Config.Labels}}', name], capture_output=True)
+        try: labels = json.loads(response.stdout)
+        except (ValueError, TypeError):raise InstallError('container ownership unavailable') from None
+        if not isinstance(labels, dict) or (labels.get('com.docker.compose.project'), labels.get('com.docker.compose.service')) != (project, service):
+            raise ContainerNameConflict('container name conflict: ' + name)
+
+
 def prepare_stack(prepared):
     """Validate/build/provision against staged artifacts before activation."""
     root, release, config = prepared.root, prepared.release, prepared.config
+    validate_container_names(prepared)
     run(compose_command(root, 'config', '--quiet', release=release, config=config))
     run(compose_command(root, 'build', 'netbox-sync-api', release=release, config=config))
     run(compose_command(root, 'up', '-d', 'postgres', release=release, config=config))
@@ -936,6 +960,9 @@ def main(argv=None):
             _cleanup_prepared(prepared)
     except TLSConfigurationError as error:
         print(str(error),file=sys.stderr)
+        return 1
+    except ContainerNameConflict as error:
+        print(str(error) + '; preserve the existing container and review its ownership', file=sys.stderr)
         return 1
     except (InstallError, OSError, subprocess.SubprocessError):
         print('deployment preparation failed; check TLS material/public URL, then inspect host prerequisites and protected config',

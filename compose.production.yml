@@ -18,6 +18,7 @@ x-app: &app
 
 services:
   netbox-sync-proxy:
+    container_name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}-proxy
     image: ${NETBOX_SYNC_PROXY_IMAGE:-nginx:stable-alpine}
     user: "10001:10001"
     entrypoint: [/bin/sh, -ec]
@@ -60,6 +61,7 @@ services:
     restart: "no"
 
   postgres:
+    container_name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}-postgres
     image: ${NETBOX_SYNC_POSTGRES_IMAGE:-postgres:16-bookworm}
     environment:
       POSTGRES_DB: netbox_sync
@@ -70,7 +72,7 @@ services:
       - netbox-sync-postgres:/var/lib/postgresql/data
     networks: [netbox-sync-db]
     healthcheck:
-      test: [CMD-SHELL, "pg_isready -U netbox_sync_bootstrap -d netbox_sync"]
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U netbox_sync_bootstrap -d netbox_sync"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -79,6 +81,7 @@ services:
     logging: *bounded-logging
 
   netbox-sync-api:
+    container_name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}-api
     <<: *app
     user: "10001:10001"
     command: [python, -m, netbox_sync.web_runtime, serve]
@@ -101,6 +104,7 @@ services:
       start_period: 15s
 
   netbox-sync-secret-broker:
+    container_name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}-secret-broker
     <<: *app
     user: "0:0"
     group_add: ["10001"]
@@ -113,6 +117,7 @@ services:
     restart: unless-stopped
 
   netbox-sync-lifecycle-worker:
+    container_name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}-lifecycle-worker
     <<: *app
     user: "0:0"
     command: [python, -m, netbox_sync.lifecycle_worker]
@@ -126,6 +131,7 @@ services:
     restart: unless-stopped
 
   netbox-sync-bootstrap-worker:
+    container_name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}-bootstrap-worker
     <<: *app
     user: "0:0"
     command: [python, -m, netbox_sync.bootstrap_worker]
@@ -139,6 +145,7 @@ services:
     restart: unless-stopped
 
   netbox-sync-discovery-worker:
+    container_name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}-discovery-worker
     <<: *app
     user: "0:0"
     command: [python, -m, netbox_sync.discovery_worker, --socket, /run/netbox-sync-discovery/worker.sock, --secret-root, /run/secrets/netbox-sync, --source-secret-root, /run/secrets/netbox-sync-sources, --netbox-token-file, /run/secrets/netbox/read-token, --api-uid, "10001", --child-uid, "10001", --child-gid, "10001"]
@@ -153,6 +160,7 @@ services:
     restart: unless-stopped
 
   netbox-sync-apply-worker:
+    container_name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}-apply-worker
     <<: *app
     user: "0:0"
     command: [python, -m, netbox_sync.apply_worker, --socket, /run/netbox-sync-apply/worker.sock, --secret-root, /run/secrets/netbox-sync, --source-secret-root, /run/secrets/netbox-sync-sources, --netbox-token-file, /run/secrets/netbox/apply-token, --lock-path, /run/netbox-sync-lock/apply.lock, --api-uid, "10001", --child-uid, "10001", --child-gid, "10001"]
@@ -168,6 +176,7 @@ services:
     restart: unless-stopped
 
   netbox-sync-schedule-worker:
+    container_name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}-schedule-worker
     <<: *app
     user: "0:0"
     command: [python, -m, netbox_sync.schedule_worker, --socket, /run/netbox-sync-schedule/worker.sock, --api-uid, "10001"]

@@ -50,7 +50,8 @@ def test_canonical_compose_has_private_bundled_postgres_and_one_app_image():
     assert 'internal: true' in text
     assert 'x-app: &app' in text
     assert text.count('dockerfile: Dockerfile.web') == 1
-    assert 'container_name:' not in text
+    assert text.count('container_name:') == 9
+    assert 'container_name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}-postgres' in text
     assert 'name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}' in text
     for service in ('netbox-sync-api', 'netbox-sync-discovery-worker',
                     'netbox-sync-apply-worker', 'netbox-sync-schedule-worker',
@@ -682,3 +683,29 @@ def test_fresh_runtime_failure_then_new_release_preserves_credentials(tmp_path, 
     assert first.release.exists()
     assert {p.name: p.read_bytes() for p in (root / 'secrets/infrastructure').iterdir()} == passwords
     install._cleanup_prepared(second)
+
+
+@pytest.mark.parametrize('owner', ['foreign', 'matching'])
+def test_canonical_container_names_require_matching_compose_ownership(tmp_path, monkeypatch, owner):
+    config=tmp_path/'config';config.mkdir();(config/'compose.env').write_text('NETBOX_SYNC_COMPOSE_PROJECT=netbox-sync\n')
+    calls=[]
+    def run(command, **kwargs):
+        calls.append(command)
+        if command[1]=='ps':return SimpleNamespace(stdout='netbox-sync-postgres\n')
+        return SimpleNamespace(stdout=__import__('json').dumps({'com.docker.compose.project':'netbox-sync' if owner=='matching' else 'foreign', 'com.docker.compose.service':'postgres'}))
+    monkeypatch.setattr(install,'run',run)
+    prepared=SimpleNamespace(config=config)
+    if owner=='foreign':
+        with pytest.raises(install.ContainerNameConflict):install.validate_container_names(prepared)
+    else:install.validate_container_names(prepared)
+    assert all(command[1] in ('ps','inspect') for command in calls)
+
+
+def test_installer_waits_for_final_postgres_tcp_listener(monkeypatch):
+    from types import SimpleNamespace
+    calls=[]
+    monkeypatch.setattr(install,'compose_command',lambda root,*args,**kwargs:list(args))
+    monkeypatch.setattr(install,'run',lambda command,**kwargs:(calls.append(command) or SimpleNamespace(returncode=0)))
+    install._wait_for_postgres(None,None,None)
+    assert calls[0][calls[0].index('pg_isready')+1:][:2]==['-h','127.0.0.1']
+    assert 'pg_isready -h 127.0.0.1' in COMPOSE.read_text()
