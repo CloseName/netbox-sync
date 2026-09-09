@@ -53,7 +53,7 @@ class EgressPolicy:
             literal = ipaddress.IPv4Address(host)
         except ipaddress.AddressValueError:
             literal = None
-        if literal is None and ('.' not in host or host in LOCAL_NAMES) and not exact:
+        if host in LOCAL_NAMES or (literal is None and '.' not in host and not exact):
             raise OnboardingError(ErrorCode.SOURCE_DESTINATION_DENIED)
         answers = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (str(literal), port))] if literal else resolver(
             host, port, socket.AF_UNSPEC, socket.SOCK_STREAM,

@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import ssl
+import socket
 import subprocess
 import sys
 from dataclasses import asdict
@@ -23,6 +24,8 @@ def classify(exc):
     """Never propagate remote error text or response payloads."""
     if isinstance(exc, OnboardingError):
         return exc.code
+    if isinstance(exc, socket.gaierror):
+        return ErrorCode.SOURCE_DNS_FAILED
     if isinstance(exc, TimeoutError):
         return ErrorCode.SOURCE_TIMEOUT
     if isinstance(exc, ssl.SSLError):
@@ -127,7 +130,7 @@ def run_connection_test(credentials, policy=None, popen=subprocess.Popen, *, chi
             result = json.loads(output)
             if result != {'ok': True}:
                 code = ErrorCode(result.get('error'))
-                if code not in (ErrorCode.SOURCE_TIMEOUT, ErrorCode.SOURCE_TLS_FAILED,
+                if code not in (ErrorCode.SOURCE_DNS_FAILED, ErrorCode.SOURCE_TIMEOUT, ErrorCode.SOURCE_TLS_FAILED,
                                 ErrorCode.SOURCE_AUTH_FAILED, ErrorCode.SOURCE_DESTINATION_DENIED,
                                 ErrorCode.SOURCE_CONNECTION_FAILED):
                     raise ValueError('Invalid probe result')

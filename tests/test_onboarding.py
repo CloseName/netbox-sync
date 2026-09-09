@@ -257,6 +257,7 @@ def test_api_confirmation_and_redaction(caplog):
         malformed = client.post('/api/v1/sources/test-connection', json={**payload, 'address': SECRET + '/bad'},
                                 headers=HEADERS)
         assert malformed.status_code == 422
+        assert malformed.json()["error"]["code"] == "SOURCE_ADDRESS_INVALID"
         assert SECRET not in created.text + malformed.text + caplog.text
 
 
@@ -288,3 +289,11 @@ def test_auth_failure_is_classified_without_echo():
     class InvalidLogin(Exception):
         pass
     assert classify(InvalidLogin(SECRET)) == ErrorCode.SOURCE_AUTH_FAILED
+
+def test_no_unauthenticated_policy_management_or_disclosure_endpoint():
+    instance, registry, store = service()
+    with TestClient(create_app(ApiSettings(allowed_write_hosts=('testserver',)), onboarding_service=instance)) as client:
+        for method in ('GET','POST','PATCH'):
+            response=client.request(method,'/api/v1/source-access-policy',headers=HEADERS)
+            assert response.status_code==404
+        assert registry.records == store.values == {}

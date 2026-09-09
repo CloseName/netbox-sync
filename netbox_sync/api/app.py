@@ -80,6 +80,7 @@ def _install_boundaries(app, settings):
         errors = {
             'SOURCE_ALREADY_EXISTS': (409, 'Source already exists'),
             'SOURCE_UNSUPPORTED': (422, 'Source type is unsupported'),
+            'SOURCE_DNS_FAILED': (422, 'Source hostname could not be resolved'),
             'SOURCE_AUTH_FAILED': (422, 'Source authentication failed'),
             'SOURCE_TLS_FAILED': (422, 'Source TLS verification failed'),
             'SOURCE_TIMEOUT': (504, 'Source connection timed out'),
@@ -248,6 +249,8 @@ def _install_boundaries(app, settings):
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, _exc):
+        if request.url.path == '/api/v1/sources/test-connection' and any(error.get('loc') == ('body', 'address') for error in _exc.errors()):
+            return _error(request, 422, 'SOURCE_ADDRESS_INVALID', 'Use a bare hostname or IPv4 address')
         return _error(request, 422, 'API_VALIDATION_FAILED', 'Request validation failed')
 
 

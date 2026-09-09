@@ -141,7 +141,7 @@ if pgmode == 'bundled':
         time.sleep(.5)
     else: raise RuntimeError('Baseline API not ready')
     result = request(body)
-    assert result['body']['error']['code'] in ('SOURCE_CONNECTION_FAILED','SOURCE_TIMEOUT')
+    assert result['body']['error']['code'] in ('SOURCE_CONNECTION_FAILED','SOURCE_TIMEOUT','SOURCE_DNS_FAILED')
     assert secret not in json.dumps(result)
     print('REPRODUCED: actual in-API probe fails from the DB-only network',flush=True)
     compose('up','-d','--no-deps','netbox-sync-api')
@@ -163,7 +163,9 @@ for _ in range(3):
 else: raise RuntimeError('SOAP probe failed: '+json.dumps(success))
 assert success['body']['status'] == 'success'
 assert request({'onboarding_token':success['body']['onboarding_token']},'/api/v1/sources/cancel-onboarding')['status'] == 200
-for change, code in [({'username':'reject'},'SOURCE_AUTH_FAILED'),
+for change, code in [({'address':'missing.probe.test'},'SOURCE_DNS_FAILED'),
+                     ({'address':'https://esxi.probe.test'},'SOURCE_ADDRESS_INVALID'),
+                     ({'username':'reject'},'SOURCE_AUTH_FAILED'),
                      ({'address':'wrong.probe.test'},'SOURCE_TLS_FAILED'),
                      ({'address':'slow.probe.test'},'SOURCE_TIMEOUT'),
                      ({'address':'127.0.0.1'},'SOURCE_DESTINATION_DENIED'),

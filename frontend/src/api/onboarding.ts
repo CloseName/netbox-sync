@@ -6,6 +6,8 @@ export class SourceIdReservedError extends Error {
 }
 
 export const connectionMessages = {
+  SOURCE_ADDRESS_INVALID: ['Use a bare hostname or IPv4 address, without a scheme, path or port.', 'Введите имя узла или IPv4 без схемы, пути и порта.'],
+  SOURCE_DNS_FAILED: ['The source hostname could not be resolved. Check its spelling and ask the deployment operator to verify DNS.', 'Не удалось разрешить имя источника. Проверьте написание; оператор установки должен проверить DNS.'],
   SOURCE_CONNECTION_FAILED: ['Could not reach the source. Check hostname, DNS, routing and HTTPS service.', 'Не удалось подключиться к источнику. Проверьте имя, DNS, маршрутизацию и службу HTTPS.'],
   SOURCE_TIMEOUT: ['The source connection timed out. Check reachability and retry.', 'Источник не ответил вовремя. Проверьте доступность и повторите проверку.'],
   SOURCE_TLS_FAILED: ['TLS verification failed. Check certificate, hostname and trusted CA.', 'Ошибка проверки TLS. Проверьте сертификат, имя узла и доверенный центр сертификации.'],

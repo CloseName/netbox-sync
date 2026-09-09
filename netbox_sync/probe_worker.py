@@ -6,7 +6,7 @@ from .application.observability import ErrorCode
 from .api.connection_probe import run_connection_test, PROBE_DEADLINE
 from .api.egress import EgressPolicy
 
-CODES = frozenset({ErrorCode.SOURCE_TIMEOUT, ErrorCode.SOURCE_TLS_FAILED,
+CODES = frozenset({ErrorCode.SOURCE_DNS_FAILED, ErrorCode.SOURCE_TIMEOUT, ErrorCode.SOURCE_TLS_FAILED,
     ErrorCode.SOURCE_AUTH_FAILED, ErrorCode.SOURCE_DESTINATION_DENIED,
     ErrorCode.SOURCE_CONNECTION_FAILED})
 

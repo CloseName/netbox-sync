@@ -279,3 +279,11 @@ def test_cancellation_revokes_token_without_registry_or_broker_writes():
     with pytest.raises(OnboardingError, match='ONBOARDING_TOKEN_INVALID'):
         instance.register(command(token))
     assert registry.records == secrets.values == {}
+
+@pytest.mark.parametrize('name', ['localhost','host.docker.internal','gateway.docker.internal','kubernetes.default.svc'])
+def test_protected_service_names_cannot_be_explicitly_allowed(name):
+    with pytest.raises(OnboardingError, match='SOURCE_DESTINATION_DENIED'):
+        EgressPolicy(allowed_hosts=(name,)).resolve(name,443,lambda *args: answers('10.1.1.1'))
+
+def test_dns_error_has_safe_distinct_code():
+    assert probe.classify(socket.gaierror('private resolver detail')).value == 'SOURCE_DNS_FAILED'
