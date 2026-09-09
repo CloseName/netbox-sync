@@ -2,7 +2,7 @@
 
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Mapping
 
@@ -73,6 +73,7 @@ class NetBoxTargetConfig:
     device_type_slug: str
     cluster_type_slug: str
     cluster_name: str
+    onboarding_mapping: dict = field(default_factory=dict)
 
     def __post_init__(self):
         for field_name in (
@@ -188,6 +189,9 @@ class SourceConfig:
 
         if not isinstance(self.settings, Mapping):
             raise ValueError('settings must be a mapping')
+
+        if self.settings.get('onboarding_mapping'):
+            object.__setattr__(self,'target',replace(self.target,onboarding_mapping=dict(self.settings['onboarding_mapping'])))
 
         object.__setattr__(
             self,

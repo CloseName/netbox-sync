@@ -63,7 +63,7 @@ def probe_proxmox(credentials, host, context, getter=https_get):
         raise OnboardingError(ErrorCode.SOURCE_CONNECTION_FAILED)
 
 
-def probe_esxi(credentials, host, context, getter=https_get, connector=None, disconnecter=None):
+def probe_esxi(credentials, host, context, getter=https_get, connector=None, disconnecter=None, preview=False):
     """Bound version GET explicitly, then Connect (not SmartConnect) for SOAP login/read/logout."""
     from pyVim.connect import Connect, Disconnect  # pylint: disable=import-outside-toplevel
     from pyVmomi.VmomiSupport import GetServiceVersions, versionIdMap  # pylint: disable=import-outside-toplevel
@@ -86,6 +86,9 @@ def probe_esxi(credentials, host, context, getter=https_get, connector=None, dis
         content = service.RetrieveContent()
         if content is None or not getattr(content, 'about', None):
             raise OnboardingError(ErrorCode.SOURCE_CONNECTION_FAILED)
+        if preview:
+            from ..source_preview import esxi
+            return esxi(content)
     finally:
         if service is not None:
             try:
@@ -94,7 +97,20 @@ def probe_esxi(credentials, host, context, getter=https_get, connector=None, dis
                 pass
 
 
-def execute(credentials, policy):
+def bound_http_reads():
+    """The probe is a disposable child: also bound SDK SOAP response reads."""
+    original=http.client.HTTPResponse.read
+    def read(response,amt=None):
+        total=getattr(response,'_probe_bytes',0)
+        cap=2*1024*1024
+        data=original(response,min(amt if amt is not None else cap+1,cap-total+1))
+        response._probe_bytes=total+len(data)
+        if response._probe_bytes>cap: raise OnboardingError(ErrorCode.SOURCE_CONNECTION_FAILED)
+        return data
+    http.client.HTTPResponse.read=read
+
+
+def execute(credentials, policy, preview=False):
     """Resolve once; pin all subsequent DNS calls inside this isolated process."""
     port = {'proxmox': 8006, 'esxi': 443}[credentials.source_type]
     host, address = policy.resolve(credentials.address, port)
@@ -102,18 +118,21 @@ def execute(credentials, policy):
     with pinned_dns(host, address, port):
         if credentials.source_type == 'proxmox':
             probe_proxmox(credentials, host, context)
+            if preview:
+                from ..source_preview import proxmox
+                return proxmox(credentials,host,context,https_get)
         else:
-            probe_esxi(credentials, host, context)
+            return probe_esxi(credentials, host, context, preview=preview)
 
 
-def run_connection_test(credentials, policy=None, popen=subprocess.Popen, *, child_uid=None):
+def run_connection_test(credentials, policy=None, popen=subprocess.Popen, *, child_uid=None, preview=False):
     """Kill/reap probe on whole-operation timeout, including DNS and initial TLS probe."""
     # Credentials use stdin only, never argv/environment/disk. No production DSN
     # or broker configuration is inherited by the disposable child.
     environ = {key: value for key, value in os.environ.items()
                if key in ('PATH', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL')}
     environ['PYTHONDONTWRITEBYTECODE'] = '1'
-    payload = json.dumps({'credentials': asdict(credentials), 'policy': asdict(policy or EgressPolicy())}).encode()
+    payload = json.dumps({'credentials': asdict(credentials), 'policy': asdict(policy or EgressPolicy()), 'preview': preview}).encode()
     identity = {} if child_uid is None else {'user': child_uid, 'group': child_uid, 'extra_groups': []}
     try:
         with popen([sys.executable, '-B', '-m', 'netbox_sync.api.connection_probe'],
@@ -125,9 +144,11 @@ def run_connection_test(credentials, policy=None, popen=subprocess.Popen, *, chi
                 process.kill()
                 process.communicate()
                 raise OnboardingError(ErrorCode.SOURCE_TIMEOUT) from None
-            if process.returncode != 0 or len(output) > 256:
+            if process.returncode != 0 or len(output) > 24576:
                 raise OnboardingError(ErrorCode.SOURCE_CONNECTION_FAILED)
             result = json.loads(output)
+            if preview and result.get('ok') is True and isinstance(result.get('preview'),dict):
+                return result['preview']
             if result != {'ok': True}:
                 code = ErrorCode(result.get('error'))
                 if code not in (ErrorCode.SOURCE_DNS_FAILED, ErrorCode.SOURCE_TIMEOUT, ErrorCode.SOURCE_TLS_FAILED,
@@ -147,8 +168,10 @@ def main():
     http.client.HTTPConnection.debuglevel = 0
     try:
         payload = json.loads(sys.stdin.buffer.read(65537))
-        execute(PendingCredentials(**payload['credentials']), EgressPolicy(**payload['policy']))
+        if payload.get('preview'): bound_http_reads()
+        preview=execute(PendingCredentials(**payload['credentials']), EgressPolicy(**payload['policy']),payload.get('preview',False))
         result = {'ok': True}
+        if preview is not None: result['preview']=preview
     except Exception as exc:  # pylint: disable=broad-exception-caught
         result = {'ok': False, 'error': classify(exc).value}
     sys.stdout.write(json.dumps(result))

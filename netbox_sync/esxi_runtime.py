@@ -95,6 +95,8 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False):
     if not isinstance(confirmed, bool):
         raise TypeError('confirmed must be a boolean')
 
+    from .host_mapping import validate
+    validate(nb_api,config.target,hosts)
     try:
         plan = build_esxi_migration_plan(nb_api, hosts, config)
         managed_ids = _managed_vm_ids(plan)

@@ -3,7 +3,7 @@
 import secrets
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..source_config import NetBoxTargetConfig, SecretReference, SourceConfig, SourceCredentials
 from .observability import ErrorCode
@@ -49,7 +49,7 @@ class EphemeralOnboardingStore:
         self._timers = {}
         self._lock = threading.Lock()
 
-    def issue(self, credentials):
+    def issue(self, credentials, preview=None):
         """Return only an opaque random token."""
         token = secrets.token_urlsafe(32)
         now = self._clock()
@@ -61,7 +61,7 @@ class EphemeralOnboardingStore:
                 self._timers.pop(key).cancel()
             if len(self._items) >= 128:
                 raise OnboardingError(ErrorCode.REGISTRATION_UNAVAILABLE)
-            self._items[token] = (now + self._ttl, credentials)
+            self._items[token] = (now + self._ttl, credentials, preview)
             self._timers[token] = expiry
         expiry.start()
         return token
@@ -70,6 +70,13 @@ class EphemeralOnboardingStore:
         with self._lock:
             self._items.pop(token, None)
             self._timers.pop(token, None)
+
+    def preview(self, token):
+        with self._lock:
+            item=self._items.get(token)
+            if item is None or item[0]<=self._clock():
+                raise OnboardingError(ErrorCode.ONBOARDING_TOKEN_INVALID)
+            return item[2]
 
     def consume(self, token):
         """Consume exactly once and reject expired/unknown tokens."""
@@ -117,6 +124,7 @@ class RegistrationCommand:
     device_type_slug: str
     cluster_type_slug: str
     confirm_sync_disabled: bool
+    mapping: dict = field(default_factory=dict)
 
 
 class SourceOnboardingService:
@@ -136,9 +144,12 @@ class SourceOnboardingService:
         tester(credentials)
         return self._pending.issue(credentials)
 
-    def accept_checked_credentials(self, credentials):
+    def accept_checked_credentials(self, credentials, preview=None):
         """Retain credentials only after the trusted probe transport succeeded."""
-        return self._pending.issue(credentials)
+        return self._pending.issue(credentials, preview)
+
+    def preview(self, token):
+        return self._pending.preview(token)
 
     def cancel(self, token):
         """Revoke only ephemeral onboarding state; no registry or broker operation."""
@@ -201,7 +212,7 @@ class SourceOnboardingService:
                 username=credentials.username, token_id=token_reference,
                 token_secret=SecretReference(provider='file', key=secret_receipt.key),
             ),
-            legacy_identity_owner=False, settings={},
+            legacy_identity_owner=False, settings={"onboarding_mapping":request.mapping} if request.mapping else {},
         )
         try:
             return self._registry.create(config)

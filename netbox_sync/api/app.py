@@ -444,14 +444,30 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
             persist_stale(source_instance, payload.operation_id, exc)
             raise
 
+    from .catalog import CatalogError, call as catalog_call, validate as catalog_validate
+
+    @app.exception_handler(CatalogError)
+    async def catalog_error(request,exc):
+        known={'CATALOG_CHANGED','SELECTION_REQUIRED','HOST_MAPPING_REQUIRED','CLUSTER_SCOPE_MISMATCH','CLUSTER_AMBIGUOUS','PERMISSION_DENIED','AUTH_FAILED','TLS_FAILED','NETWORK_UNREACHABLE','RESPONSE_INVALID','UNAVAILABLE'}
+        code=exc.code if exc.code in known else 'UNAVAILABLE'
+        status=409 if code in {'CATALOG_CHANGED','SELECTION_REQUIRED','HOST_MAPPING_REQUIRED','CLUSTER_SCOPE_MISMATCH','CLUSTER_AMBIGUOUS'} else 503
+        return _error(request,status,'CATALOG_'+code.removeprefix('CATALOG_'),'NetBox selection could not be verified')
+
+    @router.get('/catalog/{kind}')
+    def catalog(kind: str, search: str = Query(default='',max_length=100), offset: int = Query(default=0,ge=0,le=10000)):
+        from ..netbox_catalog import ENDPOINTS
+        if kind not in ENDPOINTS: raise CatalogError('SELECTION_REQUIRED')
+        return catalog_call(settings.bootstrap_socket,{'action':'list','kind':kind,'search':search,'offset':offset})
+
     @router.post('/sources/test-connection', response_model=ConnectionResult)
     def connection_test(request: ConnectionRequest, http: Request):
         session = http.cookies.get(COOKIE)
         policy = auth_client.call('policy', session=session)
         from ..probe_worker import remote_test_authorized
+        preview=None
         if settings.probe_socket:
-            remote_test_authorized(settings.probe_socket, request.credentials(), session, policy['revision'])
-            token = onboarding_service.accept_checked_credentials(request.credentials())
+            preview=remote_test_authorized(settings.probe_socket, request.credentials(), session, policy['revision'], **({'preview':True} if request.preview else {}))
+            token = onboarding_service.accept_checked_credentials(request.credentials(), preview)
         elif onboarding_injected:
             token = onboarding_service.test_connection(request.credentials())
         else:
@@ -464,13 +480,23 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         except AuthError:
             onboarding_service.cancel(token)
             raise
-        return ConnectionResult(onboarding_token=token)
+        return ConnectionResult(onboarding_token=token,preview=preview,suggested_source_instance=request.source_type+'-'+uuid4().hex[:20])
 
     @router.post('/sources', response_model=SourceDTO, status_code=201)
     def register_source(request: RegistrationRequest, http: Request):
+        from dataclasses import replace
+        mapping={}
+        if request.references or request.host_types or onboarding_service.preview(request.onboarding_token):
+            mapping=catalog_validate(settings.bootstrap_socket,request.references,request.host_types,onboarding_service.preview(request.onboarding_token))
+            refs=mapping['references'];types=mapping['host_types']
+            request=request.model_copy(update={'site_slug':refs['site']['slug'],'cluster_name':refs['cluster']['name'],
+                'platform_slug':refs['platform']['slug'],'device_role_slug':refs['device_role']['slug'],
+                'cluster_type_slug':refs['cluster_type']['slug'],'device_type_slug':next(iter(types.values()))['slug']})
+        elif not onboarding_injected:
+            raise CatalogError('SELECTION_REQUIRED')
         auth_client.call('receipt.consume', session=http.cookies.get(COOKIE),
                          receipt=request.onboarding_token, destination=request.address, provider=request.source_type)
-        onboarding_service.register(request.command())
+        onboarding_service.register(replace(request.command(),mapping=mapping))
         return SourceDTO.from_view(source_view({
             **request.model_dump(), 'enabled': True, 'sync_enabled': False, 'legacy_identity_owner': False,
         }))

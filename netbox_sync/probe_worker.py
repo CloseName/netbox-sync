@@ -12,6 +12,8 @@ CODES = frozenset({ErrorCode.SOURCE_DNS_FAILED, ErrorCode.SOURCE_TIMEOUT, ErrorC
 
 
 def handle(payload):
+    preview=payload.pop('preview',False)
+    if type(preview) is not bool: raise ControlError('CONTROL_REQUEST_INVALID')
     if set(payload) == {'credentials', 'session', 'revision'}:
         from .api.auth import AuthClient
         policy = AuthClient('/run/netbox-sync-auth/worker.sock').call('probe.authorize',
@@ -27,8 +29,8 @@ def handle(payload):
         policy = EgressPolicy(**payload['policy'])
         if credentials.source_type not in ('esxi', 'proxmox') or not isinstance(credentials.verify_ssl, bool):
             raise ValueError()
-        run_connection_test(credentials, policy, child_uid=10001)
-        return {'success': True}
+        result=run_connection_test(credentials, policy, child_uid=10001, **({'preview':True} if preview else {}))
+        return {'success': True, 'preview':result} if preview else {'success': True}
     except OnboardingError as exc:
         return {'error': exc.code.value if exc.code in CODES else ErrorCode.SOURCE_CONNECTION_FAILED.value}
     except Exception:
@@ -50,15 +52,17 @@ def remote_test(path, credentials, policy):
     raise OnboardingError(code)
 
 
-def remote_test_authorized(path, credentials, session, revision):
+def remote_test_authorized(path, credentials, session, revision, preview=False):
     from .auth_policy import AuthError, CODES as AUTH_CODES
     try:
         result = request(path, {'credentials': asdict(credentials), 'session': session,
-                              'revision': revision}, timeout=PROBE_DEADLINE + 3)['result']
+                              'revision': revision, **({'preview':True} if preview else {})}, timeout=PROBE_DEADLINE + 3)['result']
     except ControlError as exc:
         if exc.code in AUTH_CODES:
             raise AuthError(exc.code) from None
         raise OnboardingError(ErrorCode.SOURCE_CONNECTION_FAILED) from None
+    if preview and result.get('success') is True and isinstance(result.get('preview'),dict):
+        return result['preview']
     if result == {'success': True}:
         return
     try:

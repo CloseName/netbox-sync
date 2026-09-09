@@ -44,9 +44,11 @@ fixture = root / 'state/fixture'
 fixture.mkdir()
 run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
      '-keyout', str(fixture / 'server.key'), '-out', str(fixture / 'server.crt'),
-     '-subj', '/CN=esxi.probe.test', '-addext', 'subjectAltName=DNS:esxi.probe.test,DNS:slow.probe.test'])
+     '-subj', '/CN=esxi.probe.test', '-addext', 'subjectAltName=DNS:esxi.probe.test,DNS:slow.probe.test,DNS:netbox.example.test'])
 (fixture / 'server.key').chmod(0o600)
 (fixture / 'server.crt').chmod(0o644)
+(root/'secrets/ca/netbox-ca.pem').write_bytes((fixture/'server.crt').read_bytes())
+(root/'secrets/ca/netbox-ca.pem').chmod(0o644)
 overlay = root / 'state/fixture.yml'
 overlay.write_text(json.dumps({'networks':{'netbox-sync-probe-egress':{'ipam':{'config':[{'subnet':'93.184.216.0/24'}]}}},'services': {'netbox-sync-probe-worker': {'volumes': [
     {'type':'bind','source':str(fixture / 'server.crt'),'target':'/etc/ssl/certs/ca-certificates.crt','read_only':True}]}}}))
@@ -128,6 +130,7 @@ run(['docker','run','-d','--name',project+'-endpoint','--label','com.docker.comp
      '--mount','type=bind,source='+str(fixture)+',target=/fixture,readonly',
      '--mount','type=bind,source='+str(root / 'current/tests/probe_https_fixture.py')+',target=/server.py,readonly',
      image,'python','/server.py'])
+run(['docker','network','connect','--alias','netbox.example.test',project+'_netbox-sync-egress',project+'-endpoint'])
 CLIENT = """import http.client,json,socket,sys
 class UnixHTTP(http.client.HTTPConnection):
  def connect(self):
@@ -152,7 +155,7 @@ assert request(None,'/api/v1/auth/me','GET')['status']==200
 assert request(dict(username='admin',password=password,invitation=invitation),'/api/v1/auth/enroll')['status']==409
 compose('exec','-T','--user','0','netbox-sync-auth-worker','python','-m','netbox_sync.auth_worker','managed','public-ipv4')
 secret = secrets.token_urlsafe(32)
-body = dict(source_type='esxi',address='esxi.probe.test',verify_ssl=True,username='netbox-sync',secret=secret)
+body = dict(source_type='esxi',address='esxi.probe.test',verify_ssl=True,username='netbox-sync',secret=secret,preview=True)
 
 def snapshot():
     return {str(path):hashlib.sha256(path.read_bytes()).digest() for dirname in ('config','secrets')
@@ -231,7 +234,12 @@ success=request(body);assert success['status']==200
 receipt=success['body']['onboarding_token']
 policy=request(None,'/api/v1/policy','GET')['body']
 assert request(dict(host='extra.probe.test',expected_revision=policy['revision'],request_id='fixture-extra-host'),'/api/v1/policy')['status']==200
-registration=dict(onboarding_token=receipt,source_type='esxi',source_instance='auth-test',
+references={kind:request(None,'/api/v1/catalog/'+kind,'GET')['body']['items'][0] for kind in ('site','cluster','platform','device_role','cluster_type')}
+host_type=request(None,'/api/v1/catalog/device_type','GET')['body']['items'][0]
+assert success['body']['preview']['hosts'][0]['manufacturer']=='Dell Inc.'
+assert success['body']['preview']['hosts'][0]['model']=='PowerEdge R650'
+host_types={host['id']:host_type for host in success['body']['preview']['hosts']}
+registration=dict(references=references,host_types=host_types,onboarding_token=receipt,source_type='esxi',source_instance='auth-test',
  name='Auth test',address=body['address'],verify_ssl=True,sync_interval_seconds=600,
  site_slug='dc1',cluster_name='Test',platform_slug='vmware-esxi',device_role_slug='server',
  device_type_slug='server',cluster_type_slug='vmware-esxi',confirm_sync_disabled=True)

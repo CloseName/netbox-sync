@@ -13,6 +13,7 @@ from .egress import validate_host
 class ConnectionRequest(PublicModel):
     """Credentials are accepted only in JSON bodies, never URL parameters."""
 
+    preview: bool = Field(default=False, strict=True)
     source_type: Literal['proxmox', 'esxi']
     address: str = Field(min_length=1, max_length=253)
     verify_ssl: bool = Field(default=True, strict=True)
@@ -57,6 +58,8 @@ class ConnectionResult(PublicModel):
     message: str = 'Connection and authentication succeeded'
     onboarding_token: str = Field(repr=False)
     expires_in_seconds: int = 600
+    preview: dict | None = None
+    suggested_source_instance: str | None = None
 
 
 class CancellationRequest(PublicModel):
@@ -87,6 +90,8 @@ class RegistrationRequest(PublicModel):
     device_role_slug: str
     device_type_slug: str
     cluster_type_slug: str
+    references: dict[str, dict] = Field(default_factory=dict, max_length=5)
+    host_types: dict[str, dict] = Field(default_factory=dict, max_length=16)
     confirm_sync_disabled: Literal[True]
 
     @field_validator('confirm_sync_disabled', mode='before')

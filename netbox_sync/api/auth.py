@@ -10,6 +10,7 @@ from ..local_control import request, ControlError
 COOKIE = '__Host-netbox-sync-session'
 PUBLIC = {('GET', '/api/v1/health'), ('POST', '/api/v1/auth/login'), ('POST', '/api/v1/auth/enroll')}
 ROUTES = (
+    ('GET', r'/api/v1/catalog/[^/]+', 'source.register'),
     ('GET', r'/api/v1/auth/me', 'source.read'),
     ('POST', r'/api/v1/auth/logout', 'source.read'),
     ('GET', r'/api/v1/policy', 'policy.read'),

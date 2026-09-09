@@ -412,6 +412,8 @@ def discover_hosts(service_instance, source_config):
                 management_ip=_management_ip(host),
                 hypervisor='VMware ESXi',
                 hypervisor_version=version,
+                manufacturer=_value(host, 'hardware.systemInfo.vendor', _value(host, 'summary.hardware.vendor')),
+                model=_value(host, 'hardware.systemInfo.model', _value(host, 'summary.hardware.model')),
                 cpu=DiscoveredCPU(
                     model=getattr(first_cpu, 'description', None),
                     vendor=getattr(first_cpu, 'vendor', None),

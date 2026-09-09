@@ -70,11 +70,12 @@ def _resolve_cluster(
         site,
         cluster_type,
         cluster_name,
+        cluster_id=None,
 ):
     matches = []
 
     for cluster in nb_api.virtualization.clusters.filter(
-        name=cluster_name
+        **({'id':cluster_id} if cluster_id else {'name':cluster_name})
     ):
         data = cluster.serialize()
 
@@ -544,34 +545,32 @@ def apply_hosts(
         *,
         confirmed=False,
 ):
+    from .host_mapping import validate, selected, device_types
+    validate(nb_api,config,hosts)
     site = _required(
         nb_api.dcim.sites,
         'site',
-        slug=config.site_slug,
+        **selected(config,'site',config.site_slug),
     )
 
     role = _required(
         nb_api.dcim.device_roles,
         'device role',
-        slug=config.device_role_slug,
+        **selected(config,'device_role',config.device_role_slug),
     )
 
     platform = _required(
         nb_api.dcim.platforms,
         'platform',
-        slug=config.platform_slug,
+        **selected(config,'platform',config.platform_slug),
     )
 
-    device_type = _required(
-        nb_api.dcim.device_types,
-        'device type',
-        slug=config.device_type_slug,
-    )
+    host_types=device_types(nb_api,config,hosts,_required)
 
     cluster_type = _required(
         nb_api.virtualization.cluster_types,
         'cluster type',
-        slug=config.cluster_type_slug,
+        **selected(config,'cluster_type',config.cluster_type_slug),
     )
 
     cluster = _resolve_cluster(
@@ -579,6 +578,7 @@ def apply_hosts(
         site,
         cluster_type,
         config.cluster_name,
+        getattr(config,'onboarding_mapping',{}).get('references',{}).get('cluster',{}).get('id'),
     )
 
     contexts = []
@@ -601,6 +601,7 @@ def apply_hosts(
 
     for context in contexts:
         host = context['host']
+        device_type=host_types[host.source_id]
         device = context['device']
 
         action = (
@@ -673,6 +674,7 @@ def apply_hosts(
 
     for context in contexts:
         host = context['host']
+        device_type=host_types[host.source_id]
         device = context['device']
 
         if device is None:

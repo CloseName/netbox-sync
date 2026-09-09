@@ -1,4 +1,5 @@
 """Safe, provider-neutral Web projection of read-only discovery results."""
+from ..host_mapping import cluster_filter
 # pylint: disable=too-many-instance-attributes
 
 import ipaddress
@@ -127,7 +128,7 @@ def build_proxmox_review(nb_api, hosts, config):
     if site is None or cluster_type is None:
         raise ValueError('Proxmox review target is incomplete')
     clusters = [cluster for cluster in nb_api.virtualization.clusters.filter(
-        name=config.target.cluster_name) if (
+        **cluster_filter(config.target)) if (
             _object_id(_record(cluster).get('type')) == cluster_type.id
             and _record(cluster).get('scope_type') == 'dcim.site'
             and _record(cluster).get('scope_id') == site.id)]

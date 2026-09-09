@@ -1,3 +1,4 @@
+from .host_mapping import cluster_filter
 import ipaddress
 
 from .netbox_lxc_metadata import (
@@ -226,7 +227,7 @@ def apply_lxc_networks(
         nb_api.virtualization
         .clusters
         .filter(
-            name=config.cluster_name
+            **cluster_filter(config)
         )
     )
 

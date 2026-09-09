@@ -141,3 +141,19 @@ def test_actual_commit_then_conversion_failure_reconciles(registry_database, mon
     assert reader.get_source_config(result.id) == result
     assert len(conversions) >= 2
     assert len(store.values) == 2
+
+
+def test_mapping_survives_registry_roundtrip_without_changing_legacy_source(registry_database):
+    from dataclasses import replace
+    from tests.test_netbox_catalog import row
+    writer,reader,_dsn,_schema=registry_database
+    legacy=reader.create_source(sample_source_config()).config
+    mapping={'version':1,'references':{kind:row(kind) for kind in ('site','cluster','platform','device_role','cluster_type')},
+             'host_types':{'a':row('device_type',10,'A'),'b':row('device_type',11,'B')},
+             'hosts':[{'id':'a','model':None,'manufacturer':None},{'id':'b','model':None,'manufacturer':None}]}
+    store=FakeSecrets();service=SourceOnboardingService({'proxmox':lambda _:None},EphemeralOnboardingStore(),writer,store)
+    result=service.register(replace(command(service.test_connection(credentials())),mapping=mapping))
+    loaded=reader.get_source_config(result.id)
+    assert loaded==result and loaded.target.onboarding_mapping==mapping
+    assert not loaded.sync_enabled and reader.get_source_config(legacy.id)==legacy
+    assert not legacy.target.onboarding_mapping

@@ -247,7 +247,7 @@ def test_api_confirmation_and_redaction(caplog):
         assert registry.records == store.values == {}
         assert SECRET not in response.text + caplog.text
         token = response.json()['onboarding_token']
-        request = command(token).__dict__
+        request = {key:value for key,value in command(token).__dict__.items() if key!='mapping'}
         invalid = client.post('/api/v1/sources', json={**request, 'confirm_sync_disabled': False}, headers=HEADERS)
         assert invalid.status_code == 422
         created = client.post('/api/v1/sources', json=request, headers=HEADERS)

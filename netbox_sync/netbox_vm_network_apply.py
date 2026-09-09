@@ -1,3 +1,4 @@
+from .host_mapping import cluster_filter
 import ipaddress
 
 from .netbox_vm_metadata import (
@@ -237,7 +238,7 @@ def apply_vm_networks(
         nb_api.virtualization
         .clusters
         .filter(
-            name=cluster_name
+            **cluster_filter(config)
         )
     )
 

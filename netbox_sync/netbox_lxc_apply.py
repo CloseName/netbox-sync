@@ -1,3 +1,4 @@
+from .host_mapping import cluster_filter
 from .netbox_lxc_metadata import (
     MANAGED_LXC_CUSTOM_FIELDS,
     build_lxc_custom_fields,
@@ -180,7 +181,7 @@ def apply_lxc_containers(
 
     clusters = list(
         nb_api.virtualization.clusters.filter(
-            name=config.cluster_name
+            **cluster_filter(config)
         )
     )
 

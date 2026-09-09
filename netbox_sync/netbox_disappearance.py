@@ -1,3 +1,4 @@
+from .host_mapping import cluster_filter
 from .netbox_vm_metadata import (
     vm_identity_source_id,
 )
@@ -139,7 +140,7 @@ def report_missing_managed_objects(
         nb_api.virtualization
         .clusters
         .filter(
-            name=config.cluster_name
+            **cluster_filter(config)
         )
     )
 

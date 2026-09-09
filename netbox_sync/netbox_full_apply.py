@@ -68,6 +68,8 @@ def apply_full_sync(
     *,
     confirmed=False,
 ):
+    from .host_mapping import validate
+    validate(nb_api,config,hosts)
     print(
         '=== FULL PROXMOX SYNC ==='
     )

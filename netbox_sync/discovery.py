@@ -67,6 +67,9 @@ class DiscoveredHost:
     cpu: DiscoveredCPU
     memory_bytes: int
 
+    manufacturer: Optional[str] = None
+    model: Optional[str] = None
+
     disks: list[DiscoveredDisk] = field(default_factory=list)
     storages: list[DiscoveredStorage] = field(default_factory=list)
     interfaces: list[DiscoveredHostInterface] = field(default_factory=list)

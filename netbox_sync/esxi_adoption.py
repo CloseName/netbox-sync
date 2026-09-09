@@ -1,4 +1,5 @@
 """Read-only legacy ESXi adoption planning and confirmed metadata adoption."""
+from .host_mapping import cluster_filter
 
 import ipaddress
 import json
@@ -353,7 +354,7 @@ def _resolve_target(nb_api, config):
         raise EsxiAdoptionError('ESXi adoption target is incomplete')
     clusters = []
     for cluster in nb_api.virtualization.clusters.filter(
-            name=config.target.cluster_name,
+            **cluster_filter(config.target),
     ):
         data = _serialized(cluster)
         if (

@@ -28,6 +28,28 @@ class BootstrapControl:
 
     def __call__(self, payload):
         action = payload.get('action')
+        if action == 'catalog' and set(payload)=={'action','query'}:
+            from .bootstrap_state import runtime_netbox
+            from contextlib import ExitStack
+            import fcntl
+            with ExitStack() as cleanup:
+                # Four cross-process read slots, independent of the shared apply
+                # lock. A catalog request never stops a running operation.
+                for slot in range(4):
+                    fd=os.open('/tmp/netbox-sync-catalog-'+str(slot)+'.lock',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
+                    try: fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                    except BlockingIOError: os.close(fd);continue
+                    cleanup.callback(os.close,fd);break
+                else: return {'error':'BUSY'}
+                url,token=runtime_netbox(self.store.path,'read')
+                try:
+                    result=subprocess.run([sys.executable,'-B','-m','netbox_sync.netbox_catalog'],
+                        input=json.dumps({'url':url,'read_token':token,'query':payload['query']}).encode(),
+                        stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=30,check=True,
+                        env=_safe_environment(),preexec_fn=_drop_privileges(10001,10001))
+                    if len(result.stdout)>24576: raise ValueError()
+                    return json.loads(result.stdout)
+                except Exception: return {'error':'NETWORK_UNREACHABLE'}
         if action == 'status' and set(payload) == {'action'}:
             return self.store.status()
         if action in ('prerequisites-plan', 'prerequisites-cancel') and set(payload)=={'action','revision'}:

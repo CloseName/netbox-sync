@@ -1,3 +1,4 @@
+from .host_mapping import cluster_filter
 import ipaddress
 import json
 
@@ -533,6 +534,8 @@ def plan_hosts(
         config: NetBoxTargetConfig,
 ) -> None:
 
+    from .host_mapping import validate
+    validate(nb_api,config,hosts)
     site = _get_required(
         nb_api.dcim.sites,
         description='site',
@@ -551,11 +554,8 @@ def plan_hosts(
         slug=config.platform_slug,
     )
 
-    device_type = _get_required(
-        nb_api.dcim.device_types,
-        description='device type',
-        slug=config.device_type_slug,
-    )
+    from .host_mapping import device_types
+    host_types=device_types(nb_api,config,hosts,lambda endpoint,description,**kw:_get_required(endpoint,description=description,**kw))
 
     cluster_type = _get_required(
         nb_api.virtualization.cluster_types,
@@ -566,7 +566,7 @@ def plan_hosts(
     cluster = None
 
     for candidate in nb_api.virtualization.clusters.filter(
-        name=config.cluster_name
+        **cluster_filter(config)
     ):
         serialized = candidate.serialize()
 
@@ -586,11 +586,11 @@ def plan_hosts(
     print(f'  site:         {site.name} (id={site.id})')
     print(f'  device_role:  {role.name} (id={role.id})')
     print(f'  platform:     {platform.name} (id={platform.id})')
-    print(
-        f'  device_type:  '
-        f'{getattr(device_type, "model", None) or device_type.slug} '
-        f'(id={device_type.id})'
-    )
+    for host in hosts:
+        device_type = host_types[host.source_id]
+        print(f'  device_type [{host.source_id}]: '
+              f'{getattr(device_type, "model", None) or device_type.slug} '
+              f'(id={device_type.id})')
     print(
         f'  cluster_type: {cluster_type.name} '
         f'(id={cluster_type.id})'
@@ -613,6 +613,7 @@ def plan_hosts(
     print()
 
     for host in hosts:
+        device_type=host_types[host.source_id]
         print(
             f'HOST source={host.source} '
             f'source_id={host.source_id}'

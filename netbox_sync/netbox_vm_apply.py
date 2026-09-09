@@ -67,13 +67,14 @@ def _resolve_cluster(
         site,
         cluster_type,
         cluster_name,
+        cluster_id=None,
 ):
     matches = []
 
     for cluster in (
         nb_api.virtualization
         .clusters
-        .filter(name=cluster_name)
+        .filter(**({'id':cluster_id} if cluster_id else {'name':cluster_name}))
     ):
         data = cluster.serialize()
 
@@ -492,6 +493,7 @@ def apply_virtual_machines(
         site,
         cluster_type,
         config.cluster_name,
+        getattr(config,'onboarding_mapping',{}).get('references',{}).get('cluster',{}).get('id'),
     )
 
     all_vms = list(
