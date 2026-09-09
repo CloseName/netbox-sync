@@ -1,7 +1,7 @@
 # Upgrade /netbox-sync-test to local administrator access
 
-**Review candidate. Do not execute on a VM until the pending pre-auth upgrade
-rehearsal in [the evidence record](local-admin-policy-review.md) is accepted.**
+**Local pre-auth upgrade and final runtime rehearsal passed; awaiting architectural
+review and publication.** See [the evidence record](local-admin-policy-review.md).
 This task performed no push, deployment or VM connection. Commands below describe
 an operator-executed future upgrade, not authorization to perform one.
 
@@ -9,6 +9,11 @@ Scope: existing bundled PostgreSQL, canonical external/shared ingress,
 `https://netbox-sync-test.indeed-id.hq`, application root `/netbox-sync-test`.
 NetBox remains separately managed at `https://netbox-test.indeed-id.hq`.
 No naming migration, old env recreation, volume replacement or TLS bypass.
+The isolated Debian rehearsal used the real installer with `--no-systemd`; it
+proved state/credential/volume and policy retention, enrollment and backup behavior.
+Systemd/reboot behavior has unit coverage, not a live host rehearsal. The normal
+host procedure below must check timer/service state explicitly.
+
 External PostgreSQL keeps its existing explicit override and operator-owned DSNs;
 this bundled-installer runbook is not an external-DB provisioning recipe.
 

@@ -5,9 +5,10 @@ Existing commits retained. No push, deployment, VM or live-provider connection.
 Implementation commits: `afe24aa38bbf4d119cc347c4031ab56ce457f6d0` (server/deployment)
 and `2a5ac65fef88c8be1aca0a6f7d08f89fb0de7b7f` (Web UI).
 
-**Implementation prepared for review; release acceptance is incomplete.** The
-mandatory full pre-auth installer upgrade gate remains blocked by automatic tool
-approval. The exact upgrade runbook is a review candidate, not a passed rehearsal.
+**Mandatory local upgrade and final runtime gates passed on 2026-09-09.**
+Prepared implementation is ready for architectural review. Publication and the
+operator-executed VM upgrade remain separate steps; neither was performed.
+Final regression commit: `45b0678a62485189cbd05293e87c3dd10744bb45`.
 
 ## Delivered contract
 
@@ -56,9 +57,8 @@ fences are server-owned. No future role/LDAPS implementation was added.
 The 5 + 2 invocations are not seven distinct test cases. They predate the final
 small hardening changes (bounded policy response/idempotency window, graceful auth
 termination, host readiness acknowledgment/check and final fixture lock-directory
-isolation). Those changes have unit/PostgreSQL/process checks and a rebuilt image;
-**a final production Compose rerun is pending alongside the upgrade gate**. Never
-present the earlier container pass as a pass on the final committed image.
+isolation). Those changes had unit/PostgreSQL/process checks and a rebuilt image. The final
+rerun below now validates that image; the earlier passes remain historical evidence.
 
 ## Reproduced/fixed validation issues
 
@@ -92,34 +92,78 @@ auth-specific grant 1. These are conditional selections, not 98 unresolved defec
 | Generic PostgreSQL, source/read/history/schedule/operation/lifecycle tests | Relevant due migration and mandatory auth seam; run in the 97-pass selection with dedicated DSNs. Three passwordless-role fixture failures corrected and rerun. |
 | Deployment PostgreSQL, auth PostgreSQL, first-run process, backup PostgreSQL | Relevant; run with dedicated disposable databases, including actual negative grants and session revocation after restore. |
 | Compose render CLI skips | Relevant; all three rendered on host and passed. |
-| test_tls_docker (3), auth Compose (2), probe compatibility entrypoint (2) | Auth/probe/Bootstrap runtime is relevant. Five unique runtime cases passed, then expanded auth two passed; final rerun pending after the last hardening. Probe entrypoint now delegates to that authenticated superset, rather than preserving anonymous old calls. |
-| test_auth_upgrade_docker (1) | Required. Prepared, not executed: automatic approval blocked Docker socket inside operator harness. |
+| test_tls_docker (3), auth Compose (2), probe compatibility entrypoint (2) | Auth/probe/Bootstrap runtime is relevant. Five unique runtime cases passed, then expanded auth two passed; final rerun of all five cases passed after the last hardening, including runtime session expiry/revocation. Probe entrypoint now delegates to that authenticated superset, rather than preserving anonymous old calls. |
+| test_auth_upgrade_docker (1) | Required; now passed twice, with the final expanded case checking old backup verify/inspect and inherited non-default allow/deny rules. |
 | test_backup_clean_debian (2), old backup Docker (1) | General old-release/optional-venv gates not rerun. Current auth archive path is covered by expanded Compose and PostgreSQL tests; old privileged systemd test is not claimed as current evidence. |
 | test_container_names_docker (2), naming PostgreSQL (1) | Name migration logic is unchanged except registering the new service; not rerun. The additional service is covered in fresh Compose; old-to-new naming transition retains previous evidence only. |
 | test_production_proxy_docker (1) | Dedicated tmpfs test not separately rerun. Exact production proxy tmpfs and delivery tested by three TLS scenarios; no test substitution of tmpfs. |
 | live ESXi (1) | Intentionally absent: no live hypervisor or VM is authorized. Real controlled HTTPS/SOAP is not full live Discovery privilege validation. |
 
-## Remaining gate and approval boundary
+## Final authorized acceptance run — 2026-09-09
 
-`tests/test_auth_upgrade_docker.py` prepares a unique disposable Debian operator
-container and builds the immutable old Git archive 897de2a. It intends to run the
-old backup CLI, confirm refusal without enrollment acknowledgment, run the new
-installer, verify DB volume/credentials/READY/source/history/schedules, and exercise
-root invitation + HTTP enrollment. It is **not executed**.
+The user explicitly approved a temporary **unprivileged** operator container with
+Docker socket access for isolated local resources. Prior automatic rejections of
+privileged/systemd and unapproved socket variants remain historical; those rejected
+commands did not execute. The approved tests ran without `--privileged` or host
+systemd control. No product Compose service acquired a Docker socket mount.
 
-Automatic approval rejected first a privileged systemd + Docker-socket harness,
-then the proposed unprivileged variant because the host Docker socket still grants
-broad Docker control. No rejected command executed. The prepared final harness is
-unprivileged, uses a unique root/runtime volume and project-scoped cleanup, but
-requires separate explicit approval for its Docker socket. Application containers
-never mount it. No indirect workaround was used.
+- **Upgrade: 1 passed, 59.45 s** in the final expanded run (initial run: 1 passed,
+  121.74 s). Real old Git archive `897de2a79a6781129f84cbbdcaef9b250795deb7`
+  was built and installed in Debian 12. The installed old host CLI performed
+  create/verify/inspect before activation. The installer refused missing enrollment
+  acknowledgment without changing current/config/secrets, then upgraded with the
+  acknowledgment. Migration 0005 -> 0006, identical source/history rows, schedule
+  settings, protected credentials, READY, PostgreSQL container and volume mounts
+  were asserted. Non-default allowed CIDRs/hosts and denied CIDRs were copied from
+  the old API baseline to auth.env. Root-only file invitation, anonymous 401,
+  HTTP enrollment and explicit managed-policy transition passed.
+- **Final production Compose: 5 passed, 273.44 s.** Bundled and external PostgreSQL
+  plus standalone/corporate/external ingress, using actual production Compose files
+  and the rebuilt product image. Bundled mode includes full host backup/verify/
+  inspect/fresh restore. Both DB modes assert real HTTP login, idle and absolute
+  session expiration (controlled fixture DB timestamps, unchanged product limits),
+  root revocation, fresh login, logout, outage 503 and policy/session persistence
+  across worker restart. Policy changes do not recreate containers or edit config/
+  secrets. All three TLS modes exercise the complete 16-field Bootstrap workflow,
+  concurrent fencing, conflict/provisioning stop, lost-response reconciliation,
+  restart, confirmed/unconfirmed temporary-token revocation and secret non-retention.
+- **Focused Linux: 101 passed, 1 skipped**, two existing deprecation warnings.
+  Auth policy/API/root CLI, installer and backup suites. The sole skip is Docker
+  CLI rendering inside the deliberately socketless test image; the same test was
+  executed on the host afterward: **1 passed**. No unresolved skip in this selection.
+- Docker Engine **29.7.2 Linux**, host Compose **5.5.0**. Product image:
+  `sha256:ba4e2a70855b5e316773baa46369b1fd8d9f98f634ab654295948fddea59d2fb`.
+  This continuation changed only test harnesses/evidence, not product code or UI.
+  Prior frontend/TypeScript/Vite/Playwright evidence therefore remains applicable.
+  `git diff --check` passed.
 
-After approval, run the upgrade gate and repeat final auth/TLS production smokes
-against the final image, fix any actual defects, and update this record before
-publication. Actual systemd/reboot remains outside the final unprivileged harness;
-unit generation/ordering/shared-lock checks pass, but a real host timer/reboot
-rehearsal is not claimed. No downgrade to a pre-auth anonymous API is a safe login
-recovery path.
+Each operator host, helper and volume now has an exact project ownership label;
+Compose resources retain their own unique project labels. Cleanup selects these
+labels, not arbitrary container/volume names. External fixture DB storage is
+explicitly labeled. TLS cleanup verifies ownership, and DB readiness waits for the
+final TCP listener rather than PostgreSQL's temporary initialization socket.
+Final metadata inventory found no remaining containers, volumes or networks for
+these smoke projects and no temporary old-release image tags. Existing unrelated
+rehearsal resources were left intact. Reusable review/test images are retained.
+
+Repeat only with the same explicit operator-socket authorization and prepared
+local review/test images (Docker-capable Debian harnesses; no production values):
+
+```sh
+NETBOX_SYNC_AUTH_UPGRADE_TEST=1 python -m pytest -q tests/test_auth_upgrade_docker.py
+NETBOX_SYNC_AUTH_DOCKER_TEST=1 NETBOX_SYNC_TLS_DOCKER_TEST=1 \
+  NETBOX_SYNC_TLS_TEST_IMAGE=netbox-sync-auth:review \
+  NETBOX_SYNC_TLS_RUNNER_IMAGE=netbox-sync-auth-tests:review \
+  python -m pytest -q tests/test_auth_compose_docker.py tests/test_tls_docker.py
+```
+
+**Limits:** the real installer ran with `--no-systemd` in the unprivileged harness.
+Unit generation/ordering/shared-lock tests passed, but a real host timer/reboot
+rehearsal is not claimed. The live runbook uses the normal systemd path and requires
+operator checks. External PostgreSQL transport is covered; the immutable old -> new
+installer rehearsal specifically covers bundled PostgreSQL/external ingress.
+No live hypervisor or VM was contacted. Do not downgrade to a pre-auth anonymous API
+as a login recovery method. No mandatory local acceptance gate remains open.
 
 ## Visual evidence
 
