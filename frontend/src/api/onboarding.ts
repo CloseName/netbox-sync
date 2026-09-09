@@ -5,6 +5,18 @@ export class SourceIdReservedError extends Error {
   constructor() { super('This Source ID was previously used and is reserved by a removed source.'); }
 }
 
+export const connectionMessages = {
+  SOURCE_CONNECTION_FAILED: ['Could not reach the source. Check hostname, DNS, routing and HTTPS service.', 'Не удалось подключиться к источнику. Проверьте имя, DNS, маршрутизацию и службу HTTPS.'],
+  SOURCE_TIMEOUT: ['The source connection timed out. Check reachability and retry.', 'Источник не ответил вовремя. Проверьте доступность и повторите проверку.'],
+  SOURCE_TLS_FAILED: ['TLS verification failed. Check certificate, hostname and trusted CA.', 'Ошибка проверки TLS. Проверьте сертификат, имя узла и доверенный центр сертификации.'],
+  SOURCE_AUTH_FAILED: ['Authentication was rejected. Check username and password or token.', 'Источник отклонил вход. Проверьте пользователя и пароль или API-токен.'],
+  SOURCE_DESTINATION_DENIED: ['The destination is blocked by policy. Ask the operator to review the allowlist.', 'Адрес запрещён политикой доступа. Попросите оператора проверить разрешённые назначения.'],
+} as const;
+export class SourceConnectionError extends Error {
+  readonly code: keyof typeof connectionMessages;
+  constructor(code: keyof typeof connectionMessages) { super(connectionMessages[code][0]); this.code = code; }
+}
+
 export interface ConnectionInput {
   source_type: 'proxmox' | 'esxi'; address: string; verify_ssl: boolean;
   username: string; secret: string; token_id?: string;
@@ -25,6 +37,13 @@ async function post(path: string, payload: ConnectionInput | RegistrationInput |
       body: JSON.stringify(payload), signal: AbortSignal.timeout(20000) });
   } catch { throw new Error('Request failed or timed out. Registration outcome may require operator review.'); }
   if (!response.ok) {
+    if (path === '/api/v1/sources/test-connection') {
+      let code: unknown;
+      try { code = (await response.clone().json())?.error?.code; } catch { /* safe fallback */ }
+      if (typeof code === 'string' && Object.hasOwn(connectionMessages, code)) {
+        throw new SourceConnectionError(code as keyof typeof connectionMessages);
+      }
+    }
     if (response.status === 409) {
       let code='';
       try { const value=await response.json(); if(typeof value?.error?.code==='string') code=value.error.code; } catch { /* safe fallback */ }

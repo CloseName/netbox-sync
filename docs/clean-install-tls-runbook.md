@@ -313,3 +313,5 @@ repository automation; this runbook has not been executed on the VM by the agent
 For a partial activation failure at proxy creation, see the [tmpfs recovery gates](proxy-tmpfs-recovery.md) before any retry.
 
 For the confirmed field-preparation flow and existing-container naming upgrade, see [onboarding verification and upgrade procedure](onboarding-verification.md).
+
+See [production source probe boundary and upgrade](source-probe-deployment.md) and [provider access preparation](source-access.md).

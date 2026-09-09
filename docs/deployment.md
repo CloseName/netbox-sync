@@ -227,3 +227,5 @@ no provider or NetBox credentials. API source removal sends fixed source-identit
 requests to the lifecycle socket. The broker admits owned-file cleanup only from that
 worker's root peer, never the API UID. See [first-run security boundaries](first-run.md).
 For an isolated manual-acceptance clone, use the [bridge runbook](historical-ui-test-bridge.md).
+
+See [production source probe boundary and upgrade](source-probe-deployment.md) and [provider access preparation](source-access.md).

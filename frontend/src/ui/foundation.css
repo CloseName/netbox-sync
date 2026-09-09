@@ -1745,3 +1745,14 @@ button.danger {
 }
 .sync-dialog label { display: block; margin-block: 0.75rem; }
 .sync-dialog input[type="text"], .sync-dialog input:not([type]) { max-width: 100%; }
+
+.source-access-help { margin-block: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); min-width: 0; overflow-wrap: anywhere; }
+.source-access-help summary { cursor: pointer; font-weight: 600; }
+.source-access-help li { margin-block: .75rem; line-height: 1.6; }
+.source-access-help p { line-height: 1.6; }
+.source-access-help ol { padding-inline-start: 1.5rem; }
+.access-command { min-width: 0; margin-block: .75rem; }
+.access-command pre { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--canvas); padding: .75rem; }
+.access-command button { margin-inline-end: .5rem; }
+.access-notice { border-inline-start: 3px solid var(--border); padding-inline-start: .75rem; }
+.access-language { max-width: 14rem; margin-block: 1rem; }

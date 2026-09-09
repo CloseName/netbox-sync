@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { testConnection, registerSource, SourceIdReservedError } from '../src/api/onboarding.ts';
+import { testConnection, registerSource, SourceIdReservedError, SourceConnectionError } from '../src/api/onboarding.ts';
 
 test('Test Connection sends credentials only in protected JSON and validates token', async (context) => {
   const mock = context.mock.method(globalThis, 'fetch', async (path, options) => {
@@ -29,4 +29,18 @@ test('reserved identity has a typed safe error while unknown conflict text stays
   await assert.rejects(registerSource({confirm_sync_disabled:true}),error=>error instanceof SourceIdReservedError && !error.message.includes('SENTINEL'));
   mock.mock.mockImplementation(async()=>Response.json({error:{code:'SECRET_SENTINEL',message:'SECRET_SENTINEL'}},{status:409}));
   await assert.rejects(registerSource({confirm_sync_disabled:true}),error=>!(error instanceof SourceIdReservedError) && !error.message.includes('SENTINEL'));
+});
+
+for (const code of ['SOURCE_CONNECTION_FAILED', 'SOURCE_TIMEOUT', 'SOURCE_TLS_FAILED', 'SOURCE_AUTH_FAILED', 'SOURCE_DESTINATION_DENIED']) {
+ test(`connection error ${code} is typed and redacted`, async (context) => {
+  context.mock.method(globalThis, 'fetch', async () => Response.json({error: {code, message: 'REMOTE_SECRET'}}, {status: 422}));
+  await assert.rejects(testConnection({}), error => error instanceof SourceConnectionError && error.code === code && !error.message.includes('REMOTE_SECRET'));
+ });
+}
+test('unknown remote codes and prototype keys cannot become UI messages', async (context) => {
+ const fetch = context.mock.method(globalThis, 'fetch', async () => new Response(''));
+ for (const code of ['REMOTE_SECRET', '__proto__', 'constructor']) {
+  fetch.mock.mockImplementation(async () => Response.json({error: {code, message: 'REMOTE_SECRET'}}, {status: 502}));
+  await assert.rejects(testConnection({}), error => !(error instanceof SourceConnectionError) && !error.message.includes('REMOTE_SECRET'));
+ }
 });

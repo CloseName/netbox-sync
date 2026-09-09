@@ -4,8 +4,12 @@ import {
   cancelOnboarding,
   registerSource,
   SourceIdReservedError,
+  SourceConnectionError,
+  connectionMessages,
   testConnection,
 } from "../api/onboarding";
+import { SourceAccessHelp } from "../components/SourceAccessHelp";
+import type { Language } from "../components/SourceAccessHelp";
 import type { Source } from "../api/sources";
 
 import { Link } from "react-router-dom";
@@ -33,6 +37,8 @@ const fields = [
 ] as const;
 
 export function AddSourcePage() {
+  const [language, setLanguage] = useState<Language>(() => navigator.language.startsWith("ru") ? "ru" : "en");
+  const t = (en: string, ru: string) => language === "ru" ? ru : en;
   const [type, setType] = useState<"proxmox" | "esxi">("proxmox");
   const [connection, setConnection] = useState({
     address: "",
@@ -88,9 +94,10 @@ export function AddSourcePage() {
           : {}),
       });
       setToken(tokenValue);
-    } catch {
+    } catch (failure) {
       setError(
-        "Connection test failed. Re-enter credentials to retry; nothing was registered.",
+        failure instanceof SourceConnectionError ? connectionMessages[failure.code][language === 'ru' ? 1 : 0] :
+        t("Connection test failed. Re-enter credentials to retry; nothing was registered.", "Проверка подключения не завершена. Введите данные повторно; источник не зарегистрирован."),
       );
     } finally {
       form.reset();
@@ -251,20 +258,24 @@ export function AddSourcePage() {
               />{" "}
               Verify TLS certificate
             </label>
-            <h2>Source credentials</h2>
+            <label className="access-language">Language / Язык
+              <select value={language} onChange={event => setLanguage(event.target.value as Language)}><option value="en">English</option><option value="ru">Русский</option></select>
+            </label>
+            <h2>{t('Source credentials', 'Доступ к источнику')}</h2>
             <p className="muted">
-              Credentials apply only to this source and are cleared from the
-              form after testing.
+              {t('Credentials apply only to this source and are cleared from the form after testing.', 'Данные доступа относятся только к этому источнику и удаляются из формы после проверки.')}
             </p>
             <div className="form-grid">
               <label>
                 {type === "proxmox" ? "Token user (user@realm)" : "Username"}
-                <input name="username" required />
+                <input name="username" required aria-describedby="source-user-hint" />
+                <small id="source-user-hint">{type === 'proxmox' ? t('User including realm, e.g. netbox-sync@pve.', 'Пользователь вместе с realm, например netbox-sync@pve.') : t('Local ESXi user, e.g. netbox-sync.', 'Локальный пользователь ESXi, например netbox-sync.')}</small>
               </label>
               {type === "proxmox" && (
                 <label>
                   Token name (without user prefix)
-                  <input name="token_id" type="password" required />
+                  <input name="token_id" required aria-describedby="source-token-hint" />
+                  <small id="source-token-hint">{t('Token name only, e.g. netbox-sync; not user@realm!token.', 'Только имя токена, например netbox-sync; не user@realm!token.')}</small>
                 </label>
               )}
               <label>
@@ -273,10 +284,13 @@ export function AddSourcePage() {
                   name="secret"
                   type="password"
                   required
+                  aria-describedby="source-secret-hint"
                   autoComplete="new-password"
                 />
+                <small id="source-secret-hint">{type === 'proxmox' ? t('The value saved at token issuance; not the user password.', 'Значение, сохранённое при выдаче токена; не пароль пользователя.') : t('Separate password for this host’s account.', 'Отдельный пароль пользователя на этом хосте.')}</small>
               </label>
             </div>
+            <SourceAccessHelp provider={type} language={language}/>
             <button className="primary" disabled={busy}>
               {busy ? "Testing…" : "Test Connection"}
             </button>
