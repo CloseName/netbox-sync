@@ -315,3 +315,5 @@ For a partial activation failure at proxy creation, see the [tmpfs recovery gate
 For the confirmed field-preparation flow and existing-container naming upgrade, see [onboarding verification and upgrade procedure](onboarding-verification.md).
 
 See [production source probe boundary and upgrade](source-probe-deployment.md) and [provider access preparation](source-access.md).
+
+See [shared UI hardening and destination-policy dependency](ux-hardening-audit.md) before interpreting a policy denial as an authentication failure. Online policy management is not available without server authorization; this update preserves existing env restrictions.

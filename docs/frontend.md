@@ -666,3 +666,41 @@ route. `/setup` supports deliberate token replacement after completion. No token
 loaded from GET or stored in browser storage. POST outcomes are reconciled through
 explicit Reload, without automatic mutation retry. See [first-run flow](first-run.md)
 and its disposable-VM checklist; browser mocks are not live NetBox permission evidence.
+
+## Shared operator UX hardening
+
+See [audit, screen/role map and verification](ux-hardening-audit.md).
+EN/RU and Light/Dark/System are shared between setup and the operational panel.
+Only language/theme preferences are persisted in browser storage; changing them
+neither remounts forms nor grants permissions. Storage denial uses an in-memory
+fallback. UI copy is explicit in `src/ui/ru.ts`; provider names, identities, managed
+field values and original technical evidence must not be passed through translation.
+Backend-generated technical explanations can retain their original language; the
+surrounding controls, safe failure messages and status labels are localized.
+
+`/system` is a production SPA route and exposes the frontend content fingerprint in
+its details. The same `ui-<16 hex>` identity appears in index metadata under
+`netbox-sync-ui-build`. It fingerprints the frontend input bytes, not a Git commit;
+it can change between builds and must not be used for authorization or version fencing.
+Dockerfile.web builds Vite and copies dist into `/app/web`. Production serves `/assets`
+and recognized SPA routes with no-store. There is no service worker. Test artifacts
+and nested Python caches are excluded from the Docker build context.
+
+Inter is bundled locally with its unmodified SIL OFL 1.1 license in
+`frontend/public/assets/Inter-LICENSE.txt`. Upstream font file:
+https://github.com/rsms/inter/blob/master/docs/font-files/InterVariable.woff2
+SHA-256: `693b77d4f32ee9b8bfc995589b5fad5e99adf2832738661f5402f9978429a8e3`.
+The font contains Cyrillic; there are no third-party font requests. Brand SVG/PNG/ICO
+files live under `/assets/brand`, the production static mount.
+
+Client dispatch is labelled “Request sent / waiting for acknowledgement”. Only a
+persisted RUNNING/VALIDATING state is labelled server-confirmed execution. Elapsed
+time is outside the live region and is not a completion estimate. No determinate
+progressbar is introduced. Returning to a durable operation loads its existing state;
+a lost response does not automatically resubmit a mutation. Apply retains separate
+confirmation, digest/revision fencing and the shared lock.
+
+Saved Bootstrap validation is labelled with its timestamp. Missing detailed checks
+are explicitly reported as unavailable historical evidence. An absent/expired
+validated_at cannot enable Finish; the UI uses the current backend 300-second window
+and backend remains authoritative. READY installations remain READY on normal visits.
