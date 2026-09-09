@@ -39,13 +39,13 @@ test('two browsers share Plan and Discovery; close, reopen, deduplicate and isol
   await server.attach(a);await server.attach(b);
   try{
     const first=await a.newPage();await first.goto(url+'/sources/source-1/sync');await first.getByRole('button',{name:'Build plan',exact:true}).click();
-    const second=await b.newPage();await second.goto(url+'/sources/source-1/sync');await expect(second.getByText(/Build plan.*Execution confirmed by the server/)).toBeVisible();
+    const second=await b.newPage();await second.goto(url+'/sources/source-1/sync');await expect(second.getByText(/Build plan.*Operation in progress/)).toBeVisible();
     await expect(second.getByRole('button',{name:'Build plan',exact:true})).toBeDisabled();
     const original=server.slots.get('source-1PLAN').operation_id;
     const duplicate=await second.evaluate(async()=>{const response=await fetch('/api/v1/sources/source-1/operations/plan',{method:'POST',headers:{'Content-Type':'application/json','X-NetBox-Sync-CSRF':'same-origin'},body:'{}'});return response.json();});
     expect(duplicate.operation_id).toBe(original);expect(server.calls.filter(c=>c==='source-1PLAN')).toHaveLength(1);
     await second.getByRole('button',{name:'Run discovery',exact:true}).click();
-    await first.reload();await expect(first.getByText(/Run discovery.*Execution confirmed by the server/)).toBeVisible();
+    await first.reload();await expect(first.getByText(/Run discovery.*Operation in progress/)).toBeVisible();
     await expect(first.getByRole('button',{name:'Run discovery',exact:true})).toBeDisabled();
     const discoveryId=server.slots.get('source-1DISCOVERY').operation_id;
     const duplicateDiscovery=await first.evaluate(async()=>{const response=await fetch('/api/v1/sources/source-1/operations/discovery',{method:'POST',headers:{'Content-Type':'application/json','X-NetBox-Sync-CSRF':'same-origin'},body:'{}'});return response.json();});
@@ -77,7 +77,7 @@ for(const width of [1440,1024,768])test(`Durable operation states at ${width}`,a
   const server=backend();await server.attach(context);await page.setViewportSize({width,height:900});
   await page.goto(url+'/sources/source-1/sync');await page.getByRole('button',{name:'Build plan',exact:true}).click();
   await page.getByRole('button',{name:'Run discovery',exact:true}).click();await page.reload();
-  await expect(page.getByText(/Run discovery.*Execution confirmed by the server/)).toBeVisible();await expect(page.getByText(/Build plan.*Execution confirmed by the server/)).toBeVisible();
+  await expect(page.getByText(/Run discovery.*Operation in progress/)).toBeVisible();await expect(page.getByText(/Build plan.*Operation in progress/)).toBeVisible();
   await page.screenshot({path:info.outputPath('operations-running.png'),fullPage:true});
   server.complete('source-1','PLAN');server.complete('source-1','DISCOVERY');await page.reload();
   await expect(page.getByText('Plan ready for review.')).toBeVisible();await page.screenshot({path:info.outputPath('operations-ready.png'),fullPage:true});
@@ -102,4 +102,23 @@ for(const width of [1440,1024,768])test(`Reserved Source ID is explained during 
   await expect(page.getByText('This Source ID was previously used and is reserved by a removed source.')).toBeVisible();
   await expect(page.getByRole('heading',{name:'Source registered',exact:true})).toHaveCount(0);
   await page.screenshot({path:info.outputPath('reserved-source-id.png'),fullPage:true});
+});
+
+for(const lang of ['en','ru'])for(const scenario of ['denied','server','invalid','transport'])
+test(`operation state failure classification ${lang} ${scenario}`,async({page,context})=>{
+ const server=backend();await server.attach(context);await page.goto(url+'/sources/source-1/sync');
+ await page.getByRole('button',{name:'Build plan',exact:true}).click();
+ await expect(page.locator('.operation-feedback')).toContainText('Operation in progress');
+ await page.getByLabel('Language / Язык').selectOption(lang);
+ await context.route('**/operations',route=>scenario==='transport'?route.abort('failed'):route.fulfill({status:scenario==='denied'?403:scenario==='server'?503:200,body:'REMOTE_SENTINEL'}));
+ const reason=lang==='ru'?{denied:'Доступ к состоянию операции отклонён.',server:'Сервер не смог вернуть состояние операции.',invalid:'Не удалось проверить ответ о состоянии операции.',transport:'Ответ не получен.'}:{denied:'Access to operation state was denied.',server:'The server could not return operation state.',invalid:'The operation response could not be validated.',transport:'No response received.'};
+ await expect(page.getByText(reason[scenario as keyof typeof reason],{exact:false})).toBeVisible();
+ await expect(page.locator('.operation-uncertain')).toContainText(lang==='ru'?'Результат неизвестен':'Outcome unknown');
+ await expect(page.locator('main')).not.toContainText('REMOTE_SENTINEL');
+ await expect(page.locator('main')).not.toContainText(/Connection lost|Связь потеряна/);
+ expect(server.calls).toHaveLength(1);
+ await page.screenshot({path:`test-results/review-operation-${lang}-${scenario}.png`,fullPage:true});
+ await context.unroute('**/operations');server.complete('source-1','PLAN');await page.reload();
+ await expect(page.getByText(lang==='ru'?'План готов к проверке.':'Plan ready for review.')).toBeVisible();
+ await expect(page.locator('.operation-uncertain')).toHaveCount(0);expect(server.calls).toHaveLength(1);
 });

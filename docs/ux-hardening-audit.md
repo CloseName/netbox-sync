@@ -128,3 +128,7 @@ metadata inventory → supported verified backup → exact reviewed release → 
 project, public URL and ingress mode → installer → verify current/image/UI fingerprint,
 unchanged DB volume/credentials/READY and timer state. Failure is a stop condition,
 not permission to regenerate credentials or blindly repeat an immutable release ID.
+
+## Follow-up architectural review of c1e8b1d
+
+See [UI corrections and verification](ux-hardening-review.md) and the [exact 91-skip inventory](linux-skip-inventory.md). These supersede the generic skip explanation above without changing its historical test totals.

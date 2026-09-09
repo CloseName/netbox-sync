@@ -56,7 +56,7 @@ export function OverviewPage() {
     <main>
       <PageHeader
         title={tr("Overview")}
-        description={tr("Synchronization activity and the evidence behind it.")}
+        description={tr("Sources, schedules and recent runs.")}
         actions={
           <button
             disabled={sources.loading || diagnostics.loading || runs.loading}
@@ -81,6 +81,7 @@ export function OverviewPage() {
               code={data.overall_status}
             />
             <p>{tr(overviewReason(data))}</p>
+            <small>{tr("Diagnostic snapshot; source connectivity is not tested here.")}</small>
             <small>
               {tr("Checked")}{" "}<Timestamp value={data.generated_at} />
             </small>
@@ -140,10 +141,9 @@ export function OverviewPage() {
             <>
               <p>
                 <Link to="/runs">
-                  {running?.length} {tr("records marked as running in the latest")}{" "}{" "}
-                  {runs.data.length} {tr("runs")}{" "}</Link>
+                  {tr("Running records")}: {running?.length}</Link>
               </p>
-              <p className="muted">{tr("Recorded status; not a live worker check.")}{" "}</p>
+              <p className="muted">{tr("Sample:")} {runs.data.length} {tr("latest run records; not a live worker check.")}</p>
             </>
           ) : runs.loading ? (
             <LoadingState />
@@ -153,7 +153,7 @@ export function OverviewPage() {
           {data && data.components.run_history.status === "HEALTHY" ? (
             <p>
               <Link to="/diagnostics">
-                {tr("Completion unconfirmed:")}{" "}{data.stale_runs.length} {tr("returned run records")}{" "}</Link>
+                {tr("Completion unconfirmed:")}{" "}{data.stale_runs.length}</Link>
               <small>
                 {tr("Diagnostic selection is limited to 100; not a global total.")}{" "}</small>
             </p>
@@ -206,7 +206,7 @@ export function OverviewPage() {
             {tr("View sources needing attention →")}{" "}</Link>
         </section>
         <section className="panel">
-          <h2>{tr("Next expected")}{" "}</h2>
+          <h2>{tr("Next scheduled runs")}{" "}</h2>
           {!usable ? (
             <p>{tr("Schedule evidence unavailable.")}{" "}</p>
           ) : expected.length ? (
@@ -223,10 +223,10 @@ export function OverviewPage() {
               ))}
             </ul>
           ) : (
-            <p>{tr("No next expected runs reported.")}{" "}</p>
+            <p>{tr("No upcoming runs reported.")}{" "}</p>
           )}
           <p className="muted">
-            {tr("Expected times are derived from configuration and history; start times are not guaranteed.")}{" "}</p>
+            {tr("Up to five estimates from configuration and history. Actual start times may differ.")}{" "}</p>
         </section>
       </div>
       <section className="panel">

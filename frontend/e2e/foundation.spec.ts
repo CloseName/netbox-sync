@@ -136,11 +136,11 @@ test("overview healthy, unknown, stale and partial error preserve epistemic boun
   await fixture(page, 1, { stale: true, unknown: true });
   await page.goto("/");
   await expect(
-    page.getByText("Historical run records have unconfirmed completion."),
+    page.getByText("Some runs have unconfirmed completion."),
   ).toBeVisible();
   await expect(page.getByText("Not verified: 1")).toBeVisible();
   await expect(
-    page.getByText("Completion unconfirmed: 1 returned run records"),
+    page.getByText("Completion unconfirmed: 1"),
   ).toBeVisible();
   await page.route("**/api/v1/diagnostics", (route) =>
     route.fulfill({ status: 503, json: {} }),
@@ -253,7 +253,7 @@ test("source route remount isolates late discovery results", async ({
   await page
     .getByRole("button", { name: "Run discovery", exact: true })
     .click();
-  await expect(page.getByText(/Run discovery.*Execution confirmed by the server/)).toBeVisible();
+  await expect(page.getByText(/Run discovery.*Operation in progress/)).toBeVisible();
   await page.getByRole("link", { name: "Back to sources" }).click();
   await page.getByRole("link", { name: "Source 002", exact: true }).click();
   await finish();

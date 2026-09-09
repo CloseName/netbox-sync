@@ -361,7 +361,7 @@ test("discovery persists across tabs", async ({ page }) => {
   await page
     .getByRole("button", { name: "Run discovery", exact: true })
     .click();
-  await expect(page.getByText(/Run discovery.*Execution confirmed by the server/)).toBeVisible();
+  await expect(page.getByText(/Run discovery.*Operation in progress/)).toBeVisible();
   await section(page, "Overview").click();
   await expect(section(page, "Overview")).toHaveAttribute(
     "aria-current",
@@ -561,7 +561,7 @@ test("late plan for A cannot appear on B", async ({ page }) => {
   });
   await page.goto("/sources/source-1/sync");
   await page.getByRole("button", { name: "Build plan", exact: true }).click();
-  await expect(page.getByText(/Build plan.*Execution confirmed by the server/)).toBeVisible();
+  await expect(page.getByText(/Build plan.*Operation in progress/)).toBeVisible();
   await page.getByRole("link", { name: "Back to sources" }).click();
   await page.getByRole("link", { name: "Source 002", exact: true }).click();
   await section(page, "Sync").click();

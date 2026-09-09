@@ -3,7 +3,7 @@ import {tr} from "../ui/i18n";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Source } from "../api/sources";
-import { fetchOperations, startOperation, operationReason, type SourceOperation } from "../api/operations";
+import { fetchOperations, startOperation, operationReason, operationRequestMessage, type SourceOperation } from "../api/operations";
 import type { DiscoveryResult } from "../api/discovery";
 import {
   applySync,
@@ -75,8 +75,8 @@ export function SourceSync({
         if (controller.signal.aborted) return;
         setOperations(rows); setLoaded(true); setOperationError('');
         if (rows.some(row => row.status === 'RUNNING')) timer = setTimeout(poll, 2500);
-      } catch {
-        if (!controller.signal.aborted) { setOperationError('Operation state is unavailable. Reload to check current state.'); setLoaded(false); setUsable(false); }
+      } catch (error) {
+        if (!controller.signal.aborted) { setOperationError(operationRequestMessage(error)); setLoaded(false); setUsable(false); }
       }
     };
     void poll();
@@ -135,8 +135,8 @@ export function SourceSync({
     try {
       const operation = await startOperation(selected, kind, AbortSignal.timeout(15000));
       if (alive.current) { setOperations(rows => [...rows.filter(row => row.operation_kind !== kind), operation]); setRefreshOperations(value=>value+1); }
-    } catch {
-      if (alive.current) { setOperationError('Start acknowledgement was lost or rejected. Reload to check current state; no automatic retry.'); setLoaded(false); setRefreshOperations(value=>value+1); }
+    } catch (error) {
+      if (alive.current) { setOperationError(operationRequestMessage(error)); setLoaded(false); setRefreshOperations(value=>value+1); }
     } finally {
       if (kind === 'PLAN') busy.current = false; else discoveryBusy.current = false;
     }

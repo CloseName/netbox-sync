@@ -715,3 +715,17 @@ for(const theme of themes)for(const width of [1440,390])test(`shared RU full-pag
  await page.screenshot({path:`test-results/ux-ru-${theme}-${width}-partial.png`,fullPage:true});
  await page.reload();await expect(page.locator('html')).toHaveAttribute('lang','ru');
 });
+
+// Ordinary operator content is a separate gallery from adversarial long-name fixtures.
+for(const lang of ['en','ru'])for(const theme of themes)for(const width of [1440,390])
+test(`Overview editorial ordinary ${lang} ${theme} ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:960});await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});
+ await fixture(page);
+ const ordinary=diagnostics([source(),source(2),source(3)]);ordinary.generated_at=new Date().toISOString();ordinary.sources[0].next_expected_at=new Date(Date.now()+600000).toISOString();
+ await page.route('**/api/v1/diagnostics',route=>route.fulfill({json:ordinary}));
+ await page.goto('/');await page.getByLabel('Language / Язык').selectOption(lang);
+ await expect(page.getByRole('heading',{name:lang==='ru'?'Ближайшие запуски':'Next scheduled runs'})).toBeVisible();
+ await expect(page.getByText(lang==='ru'?'По данным диагностики. Подключение к источникам здесь не проверяется.':'Diagnostic snapshot; source connectivity is not tested here.')).toBeVisible();
+ await expect(page.getByText(/100/)).toBeVisible();await overflow(page);
+ await page.screenshot({path:`test-results/review-overview-ordinary-${lang}-${theme}-${width}.png`,fullPage:true});
+});

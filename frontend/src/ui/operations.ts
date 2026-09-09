@@ -149,9 +149,9 @@ export function querySources(rows: SourceRow[], params: URLSearchParams) {
 }
 export function overviewReason(data: Diagnostics): string {
   if (Object.values(data.components).some((c) => c.status === "UNAVAILABLE"))
-    return "One or more diagnostic components are unavailable.";
+    return "Some diagnostics are unavailable.";
   if (data.sources.some((s) => s.status === "UNHEALTHY"))
-    return "A source has an unhealthy synchronization outcome.";
+    return "A source reports a synchronization problem.";
   if (
     data.warnings.length &&
     data.warnings.every((w) => w.warning_code === "STALE_RUNNING") &&
@@ -167,8 +167,8 @@ export function overviewReason(data: Diagnostics): string {
     ) &&
     !Object.values(data.components).some((c) => c.status === "DEGRADED")
   )
-    return "Historical run records have unconfirmed completion.";
+    return "Some runs have unconfirmed completion.";
   if (data.overall_status !== "HEALTHY")
-    return "Synchronization evidence needs attention. Review the items below.";
-  return "No problems reported by this diagnostic snapshot. Provider connectivity is not verified here.";
+    return "Synchronization needs attention.";
+  return "No problems reported.";
 }

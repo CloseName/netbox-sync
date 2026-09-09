@@ -694,7 +694,11 @@ The font contains Cyrillic; there are no third-party font requests. Brand SVG/PN
 files live under `/assets/brand`, the production static mount.
 
 Client dispatch is labelled “Request sent / waiting for acknowledgement”. Only a
-persisted RUNNING/VALIDATING state is labelled server-confirmed execution. Elapsed
+persisted RUNNING state is labelled “Operation in progress” / “Операция выполняется”.
+Completion has its separate result; unknown state never claims connection loss.
+The operation client distinguishes confirmed HTTP access denial, other HTTP errors,
+invalid response, timeout, transport failure and an unclassified failure; it never
+shows remote exception/body text. Transport failure does not prove a network outage. Elapsed
 time is outside the live region and is not a completion estimate. No determinate
 progressbar is introduced. Returning to a durable operation loads its existing state;
 a lost response does not automatically resubmit a mutation. Apply retains separate

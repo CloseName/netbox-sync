@@ -103,13 +103,13 @@ test("attention priority is deterministic and unknown is not success", () => {
 });
 test("overview states explain evidence without declaring operational health", () => {
   const d = diagnostics();
-  assert.match(overviewReason(d), /connectivity is not verified/);
+  assert.match(overviewReason(d), /No problems reported/);
   d.overall_status = "DEGRADED";
   d.warnings = [staleWarning];
   d.stale_runs = [staleWarning];
   d.sources[0].warnings = ["STALE_RUNNING"];
   d.sources[0].status = "DEGRADED";
-  assert.match(overviewReason(d), /Historical/);
+  assert.match(overviewReason(d), /unconfirmed completion/);
   d.components.registry.status = "UNAVAILABLE";
   assert.match(overviewReason(d), /unavailable/);
 });

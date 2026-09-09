@@ -124,7 +124,7 @@ test("empty and independent discovery pending/result", async ({ page }) => {
   await page
     .getByRole("button", { name: "Run discovery", exact: true })
     .click();
-  await expect(page.getByText(/Run discovery.*Execution confirmed by the server/)).toBeVisible();
+  await expect(page.getByText(/Run discovery.*Operation in progress/)).toBeVisible();
   await page.screenshot({
     path: "test-results/ui3-discovery-pending.png",
     fullPage: true,
