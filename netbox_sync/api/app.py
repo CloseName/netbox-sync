@@ -47,14 +47,20 @@ from .schedule_client import ScheduleRequestError, ScheduleWorkerClient
 LOGGER = logging.getLogger('netbox_sync.api')
 
 
-def _error(request, status, code, message):
+def _error(request, status, code, message, diagnostic=None):
     request.state.error_code = code
     from ..worker_failure import ERRORS
     detail=ERRORS.get(code)
+    diagnostic = diagnostic or {}
     dto = ErrorDTO(error=ErrorDetailDTO(code=code, message=message, request_id=request.state.request_id,
-        event_id=request.state.request_id,stage=detail['stage'] if detail else None,
+        event_id=diagnostic.get('event_id') or request.state.request_id,stage=diagnostic.get('stage') or (detail['stage'] if detail else None),
+        reason=diagnostic.get('reason'), difference_categories=diagnostic.get('categories', []),
         recommended_action=detail['action']['en'] if detail else None))
-    return JSONResponse(status_code=status, content=dto.model_dump(mode='json'), headers={'Cache-Control':'no-store', 'X-Request-ID':request.state.request_id})
+    content = dto.model_dump(mode='json')
+    if not diagnostic:
+        content['error'].pop('reason', None)
+        content['error'].pop('difference_categories', None)
+    return JSONResponse(status_code=status, content=content, headers={'Cache-Control':'no-store', 'X-Request-ID':request.state.request_id})
 
 
 def _install_boundaries(app, settings, auth_client):
@@ -155,7 +161,9 @@ def _install_boundaries(app, settings, auth_client):
             'CONFIRMATION_EXPIRED': 409, 'CONFIRMATION_SOURCE_MISMATCH': 409,
             'APPLY_LOCKED': 409, 'OUTCOME_UNCERTAIN': 503,
         }
-        return _error(request, statuses.get(exc.code, 503), exc.code, 'Manual sync request failed')
+        diagnostic = dict(event_id=exc.event_id or request.state.request_id, reason=exc.reason, categories=exc.categories, stage='validation')
+        LOGGER.warning(json.dumps(dict(component='api', code=exc.code, request_id=request.state.request_id, **diagnostic), sort_keys=True))
+        return _error(request, statuses.get(exc.code, 503), exc.code, 'Manual sync request failed', diagnostic)
 
     @app.exception_handler(RunReadError)
     async def run_read_error(request, exc):

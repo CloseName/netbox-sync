@@ -8,7 +8,7 @@ from enum import Enum
 
 
 PLAN_SCHEMA_VERSION = 1
-PLANNER_VERSION = 'web-5a-1'
+PLANNER_VERSION = 'web-5a-2'
 
 
 class SyncAction(str, Enum):
@@ -148,6 +148,13 @@ def plan_from_mutations(review, config, mutations):
              if item.action in (SyncAction.REVIEW_REQUIRED, SyncAction.BLOCKED,
                                 SyncAction.IGNORED, SyncAction.UNSUPPORTED,
                                 SyncAction.RETAIN_ONLY)]
+    review_endpoints = {'host': 'dcim.devices', 'qemu': 'virtualization.virtual_machines',
+                        'lxc': 'virtualization.virtual_machines', 'vm': 'virtualization.virtual_machines'}
+    object_names = {(review_endpoints.get(item.object_kind, item.object_kind), item.matched_object_id): item.name
+                    for item in review_plan.items if item.matched_object_id is not None}
+    object_names.update({(mutation.endpoint, mutation.object_id):
+        str(mutation.after.get('name') or mutation.after.get('address') or mutation.after.get('mac_address') or mutation.object_id)
+        for mutation in mutations if mutation.operation == 'create'})
     for mutation in mutations:
         fields = {**mutation.before, **mutation.after}
         identities = fields.get('custom_fields', {}).get('sync_identities', []) \
@@ -158,7 +165,7 @@ def plan_from_mutations(review, config, mutations):
             or str(mutation.object_id)
         items.append(SyncPlanItem(
             object_kind=mutation.endpoint, external_id=str(external_id),
-            name=str(mutation.after.get('name', mutation.object_id)),
+            name=str(mutation.after.get('name', object_names.get((mutation.endpoint, mutation.object_id), mutation.object_id))),
             action=SyncAction.CREATE if mutation.operation == 'create' else SyncAction.UPDATE,
             reason_code='GUARDED_EXECUTOR_ACTION',
             reason='Existing guarded executor would perform this managed-field mutation.',
@@ -192,6 +199,7 @@ def plan_from_mutations(review, config, mutations):
         target_fingerprint=review_plan.target_fingerprint,
         provider_fingerprint=review_plan.provider_fingerprint,
         netbox_fingerprint=stable_fingerprint([
-            (mutation.endpoint, mutation.object_id, mutation.before) for mutation in mutations]),
+            (mutation.endpoint, mutation.object_id, mutation.before)
+            for mutation in sorted(mutations, key=lambda mutation: (mutation.endpoint, str(mutation.object_id)))]),
         items=ordered,
     )

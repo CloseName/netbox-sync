@@ -68,6 +68,8 @@ def apply_full_sync(
     *,
     confirmed=False,
 ):
+    from .application.inventory_order import canonical_hosts
+    hosts = canonical_hosts(hosts)
     from .host_mapping import validate
     validate(nb_api,config,hosts)
     print(

@@ -10,6 +10,8 @@ from ..netbox_full_apply import apply_full_sync
 
 def build_runtime_plan(nb_api, hosts, config):
     """Run guarded executors on a write-recording facade and return one canonical plan."""
+    from .inventory_order import canonical_hosts
+    hosts = canonical_hosts(hosts)
     from ..host_mapping import validate
     validate(nb_api,config.target,hosts)
     review = (build_proxmox_review(nb_api, hosts, config) if config.source_type == 'proxmox'

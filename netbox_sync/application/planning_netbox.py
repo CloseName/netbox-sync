@@ -90,7 +90,8 @@ class PlanningEndpoint:
         return self._wrapped[key]
 
     def all(self):
-        return [self._wrap(record) for record in self._endpoint.all()] + list(self._created)
+        return sorted([self._wrap(record) for record in self._endpoint.all()] + list(self._created),
+                      key=lambda record: record.id)
 
     @staticmethod
     def _matches(record, filters):
@@ -149,7 +150,7 @@ class PlanningEndpoint:
                     record.serialize().get(field) != record._baseline.get(field)
                     for field in (key[:-3] if key.endswith('_id') else key for key in filters)):
                 del matches[record.id]
-        return list(matches.values())
+        return sorted(matches.values(), key=lambda record: record.id)
 
     def get(self, *args, **filters):
         if len(args) > 1 or (args and filters):

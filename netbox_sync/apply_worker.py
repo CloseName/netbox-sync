@@ -5,6 +5,9 @@
 # pylint: disable=too-few-public-methods,import-error,duplicate-code
 
 import argparse
+import logging
+from uuid import uuid4
+from .plan_diagnostics import summary, differences, safe_reason, safe_categories
 from contextlib import redirect_stdout
 import json
 import os
@@ -38,8 +41,10 @@ TOKEN_PATTERN = re.compile(r'^[a-f0-9]{64}$')
 class ApplyWorkerError(RuntimeError):
     """Stable, secret-free worker failure."""
 
-    def __init__(self, code):
+    def __init__(self, code, reason=None, categories=None):
         self.code = code
+        self.reason = safe_reason(reason)
+        self.categories = safe_categories(categories)
         super().__init__(code)
 
 
@@ -85,8 +90,10 @@ def execute_child(payload):
     plan = _plan(nb_api, hosts, config)
     if payload['operation'] == 'plan':
         return {**plan.canonical_dict(), 'digest': plan.digest}
-    if not plan.apply_allowed or plan.digest != payload.get('expected_digest'):
-        raise ApplyWorkerError('PLAN_STALE')
+    if not plan.apply_allowed:
+        raise ApplyWorkerError('PLAN_STALE', 'PLAN_FORBIDDEN')
+    if plan.digest != payload.get('expected_digest'):
+        raise ApplyWorkerError('PLAN_STALE', 'PLAN_DIGEST', differences(payload.get('expected_summary'), plan.canonical_dict()))
     # Prove all provider-specific prechecks before entering the write call.
     try:
         if config.source_type == 'proxmox':
@@ -115,7 +122,7 @@ def child_main():
             value = execute_child(payload)
         result = {'result': value}
     except ApplyWorkerError as exc:
-        result = {'error': exc.code}
+        result = {'error': exc.code, 'reason': exc.reason, 'categories': exc.categories}
     except Exception:  # pylint: disable=broad-exception-caught
         result = {'error': 'APPLY_FAILED'}
     sys.stdout.write(json.dumps(result))
@@ -199,14 +206,14 @@ class ApplySupervisor:
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise ApplyWorkerError('FAILED_BEFORE_WRITE' if operation == 'plan'
                                    else 'OUTCOME_UNCERTAIN') from None
-        if not isinstance(response, dict) or set(response) - {'result', 'error'}:
+        if not isinstance(response, dict) or set(response) - {'result', 'error', 'reason', 'categories'}:
             raise ApplyWorkerError('FAILED_BEFORE_WRITE' if operation == 'plan'
                                    else 'OUTCOME_UNCERTAIN')
         if response.get('error'):
             allowed = {'PLAN_STALE', 'PLAN_BLOCKED', 'FAILED_BEFORE_WRITE',
                        'OUTCOME_UNCERTAIN', 'APPLY_FAILED', 'SOURCE_UNSUPPORTED'}
             code = response['error'] if response['error'] in allowed else 'APPLY_FAILED'
-            raise ApplyWorkerError(code)
+            raise ApplyWorkerError(code, response.get('reason'), response.get('categories'))
         if not isinstance(response.get('result'), dict):
             raise ApplyWorkerError('APPLY_FAILED')
         return response['result']
@@ -215,18 +222,20 @@ class ApplySupervisor:
         """Recompute the exact current generation and bind its single-use token."""
         guard = self.operations.review_guard(instance, digest, operation_id) if self.operations else nullcontext()
         try:
-            with guard:
+            with guard as reviewed:
                 config = self._source(instance)
                 plan = self._child(self._payload(config, 'plan'))
                 if not plan['apply_allowed']:
-                    raise ApplyWorkerError('PLAN_BLOCKED')
+                    raise ApplyWorkerError('PLAN_BLOCKED', 'PLAN_FORBIDDEN')
+                if isinstance(reviewed, dict) and reviewed.get('planner_version') != plan.get('planner_version'):
+                    raise ApplyWorkerError('PLAN_STALE', 'PLANNER_VERSION')
                 if plan['digest'] != digest:
-                    raise ApplyWorkerError('PLAN_STALE')
+                    raise ApplyWorkerError('PLAN_STALE', 'PLAN_DIGEST', differences(summary(reviewed) if isinstance(reviewed, dict) else None, plan))
                 claims = ConfirmationClaims(instance, config.id, digest, plan['planner_version'],
                     plan['source_fingerprint'], plan['target_fingerprint'], operation_id)
                 return {'confirmation_token': self._confirmations.issue(claims), 'expires_in_seconds': 300}
         except OperationError as exc:
-            raise ApplyWorkerError(exc.code) from None
+            raise ApplyWorkerError(exc.code, getattr(exc, 'reason', None)) from None
 
     def apply(self, instance, token):
         """Consume, lock, reload and recompute before any write."""
@@ -255,18 +264,20 @@ class ApplySupervisor:
                     raise ApplyWorkerError('APPLY_LOCKED') from None
                 guard = self.operations.review_guard(instance, claims.plan_digest, claims.operation_id) if self.operations else nullcontext()
                 try:
-                    with guard:
+                    with guard as reviewed:
                         config = self._source(instance)
                         if config.id != claims.source_id:
-                            raise ApplyWorkerError('PLAN_STALE')
+                            raise ApplyWorkerError('PLAN_STALE', 'SOURCE_IDENTITY')
                         apply_started = True
-                        result = self._child(self._payload(config, 'apply', claims.plan_digest))
+                        payload = self._payload(config, 'apply', claims.plan_digest)
+                        if isinstance(reviewed, dict): payload['expected_summary'] = summary(reviewed)
+                        result = self._child(payload)
                         if result.get('plan_digest') != claims.plan_digest:
                             # The child may already have crossed the NetBox write boundary.
                             # A response-contract mismatch is therefore not a pre-write stale plan.
                             raise ApplyWorkerError('OUTCOME_UNCERTAIN')
                 except OperationError as exc:
-                    raise ApplyWorkerError(exc.code) from None
+                    raise ApplyWorkerError(exc.code, getattr(exc, 'reason', None)) from None
             finally:
                 os.close(lock_fd)
             counts = ActionCounts(**result.pop('action_counts', {}))
@@ -382,7 +393,8 @@ def serve(socket_path, supervisor, allowed_uid):
                     result = _handle_request(supervisor, request)
                     response = {'ok': True, 'result': result}
                 except ApplyWorkerError as exc:
-                    response = {'ok': False, 'error': exc.code}
+                    response = {'ok': False, 'error': exc.code, 'reason': exc.reason, 'categories': exc.categories, 'event_id': str(uuid4())}
+                    logging.getLogger(__name__).warning(json.dumps(response, sort_keys=True))
                 except Exception:  # pylint: disable=broad-exception-caught
                     response = {'ok': False, 'error': 'WORKER_INTERNAL_ERROR'}
                 connection.sendall(json.dumps(response).encode())

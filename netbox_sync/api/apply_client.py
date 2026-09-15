@@ -9,8 +9,13 @@ from ..source_config import SOURCE_INSTANCE_PATTERN
 class ApplyRequestError(RuntimeError):
     """Stable, secret-free apply transport failure."""
 
-    def __init__(self, code):
+    def __init__(self, code, reason=None, categories=None, event_id=None):
         self.code = code
+        from ..plan_diagnostics import safe_reason, safe_categories
+        from uuid import UUID
+        self.reason, self.categories = safe_reason(reason), safe_categories(categories)
+        try: self.event_id = str(UUID(event_id)) if event_id else None
+        except (ValueError, TypeError, AttributeError): self.event_id = None
         super().__init__(code)
 
 
@@ -46,7 +51,10 @@ class ApplyWorkerClient:
             raise ApplyRequestError('APPLY_UNAVAILABLE') from None
         if not isinstance(response, dict) or response.get('ok') is not True:
             code = response.get('error') if isinstance(response, dict) else None
-            raise ApplyRequestError(code if isinstance(code, str) else 'APPLY_UNAVAILABLE')
+            raise ApplyRequestError(code if isinstance(code, str) else 'APPLY_UNAVAILABLE',
+                                    response.get('reason') if isinstance(response, dict) else None,
+                                    response.get('categories') if isinstance(response, dict) else None,
+                                    response.get('event_id') if isinstance(response, dict) else None)
         if not isinstance(response.get('result'), dict):
             raise ApplyRequestError('APPLY_RESPONSE_INVALID')
         return response['result']

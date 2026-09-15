@@ -23,8 +23,10 @@ MAX_RESULT_BYTES = 8 * 1024 * 1024
 class OperationError(RuntimeError):
     """An allowlisted operation failure, never raw worker or database text."""
 
-    def __init__(self, code):
+    def __init__(self, code, reason=None):
         self.code = code
+        from .plan_diagnostics import safe_reason
+        self.reason = safe_reason(reason)
         super().__init__(code)
 
 
@@ -186,26 +188,30 @@ class OperationStore:
             finally:
                 owner.execute('SELECT pg_advisory_unlock(hashtextextended(%s,0))', (key,))
 
-    def current_plan(self, source, digest, operation_id=None):
+    def current_plan(self, source, digest, operation_id=None, *, include_result=False):
         """Require the current READY generation, including its bounded lifetime."""
         with self.connect() as connection:
-            row = connection.execute(sql.SQL('''SELECT * FROM {} WHERE source_instance=%s
-                AND operation_kind='PLAN' AND finished_at > clock_timestamp()-interval '24 hours'
+            row = connection.execute(sql.SQL('''SELECT *, finished_at <= clock_timestamp()-interval '24 hours' AS expired FROM {} WHERE source_instance=%s
+                AND operation_kind='PLAN'
                 ''').format(self.table), (source,)).fetchone()
-        if (not row or row['status'] != 'READY' or not row['result']
-                or row['result']['digest'] != digest
-                or (operation_id is not None and str(row['operation_id']) != str(operation_id))):
-            raise OperationError('PLAN_STALE')
-        return str(row['operation_id'])
+        reason = ('OPERATION_MISSING' if not row else
+                  'OPERATION_VERSION' if operation_id is not None and str(row['operation_id']) != str(operation_id) else
+                  'OPERATION_EXPIRED' if row.get('expired') is not False else
+                  'OPERATION_STATUS' if row['status'] != 'READY' else
+                  'RESULT_MISSING' if not row['result'] else
+                  'REVIEW_DIGEST' if row['result']['digest'] != digest else None)
+        if reason:
+            raise OperationError('PLAN_STALE', reason)
+        return row['result'] if include_result else str(row['operation_id'])
 
     @contextmanager
     def review_guard(self, source, digest, operation_id):
         """Keep the reviewed generation current during revalidation and apply."""
         if operation_id is None:
-            raise OperationError('PLAN_STALE')
+            raise OperationError('PLAN_STALE', 'OPERATION_MISSING')
         with self.connect() as connection, source_gate(connection, self.schema, source):
-            self.current_plan(source, digest, operation_id)
-            yield
+            reviewed = self.current_plan(source, digest, operation_id, include_result=True)
+            yield reviewed
 
     def invalidate_plan(self, source, operation_id):
         """Persist revalidation failure only for the exact reviewed generation."""

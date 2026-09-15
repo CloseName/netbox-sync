@@ -185,6 +185,8 @@ class ErrorDetailDTO(PublicModel):
     event_id: str | None = None
     stage: str | None = None
     recommended_action: str | None = None
+    reason: str | None = None
+    difference_categories: list[str] = []
 
 
 class ErrorDTO(PublicModel):

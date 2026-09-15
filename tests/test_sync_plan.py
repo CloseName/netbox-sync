@@ -70,3 +70,9 @@ def test_unexecuted_discovery_create_is_explicitly_unsupported():
     assert len(unresolved) == 1
     assert unresolved[0].action is SyncAction.UNSUPPORTED
     assert unresolved[0].reason_code == 'EXECUTOR_CREATE_UNSUPPORTED'
+
+
+def test_independent_mutation_order_does_not_change_digest():
+    from netbox_sync.application.planning_netbox import PlannedMutation
+    changes = [PlannedMutation('update', 'dcim.devices', i, {'name': 'old'}, {'name': 'new'}) for i in (1, 2)]
+    assert plan_from_mutations(review([]), sample_source_config(), changes).digest == plan_from_mutations(review([]), sample_source_config(), list(reversed(changes))).digest

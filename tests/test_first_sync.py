@@ -56,7 +56,8 @@ def test_real_pynetbox_plan_apply_replan_new_source(provider, existing_host):
                  hosts=[dict(id=h.source_id,manufacturer=None,model=None) for h in hosts])
     config=replace(config,settings={'onboarding_mapping':mapping})
     requests=[]
-    with netbox_http(seed, requests=requests) as (api,rows,writes):
+    behavior={}
+    with netbox_http(seed, requests=requests, behavior=behavior) as (api,rows,writes):
         if existing_host:
             from netbox_sync.netbox_apply import apply_hosts
             apply_hosts(api,hosts,config.target,confirmed=True)
@@ -80,6 +81,8 @@ def test_real_pynetbox_plan_apply_replan_new_source(provider, existing_host):
         repeated=build_runtime_plan(api,hosts,config)
         assert writes==[]
         assert not [i for i in repeated.items if i.action.value in ('CREATE','UPDATE')]
+        behavior['reverse_reads']=True
+        assert build_runtime_plan(api,hosts,config).digest==repeated.digest
         assert requests and not any('/-' in path or '=-' in path for _,path in requests)
 
 
@@ -93,3 +96,31 @@ def test_esxi_report_only_network_survives_public_discovery_contract():
     review=build_esxi_review(build_esxi_adoption_plan(api,_inventory(1),config),config)
     result=DiscoveryResultDTO.model_validate(asdict(review))
     assert any(i.object_kind=='host_network' and i.classification=='UNSUPPORTED' for i in result.items)
+
+
+def test_reordered_provider_inventory_has_identical_exact_plan():
+    from copy import deepcopy
+    from netbox_sync.discovery import DiscoveredHostInterface
+    seed = FakeNetBox()
+    config = target(seed, replace(sample_source_config(), legacy_identity_owner=False))
+    hosts = discover_hosts(FakeProxmox(proxmox_responses()), config)
+    hosts[0].interfaces.extend([DiscoveredHostInterface(name='eth9', interface_type='eth'), DiscoveredHostInterface(name='eth8', interface_type='eth')])
+    second_host = deepcopy(hosts[0])
+    second_host.source_id = 'node-b'; second_host.original_name = 'node-b'; second_host.normalized_name = 'NODE-B'
+    second_host.management_ip = '10.20.30.11'; second_host.interfaces[0].addresses = ['10.20.30.11/24']; second_host.virtual_machines = []; second_host.containers = []
+    hosts.append(second_host)
+    other = deepcopy(hosts)
+    other[0].interfaces.reverse()
+    other.reverse()
+    with netbox_http(seed) as (api, _rows, writes):
+        first = build_runtime_plan(api, hosts, config)
+        second = build_runtime_plan(api, other, config)
+        assert first.digest == second.digest
+        api.token = 'test-read-only'
+        read_plan = build_runtime_plan(api, hosts, config)
+        api.token = 'test-apply-capable'
+        assert build_runtime_plan(api, hosts, config).digest == read_plan.digest
+        # A different token is harmless only when it sees identical relevant data.
+        other[0].memory_bytes += 1024**3
+        assert build_runtime_plan(api, other, config).digest != first.digest
+        assert not writes
