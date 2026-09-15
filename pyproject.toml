@@ -46,3 +46,6 @@ include = ["netbox_sync*"]
 
 [license]
 file = 'LICENSE.txt'
+
+[tool.setuptools.package-data]
+netbox_sync = ["public_errors.json"]

@@ -1,10 +1,16 @@
 """Controlled HTTPS/SOAP peer. Never logs headers, bodies or credentials."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+from pathlib import Path
+import threading
 from urllib.parse import urlsplit,parse_qs
 import ssl
 import time
 from xml.etree import ElementTree as ET
+
+catalog_rows={}
+catalog_lock=threading.Lock()
+catalog_posts=0
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_): pass
@@ -16,6 +22,7 @@ class Handler(BaseHTTPRequestHandler):
         try: self.wfile.write(body)
         except (OSError, ssl.SSLError): pass
     def do_GET(self):
+        if self.path=='/fixture/catalog-count':return self.respond(json.dumps({'posts':catalog_posts}).encode())
         if self.path.startswith('/api/'):
             path=urlsplit(self.path).path.strip('/').split('/')
             kind=path[2]
@@ -25,6 +32,11 @@ class Handler(BaseHTTPRequestHandler):
                 'platforms':dict(id=4,name='VMware ESXi',slug='vmware-esxi'),
                 'device-roles':dict(id=5,name='Hypervisor',slug='server'),
                 'device-types':dict(id=6,model='PowerEdge R650',slug='r650',manufacturer={'id':7,'name':'Dell Inc.'})}
+            if kind=='manufacturers':
+                with catalog_lock:
+                    query=parse_qs(urlsplit(self.path).query)
+                    found=[row for row in catalog_rows.values() if not query.get('slug') or row['slug'] in query['slug']]
+                return self.respond(json.dumps(dict(results=found,count=len(found),next=None,previous=None)).encode())
             if kind not in rows:return self.respond(b'{}',404)
             row=rows[kind]
             if len(path)>3:
@@ -34,6 +46,18 @@ class Handler(BaseHTTPRequestHandler):
             time.sleep(7)
         self.respond(b'<namespaces version="1.0"><namespace><version>6.7</version></namespace></namespaces>')
     def do_POST(self):
+        global catalog_posts
+        if self.path=='/api/dcim/manufacturers/':
+            expected=Path('/fixture/catalog-token').read_text()
+            if self.headers.get('Authorization')!='Token '+expected:return self.respond(b'{}',403)
+            data=json.loads(self.rfile.read(min(int(self.headers.get('Content-Length','0')),8192)))
+            with catalog_lock:
+                if data['slug'] in catalog_rows:return self.respond(b'{}',400)
+                catalog_posts+=1;row=dict(id=100+catalog_posts,**data);catalog_rows[data['slug']]=row
+            if data['slug']=='lost-response':
+                self.close_connection=True
+                return
+            return self.respond(json.dumps(row).encode(),201)
         body = ET.fromstring(self.rfile.read(min(int(self.headers.get('Content-Length', '0')), 65536)))
         method = next(iter(next(e for e in body if e.tag.endswith('Body'))))
         name = method.tag.split('}')[-1]
@@ -64,8 +88,9 @@ class Handler(BaseHTTPRequestHandler):
     def soap(self, body, status=200):
         self.respond(('<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><soap:Body>' + body + '</soap:Body></soap:Envelope>').encode(), status)
 
-server = ThreadingHTTPServer(('0.0.0.0', 443), Handler)
-context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-context.load_cert_chain('/fixture/server.crt', '/fixture/server.key')
-server.socket = context.wrap_socket(server.socket, server_side=True)
-server.serve_forever()
+if __name__ == '__main__':
+    server = ThreadingHTTPServer(('0.0.0.0', 443), Handler)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain('/fixture/server.crt', '/fixture/server.key')
+    server.socket = context.wrap_socket(server.socket, server_side=True)
+    server.serve_forever()

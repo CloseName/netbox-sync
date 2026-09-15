@@ -25,3 +25,13 @@ def validate(path,references,host_types,preview):
     if (cluster.get('type') or {}).get('id')!=ctype['id'] or cluster.get('scope_type')!='dcim.site' or cluster.get('scope_id')!=site['id']:
         raise CatalogError('CLUSTER_SCOPE_MISMATCH')
     return dict(version=1,references=refs,host_types=types,hosts=preview['hosts'])
+
+
+def create_call(path,payload):
+    try: result=request(path,payload,timeout=33)['result']
+    except ControlError as exc:
+        # These lock refusals occur before a catalog child can send its POST.
+        # Transport failures still have an unknown outcome.
+        raise CatalogError('BUSY' if exc.code in {'BOOTSTRAP_BUSY','SOURCE_APPLY_ACTIVE'} else 'UNAVAILABLE') from None
+    if 'status' not in result: raise CatalogError(result.get('error','UNAVAILABLE'))
+    return result

@@ -13,6 +13,10 @@ ESXI_IO_TIMEOUT = 15
 class EsxiConnectionError(RuntimeError):
     """An ESXi authentication, TLS, or API connection failed safely."""
 
+    def __init__(self, message, code='PROVIDER_UNAVAILABLE'):
+        self.code=code
+        super().__init__(message)
+
 
 @dataclass(frozen=True)
 class SourceConnectionResult:
@@ -24,7 +28,7 @@ class SourceConnectionResult:
     summary: str = None
 
 
-def _pyvmomi_connect(host, username, password, verify_ssl):
+def _pyvmomi_connect(host, username, password, verify_ssl, *, port=443):
     from pyVim.connect import SmartConnect  # pylint: disable=import-outside-toplevel
 
     context = (
@@ -34,6 +38,7 @@ def _pyvmomi_connect(host, username, password, verify_ssl):
     )
     return SmartConnect(
         host=host,
+        port=port,
         user=username,
         pwd=password,
         sslContext=context,
@@ -74,9 +79,11 @@ class EsxiClient:
                 source_config.credentials.username,
                 password,
                 source_config.verify_ssl,
+                **({"port": source_config.api_port} if source_config.api_port != 443 else {}),
             )
-        except Exception:  # pylint: disable=broad-exception-caught
-            raise EsxiConnectionError('ESXi connection failed') from None
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            from .worker_failure import classify
+            raise EsxiConnectionError('ESXi connection failed',classify(exc,'provider')) from None
 
         try:
             yield service_instance

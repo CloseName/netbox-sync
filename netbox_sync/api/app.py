@@ -39,7 +39,7 @@ from .onboarding_adapters import BrokerSecretStore, RegistrationRegistry, test_e
 from .run_reader import PostgresRunReader
 from .worker_health import WorkerHealthClient
 from .lifecycle_client import LifecycleClient, LifecycleRequestError
-from .operation_dto import LifecycleDTO, RemovalDTO
+from .operation_dto import LifecycleDTO, RemovalDTO, SourceNameDTO
 from .auth import AuthClient, COOKIE, PUBLIC, permission, routes as auth_routes
 from ..auth_policy import AuthError
 from .schedule_client import ScheduleRequestError, ScheduleWorkerClient
@@ -49,7 +49,11 @@ LOGGER = logging.getLogger('netbox_sync.api')
 
 def _error(request, status, code, message):
     request.state.error_code = code
-    dto = ErrorDTO(error=ErrorDetailDTO(code=code, message=message, request_id=request.state.request_id))
+    from ..worker_failure import ERRORS
+    detail=ERRORS.get(code)
+    dto = ErrorDTO(error=ErrorDetailDTO(code=code, message=message, request_id=request.state.request_id,
+        event_id=request.state.request_id,stage=detail['stage'] if detail else None,
+        recommended_action=detail['action']['en'] if detail else None))
     return JSONResponse(status_code=status, content=dto.model_dump(mode='json'), headers={'Cache-Control':'no-store', 'X-Request-ID':request.state.request_id})
 
 
@@ -74,10 +78,11 @@ def _install_boundaries(app, settings, auth_client):
     @app.exception_handler(LifecycleRequestError)
     async def lifecycle_error(request, exc):
         messages = {
+            'SOURCE_DISCOVERY_REQUIRED': (409, 'Run Discovery to refresh host mappings'),
             'SOURCE_NOT_FOUND': (404, 'Source not found'),
             'SOURCE_ALREADY_REMOVED': (409, 'Source is already removed'),
             'SOURCE_LIFECYCLE_CONFLICT': (409, 'Source changed; review its current state'),
-            'SOURCE_CONFIRMATION_INVALID': (422, 'Enter the exact Source ID'),
+            'SOURCE_CONFIRMATION_INVALID': (422, 'Enter the exact display name'),
             'SOURCE_OPERATION_ACTIVE': (409, 'Wait for active Plan or Discovery to finish'),
             'SOURCE_APPLY_ACTIVE': (409, 'Wait for active synchronization to finish'),
             'SOURCE_APPLY_UNCONFIRMED': (409, 'Synchronization outcome requires reconciliation'),
@@ -111,6 +116,7 @@ def _install_boundaries(app, settings, auth_client):
     @app.exception_handler(SourceReadError)
     async def source_error(request, exc):
         errors = {
+            'SOURCE_DISCOVERY_REQUIRED': (409, 'Run Discovery to refresh host mappings'),
             'SOURCE_NOT_FOUND': (404, 'Source not found'),
             'SOURCE_DATA_INVALID': (503, 'Source metadata is unavailable'),
             'REGISTRY_UNAVAILABLE': (503, 'Source registry is unavailable'),
@@ -121,6 +127,7 @@ def _install_boundaries(app, settings, auth_client):
     @app.exception_handler(DiscoveryRequestError)
     async def discovery_error(request, exc):
         errors = {
+            'SOURCE_DISCOVERY_REQUIRED': (409, 'Run Discovery to refresh host mappings'),
             'SOURCE_NOT_FOUND': (404, 'Source not found'),
             'SOURCE_DISABLED': (409, 'Disabled sources cannot be discovered'),
             'CREDENTIAL_UNAVAILABLE': (503, 'Discovery credentials are unavailable'),
@@ -135,7 +142,9 @@ def _install_boundaries(app, settings, auth_client):
             'OPERATION_STILL_EXECUTING': (409, 'The operation is still executing'),
             'PLAN_STALE': (409, 'Plan is no longer current'),
         }
-        status, message = errors.get(exc.code, errors['DISCOVERY_UNAVAILABLE'])
+        from ..worker_failure import ERRORS
+        status, message = errors.get(exc.code, (502, ERRORS[exc.code]['message']['en'])
+                                     if exc.code in ERRORS else errors['DISCOVERY_UNAVAILABLE'])
         return _error(request, status, exc.code, message)
 
     @app.exception_handler(ApplyRequestError)
@@ -163,6 +172,7 @@ def _install_boundaries(app, settings, auth_client):
         errors = {
             'SCHEDULE_INVALID': (422, 'Scheduling settings are invalid'),
             'SCHEDULE_CONFLICT': (409, 'Scheduling settings changed; refresh and try again'),
+            'SOURCE_DISCOVERY_REQUIRED': (409, 'Run Discovery to refresh host mappings'),
             'SOURCE_NOT_FOUND': (404, 'Source not found'),
             'CONTROL_WORKER_UNAVAILABLE': (503, 'Scheduling control is unavailable'),
             'CONTROL_REQUEST_FAILED': (503, 'Scheduling update failed'),
@@ -361,6 +371,25 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
     def source_lifecycle(source_instance: str):
         return lifecycle_client.request(source_instance)
 
+    from .operation_dto import PlacementUpdateDTO
+
+    @router.get('/sources/{source_instance}/placement')
+    def source_placement(source_instance: str):
+        return lifecycle_client.placement(source_instance)
+
+    @router.patch('/sources/{source_instance}/placement', response_model=LifecycleDTO)
+    def update_source_placement(source_instance: str, payload: PlacementUpdateDTO):
+        current = lifecycle_client.placement(source_instance)
+        if current['revision'] != payload.revision or current['discovery_id'] != str(payload.discovery_id):
+            raise LifecycleRequestError('SOURCE_LIFECYCLE_CONFLICT')
+        mapping = catalog_validate(settings.bootstrap_socket, payload.references, payload.host_types, current['preview'])
+        return lifecycle_client.request(source_instance, dict(revision=payload.revision,
+            discovery_id=str(payload.discovery_id), mapping=mapping), action='save_placement')
+
+    @router.patch('/sources/{source_instance}/name', response_model=LifecycleDTO)
+    def rename_source(source_instance: str, payload: SourceNameDTO):
+        return lifecycle_client.request(source_instance, payload.model_dump(), action='rename_source')
+
     @router.post('/sources/{source_instance}/remove', response_model=LifecycleDTO)
     def remove_source(source_instance: str, payload: RemovalDTO):
         return lifecycle_client.request(source_instance, payload.model_dump())
@@ -444,14 +473,26 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
             persist_stale(source_instance, payload.operation_id, exc)
             raise
 
-    from .catalog import CatalogError, call as catalog_call, validate as catalog_validate
+    from .catalog import CatalogError, call as catalog_call, validate as catalog_validate, create_call as catalog_create_call
 
     @app.exception_handler(CatalogError)
     async def catalog_error(request,exc):
-        known={'CATALOG_CHANGED','SELECTION_REQUIRED','HOST_MAPPING_REQUIRED','CLUSTER_SCOPE_MISMATCH','CLUSTER_AMBIGUOUS','PERMISSION_DENIED','AUTH_FAILED','TLS_FAILED','NETWORK_UNREACHABLE','RESPONSE_INVALID','UNAVAILABLE'}
+        known={'BUSY','CONFLICT','CATALOG_CHANGED','SELECTION_REQUIRED','HOST_MAPPING_REQUIRED','CLUSTER_SCOPE_MISMATCH','CLUSTER_AMBIGUOUS','PERMISSION_DENIED','AUTH_FAILED','TLS_FAILED','NETWORK_UNREACHABLE','RESPONSE_INVALID','UNAVAILABLE'}
         code=exc.code if exc.code in known else 'UNAVAILABLE'
-        status=409 if code in {'CATALOG_CHANGED','SELECTION_REQUIRED','HOST_MAPPING_REQUIRED','CLUSTER_SCOPE_MISMATCH','CLUSTER_AMBIGUOUS'} else 503
+        status=409 if code in {'BUSY','CONFLICT','CATALOG_CHANGED','SELECTION_REQUIRED','HOST_MAPPING_REQUIRED','CLUSTER_SCOPE_MISMATCH','CLUSTER_AMBIGUOUS'} else 503
         return _error(request,status,'CATALOG_'+code.removeprefix('CATALOG_'),'NetBox selection could not be verified')
+
+    from .catalog_dto import CatalogCreateDTO
+
+    @router.post('/catalog/{kind}')
+    def create_catalog(kind: str, payload: CatalogCreateDTO):
+        return catalog_create_call(settings.bootstrap_socket,dict(action='catalog-create',
+            operation_id=str(payload.operation_id),kind=kind,object=payload.object,
+            write_token=payload.write_token.get_secret_value(),confirm=payload.confirm))
+
+    @router.get('/catalog-operations/{operation_id}')
+    def reconcile_catalog(operation_id: UUID):
+        return catalog_create_call(settings.bootstrap_socket,dict(action='catalog-reconcile',operation_id=str(operation_id)))
 
     @router.get('/catalog/{kind}')
     def catalog(kind: str, search: str = Query(default='',max_length=100), offset: int = Query(default=0,ge=0,le=10000)):

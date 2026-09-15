@@ -1,18 +1,22 @@
 """Explicit per-host onboarding mappings; old source contracts remain unchanged."""
 from .netbox_catalog import ENDPOINTS
 
+class MappingError(ValueError):
+    """A selected catalog identity or host mapping must be reviewed."""
+
+
 def endpoint(api,kind):
     group,name=ENDPOINTS[kind].split('/')
     return getattr(getattr(api,group),name.replace('-','_'))
 
 def check_record(record,choice,kind):
-    if record is None or record.id!=choice['id']: raise ValueError('Selected NetBox object no longer exists')
+    if record is None or record.id!=choice['id']: raise MappingError('Selected NetBox object no longer exists')
     name=getattr(record,'model' if kind=='device_type' else 'name',None)
     if name!=choice['name'] or (kind!='cluster' and getattr(record,'slug',None)!=choice['slug']):
-        raise ValueError('Selected NetBox object changed; review source mapping')
+        raise MappingError('Selected NetBox object changed; review source mapping')
     if kind=='device_type':
         if getattr(getattr(record,'manufacturer',None),'id',None)!=(choice.get('manufacturer') or {}).get('id'):
-            raise ValueError('Selected manufacturer changed')
+            raise MappingError('Selected manufacturer changed')
     return record
 
 def validate(api,config,hosts):
@@ -24,15 +28,15 @@ def validate(api,config,hosts):
             if (getattr(getattr(record,'type',None),'id',None)!=mapping['references']['cluster_type']['id']
                 or getattr(record,'scope_type',None)!='dcim.site'
                 or getattr(record,'scope_id',None)!=mapping['references']['site']['id']):
-                raise ValueError('Selected cluster scope or type changed')
+                raise MappingError('Selected cluster scope or type changed')
     for host in hosts:
         choice=mapping['host_types'].get(host.source_id)
-        if choice is None: raise ValueError('Discovered host requires an explicit device type mapping')
+        if choice is None: raise MappingError('Discovered host requires an explicit device type mapping')
         original=next((r for r in mapping['hosts'] if r['id']==host.source_id),None)
-        if original is None: raise ValueError('Unknown host mapping')
+        if original is None: raise MappingError('Unknown host mapping')
         for key in ('manufacturer','model'):
             if original.get(key) and original[key]!=getattr(host,key,None):
-                raise ValueError('Host hardware changed; review the device type mapping')
+                raise MappingError('Host hardware changed; review the device type mapping')
         check_record(endpoint(api,'device_type').get(id=choice['id']),choice,'device_type')
 
 def selected(config,kind,slug):

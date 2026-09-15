@@ -17,6 +17,7 @@ class ConnectionRequest(PublicModel):
     source_type: Literal['proxmox', 'esxi']
     address: str = Field(min_length=1, max_length=253)
     verify_ssl: bool = Field(default=True, strict=True)
+    port: int | None = Field(default=None, strict=True, ge=1, le=65535)
     username: Annotated[SecretStr, Field(exclude=True, repr=False)]
     token_id: Annotated[SecretStr | None, Field(exclude=True, repr=False)] = None
     secret: Annotated[SecretStr, Field(exclude=True, repr=False)]
@@ -47,7 +48,7 @@ class ConnectionRequest(PublicModel):
         """Create ephemeral internal values, never a public response."""
         return PendingCredentials(
             self.source_type, self.address, self.verify_ssl, self.username.get_secret_value(),
-            self.token_id.get_secret_value() if self.token_id else '', self.secret.get_secret_value(),
+            self.token_id.get_secret_value() if self.token_id else '', self.secret.get_secret_value(), port=self.port,
         )
 
 
@@ -83,6 +84,7 @@ class RegistrationRequest(PublicModel):
     name: str
     address: str
     verify_ssl: bool = Field(strict=True)
+    port: int | None = Field(default=None, strict=True, ge=1, le=65535)
     sync_interval_seconds: int = Field(strict=True, gt=0, le=2147483647)
     site_slug: str
     cluster_name: str
@@ -120,7 +122,7 @@ class RegistrationRequest(PublicModel):
         return RegistrationCommand(
             onboarding_token=self.onboarding_token, source_type=self.source_type,
             source_instance=self.source_instance, name=self.name, address=self.address,
-            verify_ssl=self.verify_ssl, sync_interval_seconds=self.sync_interval_seconds,
+            verify_ssl=self.verify_ssl, port=self.port, sync_interval_seconds=self.sync_interval_seconds,
             site_slug=self.site_slug, cluster_name=self.cluster_name, platform_slug=self.platform_slug,
             device_role_slug=self.device_role_slug, device_type_slug=self.device_type_slug,
             cluster_type_slug=self.cluster_type_slug, confirm_sync_disabled=self.confirm_sync_disabled,

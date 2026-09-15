@@ -7,6 +7,7 @@ import secrets
 import subprocess
 import sys
 import time
+from uuid import uuid4
 sys.path.insert(0, '/review')
 from deploy import install
 
@@ -42,6 +43,9 @@ bootstrap.write_text(json.dumps(value))
 bootstrap.chmod(0o600)
 fixture = root / 'state/fixture'
 fixture.mkdir()
+catalog_token=secrets.token_urlsafe(32)
+(fixture/'catalog-token').write_text(catalog_token)
+(fixture/'catalog-token').chmod(0o600)
 run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
      '-keyout', str(fixture / 'server.key'), '-out', str(fixture / 'server.crt'),
      '-subj', '/CN=esxi.probe.test', '-addext', 'subjectAltName=DNS:esxi.probe.test,DNS:slow.probe.test,DNS:netbox.example.test'])
@@ -205,7 +209,7 @@ for container in (api,worker):
 assert (root / 'current').resolve() == p.release
 print('PASS authenticated '+pgmode+': real API/SOAP, trusted TLS, auth/timeout/TLS/destination/connection codes, unchanged protected state and isolated production networks',flush=True)
 
-if pgmode == 'bundled':
+if pgmode == 'bundled' and os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST') != '1':
     # Exercise installer release preparation/activation against the existing DB.
     # No systemd exists in this disposable host; timer/reboot remains a host gate.
     db_id = compose('ps','-q','postgres')
@@ -234,6 +238,29 @@ success=request(body);assert success['status']==200
 receipt=success['body']['onboarding_token']
 policy=request(None,'/api/v1/policy','GET')['body']
 assert request(dict(host='extra.probe.test',expected_revision=policy['revision'],request_id='fixture-extra-host'),'/api/v1/policy')['status']==200
+# Catalog write uses the actual API and bootstrap child, independent of read-token.
+creation=dict(operation_id=str(uuid4()),object={'name':'Fixture Vendor','slug':'fixture-vendor'},
+              write_token=value['read_token'],confirm=True)
+refused=request(creation,'/api/v1/catalog/manufacturer')
+assert refused['status']==200 and refused['body']['status']=='REFUSED',refused
+assert refused['body']['error']=='PERMISSION_DENIED'
+creation.update(operation_id=str(uuid4()),write_token=catalog_token)
+created=request(creation,'/api/v1/catalog/manufacturer')
+assert created['status']==200 and created['body']['status']=='CREATED',created
+assert request(creation,'/api/v1/catalog/manufacturer')['body']==created['body']
+creation.update(operation_id=str(uuid4()),object={'name':'Lost response','slug':'lost-response'})
+unknown=request(creation,'/api/v1/catalog/manufacturer')
+assert unknown['status']==200 and unknown['body']['status']=='UNCERTAIN',unknown
+compose('restart','netbox-sync-bootstrap-worker')
+for _ in range(40):
+    checked=request(None,'/api/v1/catalog-operations/'+creation['operation_id'],'GET')
+    if checked['status']==200:break
+    time.sleep(.25)
+assert checked['body']['status']=='EXISTS_REVIEW_REQUIRED',checked
+assert catalog_token not in json.dumps([created,unknown,checked])
+for journal in (root/'secrets/netbox').glob('catalog-*.json'):
+    assert catalog_token not in journal.read_text() and value['read_token'] not in journal.read_text()
+print('Catalog: separate token, refusal, durable lost response and restart reconciliation passed')
 references={kind:request(None,'/api/v1/catalog/'+kind,'GET')['body']['items'][0] for kind in ('site','cluster','platform','device_role','cluster_type')}
 host_type=request(None,'/api/v1/catalog/device_type','GET')['body']['items'][0]
 assert success['body']['preview']['hosts'][0]['manufacturer']=='Dell Inc.'
@@ -258,7 +285,7 @@ for _ in range(30):
 else:raise RuntimeError('Auth state did not survive restart')
 assert request(None,'/api/v1/policy','GET')['body']==policy_before_restart
 
-if pgmode == 'bundled':
+if pgmode == 'bundled' and os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST') != '1':
     # Supported host CLI, not a manual SQL dump or an app HTTP bypass.
     from deploy import backup
     def backup_cli(target, *args):
@@ -336,3 +363,7 @@ assert request({},'/api/v1/auth/logout')['status']==200
 assert request(None,'/api/v1/sources','GET')['status']==401
 print('PASS runtime session idle/absolute expiry, root revocation, fresh login, retained policy',flush=True)
 print('PASS auth policy: direct 401, enrollment/cookie, live CAS permission without recreation, stale receipt refusal, registration, worker outage/restart/logout',flush=True)
+
+
+if os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST') == '1':
+    exec(compile(Path('/review/tests/worker_full_sync_scenario.py').read_text(), 'worker_full_sync_scenario.py', 'exec'))

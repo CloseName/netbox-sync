@@ -75,12 +75,18 @@ class PlanningEndpoint:
     def __init__(self, endpoint, name, recorder):
         self._endpoint, self._name, self._recorder = endpoint, name, recorder
         self._created = []
+        self._wrapped = {}
         self._next_id = -1
 
     def _wrap(self, record):
-        if record is None or isinstance(record, PlanningRecord):
+        if record is None:
+            return None
+        if any(record is created for created in self._created):
             return record
-        return PlanningRecord(record, self._name, self._recorder)
+        key = record.id
+        if key not in self._wrapped:
+            self._wrapped[key] = PlanningRecord(record, self._name, self._recorder)
+        return self._wrapped[key]
 
     def all(self):
         return [self._wrap(record) for record in self._endpoint.all()] + list(self._created)

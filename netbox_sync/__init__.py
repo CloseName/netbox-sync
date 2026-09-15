@@ -832,6 +832,7 @@ def execute_proxmox_source(
         token_name=_get_pve_token_name(pve_user, pve_credentials.token_id),
         token_value=pve_credentials.token_secret,
         verify_ssl=source_config.verify_ssl,
+        port=source_config.api_port,
     )
 
     hosts = discover_hosts(pve_api, source_config)

@@ -55,9 +55,9 @@ def https_get(host, port, path, context, headers=None, factory=http.client.HTTPS
 
 
 def probe_proxmox(credentials, host, context, getter=https_get):
-    """Exactly HTTPS/8006 GET /api2/json/version with existing token auth format."""
+    """HTTPS on the reviewed port: GET /api2/json/version with existing token auth format."""
     authorization = f'PVEAPIToken={credentials.username}!{credentials.token_id}={credentials.secret}'
-    body = getter(host, 8006, '/api2/json/version', context, {'Authorization': authorization})
+    body = getter(host, credentials.api_port, '/api2/json/version', context, {'Authorization': authorization})
     result = json.loads(body)
     if not isinstance(result, dict) or not isinstance(result.get('data'), dict) or not result['data'].get('version'):
         raise OnboardingError(ErrorCode.SOURCE_CONNECTION_FAILED)
@@ -67,7 +67,7 @@ def probe_esxi(credentials, host, context, getter=https_get, connector=None, dis
     """Bound version GET explicitly, then Connect (not SmartConnect) for SOAP login/read/logout."""
     from pyVim.connect import Connect, Disconnect  # pylint: disable=import-outside-toplevel
     from pyVmomi.VmomiSupport import GetServiceVersions, versionIdMap  # pylint: disable=import-outside-toplevel
-    body = getter(host, 443, '/sdk/vimServiceVersions.xml', context)
+    body = getter(host, credentials.api_port, '/sdk/vimServiceVersions.xml', context)
     if b'<!DOCTYPE' in body.upper() or b'<!ENTITY' in body.upper():
         raise OnboardingError(ErrorCode.SOURCE_CONNECTION_FAILED)
     root = ElementTree.fromstring(body)
@@ -80,7 +80,7 @@ def probe_esxi(credentials, host, context, getter=https_get, connector=None, dis
         raise OnboardingError(ErrorCode.SOURCE_CONNECTION_FAILED)
     service = None
     try:
-        service = (connector or Connect)(host=host, port=443, user=credentials.username, pwd=credentials.secret,
+        service = (connector or Connect)(host=host, port=credentials.api_port, user=credentials.username, pwd=credentials.secret,
                                          version=version, sslContext=context, httpConnectionTimeout=IO_TIMEOUT,
                                          connectionPoolTimeout=IO_TIMEOUT)
         content = service.RetrieveContent()
@@ -112,7 +112,7 @@ def bound_http_reads():
 
 def execute(credentials, policy, preview=False):
     """Resolve once; pin all subsequent DNS calls inside this isolated process."""
-    port = {'proxmox': 8006, 'esxi': 443}[credentials.source_type]
+    port = credentials.api_port
     host, address = policy.resolve(credentials.address, port)
     context = ssl.create_default_context() if credentials.verify_ssl else ssl._create_unverified_context()
     with pinned_dns(host, address, port):

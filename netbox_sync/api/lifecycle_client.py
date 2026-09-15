@@ -14,8 +14,23 @@ class LifecycleClient:
     def __init__(self, path):
         self.path = path
 
-    def request(self, source, payload=None):
-        request = {'action':'source_lifecycle' if payload is None else 'remove_source',
+    def placement(self, source):
+        from ..local_control import request, ControlError
+        from .dto import DiscoveryHostDTO
+        try:
+            value = request(self.path, {'action':'read_placement','source_instance':source}, timeout=15)['result']
+            if value['source_instance'] != source or not 1 <= len(value['preview']['hosts']) <= 16:
+                raise ValueError()
+            for host in value['preview']['hosts']:
+                DiscoveryHostDTO.model_validate(host)
+            return value
+        except ControlError as exc:
+            raise LifecycleRequestError(exc.code) from None
+        except Exception:
+            raise LifecycleRequestError('LIFECYCLE_UNAVAILABLE') from None
+
+    def request(self, source, payload=None, action=None):
+        request = {'action':action or ('source_lifecycle' if payload is None else 'remove_source'),
                    'source_instance':source, **(payload or {})}
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:

@@ -73,3 +73,22 @@ def test_reserved_registration_has_distinct_safe_message():
     assert response.status_code==409
     assert response.json()['error']['code']=='SOURCE_ID_RESERVED'
     assert 'reserved by a removed source' in response.json()['error']['message']
+
+
+def test_name_edit_is_narrow_and_requires_csrf(monkeypatch):
+    from netbox_sync.api.lifecycle_client import LifecycleClient
+    from netbox_sync.api.auth import permission
+    calls=[]
+    def rename(self, source, payload=None, action=None):
+        calls.append((source,payload,action))
+        return dict(source_instance=source,display_name=payload['name'],revision='b'*64,
+                    removed_at=None,credential_state=None)
+    monkeypatch.setattr(LifecycleClient,'request',rename)
+    body=dict(name='MiXeD Name',revision='a'*64)
+    with app(Operations(operation())) as api:
+        assert api.patch('/api/v1/sources/pve-test/name',json=body).status_code==403
+        assert api.patch('/api/v1/sources/pve-test/name',json={**body,'address':'foreign'},headers=HEADERS).status_code==422
+        response=api.patch('/api/v1/sources/pve-test/name',json=body,headers=HEADERS)
+    assert response.status_code==200 and response.json()['display_name']=='MiXeD Name'
+    assert calls==[('pve-test',body,'rename_source')]
+    assert permission('PATCH','/api/v1/sources/pve-test/name')=='source.configure'

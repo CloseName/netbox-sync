@@ -8,6 +8,8 @@ from .esxi_migration import (
     build_esxi_migration_plan,
 )
 from .netbox_vm_apply import apply_virtual_machines
+from .netbox_apply import apply_hosts
+from .application.planning_netbox import PlanningNetBox
 from .netbox_vm_network_apply import apply_vm_networks
 from .source_identity import virtual_machine_source_identity
 
@@ -20,14 +22,15 @@ def _managed_vm_ids(plan):
     selected = tuple(
         item
         for item in plan.virtual_machines
-        if item.classification == ObjectMigrationClassification.MANAGED
+        if item.classification in (ObjectMigrationClassification.MANAGED, ObjectMigrationClassification.NEW)
     )
     external_ids = [item.external_id for item in selected]
     if len(external_ids) != len(set(external_ids)):
         raise EsxiRuntimeError(
             'ESXi runtime plan contains duplicate managed VM identities'
         )
-    if any(len(item.candidates) != 1 for item in selected):
+    if any(len(item.candidates) != 1 for item in selected
+           if item.classification == ObjectMigrationClassification.MANAGED):
         raise EsxiRuntimeError(
             'Managed ESXi VM must have exactly one NetBox identity match'
         )
@@ -77,7 +80,7 @@ def _print_plan(plan):
             f'name={item.discovered_name!r} external_id={item.external_id!r}'
         )
     for item in plan.virtual_machines:
-        if item.classification != ObjectMigrationClassification.MANAGED:
+        if item.classification not in (ObjectMigrationClassification.MANAGED, ObjectMigrationClassification.NEW):
             print(
                 f'VM {item.classification.value} '
                 f'name={item.discovered_name!r} external_id={item.external_id!r} '
@@ -88,7 +91,7 @@ def _print_plan(plan):
 
 
 def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False):
-    """Reconcile only identity-managed ESXi VMs through the normal runtime."""
+    """Reconcile managed and genuinely new objects; legacy candidates stay separate."""
 
     if config.source_type != 'esxi':
         raise EsxiRuntimeError('ESXi runtime requires source_type=esxi')
@@ -108,22 +111,25 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False):
 
     _print_plan(plan)
 
-    # Every stage validates the complete managed set before the first write.
-    apply_virtual_machines(
-        nb_api, filtered_hosts, config.target, confirmed=False,
-    )
-    apply_vm_networks(
-        nb_api, filtered_hosts, config, confirmed=False,
-    )
+    # Host networking remains report-only: VMkernel/vSwitch topology is not
+    # interchangeable with the Proxmox host networking executor.
+    host_ids = {item.external_id for item in plan.hosts
+                if item.classification == ObjectMigrationClassification.NEW
+                or (config.target.onboarding_mapping
+                    and item.classification == ObjectMigrationClassification.MANAGED)}
+    metadata_hosts = tuple(replace(host, interfaces=[], management_ip=None)
+                           for host in hosts if host.source_id in host_ids)
 
+    def stages(api):
+        if metadata_hosts:
+            apply_hosts(api, metadata_hosts, config.target, confirmed=True, host_networking=False)
+        apply_virtual_machines(api, filtered_hosts, config.target, confirmed=True)
+        apply_vm_networks(api, filtered_hosts, config, confirmed=True)
+
+    # Simulate dependent creates and every network ownership check before writes.
+    stages(PlanningNetBox(nb_api))
     if not confirmed:
         print('ESXi runtime preflight completed. No changes were written to NetBox.')
         return plan
-
-    apply_virtual_machines(
-        nb_api, filtered_hosts, config.target, confirmed=True,
-    )
-    apply_vm_networks(
-        nb_api, filtered_hosts, config, confirmed=True,
-    )
+    stages(nb_api)
     return plan

@@ -18,7 +18,7 @@ from .api.egress import EgressPolicy, validate_host, LOCAL_NAMES
 
 PASSWORDS = PasswordHasher(time_cost=2, memory_cost=19456, parallelism=1, type=Type.ID)
 PERMISSIONS = frozenset({
-    'policy.read', 'policy.write', 'source.read', 'source.probe', 'source.register',
+    'catalog.create', 'policy.read', 'policy.write', 'source.read', 'source.probe', 'source.register',
     'source.configure', 'source.schedule', 'source.plan', 'source.apply', 'source.remove',
     'run.read', 'diagnostics.read', 'bootstrap.manage', 'identity.manage',
 })

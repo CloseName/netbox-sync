@@ -169,6 +169,9 @@ def test_ui6_writers_have_only_the_required_capabilities(tmp_path):
             assert connection.execute('SELECT has_schema_privilege(%s,%s,%s)',(role,'netbox_sync','CREATE')).fetchone()==(False,)
         for key, table, column, allowed in (
             ('lifecycle_writer','sources','enabled',True),
+            ('lifecycle_writer','sources','name',True),
+            ('web_reader','sources','name',False),
+            ('registration_writer','sources','name',False),
             ('lifecycle_writer','sources','sync_enabled',True),
             ('lifecycle_writer','sources','source_instance',False),
             ('lifecycle_writer','sources','token_secret_key',False),

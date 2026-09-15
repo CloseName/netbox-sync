@@ -28,6 +28,12 @@ class BootstrapControl:
 
     def __call__(self, payload):
         action = payload.get('action')
+        if action in ('catalog-create','catalog-reconcile'):
+            from .catalog_creation import CatalogCreation
+            from .bootstrap_probe import ProbeError
+            try:
+                with apply_lock(self.lock_path):return CatalogCreation(self.store).execute(payload)
+            except ProbeError as exc:return {'error':exc.code}
         if action == 'catalog' and set(payload)=={'action','query'}:
             from .bootstrap_state import runtime_netbox
             from contextlib import ExitStack

@@ -88,6 +88,9 @@ def apply_full_sync(
         '=== GLOBAL PRECHECK PHASE ==='
     )
 
+    from .application.planning_netbox import PlanningNetBox
+    preflight_api = PlanningNetBox(nb_api)
+
     # Critical safety property:
     # every stage must complete its read-only
     # precheck before ANY stage may write.
@@ -95,11 +98,11 @@ def apply_full_sync(
         _run_stage(
             name,
             function,
-            nb_api,
+            preflight_api,
             hosts,
             config,
-            confirmed=False,
-            phase='PRECHECK',
+            confirmed=True,
+            phase='PRECHECK (SIMULATED)',
         )
 
     print()

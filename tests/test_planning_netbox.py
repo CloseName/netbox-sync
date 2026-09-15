@@ -85,7 +85,7 @@ def test_guarded_full_executor_records_exact_action_with_zero_real_writes(monkey
     facade = PlanningNetBox(api)
     events = []
     def stage(nb_api, _hosts, _target, *, confirmed=False):
-        events.append('write' if confirmed else 'precheck')
+        events.append('precheck' if isinstance(nb_api, PlanningNetBox) and nb_api is not facade else 'write')
         if confirmed:
             nb_api.virtualization.virtual_machines.create(name='planned', cluster=1)
     monkeypatch.setattr(netbox_full_apply, 'STAGES', (('VM', stage),))
@@ -121,3 +121,12 @@ def test_real_esxi_executor_plans_managed_only_without_external_write(fake_netbo
     assert managed.serialize() == managed_before
     assert review.serialize() == review_before
     assert facade.mutations
+
+
+def test_nested_facade_never_mutates_outer_plan_and_keeps_working_copy():
+    api=FakeNetBox();api.dcim.devices.add(FakeRecord(id=10,name='original',custom_fields={}))
+    outer=PlanningNetBox(api);inner=PlanningNetBox(outer)
+    inner.dcim.devices.get(id=10).update({'name':'changed'})
+    assert inner.dcim.devices.get(id=10).name=='changed'
+    assert outer.dcim.devices.get(id=10).name=='original'
+    assert not outer.mutations and not api.mutations

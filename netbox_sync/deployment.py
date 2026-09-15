@@ -424,7 +424,10 @@ def apply_grants(environ=None):
             for table in (sources, operations, runs):
                 cursor.execute(sql.SQL('GRANT SELECT ON {} TO {}').format(
                     table, sql.Identifier(DATABASE_ROLES['lifecycle_writer'])))
-            _grant_columns(cursor, 'UPDATE', sources, ('enabled','sync_enabled'),
+            _grant_columns(cursor, 'UPDATE', sources, ('enabled','sync_enabled','name',
+                'site_slug','cluster_name','platform_slug','device_role_slug','cluster_type_slug','device_type_slug','settings'),
+                           DATABASE_ROLES['lifecycle_writer'])
+            _grant_columns(cursor, 'UPDATE', operations, ('status','result','safe_error_code','updated_at'),
                            DATABASE_ROLES['lifecycle_writer'])
             _grant_columns(cursor, 'INSERT', tombstones,
                            ('source_instance','display_name','credential_state'),

@@ -24,7 +24,7 @@ def test_production_auth_policy(mode):
                '--mount','type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock',
                '--mount','type=bind,source='+str(ROOT)+',target=/review,readonly',
                'netbox-sync-probe-host:review')
-        result=docker('exec',host,'python3','/review/tests/auth_compose_scenario.py',mount+'/netbox-sync-test',project,mode,check=False)
+        result=docker('exec',*(['-e','NETBOX_SYNC_WORKER_FULL_SYNC_TEST=1'] if os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST')=='1' else []),host,'python3','/review/tests/auth_compose_scenario.py',mount+'/netbox-sync-test',project,mode,check=False)
         assert result.returncode==0,result.stdout[-1500:]+result.stderr[-2500:]
         print(result.stdout[-700:])
     finally:

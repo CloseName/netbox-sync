@@ -323,12 +323,19 @@ def _preflight_host(
         nb_api,
         host,
         site,
+        *, host_networking=True,
 ):
     device, match_reason = _resolve_device(
         nb_api,
         host,
         site,
     )
+
+    if not host_networking:
+        desired, changed = _managed_metadata(host, device)
+        return dict(host=host, device=device, match_reason=match_reason,
+                    interfaces={}, management_interface=None, management_address=None,
+                    addresses=[], desired_custom_fields=desired, changed_custom_fields=changed)
 
     existing_interfaces = (
         _load_existing_interfaces(
@@ -544,6 +551,7 @@ def apply_hosts(
         config,
         *,
         confirmed=False,
+        host_networking=True,
 ):
     from .host_mapping import validate, selected, device_types
     validate(nb_api,config,hosts)
@@ -589,6 +597,7 @@ def apply_hosts(
                 nb_api,
                 host,
                 site,
+                host_networking=host_networking,
             )
         )
 
@@ -734,6 +743,8 @@ def apply_hosts(
                     f'id={device.id}'
                 )
 
+        if not host_networking:
+            continue
         interfaces = {}
 
         existing_interfaces = (

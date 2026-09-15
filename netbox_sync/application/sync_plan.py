@@ -3,7 +3,7 @@
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from enum import Enum
 
 
@@ -170,6 +170,16 @@ def plan_from_mutations(review, config, mutations):
     review_endpoints = {'host': 'dcim.devices', 'qemu': 'virtualization.virtual_machines',
                         'lxc': 'virtualization.virtual_machines',
                         'vm': 'virtualization.virtual_machines'}
+    created = {(item.object_kind, item.external_id) for item in items
+               if item.action is SyncAction.CREATE}
+    # Discovery is evidence, not proof that an executor supports every object.
+    # Preserve unexecuted create candidates explicitly instead of silently dropping them.
+    items.extend(replace(item, action=SyncAction.UNSUPPORTED,
+                         reason_code='EXECUTOR_CREATE_UNSUPPORTED',
+                         reason='No supported create operation was produced for this object.',
+                         after=())
+                 for item in review_plan.items if item.action is SyncAction.CREATE
+                 and (review_endpoints.get(item.object_kind), item.external_id) not in created)
     items.extend(item for item in review_plan.items if item.action is SyncAction.NO_CHANGE
                  and (review_endpoints.get(item.object_kind), item.matched_object_id)
                  not in mutated_ids)

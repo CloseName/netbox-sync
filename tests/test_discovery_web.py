@@ -46,7 +46,7 @@ def test_protected_discovery_returns_only_allowlisted_dto(caplog):
     with client(discovery) as api:
         response = api.post('/api/v1/sources/pve-test/discovery', headers=HEADERS, json={})
     assert response.status_code == 200
-    assert response.json() == result()
+    assert response.json() == result(hosts=[])
     assert discovery.calls == ['pve-test']
     assert SECRET not in response.text + caplog.text
 
@@ -72,6 +72,8 @@ def test_stable_discovery_errors(code, status):
 
 @pytest.mark.parametrize('change', [
     {'source_instance': SECRET}, {'items': [{'credentials': SECRET}]},
+    {'hosts':[{'id':'host','memory_bytes':0,'credentials':SECRET}]},
+    {'hosts':[{'id':str(i),'memory_bytes':0} for i in range(17)]},
     {'items': [{**result()['items'][0], 'classification': ['WOULD_CREATE']}]},
 ])
 def test_malformed_or_secret_bearing_worker_response_is_rejected(change):

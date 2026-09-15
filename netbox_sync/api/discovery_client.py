@@ -55,7 +55,8 @@ class DiscoveryWorkerClient:
                        'NETBOX_UNAVAILABLE', 'DISCOVERY_FAILED', 'OPERATIONS_UNAVAILABLE',
                        'OPERATION_INVALID', 'OPERATION_STILL_EXECUTING', 'OPERATION_INTERRUPTED',
                        'OPERATION_FAILED', 'RESULT_EXPIRED', 'RESULT_INVALID', 'PLAN_STALE'}
-            raise DiscoveryRequestError(code if code in allowed else 'DISCOVERY_UNAVAILABLE')
+            from ..worker_failure import ERRORS
+            raise DiscoveryRequestError(code if code in allowed or code in ERRORS else 'DISCOVERY_UNAVAILABLE')
         if not isinstance(response.get('result'), dict):
             raise DiscoveryRequestError('DISCOVERY_RESPONSE_INVALID')
         return response['result']

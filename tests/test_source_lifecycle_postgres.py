@@ -33,7 +33,7 @@ def lifecycle(migration_database):
 
 def remove(store, source, cleanup=lambda _: None, credentials=False):
     view = store.read(source)
-    return store.remove(source, view['revision'], source, credentials, cleanup)
+    return store.remove(source, view['revision'], view['display_name'], credentials, cleanup)
 
 
 def test_remove_retains_identity_and_stops_schedule(lifecycle):
@@ -124,7 +124,7 @@ def test_concurrent_removal_has_one_transition(lifecycle):
     revision = store.read(source.source_instance)['revision']
     def call():
         try:
-            return store.remove(source.source_instance, revision, source.source_instance, False, lambda _: None)
+            return store.remove(source.source_instance, revision, source.name, False, lambda _: None)
         except LifecycleError as exc:
             return exc.code
     with ThreadPoolExecutor(2) as pool:
@@ -189,3 +189,19 @@ def test_removed_credential_refs_cannot_be_reassigned(lifecycle):
     remove(store, source.source_instance, lambda _: None, True)
     with pytest.raises(CheckViolation):
         registry.create_source(replace(source, id='new-source', source_instance='new-source', credentials=refs))
+
+
+def test_rename_only_label_and_fences_removal(lifecycle):
+    store, registry, source = lifecycle
+    before = registry.get_by_source_instance(source.source_instance).config
+    view = store.read(source.source_instance)
+    renamed = store.rename(source.source_instance, view['revision'], 'MiXeD Display')
+    after = registry.get_by_source_instance(source.source_instance).config
+    assert after == replace(before, name='MiXeD Display')
+    assert renamed['display_name'] == 'MiXeD Display'
+    with pytest.raises(LifecycleError, match='SOURCE_LIFECYCLE_CONFLICT'):
+        store.remove(source.source_instance, view['revision'], source.name, False, lambda _: None)
+    for wrong in ('mixed display', source.source_instance):
+        with pytest.raises(LifecycleError, match='SOURCE_CONFIRMATION_INVALID'):
+            store.remove(source.source_instance, renamed['revision'], wrong, False, lambda _: None)
+    assert store.remove(source.source_instance, renamed['revision'], 'MiXeD Display', False, lambda _: None)['removed_at']

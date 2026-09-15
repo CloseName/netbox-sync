@@ -5,7 +5,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-from ..source_config import NetBoxTargetConfig, SecretReference, SourceConfig, SourceCredentials
+from ..source_config import source_port, NetBoxTargetConfig, SecretReference, SourceConfig, SourceCredentials
 from .observability import ErrorCode
 from .sources import source_view
 
@@ -37,6 +37,14 @@ class PendingCredentials:
     username: str
     token_id: str
     secret: str
+    port: int | None = None
+
+    def __post_init__(self):
+        source_port(self.source_type, self.port)
+
+    @property
+    def api_port(self):
+        return source_port(self.source_type, self.port)
 
 
 class EphemeralOnboardingStore:
@@ -125,6 +133,7 @@ class RegistrationCommand:
     cluster_type_slug: str
     confirm_sync_disabled: bool
     mapping: dict = field(default_factory=dict)
+    port: int | None = None
 
 
 class SourceOnboardingService:
@@ -175,7 +184,8 @@ class SourceOnboardingService:
         source_view({**request.__dict__, 'enabled': True, 'sync_enabled': False, 'legacy_identity_owner': False})
         credentials = self._pending.consume(request.onboarding_token)
         if (credentials.source_type != request.source_type or credentials.address != request.address
-                or credentials.verify_ssl != request.verify_ssl):
+                or credentials.verify_ssl != request.verify_ssl
+                or credentials.api_port != source_port(request.source_type, request.port)):
             raise OnboardingError(ErrorCode.ONBOARDING_TOKEN_INVALID)
         if self._registry.find(request.source_instance) is not None:
             raise OnboardingError(ErrorCode.SOURCE_ALREADY_EXISTS)
@@ -212,7 +222,8 @@ class SourceOnboardingService:
                 username=credentials.username, token_id=token_reference,
                 token_secret=SecretReference(provider='file', key=secret_receipt.key),
             ),
-            legacy_identity_owner=False, settings={"onboarding_mapping":request.mapping} if request.mapping else {},
+            legacy_identity_owner=False, settings={**({"onboarding_mapping":request.mapping} if request.mapping else {}),
+                      **({"api_port":request.port} if request.port is not None else {})},
         )
         try:
             return self._registry.create(config)

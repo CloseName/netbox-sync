@@ -44,7 +44,7 @@ def _host_external_id_summary(host,summary):
 def proxmox(credentials,host,context,getter):
     headers={'Authorization':f'PVEAPIToken={credentials.username}!{credentials.token_id}={credentials.secret}'}
     def get(path):
-        value=json.loads(getter(host,8006,'/api2/json/'+path,context,headers))
+        value=json.loads(getter(host,credentials.api_port,'/api2/json/'+path,context,headers))
         return value['data']
     cluster=get('cluster/status'); nodes=get('nodes')
     if not isinstance(cluster,list) or not isinstance(nodes,list) or not 1<=len(nodes)<=MAX_HOSTS:

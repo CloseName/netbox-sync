@@ -1,0 +1,244 @@
+{
+  "SOURCE_DNS_FAILED": {
+    "stage": "provider",
+    "message": {
+      "en": "The source hostname could not be resolved.",
+      "ru": "Не удалось разрешить имя источника."
+    },
+    "action": {
+      "en": "Check the hostname and DNS.",
+      "ru": "Проверьте имя узла и DNS."
+    }
+  },
+  "SOURCE_CONNECTION_FAILED": {
+    "stage": "provider",
+    "message": {
+      "en": "The source connection failed.",
+      "ru": "Не удалось подключиться к источнику."
+    },
+    "action": {
+      "en": "Check the HTTPS port, routing and service.",
+      "ru": "Проверьте HTTPS-порт, маршрутизацию и службу."
+    }
+  },
+  "SOURCE_TIMEOUT": {
+    "stage": "provider",
+    "message": {
+      "en": "The source did not respond in time.",
+      "ru": "Источник не ответил вовремя."
+    },
+    "action": {
+      "en": "Check reachability and retry explicitly.",
+      "ru": "Проверьте доступность и повторите проверку."
+    }
+  },
+  "SOURCE_TLS_FAILED": {
+    "stage": "provider",
+    "message": {
+      "en": "Source TLS verification failed.",
+      "ru": "Ошибка проверки TLS источника."
+    },
+    "action": {
+      "en": "Check hostname, certificate and trusted CA.",
+      "ru": "Проверьте имя узла, сертификат и доверенный CA."
+    }
+  },
+  "SOURCE_DESTINATION_DENIED": {
+    "stage": "destination",
+    "message": {
+      "en": "The destination is not permitted.",
+      "ru": "Назначение запрещено политикой."
+    },
+    "action": {
+      "en": "Review the authorized destination policy.",
+      "ru": "Проверьте политику разрешённых назначений."
+    }
+  },
+  "SOURCE_AUTH_FAILED": {
+    "stage": "provider",
+    "message": {
+      "en": "Source authentication failed.",
+      "ru": "Источник отклонил вход."
+    },
+    "action": {
+      "en": "Check the source-specific credentials.",
+      "ru": "Проверьте данные доступа этого источника."
+    }
+  },
+  "SOURCE_PERMISSION_DENIED": {
+    "stage": "provider",
+    "message": {
+      "en": "Source read permission was denied.",
+      "ru": "Недостаточно прав чтения источника."
+    },
+    "action": {
+      "en": "Review the documented discovery permissions.",
+      "ru": "Проверьте права для полного discovery."
+    }
+  },
+  "NETBOX_PERMISSION_DENIED": {
+    "stage": "netbox",
+    "message": {
+      "en": "NetBox denied the requested operation.",
+      "ru": "NetBox отклонил операцию из-за прав доступа."
+    },
+    "action": {
+      "en": "Review the token permissions for this operation.",
+      "ru": "Проверьте права токена для этой операции."
+    }
+  },
+  "NETBOX_AUTH_FAILED": {
+    "stage": "netbox",
+    "message": {
+      "en": "NetBox authentication failed.",
+      "ru": "NetBox отклонил аутентификацию."
+    },
+    "action": {
+      "en": "Review the configured NetBox token.",
+      "ru": "Проверьте настроенный токен NetBox."
+    }
+  },
+  "NETBOX_TLS_FAILED": {
+    "stage": "netbox",
+    "message": {
+      "en": "NetBox TLS verification failed.",
+      "ru": "Ошибка проверки TLS NetBox."
+    },
+    "action": {
+      "en": "Check the NetBox certificate and CA configuration.",
+      "ru": "Проверьте сертификат NetBox и настройки CA."
+    }
+  },
+  "NETBOX_UNAVAILABLE": {
+    "stage": "netbox",
+    "message": {
+      "en": "NetBox could not be read.",
+      "ru": "Не удалось прочитать данные NetBox."
+    },
+    "action": {
+      "en": "Check NetBox reachability and availability.",
+      "ru": "Проверьте доступность NetBox."
+    }
+  },
+  "MAPPING_INVALID": {
+    "stage": "mapping",
+    "message": {
+      "en": "The saved placement no longer matches.",
+      "ru": "Сохранённое размещение больше не соответствует данным."
+    },
+    "action": {
+      "en": "Review the site, cluster and each host mapping.",
+      "ru": "Проверьте площадку, кластер и соответствия каждого хоста."
+    }
+  },
+  "PLANNER_FAILED": {
+    "stage": "planning",
+    "message": {
+      "en": "Planning could not complete. No writes were sent by planning.",
+      "ru": "Планирование не завершено. Планировщик не отправлял записи."
+    },
+    "action": {
+      "en": "Give the event ID to the deployment operator.",
+      "ru": "Передайте идентификатор события оператору установки."
+    }
+  },
+  "DISCOVERY_FAILED": {
+    "stage": "discovery",
+    "message": {
+      "en": "Discovery could not complete.",
+      "ru": "Discovery не завершён."
+    },
+    "action": {
+      "en": "Give the event ID to the deployment operator.",
+      "ru": "Передайте идентификатор события оператору установки."
+    }
+  },
+  "PROVIDER_UNAVAILABLE": {
+    "stage": "provider",
+    "message": {
+      "en": "Source inventory could not be read.",
+      "ru": "Не удалось прочитать инвентарь источника."
+    },
+    "action": {
+      "en": "Check source availability and permissions.",
+      "ru": "Проверьте доступность источника и права."
+    }
+  },
+  "DISCOVERY_TIMEOUT": {
+    "stage": "discovery",
+    "message": {
+      "en": "The operation exceeded its time limit.",
+      "ru": "Операция превысила допустимое время."
+    },
+    "action": {
+      "en": "Check source availability before retrying.",
+      "ru": "Проверьте доступность источника перед повтором."
+    }
+  },
+  "ONBOARDING_TOKEN_INVALID": {
+    "stage": "registration",
+    "message": {
+      "en": "The connection check expired or was consumed.",
+      "ru": "Проверка подключения истекла или уже использована."
+    },
+    "action": {
+      "en": "Repeat the connection check; keep your placement choices.",
+      "ru": "Повторите проверку подключения; выбор размещения сохранён."
+    }
+  },
+  "PROBE_RECEIPT_INVALID": {
+    "stage": "registration",
+    "message": {
+      "en": "A fresh connection check is required.",
+      "ru": "Нужна новая проверка подключения."
+    },
+    "action": {
+      "en": "Sign in if needed and repeat the connection check.",
+      "ru": "При необходимости войдите и повторите проверку подключения."
+    }
+  },
+  "CATALOG_CHANGED": {
+    "stage": "catalog",
+    "message": {
+      "en": "The selected NetBox object changed.",
+      "ru": "Выбранный объект NetBox изменился."
+    },
+    "action": {
+      "en": "Refresh and review the selected object.",
+      "ru": "Обновите список и проверьте выбранный объект."
+    }
+  },
+  "REGISTRATION_UNCERTAIN": {
+    "stage": "registration",
+    "message": {
+      "en": "Registration outcome is unknown.",
+      "ru": "Результат регистрации неизвестен."
+    },
+    "action": {
+      "en": "Check the saved source before sending another registration.",
+      "ru": "Сначала проверьте сохранённый источник, затем решите, нужен ли повтор."
+    }
+  },
+  "OUTCOME_UNCERTAIN": {
+    "stage": "apply",
+    "message": {
+      "en": "Write outcome is unknown.",
+      "ru": "Результат записи неизвестен."
+    },
+    "action": {
+      "en": "Inspect current state and history before retrying.",
+      "ru": "Проверьте текущее состояние и историю перед повтором."
+    }
+  },
+  "OPERATION_FAILED": {
+    "stage": "operation",
+    "message": {
+      "en": "The operation could not complete.",
+      "ru": "Операция не завершена."
+    },
+    "action": {
+      "en": "Give the event ID to the deployment operator.",
+      "ru": "Передайте идентификатор события оператору установки."
+    }
+  }
+}

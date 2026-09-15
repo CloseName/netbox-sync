@@ -3,18 +3,19 @@
 import pytest
 
 from netbox_sync import netbox_full_apply
+from netbox_sync.application.planning_netbox import PlanningNetBox
 
 
 def _recording_stage(name, events, fake_netbox, *, fail_precheck=False):
     def stage(_nb_api, _hosts, _config, *, confirmed=False):
-        phase = 'write' if confirmed else 'precheck'
+        phase = 'precheck' if isinstance(_nb_api, PlanningNetBox) else 'write'
         events.append((phase, name))
 
-        if fail_precheck and not confirmed:
+        if fail_precheck and phase == 'precheck':
             raise RuntimeError(f'{name} precheck failed')
 
         if confirmed:
-            fake_netbox.extras.tags.create(
+            _nb_api.extras.tags.create(
                 name=f'{name}-write',
             )
 

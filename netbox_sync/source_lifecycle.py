@@ -75,6 +75,27 @@ class LifecycleStore:
             return {'source_instance': source, 'display_name': row['name'],
                     'removed_at': None, 'credential_state': None, 'revision': self.revision(row)}
 
+    def rename(self, source, expected_revision, name):
+        """Change only the display label under the shared apply and source locks."""
+        if (not isinstance(name, str) or not name.strip() or len(name) > 200
+                or any(ord(char) < 32 or ord(char) == 127 for char in name)):
+            raise LifecycleError('REQUEST_INVALID')
+        with self.lock(self.lock_path):
+            with self.connect() as connection, source_gate(connection, self.schema, source):
+                row = connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s')
+                    .format(self.table('sources')), (source,)).fetchone()
+                if not row or connection.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s')
+                    .format(self.table('source_tombstones')), (source,)).fetchone():
+                    raise LifecycleError('SOURCE_NOT_FOUND')
+                if self.revision(row) != expected_revision:
+                    raise LifecycleError('SOURCE_LIFECYCLE_CONFLICT')
+                if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status='RUNNING'")
+                    .format(self.table('source_operations')), (source,)).fetchone():
+                    raise LifecycleError('SOURCE_OPERATION_ACTIVE')
+                connection.execute(sql.SQL('UPDATE {} SET name=%s WHERE source_instance=%s')
+                    .format(self.table('sources')), (name, source))
+        return self.read(source)
+
     def remove(self, source, expected_revision, confirmed_source, remove_credentials, cleanup):
         """Commit the tombstone first; remove only broker-owned, exclusive local refs.
 
@@ -82,8 +103,6 @@ class LifecycleStore:
         exclusivity check and cleanup. The global apply lock spans both phases.
         A crash leaves a tombstone with CLEANUP_FAILED; it never resumes deletion.
         """
-        if confirmed_source != source:
-            raise LifecycleError('SOURCE_CONFIRMATION_INVALID')
         with self.lock(self.lock_path):
             with self.connect() as connection, source_gate(connection, self.schema, source):
                 connection.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
@@ -97,6 +116,8 @@ class LifecycleStore:
                     raise LifecycleError('SOURCE_ALREADY_REMOVED')
                 if self.revision(row) != expected_revision:
                     raise LifecycleError('SOURCE_LIFECYCLE_CONFLICT')
+                if confirmed_source != row['name']:
+                    raise LifecycleError('SOURCE_CONFIRMATION_INVALID')
                 if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status='RUNNING'")
                     .format(self.table('source_operations')), (source,)).fetchone():
                     raise LifecycleError('SOURCE_OPERATION_ACTIVE')

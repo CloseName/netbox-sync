@@ -182,6 +182,9 @@ class ErrorDetailDTO(PublicModel):
     code: str
     message: str
     request_id: str
+    event_id: str | None = None
+    stage: str | None = None
+    recommended_action: str | None = None
 
 
 class ErrorDTO(PublicModel):
@@ -256,7 +259,7 @@ class ScheduleDTO(PublicModel):
 
 
 class DiscoveryItemDTO(PublicModel):
-    object_kind: Literal['host', 'qemu', 'lxc', 'vm']
+    object_kind: Literal['host', 'host_network', 'qemu', 'lxc', 'vm']
     name: str
     external_id: str
     classification: Literal['MANAGED', 'REVIEW_REQUIRED', 'WOULD_CREATE', 'IGNORED',
@@ -268,12 +271,23 @@ class DiscoveryItemDTO(PublicModel):
     matched_object_name: str | None = None
 
 
+class DiscoveryHostDTO(PublicModel):
+    id: str = Field(min_length=1,max_length=200)
+    name: str | None = Field(default=None,max_length=200)
+    manufacturer: str | None = Field(default=None,max_length=200)
+    model: str | None = Field(default=None,max_length=200)
+    version: str | None = Field(default=None,max_length=200)
+    cpu: str | None = Field(default=None,max_length=200)
+    memory_bytes: int = Field(ge=0)
+
+
 class DiscoveryResultDTO(PublicModel):
     source_instance: str
     source_type: Literal['proxmox', 'esxi']
     site_slug: str
     cluster_name: str
     items: list[DiscoveryItemDTO]
+    hosts: list[DiscoveryHostDTO] = Field(default_factory=list,max_length=16)
 
     @classmethod
     def from_worker(cls, value):

@@ -143,7 +143,7 @@ def test_runtime_reconciles_managed_vm_and_nic_but_not_review(fake_netbox):
     assert fake_netbox.mutations == []
 
 
-def test_runtime_reports_truly_new_vm_without_creating_it(fake_netbox):
+def test_runtime_creates_truly_new_vm_without_adopting_legacy(fake_netbox):
     hosts, _, review = _setup(fake_netbox)
     fake_netbox.virtualization.virtual_machines.records.remove(review)
 
@@ -154,9 +154,9 @@ def test_runtime_reports_truly_new_vm_without_creating_it(fake_netbox):
         for item in plan.virtual_machines
     }
     assert classifications['REVIEW'] == ObjectMigrationClassification.NEW
-    assert fake_netbox.virtualization.virtual_machines.get(name='REVIEW') is None
-    assert all(
-        item.virtual_machine != review.id
+    assert fake_netbox.virtualization.virtual_machines.get(name='REVIEW') is not None
+    assert any(
+        item.virtual_machine == fake_netbox.virtualization.virtual_machines.get(name='REVIEW').id
         for item in fake_netbox.virtualization.interfaces.all()
     )
 

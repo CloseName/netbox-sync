@@ -10,6 +10,8 @@ from ..local_control import request, ControlError
 COOKIE = '__Host-netbox-sync-session'
 PUBLIC = {('GET', '/api/v1/health'), ('POST', '/api/v1/auth/login'), ('POST', '/api/v1/auth/enroll')}
 ROUTES = (
+    ('POST', r'/api/v1/catalog/[^/]+', 'catalog.create'),
+    ('GET', r'/api/v1/catalog-operations/[^/]+', 'catalog.create'),
     ('GET', r'/api/v1/catalog/[^/]+', 'source.register'),
     ('GET', r'/api/v1/auth/me', 'source.read'),
     ('POST', r'/api/v1/auth/logout', 'source.read'),
@@ -20,6 +22,9 @@ ROUTES = (
     ('GET', r'/api/v1/sources(?:/[^/]+(?:/(schedule|operations|lifecycle))?)?', 'source.read'),
     ('POST', r'/api/v1/sources/test-connection', 'source.probe'),
     ('POST', r'/api/v1/sources(?:/cancel-onboarding)?', 'source.register'),
+    ('GET', r'/api/v1/sources/[^/]+/placement', 'source.configure'),
+    ('PATCH', r'/api/v1/sources/[^/]+/placement', 'source.configure'),
+    ('PATCH', r'/api/v1/sources/[^/]+/name', 'source.configure'),
     ('PATCH', r'/api/v1/sources/[^/]+/schedule', 'source.schedule'),
     ('POST', r'/api/v1/sources/[^/]+/(discovery|operations/discovery|operations/plan|sync-plan)', 'source.plan'),
     ('POST', r'/api/v1/sources/[^/]+/(sync|sync-confirmations)', 'source.apply'),

@@ -111,7 +111,9 @@ def test_source_not_found_envelope(instance):
         response = client.get('/api/v1/sources/' + instance)
     assert response.status_code == 404
     assert response.json()['error'] == dict(code='SOURCE_NOT_FOUND', message='Source not found',
-                                           request_id=response.headers['X-Request-ID'])
+                                           request_id=response.headers['X-Request-ID'],
+                                           event_id=response.headers['X-Request-ID'],
+                                           stage=None, recommended_action=None)
 
 
 @pytest.mark.parametrize('path', ['/api/v1/sources', '/api/v1/sources/pve-test'])

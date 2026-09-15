@@ -61,3 +61,12 @@ def test_executor_plan_explicitly_binds_retain_only_disappearance_policy():
     plan = plan_from_mutations(review([item('1')]), config, ())
     assert any(value.action is SyncAction.RETAIN_ONLY for value in plan.items)
     assert 'DISAPPEARANCE_RETAIN_ONLY' in plan.canonical_json()
+
+
+def test_unexecuted_discovery_create_is_explicitly_unsupported():
+    config = sample_source_config()
+    plan = plan_from_mutations(review([item('new', ReviewClassification.WOULD_CREATE, None)]), config, ())
+    unresolved = [row for row in plan.items if row.external_id == 'new']
+    assert len(unresolved) == 1
+    assert unresolved[0].action is SyncAction.UNSUPPORTED
+    assert unresolved[0].reason_code == 'EXECUTOR_CREATE_UNSUPPORTED'

@@ -57,7 +57,7 @@ def _discover(payload):
         provider = ProxmoxAPI(
             config.address, user=credentials['username'],
             token_name=credentials['token_id'].split('!', 1)[-1],
-            token_value=credentials['token_secret'], verify_ssl=config.verify_ssl)
+            token_value=credentials['token_secret'], verify_ssl=config.verify_ssl, port=config.api_port)
         return config, discover_proxmox(provider, config)
     if config.source_type == 'esxi':
         class Resolved:

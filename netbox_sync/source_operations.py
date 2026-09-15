@@ -163,11 +163,16 @@ class OperationStore:
                 except Exception as exc:  # Public result never contains exception text.
                     result, status = None, 'FAILED'
                     candidate = getattr(exc, 'code', '')
-                    code = candidate if candidate in {
+                    from .worker_failure import ERRORS, safe_diagnostic
+                    code = candidate if candidate in set(ERRORS) | {
                         'SOURCE_NOT_FOUND', 'SOURCE_DISABLED', 'CREDENTIAL_UNAVAILABLE',
                         'REGISTRY_UNAVAILABLE', 'DISCOVERY_TIMEOUT', 'PROVIDER_UNAVAILABLE',
                         'NETBOX_UNAVAILABLE', 'DISCOVERY_FAILED', 'RESULT_TOO_LARGE',
                         'RESULT_INVALID'} else 'OPERATION_FAILED'
+                    event=safe_diagnostic(getattr(exc,'diagnostic',None),code)
+                    event.update(event_id=str(operation['operation_id']),source_instance=operation['source_instance'],
+                                 operation_kind=operation['operation_kind'])
+                    logging.getLogger(__name__).error(json.dumps(event,sort_keys=True))
                 completion = owner.execute(sql.SQL('''UPDATE {} SET status=%s, result=%s, safe_error_code=%s,
                     updated_at=clock_timestamp(), finished_at=clock_timestamp()
                     WHERE operation_id=%s AND status='RUNNING' ''').format(self.table),

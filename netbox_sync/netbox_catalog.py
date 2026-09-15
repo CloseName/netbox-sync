@@ -8,7 +8,7 @@ from .api.egress import EgressPolicy,pinned_dns
 from .bootstrap_probe import fetch,ProbeError
 from .netbox_tls import configure_session
 
-ENDPOINTS={'site':'dcim/sites','cluster':'virtualization/clusters','platform':'dcim/platforms',
+ENDPOINTS={'manufacturer':'dcim/manufacturers','site':'dcim/sites','cluster':'virtualization/clusters','platform':'dcim/platforms',
     'device_role':'dcim/device-roles','device_type':'dcim/device-types','cluster_type':'virtualization/cluster-types'}
 
 def fingerprint(row):

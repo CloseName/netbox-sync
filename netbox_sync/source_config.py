@@ -15,6 +15,15 @@ SOURCE_TYPE_PATTERN = re.compile(
 )
 
 
+def source_port(source_type, value=None):
+    """Resolve a single explicit HTTPS port; old sources keep provider defaults."""
+    if value is None:
+        return 8006 if source_type == 'proxmox' else 443
+    if type(value) is not int or not 1 <= value <= 65535:
+        raise ValueError('HTTPS port must be an integer between 1 and 65535')
+    return value
+
+
 def _require_text(value: str, field_name: str) -> None:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(
@@ -190,6 +199,8 @@ class SourceConfig:
         if not isinstance(self.settings, Mapping):
             raise ValueError('settings must be a mapping')
 
+        source_port(self.source_type, self.settings.get('api_port'))
+
         if self.settings.get('onboarding_mapping'):
             object.__setattr__(self,'target',replace(self.target,onboarding_mapping=dict(self.settings['onboarding_mapping'])))
 
@@ -198,6 +209,10 @@ class SourceConfig:
             'settings',
             MappingProxyType(dict(self.settings)),
         )
+
+    @property
+    def api_port(self):
+        return source_port(self.source_type, self.settings.get('api_port'))
 
     @classmethod
     def from_legacy_environment(cls, environ=None):

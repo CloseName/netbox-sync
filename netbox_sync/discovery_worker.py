@@ -33,8 +33,9 @@ MAX_SECRET = 4096
 
 class WorkerError(RuntimeError):
     """One stable, secret-free worker failure."""
-    def __init__(self, code):
+    def __init__(self, code, diagnostic=None):
         self.code = code
+        self.diagnostic = diagnostic
         super().__init__(code)
 
 
@@ -139,12 +140,12 @@ class DiscoverySupervisor:
             result = json.loads(output)
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise WorkerError('DISCOVERY_FAILED') from None
-        if not isinstance(result, dict) or set(result) - {'result', 'error'}:
+        if not isinstance(result, dict) or set(result) - {'result', 'error', 'diagnostic'}:
             raise WorkerError('DISCOVERY_FAILED')
         if result.get('error'):
-            raise WorkerError(result['error'] if result['error'] in {
-                'CREDENTIAL_UNAVAILABLE', 'PROVIDER_UNAVAILABLE', 'NETBOX_UNAVAILABLE',
-                'DISCOVERY_FAILED'} else 'DISCOVERY_FAILED')
+            from .worker_failure import ERRORS, safe_diagnostic
+            code=result['error'] if result['error'] in ERRORS or result['error']=='CREDENTIAL_UNAVAILABLE' else 'DISCOVERY_FAILED'
+            raise WorkerError(code, safe_diagnostic(result.get('diagnostic'),code))
         return result.get('result')
 
 
@@ -182,32 +183,46 @@ def execute_child(payload):
     nb_api = pynetbox.api(payload['netbox_url'], token=payload['netbox_token'])
     from .netbox_tls import configure_session
     configure_session(nb_api.http_session)
+    from .worker_failure import failure_stage
     if config.source_type == 'proxmox':
         token_name = credentials['token_id'].split('!', 1)[-1]
-        provider = ProxmoxAPI(config.address, user=credentials['username'], token_name=token_name,
-                              token_value=credentials['token_secret'], verify_ssl=config.verify_ssl)
-        hosts = discover_proxmox(provider, config)
-        review = build_proxmox_review(nb_api, hosts, config)
+        with failure_stage('provider'):
+            provider = ProxmoxAPI(config.address, user=credentials['username'], token_name=token_name,
+                                  token_value=credentials['token_secret'], verify_ssl=config.verify_ssl, port=config.api_port)
+            hosts = discover_proxmox(provider, config)
+        with failure_stage('netbox'):
+            review = build_proxmox_review(nb_api, hosts, config)
     elif config.source_type == 'esxi':
         class Resolved:
             """Ephemeral already-resolved ESXi password adapter."""
             def resolve(self, _reference):
                 """Return the in-memory password without touching a file."""
                 return credentials['token_secret']
-        with EsxiClient(resolver=Resolved()).session(config) as service:
-            hosts = discover_esxi(service, config)
-        review = build_esxi_review(build_esxi_adoption_plan(nb_api, hosts, config), config)
+        with failure_stage('provider'):
+            with EsxiClient(resolver=Resolved()).session(config) as service:
+                hosts = discover_esxi(service, config)
+        with failure_stage('netbox'):
+            review = build_esxi_review(build_esxi_adoption_plan(nb_api, hosts, config), config)
     else:
         raise WorkerError('DISCOVERY_FAILED')
     if payload.get('operation') == 'plan':
-        plan = build_runtime_plan(nb_api, hosts, config)
+        with failure_stage('planning'):
+            plan = build_runtime_plan(nb_api, hosts, config)
         return {**plan.canonical_dict(), 'digest': plan.digest}
-    return asdict(review)
+    from .source_preview import text, MAX_HOSTS
+    evidence = []
+    if 1 <= len(hosts) <= MAX_HOSTS:
+        evidence = [dict(id=host.source_id, name=text(host.original_name),
+            manufacturer=text(host.manufacturer), model=text(host.model),
+            version=text(host.hypervisor_version), cpu=text(host.cpu.model),
+            memory_bytes=max(0,host.memory_bytes)) for host in hosts]
+    return {**asdict(review), 'hosts': evidence}
 
 
 def child_main():
     """Execute one bounded stdin/stdout child request without logging."""
     logging.disable(logging.CRITICAL)
+    from .worker_failure import DiagnosticFailure, diagnostic
     try:
         raw = sys.stdin.buffer.read(MAX_RESPONSE + 1)
         if len(raw) > MAX_RESPONSE:
@@ -215,10 +230,13 @@ def child_main():
         with redirect_stdout(sys.stderr):
             value = execute_child(json.loads(raw))
         result = {'result': value}
+    except DiagnosticFailure as exc:
+        result = {'error':exc.code,'diagnostic':exc.diagnostic}
     except WorkerError as exc:
         result = {'error': exc.code}
-    except Exception:  # pylint: disable=broad-exception-caught
-        result = {'error': 'DISCOVERY_FAILED'}
+    except Exception as exc:  # No exception text or stderr passthrough.
+        detail=diagnostic(exc,'discovery')
+        result = {'error': detail['code'],'diagnostic':detail}
     sys.stdout.write(json.dumps(result))
 
 
