@@ -5,6 +5,11 @@ export class SourceIdReservedError extends Error {
   constructor() { super('This Source ID was previously used and is reserved by a removed source.'); }
 }
 
+export class RegistrationFailure extends Error {
+  readonly code:string;readonly uncertain:boolean;
+  constructor(code:string,uncertain=false){super(code);this.code=code;this.uncertain=uncertain;}
+}
+
 export const connectionMessages = {
   SOURCE_ADDRESS_INVALID: ['Use a bare hostname or IPv4 address, without a scheme, path or port.', 'Введите имя узла или IPv4 без схемы, пути и порта.'],
   SOURCE_DNS_FAILED: ['The source hostname could not be resolved. Check its spelling and ask the deployment operator to verify DNS.', 'Не удалось разрешить имя источника. Проверьте написание; оператор установки должен проверить DNS.'],
@@ -20,12 +25,12 @@ export class SourceConnectionError extends Error {
 }
 
 export interface ConnectionInput {
-  source_type: 'proxmox' | 'esxi'; address: string; verify_ssl: boolean;
+  source_type: 'proxmox' | 'esxi'; address: string; verify_ssl: boolean; port?: number;
   username: string; secret: string; token_id?: string; preview?: boolean;
 }
 
 export interface RegistrationInput {
-  onboarding_token: string; source_type: 'proxmox' | 'esxi'; address: string; verify_ssl: boolean;
+  onboarding_token: string; source_type: 'proxmox' | 'esxi'; address: string; verify_ssl: boolean; port?: number;
   source_instance: string; name: string; sync_interval_seconds: number;
   site_slug: string; cluster_name: string; platform_slug: string; device_role_slug: string;
   device_type_slug: string; cluster_type_slug: string; confirm_sync_disabled: true;
@@ -38,7 +43,7 @@ async function post(path: string, payload: ConnectionInput | RegistrationInput |
     response = await fetch(path, { method: 'POST', cache: 'no-store',
       headers: { 'Content-Type': 'application/json', 'X-NetBox-Sync-CSRF': 'same-origin' },
       body: JSON.stringify(payload), signal: AbortSignal.timeout(path==='/api/v1/sources'?40000:20000) });
-  } catch { throw new Error('Request failed or timed out. Registration outcome may require operator review.'); }
+  } catch { if(path==='/api/v1/sources')throw new RegistrationFailure('REGISTRATION_UNCERTAIN',true);throw new Error('Request failed or timed out. Registration outcome may require operator review.'); }
   if (!response.ok) {
     if (path === '/api/v1/sources/test-connection') {
       let code: unknown;
@@ -50,6 +55,8 @@ async function post(path: string, payload: ConnectionInput | RegistrationInput |
     if(path==='/api/v1/sources'){
       let code='';try{code=(await response.clone().json()).error.code;}catch{}
       if(code.startsWith('CATALOG_'))throw new CatalogFailure(code);
+      if(['ONBOARDING_TOKEN_INVALID','PROBE_RECEIPT_INVALID','AUTH_REQUIRED','AUTH_DENIED'].includes(code))throw new RegistrationFailure(code);
+      if(response.status>=500)throw new RegistrationFailure('REGISTRATION_UNCERTAIN',true);
     }
     if (response.status === 409) {
       let code='';
@@ -61,7 +68,7 @@ async function post(path: string, payload: ConnectionInput | RegistrationInput |
     throw new Error('Operation failed. Check configuration or ask the operator; credentials are not displayed.');
   }
   try { return await response.json(); }
-  catch { throw new Error('Unsupported server response.'); }
+  catch { if(path==='/api/v1/sources')throw new RegistrationFailure('REGISTRATION_UNCERTAIN',true);throw new Error('Unsupported server response.'); }
 }
 
 export async function cancelOnboarding(token: string): Promise<void> {
@@ -83,11 +90,11 @@ export async function registerSource(input: RegistrationInput): Promise<Source> 
   if (input.confirm_sync_disabled !== true) throw new Error('Explicit confirmation is required.');
   const result = await post('/api/v1/sources', input);
   if (!isSource(result) || result.source_instance !== input.source_instance || result.sync_enabled
-    || !result.enabled || result.legacy_identity_owner) throw new Error('Unexpected registration result; ask the operator.');
+    || !result.enabled || result.legacy_identity_owner) throw new RegistrationFailure('REGISTRATION_UNCERTAIN',true);
   return result;
 }
 
-export interface CatalogItem { id:number; name:string; slug:string; fingerprint:string;
+export interface CatalogItem { suggested?:boolean; id:number; name:string; slug:string; fingerprint:string;
  manufacturer:{id:number;name:string}|null; type:{id:number;name:string}|null;
  scope_type:string|null;scope_id:number|null;site:{id:number;name:string}|null;scope:{id:number;name:string}|null; }
 export interface HostPreview {id:string;name:string|null;manufacturer:string|null;model:string|null;version:string|null;cpu:string|null;memory_bytes:number;}
@@ -107,7 +114,7 @@ export async function catalog(kind:string,search:string,offset:number,signal:Abo
  return value;
  } finally {activeCatalog--;catalogQueue.shift()?.();}
 }
-export async function inspectConnection(input:ConnectionInput):Promise<{onboarding_token:string;preview:SourcePreview;suggested_source_instance:string}>{
+export async function inspectConnection(input:ConnectionInput):Promise<{onboarding_token:string;preview:SourcePreview;suggested_source_instance:string;expires_in_seconds?:number}>{
  const value=await post('/api/v1/sources/test-connection',{...input,preview:true}) as {onboarding_token:string;preview:SourcePreview;suggested_source_instance:string};
  if(!value||typeof value.onboarding_token!=='string'||!value.preview||!Array.isArray(value.preview.hosts)||!value.preview.hosts.length||value.preview.hosts.length>16)throw new Error('Host information is unavailable; no source was registered.');
  return value;

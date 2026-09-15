@@ -1,3 +1,5 @@
+import {planReason} from '../ui/plan';
+import {hasChanges,emptyPlanLabel} from '../ui/plan';
 import {tr} from "../ui/i18n";
 import { useState } from "react";
 import type { SyncPlan, SyncPlanItem } from "../api/sync";
@@ -64,7 +66,7 @@ export function PlanReview({
             label: previous
               ? "Previous plan — build a new plan"
               : plan.apply_allowed
-                ? "Plan permits sync"
+                ? hasChanges(plan.items) ? "Plan permits sync" : emptyPlanLabel(plan.items)
                 : "Blocked by safety checks",
             tone: previous ? "neutral" : plan.apply_allowed ? "info" : "danger",
             icon: previous ? "◷" : plan.apply_allowed ? "✓" : "!",
@@ -78,7 +80,7 @@ export function PlanReview({
         {tr("Create and Update count operations, not unique objects. Other counts describe plan rows. Filters change this view only; sync submits the entire reviewed plan.")}{" "}</p>
       {plan.items.filter(policyRow).map((item, i) => (
         <p className="sync-safety" key={i}>
-          {tr("Retention policy:")}{" "}{item.reason}
+          {tr("Retention policy:")}{" "}{planReason(item)}
         </p>
       ))}
       {!!planCounts(plan.items).REVIEW_REQUIRED && (
@@ -202,7 +204,7 @@ function PlanRow({ item }: { item: SyncPlanItem }) {
           <span className="muted">{tr(kindLabel(item.object_kind))}</span>
         </span>
         <Badge value={actionStatus(item.action)} />
-        <span className="plan-reason">{item.reason}</span>
+        <span className="plan-reason">{planReason(item)}</span>
         <span className="muted">{tr("Details")}{" "}</span>
       </summary>
       <div className="plan-row-body">
@@ -215,11 +217,11 @@ function PlanRow({ item }: { item: SyncPlanItem }) {
         )}
         {item.action === "REVIEW_REQUIRED" && (
           <p className="sync-attention">
-            {tr("Needs operator review. No automatic adoption.")}{" "}{item.reason}
+            {tr("Needs operator review. No automatic adoption.")}{" "}{planReason(item)}
           </p>
         )}
         {item.action === "BLOCKED" && (
-          <p className="source-error">{tr("Blocked:")}{" "}{item.reason}</p>
+          <p className="source-error">{tr("Blocked:")}{" "}{planReason(item)}</p>
         )}
         {fields.length ? (
           <div

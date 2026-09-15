@@ -1,3 +1,4 @@
+import {knownPublicError,publicError} from '../ui/publicErrors.ts';
 import { validPlan, type SyncPlan } from './sync.ts';
 import { validDiscovery, type DiscoveryResult } from './discovery.ts';
 export type OperationFailure = 'TIMEOUT' | 'TRANSPORT' | 'ACCESS_DENIED' | 'HTTP_ERROR' | 'INVALID_RESPONSE' | 'UNKNOWN';
@@ -44,7 +45,7 @@ const messages: Record<string,string> = {
   NETBOX_UNAVAILABLE: 'NetBox comparison is unavailable.',
   DISCOVERY_TIMEOUT: 'The operation timed out.',
 };
-export const operationReason = (code: string | null) => code && Object.hasOwn(messages, code) ? messages[code] : 'The operation could not complete. No automatic retry was performed.';
+export const operationReason = (code: string | null) => knownPublicError(code) ? publicError(code).message : code && Object.hasOwn(messages, code) ? messages[code] : 'The operation could not complete. No automatic retry was performed.';
 async function request(source: string, signal: AbortSignal, kind?: OperationKind) {
   let response:Response;
   try { response = await fetch(`/api/v1/sources/${encodeURIComponent(source)}/operations${kind ? '/' + kind.toLowerCase() : ''}`, {

@@ -1,3 +1,5 @@
+import {hasChanges} from '../ui/plan';
+import {publicError} from '../ui/publicErrors';
 import {OperationFeedback} from "../ui/OperationFeedback";
 import {tr} from "../ui/i18n";
 import { useEffect, useRef, useState } from "react";
@@ -91,7 +93,7 @@ export function SourceSync({
         reviewedId.current = current.operation_id;
         setPlan({value: current.result as SyncPlan, received: current.finished_at!}); setUsable(true); setPlanningError(null);
       } else if (current.status === 'FAILED' || current.status === 'STALE') {
-        setUsable(false); setPlanningError(new ManualSyncRequestError(current.status === 'STALE' ? 'Plan is no longer current. Build a new plan.' : operationReason(current.safe_error_code)));
+        setUsable(false); setPlanningError(new ManualSyncRequestError(current.status === 'STALE' ? 'Plan is no longer current. Build a new plan.' : operationReason(current.safe_error_code),current.safe_error_code??"OPERATION_FAILED"));
       }
     }
     if (!current && !busy.current) setPhase(previous => previous === 'planning' ? 'idle' : previous);
@@ -151,7 +153,7 @@ export function SourceSync({
       !plan ||
       !usable ||
       !planOperation ||
-      !plan.value.apply_allowed ||
+      !plan.value.apply_allowed || !hasChanges(plan.value.items) ||
       !detail.enabled
     )
       return;
@@ -230,6 +232,8 @@ export function SourceSync({
             <details>
               <summary>{tr("Technical details")}{" "}</summary>
               <code>{planningError.code}</code>
+              <p>{publicError(planningError.code).stage} · {planOperation?.operation_id}</p>
+              <p>{publicError(planningError.code).action}</p>
             </details>
             <p>
               {tr("This was a read-only planning request. Build a new plan to try planning again.")}{" "}</p>
@@ -304,7 +308,7 @@ export function SourceSync({
             disabled={
               phase !== "idle" ||
               !usable ||
-              !plan.value.apply_allowed ||
+              !plan.value.apply_allowed || !hasChanges(plan.value.items) ||
               !detail.enabled
             }
             onClick={() => setConfirmOpen(true)}
@@ -323,7 +327,8 @@ export function SourceSync({
         {discovering && <OperationFeedback operation={tr('Run discovery')} phase={operationError?'uncertain':operations.some(row=>row.operation_kind==='DISCOVERY'&&row.status==='RUNNING')?'running':'sending'} started={discoveryStarted}/>}
         {discoveryError && (
           <p role="alert" className="source-error">
-            {tr(discoveryError)}
+            {tr(discoveryError)}<br/><code>{operations.find(row=>row.operation_kind==='DISCOVERY')?.safe_error_code}</code><br/>
+            {operations.find(row=>row.operation_kind==='DISCOVERY')?.operation_id}
           </p>
         )}
         {discovery && (

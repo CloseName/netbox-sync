@@ -1,4 +1,13 @@
 export const ru: Record<string,string> = {
+  "Host networking": "Сеть хоста",
+  "ESXi host VMkernel/vSwitch networking is report-only; no host networking writes are supported.": "Сеть VMkernel/vSwitch хоста ESXi показывается только для сведения. Изменение сети хоста не поддерживается.",
+  "No supported create operation was produced for this object.": "Для этого объекта не сформирована поддерживаемая операция создания.",
+  "Type the exact display name": "Введите точное название источника",
+  "Enter the exact display name.": "Введите точное название источника.",
+  "No changes to apply": "Нет изменений для применения",
+  "No executable changes: unsupported objects": "Нет доступных изменений: есть неподдерживаемые объекты",
+  "All discovered objects are excluded": "Все обнаруженные объекты исключены",
+  "Objects require separate review": "Объекты требуют отдельного рассмотрения",
   "System": "Система",
   "Action": "Действие",
   "Actions": "Действия",

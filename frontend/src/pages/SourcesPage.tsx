@@ -1,3 +1,5 @@
+import {SourceMappingEditor} from '../components/SourceMappingEditor';
+import {SourceNameEditor} from '../components/SourceNameEditor';
 import {useLanguage} from "../ui/language";
 import {tr} from "../ui/i18n";
 import { useCallback, useEffect, useState } from "react";
@@ -141,6 +143,7 @@ export function SourcesPage() {
           <header className="source-header">
             <PageHeader
               title={detail.name}
+              titleAction={<SourceNameEditor source={detail.source_instance} name={detail.name} onSaved={source.refresh}/>}
               description={
                 detail.type === "proxmox" ? tr("Proxmox VE") : tr("VMware ESXi")
               }
@@ -478,7 +481,8 @@ export function SourcesPage() {
               source={detail}
               scheduleLink={base + "/schedule"}
             />
-            <SourceLifecyclePanel source={detail} onRemoved={setRemoved} />
+            <SourceMappingEditor key={detail.source_instance} source={detail.source_instance} onSaved={source.refresh}/>
+          <SourceLifecyclePanel source={detail} onRemoved={setRemoved} />
           </>)}
         </>
       )}

@@ -7,7 +7,7 @@ const messages: Record<string,string> = {
   SOURCE_APPLY_ACTIVE: 'Wait for synchronization to finish.',
   SOURCE_APPLY_UNCONFIRMED: 'A synchronization outcome requires reconciliation. Removal is blocked.',
   SOURCE_LIFECYCLE_CONFLICT: 'Source changed. Reload its current state before confirming again.',
-  SOURCE_CONFIRMATION_INVALID: 'Enter the exact Source ID.',
+  SOURCE_CONFIRMATION_INVALID: 'Enter the exact display name.',
   SOURCE_ALREADY_REMOVED: 'Source is already removed. Reload its state.',
 };
 export async function sourceLifecycle(source: string, signal: AbortSignal, removal?: {revision: string; confirmed_source: string; remove_credentials: boolean}): Promise<SourceLifecycle> {

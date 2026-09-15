@@ -1,9 +1,9 @@
 export type Classification = 'MANAGED' | 'REVIEW_REQUIRED' | 'WOULD_CREATE' | 'IGNORED' | 'UNSUPPORTED' | 'CONFLICT' | 'NO_CHANGE';
-export interface DiscoveryItem { object_kind: 'host' | 'qemu' | 'lxc' | 'vm'; name: string; external_id: string; classification: Classification; reason_code: string; reason: string; future_action: 'none' | 'create' | 'update' | 'review' | 'ignored' | 'unsupported'; matched_object_id: string | number | null; matched_object_name: string | null; }
+export interface DiscoveryItem { object_kind: 'host' | 'host_network' | 'qemu' | 'lxc' | 'vm'; name: string; external_id: string; classification: Classification; reason_code: string; reason: string; future_action: 'none' | 'create' | 'update' | 'review' | 'ignored' | 'unsupported'; matched_object_id: string | number | null; matched_object_name: string | null; }
 export interface DiscoveryResult { source_instance: string; source_type: 'proxmox' | 'esxi'; site_slug: string; cluster_name: string; items: DiscoveryItem[]; }
 const classifications = ['MANAGED', 'REVIEW_REQUIRED', 'WOULD_CREATE', 'IGNORED', 'UNSUPPORTED', 'CONFLICT', 'NO_CHANGE'];
 const actions = ['none', 'create', 'update', 'review', 'ignored', 'unsupported'];
-const kinds = ['host', 'qemu', 'lxc', 'vm'];
+const kinds = ['host', 'host_network', 'qemu', 'lxc', 'vm'];
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const item = (value: unknown): value is DiscoveryItem => record(value)
   && typeof value.object_kind === 'string' && kinds.includes(value.object_kind)

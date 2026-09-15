@@ -1,3 +1,4 @@
+import {SessionControls} from './AuthGate';
 import {DestinationPolicyPage} from "./pages/DestinationPolicyPage";
 import {tr} from "./ui/i18n";
 import {useLanguage} from "./ui/language";
@@ -54,7 +55,7 @@ export function App() {
           <Brand />
         </Link>
         <span className="muted">{tr("Source synchronization")}{" "}</span>
-        <LanguageControl /><ThemeControl language={language} />
+        <LanguageControl /><ThemeControl language={language} /><SessionControls/>
         <button
           ref={navToggle}
           className="nav-toggle"

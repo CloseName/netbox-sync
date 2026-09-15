@@ -1,3 +1,4 @@
+import {tr} from './i18n.ts';
 import type { SyncPlanItem, SyncAction } from "../api/sync.ts";
 import type { Status } from "./status.ts";
 export const actionLabels: Record<SyncAction, string> = {
@@ -112,6 +113,7 @@ export function fieldText(field: FieldValue): string {
 export function kindLabel(kind: string) {
   const labels: Record<string, string> = {
     host: "Host",
+    host_network: "Host networking",
     qemu: "Virtual machine",
     vm: "Virtual machine",
     lxc: "Container",
@@ -123,4 +125,21 @@ export function kindLabel(kind: string) {
     source: "Source policy",
   };
   return labels[kind] ?? kind;
+}
+
+export const hasChanges = (items:SyncPlanItem[]) => items.some(i=>i.action==='CREATE'||i.action==='UPDATE');
+export function emptyPlanLabel(items:SyncPlanItem[]) {
+  const objects=items.filter(i=>!policyRow(i));
+  if(objects.some(i=>i.action==='UNSUPPORTED'))return 'No executable changes: unsupported objects';
+  if(objects.length&&objects.every(i=>i.action==='IGNORED'))return 'All discovered objects are excluded';
+  if(objects.some(i=>i.action==='REVIEW_REQUIRED'))return 'Objects require separate review';
+  return 'No changes to apply';
+}
+
+export function planReason(item:{reason_code:string;reason:string}) {
+ const reasons:Record<string,string>={
+  ESXI_HOST_NETWORK_UNSUPPORTED:'ESXi host VMkernel/vSwitch networking is report-only; no host networking writes are supported.',
+  EXECUTOR_CREATE_UNSUPPORTED:'No supported create operation was produced for this object.'
+ };
+ return Object.hasOwn(reasons,item.reason_code)?tr(reasons[item.reason_code]):item.reason;
 }

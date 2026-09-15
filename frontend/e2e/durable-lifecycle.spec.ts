@@ -19,10 +19,11 @@ function backend(){
       if(slots.get(key)?.status!=='RUNNING') {const now=new Date().toISOString();slots.set(key,{operation_id:randomUUID(),source_instance:id,operation_kind:kind,status:'RUNNING',started_at:now,updated_at:now,finished_at:null,result:null,safe_error_code:null});calls.push(key);}
       return route.fulfill({status:202,json:slots.get(key)});
     }
+    if(path.endsWith('/name')&&request.method()==='PATCH'){const body=request.postDataJSON();expect(Object.keys(body).sort()).toEqual(['name','revision']);sources.find(s=>s.source_instance===id)!.name=body.name;return route.fulfill({json:lifecycle(id)});}
     if(path.endsWith('/lifecycle'))return route.fulfill({json:lifecycle(id)});
     if(path.endsWith('/remove')){
       if([...slots.values()].some(row=>row.source_instance===id&&row.status==='RUNNING'))return route.fulfill({status:409,json:{error:{code:'SOURCE_OPERATION_ACTIVE'}}});
-      const body=request.postDataJSON();expect(body.confirmed_source).toBe(id);expect(body.revision).toBe('a'.repeat(64));
+      const body=request.postDataJSON();expect(body.confirmed_source).toBe(lifecycle(id).display_name);expect(body.revision).toBe('a'.repeat(64));
       removed.set(id,{...lifecycle(id),revision:null,removed_at:new Date().toISOString(),credential_state:body.remove_credentials?'REMOVED':'RETAINED_BY_REQUEST'});
       return route.fulfill({json:lifecycle(id)});
     }
@@ -65,7 +66,7 @@ for(const width of [1440,1024,768])test(`Remove Source confirmation, active bloc
   await page.goto(url+'/sources/source-1/sync');await page.getByRole('button',{name:'Build plan',exact:true}).click();
   await page.getByRole('navigation',{name:'Source sections'}).getByRole('link',{name:'Configuration',exact:true}).click();
   await page.getByRole('button',{name:'Remove Source',exact:true}).click();const dialog=page.getByRole('dialog');
-  await expect(dialog.getByRole('button',{name:'Remove Source',exact:true})).toBeDisabled();await dialog.getByLabel('Type the exact Source ID').fill('source-1');
+  await expect(dialog.getByRole('button',{name:'Remove Source',exact:true})).toBeDisabled();await dialog.getByLabel('Type the exact display name').fill(source().name.toLowerCase());await expect(dialog.getByRole('button',{name:'Remove Source',exact:true})).toBeDisabled();await dialog.getByLabel('Type the exact display name').fill(source().name);
   await page.screenshot({path:info.outputPath('remove-confirmation.png'),fullPage:true});
   await dialog.getByRole('button',{name:'Remove Source',exact:true}).click();await expect(dialog.getByText('Wait for active Plan or Discovery to finish.')).toBeVisible();
   server.complete('source-1','PLAN');await dialog.getByRole('checkbox').check();await dialog.getByRole('button',{name:'Remove Source',exact:true}).click();
@@ -123,4 +124,23 @@ test(`operation state failure classification ${lang} ${scenario}`,async({page,co
  await context.unroute('**/operations');server.complete('source-1','PLAN');await page.reload();
  await expect(page.getByText(lang==='ru'?'План готов к проверке.':'Plan ready for review.')).toBeVisible();
  await expect(page.locator('.operation-uncertain')).toHaveCount(0);expect(server.calls).toHaveLength(1);
+});
+
+
+test('display name edit preserves case and source identity',async({page,context},info)=>{
+ const server=backend();await server.attach(context);await page.goto(url+'/sources/source-1');
+ await page.getByRole('button',{name:'Edit name',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Edit name'});
+ await dialog.getByLabel('Display name',{exact:true}).fill('MiXeD Source');
+ await dialog.getByRole('button',{name:'Save',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'MiXeD Source',exact:true})).toBeVisible();
+ expect(new URL(page.url()).pathname).toBe('/sources/source-1');
+ await page.screenshot({path:info.outputPath('source-renamed.png'),fullPage:true});
+});
+test('name concurrency conflict requires reloading before retry',async({page,context})=>{
+ const server=backend();await server.attach(context);
+ await page.route('**/api/v1/sources/source-1/name',route=>route.fulfill({status:409,json:{error:{code:'SOURCE_LIFECYCLE_CONFLICT'}}}));
+ await page.goto(url+'/sources/source-1');await page.getByRole('button',{name:'Edit name',exact:true}).click();
+ const dialog=page.getByRole('dialog',{name:'Edit name'});await dialog.getByLabel('Display name',{exact:true}).fill('New name');
+ await dialog.getByRole('button',{name:'Save',exact:true}).click();await expect(dialog.getByRole('alert')).toContainText('reopen');
+ await expect(dialog.getByRole('button',{name:'Save',exact:true})).toBeDisabled();
 });

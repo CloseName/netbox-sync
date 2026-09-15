@@ -75,6 +75,10 @@ test('slow probe sends once, remains readable and does not invent progress',asyn
  await expect(page.getByRole('status')).toContainText('Waiting for server acknowledgement');
  await expect(page.getByRole('progressbar')).toHaveCount(0);expect(calls).toBe(1);
  await page.getByText('How to prepare access',{exact:true}).click();await expect(page.locator('.source-access-help').first()).toHaveAttribute('open','');
+ await page.emulateMedia({reducedMotion:'no-preference'});
+ const indicator=page.locator('.activity-indicator');
+ const initialTransform=await indicator.evaluate(el=>getComputedStyle(el).transform);
+ await expect.poll(()=>indicator.evaluate(el=>getComputedStyle(el).transform)).not.toBe(initialTransform);
  await page.emulateMedia({reducedMotion:'reduce'});
  expect(await page.locator('.activity-indicator').evaluate(el=>getComputedStyle(el).animationName)).toBe('none');
  // Never include form secrets in screenshots.

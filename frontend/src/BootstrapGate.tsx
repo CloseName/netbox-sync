@@ -1,3 +1,4 @@
+import {SessionControls} from './AuthGate';
 import {OperationFeedback} from "./ui/OperationFeedback";
 import {useLanguage} from "./ui/language";
 import {LanguageControl} from "./ui/LanguageControl";
@@ -44,7 +45,7 @@ export function BootstrapGate({children}:{children:ReactNode}){
  const statusLabel=(status:string)=>({ready:t('Ready','Готово'),missing:t('Will be created','Будет создано'),conflict:t('Conflict — review in NetBox','Конфликт — проверьте в NetBox'),provisioning:t('NetBox is provisioning','NetBox подготавливает поле'),passed:t('Passed','Проверено'),failed:t('Needs attention','Требует внимания'),not_run:t('Not checked','Не проверено'),preliminary:t('Preliminary check only','Только предварительная проверка'),pending:t('Preparation needed','Нужна подготовка')}[status]??t('Not confirmed','Не подтверждено'));
 
  return <main className="setup-workspace" lang={language}>
-  <div className="setup-toolbar"><Brand/><LanguageControl/><ThemeControl language={language}/></div>
+  <div className="setup-toolbar"><Brand/><LanguageControl/><ThemeControl language={language}/><SessionControls/></div>
   <header className="setup-intro"><h1>{t('Welcome to NetBox Sync','Добро пожаловать в NetBox Sync')}</h1><p>{t('Connect NetBox, prepare its service fields, then add your sources.','Подключите NetBox, подготовьте служебные поля, затем добавьте источники.')}</p></header>
   <nav aria-label={t('Setup progress','Ход настройки')}><ol className="setup-progress">{titles.map((title,i)=><li key={i} aria-current={step===i+1?'step':undefined}><button disabled={running||i+1>step} onClick={()=>setStep(i+1)}><span>{i+1}</span>{title}</button></li>)}</ol></nav>
   {error&&<div role="alert" className="setup-notice">{error==='finish'?t('Finish was not confirmed. Repeat the access check; saved connection details are retained.','Завершение не подтверждено. Повторите проверку доступа; подключение сохранено.'):t('Request outcome is unconfirmed. Reload server state before retrying; writes are not repeated automatically.','Результат запроса не подтверждён. Обновите состояние перед повтором; записи автоматически не повторяются.')}</div>}

@@ -1,3 +1,4 @@
+import {knownPublicError,publicError} from '../ui/publicErrors.ts';
 export type SyncAction =
   | "CREATE"
   | "UPDATE"
@@ -105,8 +106,8 @@ async function errorFor(response: Response): Promise<ManualSyncRequestError> {
         ? value.error.code
         : "UNKNOWN";
     return new ManualSyncRequestError(
-      Object.hasOwn(messages, code) ? messages[code] : genericFailure,
-      Object.hasOwn(messages, code) ? code : "UNKNOWN",
+      Object.hasOwn(messages, code) ? messages[code] : knownPublicError(code) ? publicError(code).message : genericFailure,
+      Object.hasOwn(messages, code) || knownPublicError(code) ? code : "UNKNOWN",
     );
   } catch {
     return new ManualSyncRequestError();

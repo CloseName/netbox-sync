@@ -586,3 +586,12 @@ test("switching sibling tab dismisses unsubmitted confirmation and preserves pla
     writes.filter((w) => w.path.endsWith("/sync-confirmations")),
   ).toHaveLength(0);
 });
+
+
+test('empty plan cannot be mistaken for ready transfer',async({page})=>{
+ await fixture(page,plan([]));await page.goto('/sources/source-1/sync');
+ await page.getByRole('button',{name:'Build plan',exact:true}).click();
+ await expect(page.getByRole('region',{name:'Review plan',exact:true}).locator('.badge')).toContainText('No changes to apply');
+ await expect(page.getByRole('button',{name:'Review and confirm sync',exact:true})).toBeDisabled();
+ await expect(page.getByText('Plan permits sync',{exact:true})).toHaveCount(0);
+});

@@ -120,3 +120,25 @@ code {
 .catalog-pagination button, .catalog-actions button { padding: .35rem .6rem; }
 .host-preview { padding: .75rem 0; border-bottom: 1px solid var(--border); }
 .host-preview:last-child { border-bottom: 0; }
+
+/* One selected value; search lives only inside the expanded catalog popup. */
+.catalog-lookup { position:relative; min-width:0; align-self:start; }
+.catalog-control { display:flex; align-items:center; justify-content:space-between; gap:.5rem; width:100%; min-height:2.7rem; text-align:left; font-weight:400; }
+.catalog-control span:first-child { min-width:0; overflow-wrap:anywhere; }
+.catalog-control small,.catalog-options small { display:block; opacity:.8; font-size:.8rem; }
+.catalog-control.is-selected { border-color:var(--accent); }
+.catalog-popup { padding:.65rem; margin-top:.4rem; border:1px solid var(--border); border-radius:.35rem; background:var(--surface); }
+.catalog-options { margin:.4rem 0; padding:0; list-style:none; max-height:15rem; overflow:auto; }
+.catalog-options [role=option] { padding:.5rem; border:1px solid transparent; border-radius:.25rem; cursor:pointer; overflow-wrap:anywhere; }
+.catalog-options [role=option].is-active,.catalog-options [role=option]:hover { border-color:var(--accent); background:var(--surface-muted); }
+.source-form .form-grid { align-items:start; }
+.source-form .form-grid > label { display:flex; flex-direction:column; align-self:start; margin-top:0; }
+
+.session-controls { display:flex; align-items:center; justify-content:flex-end; gap:.5rem; flex-wrap:wrap; margin-inline-start:auto; font-size:.875rem; }
+.session-controls [role=alert] { flex-basis:100%; }
+.app-header .session-controls button { color:var(--nav-text); border-color:var(--nav-muted); background:var(--nav-hover); }
+
+.source-title-row { display:flex; align-items:center; gap:.65rem; }
+.source-title-row h1 { min-width:0; overflow-wrap:anywhere; }
+
+.catalog-lookup > label { display:block; }

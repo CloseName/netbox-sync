@@ -1,3 +1,5 @@
+import {RegistrationFailure} from '../api/onboarding';
+import {updateTokenUser} from '../ui/proxmoxToken';
 import {SourcePlacement} from '../components/SourcePlacement';
 import type {Placement} from '../components/SourcePlacement';
 import type {SourcePreview} from '../api/onboarding';
@@ -23,13 +25,14 @@ import { Link } from "react-router-dom";
 import { PageHeader } from "../ui/primitives";
 import { sourcePath } from "../ui/routes";
 // In-memory non-secret draft survives an auth-boundary remount; no token or password.
-let remembered: {type:'proxmox'|'esxi';connection:{address:string;verify_ssl:boolean};draft:Placement;preview:SourcePreview|null}|null=null;
+let remembered: {type:'proxmox'|'esxi';connection:{address:string;verify_ssl:boolean;port:number};draft:Placement;preview:SourcePreview|null;uncertain:boolean}|null=null;
 export function AddSourcePage() {
   const [language] = useLanguage();
   const t = (en: string, ru: string) => language === "ru" ? ru : en;
   const [type, setType] = useState<"proxmox" | "esxi">(remembered?.type??"proxmox");
   const [connection, setConnection] = useState(remembered?.connection??{
     address: "",
+    port: 8006,
     verify_ssl: true,
   });
   const [token, setToken] = useState("");
@@ -40,9 +43,13 @@ export function AddSourcePage() {
   const inFlight = useRef(false); const [started,setStarted]=useState(0);
   const [error, setError] = useState("");
   const [connectionCode,setConnectionCode]=useState<keyof typeof connectionMessages|null>(null);
+  const [identity,setIdentity]=useState({user:'',token:'',edited:false,parsed:false});
+  const [expiresAt,setExpiresAt]=useState<number|null>(null);
+  const [uncertain,setUncertain]=useState(remembered?.uncertain??false);
+  const [reconciled,setReconciled]=useState(false);
   const [created, setCreated] = useState<Source | null>(null);
 
-  useEffect(()=>{remembered=created?null:{type,connection,draft,preview};},[type,connection,draft,preview,created]);
+  useEffect(()=>{remembered=created?null:{type,connection,draft,preview,uncertain};},[type,connection,draft,preview,created,uncertain]);
   const workspace = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!error && !token && !created) return;
@@ -89,7 +96,7 @@ export function AddSourcePage() {
           ? { token_id: String(data.get("token_id")) }
           : {}),
       });
-      setToken(result.onboarding_token);setPreview(result.preview);setReview(false);
+      setExpiresAt(Number.isFinite(result.expires_in_seconds)?Date.now()+result.expires_in_seconds!*1000:null);setToken(result.onboarding_token);setPreview(result.preview);setReview(false);
       setDraft(d=>({...d,source_instance:d.source_instance||result.suggested_source_instance,name:d.name||result.preview.name||connection.address,host_types:Object.fromEntries(Object.entries(d.host_types).filter(([id])=>result.preview.hosts.some(h=>h.id===id&&preview?.hosts.some(old=>old.id===id&&old.model===h.model&&old.manufacturer===h.manufacturer))))}));
     } catch (failure) {
       if(failure instanceof SourceConnectionError)setConnectionCode(failure.code);
@@ -98,7 +105,7 @@ export function AddSourcePage() {
         t("Connection test failed. Re-enter credentials to retry; nothing was registered.", "Проверка подключения не завершена. Введите данные повторно; источник не зарегистрирован."),
       );
     } finally {
-      form.reset();
+      form.reset();setIdentity({user:'',token:'',edited:false,parsed:false});
       inFlight.current=false; setBusy(false);
     }
   }
@@ -107,7 +114,7 @@ export function AddSourcePage() {
     event.preventDefault();
     if (inFlight.current) return;
     const data = new FormData(event.currentTarget);
-    if (data.get("confirm") !== "on") return;
+    if (data.get("confirm") !== "on" || uncertain) return;
     inFlight.current=true; setStarted(Date.now());
     let selectionRejected=false;
     setBusy(true);
@@ -128,7 +135,10 @@ export function AddSourcePage() {
       setCreated(result);
     } catch (failure) {
       if(failure instanceof CatalogFailure){selectionRejected=true;setReview(false);}
+      if(failure instanceof RegistrationFailure&&failure.uncertain){selectionRejected=true;setUncertain(true);setReconciled(false);}
+
       setError(
+        failure instanceof RegistrationFailure?failure.uncertain?t('The registration outcome is unknown. Check server state before any further action. Your choices are retained.','Результат регистрации неизвестен. Сначала сверьте состояние сервера. Ваш выбор сохранён.'):t('The connection check or session is no longer valid. Sign in if needed, re-enter credentials and repeat the check; your placement choices are retained.','Проверка подключения или сеанс больше не действуют. При необходимости войдите, повторно введите данные доступа и выполните проверку; выбранное размещение сохранено.'):
         failure instanceof CatalogFailure?t('NetBox selection changed or could not be verified. Refresh the lists and review the site, cluster and host device types; nothing was registered.','Выбор NetBox изменился или не прошёл проверку. Обновите списки, проверьте площадку, кластер и типы устройств хостов; источник не зарегистрирован.'):
         failure instanceof SourceIdReservedError ? failure.message :
         "Registration failed or outcome is uncertain. Ask the operator before retrying.",
@@ -186,8 +196,13 @@ export function AddSourcePage() {
     <main className="add-source-workspace" ref={workspace}>
       <PageHeader
         title={tr("Add source")}
-        description={t('Connect → read host information → choose NetBox placement → register. No VM inventory scan or NetBox writes.','Подключение → сведения о хостах → размещение в NetBox → регистрация. Без обхода виртуальных машин и записи в NetBox.')}
+        description={t('Connect → read host information → choose NetBox placement → register. No VM inventory scan. Catalog writes require a separate explicit confirmation.','Подключение → сведения о хостах → размещение в NetBox → регистрация. Без обхода виртуальных машин. Запись справочников требует отдельного явного подтверждения.')}
       />
+      {uncertain&&<section className="source-panel"><p>{t('No registration request will be retried automatically.','Запрос регистрации не будет повторён автоматически.')}</p><button type="button" disabled={busy} onClick={async()=>{
+        setBusy(true);try{const response=await fetch('/api/v1/sources/'+encodeURIComponent(draft.source_instance),{cache:'no-store',signal:AbortSignal.timeout(10000)});
+          setReconciled(response.ok);setError(response.ok?t('A source with this ID exists. Open it and verify the saved configuration.','Источник с этим ID существует. Откройте его и проверьте сохранённую конфигурацию.'):t('The outcome is still unconfirmed. Ask the operator to inspect the operation before retrying.','Результат пока не подтверждён. Перед повтором оператор должен проверить состояние операции.'));
+        }catch{setError(t('Could not check server state. No registration was repeated.','Не удалось сверить состояние сервера. Регистрация не повторялась.'));}finally{setBusy(false);}
+      }}>{t('Check server state','Сверить состояние сервера')}</button>{reconciled&&<Link to={sourcePath(draft.source_instance)}>{t('Open source for review','Открыть источник для проверки')}</Link>}</section>}
       {error && (
         <p role="alert" tabIndex={-1} className="source-error">
           {connectionCode?connectionMessages[connectionCode][language==='ru'?1:0]:tr(error)}
@@ -207,6 +222,7 @@ export function AddSourcePage() {
                     const nextType = event.target.value as typeof type;
                     event.currentTarget.form?.reset();
                     setType(nextType);
+                    setConnection(c=>({...c,port:nextType==='proxmox'?8006:443}));
                   }}
                 >
                   <option value="proxmox">{tr("Proxmox VE")}{" "}</option>
@@ -227,6 +243,11 @@ export function AddSourcePage() {
                 />
               </label>
             </div>
+            <label>{t('HTTPS port', 'Порт HTTPS')} *
+              <input type="number" min={1} max={65535} step={1} required value={connection.port || ''}
+                onChange={event=>setConnection({...connection,port:Number(event.target.value)})}/>
+              <span className="muted">{t('Used for connection checks and synchronization. No automatic port fallback.', 'Используется для проверки и синхронизации. Автоматического перебора портов нет.')}</span>
+            </label>
             <label className="checkbox-label">
               <input
                 type="checkbox"
@@ -246,13 +267,13 @@ export function AddSourcePage() {
             <div className="form-grid">
               <label>
                 {type === "proxmox" ? tr("Token user (user@realm)") : tr("Username")}
-                <input name="username" required aria-describedby="source-user-hint" />
-                <small id="source-user-hint">{type === 'proxmox' ? t('User including realm, e.g. netbox-sync@pve.', 'Пользователь вместе с realm, например netbox-sync@pve.') : t('Local ESXi user, e.g. netbox-sync.', 'Локальный пользователь ESXi, например netbox-sync.')}</small>
+                <input name="username" required aria-describedby="source-user-hint" value={identity.user} onChange={e=>setIdentity(old=>type==='proxmox'?updateTokenUser(old,e.target.value):{...old,user:e.target.value})} />
+                <small id="source-user-hint">{type === 'proxmox' ? t('Include your actual realm, e.g. netbox-sync@pve. You can paste user@realm!token here; the two fields are separated explicitly.', 'Укажите свой realm, например netbox-sync@pve. Здесь можно вставить user@realm!token — идентификатор будет разделён на два поля.') : t('Local ESXi user, e.g. netbox-sync.', 'Локальный пользователь ESXi, например netbox-sync.')}</small>
               </label>
               {type === "proxmox" && (
                 <label>
-                  {tr("Token name (without user prefix)")}{" "}<input name="token_id" required aria-describedby="source-token-hint" />
-                  <small id="source-token-hint">{t('Token name only, e.g. netbox-sync; not user@realm!token.', 'Только имя токена, например netbox-sync; не user@realm!token.')}</small>
+                  {tr("Token name (without user prefix)")}{" "}<input name="token_id" required aria-describedby="source-token-hint" value={identity.token} onChange={e=>setIdentity(old=>({...old,token:e.target.value,edited:true,parsed:false}))} />
+                  <small id="source-token-hint">{identity.parsed?t('Full identifier split into user and token name. Review both fields.', 'Полный идентификатор разделён на пользователя и имя токена. Проверьте оба поля.'):t('Suggested from the user name. Editable: enter your actual token name if different.', 'Предлагается по имени пользователя. Можно изменить: укажите фактическое имя токена, если оно отличается.')}</small>
                 </label>
               )}
               <label>
@@ -285,7 +306,8 @@ export function AddSourcePage() {
               {connection.address} {tr("· TLS verification")}{" "}{" "}
               {connection.verify_ssl ? tr("on") : tr("off")}.
             </p>
-            <button type="button" disabled={busy} onClick={changeConnection}>
+            {expiresAt&&<p>{t('Connection check expires at: ','Проверка подключения действительна до: ')}{new Date(expiresAt).toLocaleTimeString(language)}</p>}
+            <button type="button" disabled={busy||uncertain} onClick={changeConnection}>
               {tr("Change connection and re-test")}{" "}</button>
           </section>
           {preview&&!review&&<fieldset disabled={busy}><SourcePlacement preview={preview} draft={draft} setDraft={setDraft} language={language}/>
@@ -296,9 +318,14 @@ export function AddSourcePage() {
           {preview?.hosts.map(h=><p key={h.id}>{h.name||h.id} → {draft.host_types[h.id]?.manufacturer?.name} / {draft.host_types[h.id]?.name}</p>)}
           <p>{t('Only the source and protected credentials will be saved. NetBox infrastructure objects and automatic synchronization remain unchanged.','Сохранятся только источник и защищённые данные доступа. Инфраструктурные объекты NetBox и автоматическая синхронизация не изменяются.')}</p>
           <button type="button" onClick={()=>setReview(false)}>{t('Back to placement','Вернуться к размещению')}</button>
+            <label>{t('HTTPS port', 'Порт HTTPS')} *
+              <input type="number" min={1} max={65535} step={1} required value={connection.port || ''}
+                onChange={event=>setConnection({...connection,port:Number(event.target.value)})}/>
+              <span className="muted">{t('Used for connection checks and synchronization. No automatic port fallback.', 'Используется для проверки и синхронизации. Автоматического перебора портов нет.')}</span>
+            </label>
             <label className="checkbox-label">
               <input name="confirm" type="checkbox" required /> {tr("Register a new source with automatic sync OFF.")}{" "}</label>
-            <button className="primary" disabled={busy}>
+            <button className="primary" disabled={busy||uncertain}>
               {busy ? tr("Registering…") : tr("Register Source")}
             </button>
           </fieldset>}

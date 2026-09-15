@@ -1,3 +1,4 @@
+import {planReason} from '../ui/plan';
 import {tr} from "../ui/i18n";
 import { useState } from "react";
 import type { DiscoveryResult } from "../api/discovery";
@@ -101,7 +102,7 @@ export function DiscoveryReview({
                     : "−",
                 }}
               />
-              <span className="plan-reason">{item.reason}</span>
+              <span className="plan-reason">{planReason(item)}</span>
             </summary>
             <div className="plan-row-body">
               <p>{tr("NetBox match:")}{" "}{item.matched_object_name ?? tr("Not provided")}</p>
@@ -109,7 +110,7 @@ export function DiscoveryReview({
                 item.classification,
               ) && (
                 <p className="sync-attention">
-                  {tr("Attention:")}{" "}{item.reason}{tr(". No automatic adoption.")}{" "}</p>
+                  {tr("Attention:")}{" "}{planReason(item)}{tr(". No automatic adoption.")}{" "}</p>
               )}
               <details>
                 <summary>{tr("Discovery technical details")}{" "}</summary>

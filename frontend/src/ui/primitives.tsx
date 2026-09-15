@@ -21,17 +21,19 @@ export function Timestamp({ value }: { value: string | null | undefined }) {
 }
 export function PageHeader({
   title,
+  titleAction,
   description,
   actions,
 }: {
   title: string;
+  titleAction?: ReactNode;
   description?: string;
   actions?: ReactNode;
 }) {
   return (
     <div className="page-heading">
       <div>
-        <h1>{title}</h1>
+        {titleAction?<div className="source-title-row"><h1>{title}</h1>{titleAction}</div>:<h1>{title}</h1>}
         {description && <p className="muted">{description}</p>}
       </div>
       <div className="page-actions">{actions}</div>

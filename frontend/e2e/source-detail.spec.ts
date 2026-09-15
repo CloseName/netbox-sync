@@ -494,7 +494,7 @@ test("Build plan needs no discovery, retains result and confirmation semantics a
         planner_version: "web-5a-1",
         apply_allowed: true,
         digest,
-        items: [],
+        items: [{action:'UPDATE',object_kind:'virtualization.virtual_machines',external_id:'vm-1',name:'Test VM',reason:'Managed memory differs',reason_code:'GUARDED_EXECUTOR_ACTION',matched_object_id:1,before:[['memory',1024]],after:[['memory',2048]]}],
       },
     }),
   );
@@ -658,4 +658,28 @@ test("scheduled outcome and expected time are evidence, not a guaranteed start",
     path: "test-results/ui2-scheduled-evidence.png",
     fullPage: true,
   });
+});
+
+
+test('placement requires review, preserves source fields and never retries uncertain save', async ({page}) => {
+ await fixture(page);
+ const {previewResult,catalogRow}=await import('./source-placement-fixture');
+ const references=Object.fromEntries(['site','cluster','platform','device_role','cluster_type'].map(k=>[k,catalogRow(k)]));
+ let writes:any[]=[];
+ await page.route('**/api/v1/sources/source-1/placement',route=>{
+  if(route.request().method()==='PATCH'){writes.push(route.request().postDataJSON());return route.abort('connectionfailed');}
+  return route.fulfill({json:{source_instance:'source-1',revision:'b'.repeat(64),discovery_id:'11111111-1111-4111-8111-111111111111',preview:previewResult.preview,references,host_types:{'host-a':catalogRow('device_type')}}});
+ });
+ await page.goto('/sources/source-1/configuration');
+ await page.getByRole('button',{name:'Edit placement',exact:true}).click();
+ const editor=page.locator('section').filter({has:page.getByRole('heading',{name:'Source placement',exact:true})}).last();
+ await expect(editor.getByLabel('Display name',{exact:true})).toHaveCount(0);
+ await expect(editor.getByRole('button',{name:'Confirm placement',exact:true})).toHaveCount(0);
+ await editor.getByRole('button',{name:'Review changes',exact:true}).click();
+ expect(writes).toHaveLength(0);
+ await editor.getByRole('button',{name:'Confirm placement',exact:true}).click();
+ await expect(editor).toContainText('Result requires review');
+ expect(writes).toHaveLength(1);
+ expect(Object.keys(writes[0]).sort()).toEqual(['discovery_id','host_types','references','revision']);
+ await expect(editor.getByRole('button',{name:'Confirm placement',exact:true})).toHaveCount(0);
 });

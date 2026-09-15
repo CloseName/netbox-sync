@@ -1,9 +1,15 @@
-import {useEffect,useState,type ReactNode,type FormEvent} from 'react';
+import {useEffect,useState,createContext,useContext,type ReactNode,type FormEvent} from 'react';
 import {useLanguage} from './ui/language';
 import {LanguageControl} from './ui/LanguageControl';
 import {ThemeControl} from './ui/ThemeControl';
 import {Brand} from './ui/Brand';
 export type Principal={principal_id:string;username:string;permissions:string[]};
+const SessionContext=createContext<{principal:Principal;busy:boolean;error:string;logout:()=>Promise<void>}|null>(null);
+export function SessionControls(){
+ const value=useContext(SessionContext);const [lang]=useLanguage();if(!value)return null;
+ return <div className="session-controls"><span>{value.principal.username}</span><button onClick={value.logout} disabled={value.busy}>{lang==='ru'?'Выйти':'Sign out'}</button>{value.error&&<span role="alert">{lang==='ru'?'Выход не подтверждён. Повторите запрос.':'Sign out could not be confirmed. Retry.'}</span>}</div>;
+}
+
 let installed=false;
 export function installAuthBoundary(){
  if(installed)return;installed=true;
@@ -38,7 +44,8 @@ export function AuthGate({children}:{children:ReactNode}){
   try{await authRequest(enroll?'auth/enroll':'auth/login',body);await check();}catch(e){setError(e instanceof Error?e.message:'AUTH_UNAVAILABLE');}
   finally{form.reset();setBusy(false);}
  }
- if(principal&&state==='ready')return <>{children}<div className="session-bar"><span>{principal.username}</span><button onClick={async()=>{if(busy)return;setBusy(true);try{await authRequest('auth/logout',{});setPrincipal(null);setState('AUTH_REQUIRED');}catch(e){if(e instanceof Error&&e.message==='AUTH_REQUIRED'){setPrincipal(null);setState('AUTH_REQUIRED');}else setError('AUTH_UNAVAILABLE');}finally{setBusy(false);}}} disabled={busy}>{t('Sign out','Выйти')}</button>{error&&<span role="alert">{t('Sign out could not be confirmed. Retry.','Выход не подтверждён. Повторите запрос.')}</span>}</div></>;
+ async function logout(){if(busy)return;setBusy(true);try{await authRequest('auth/logout',{});setPrincipal(null);setState('AUTH_REQUIRED');}catch(e){if(e instanceof Error&&e.message==='AUTH_REQUIRED'){setPrincipal(null);setState('AUTH_REQUIRED');}else setError('AUTH_UNAVAILABLE');}finally{setBusy(false);}}
+ if(principal&&state==='ready')return <SessionContext.Provider value={{principal,busy,error,logout}}>{children}</SessionContext.Provider>;
  const messages:Record<string,string>={AUTH_INVALID:t('Username or password is incorrect.','Неверное имя пользователя или пароль.'),AUTH_RATE_LIMITED:t('Too many attempts. Wait five minutes.','Слишком много попыток. Подождите пять минут.'),ENROLLMENT_INVALID:t('Invitation is invalid, expired or already used. Contact the host administrator.','Приглашение недействительно, истекло или уже использовано. Обратитесь к администратору сервера.'),AUTH_DENIED:t('Access denied. Contact the administrator.','Недостаточно прав. Обратитесь к администратору.'),AUTH_UNAVAILABLE:t('Authentication service is unavailable. No operation was retried.','Служба входа недоступна. Операции повторно не отправлялись.')};
  return <><header className="app-header"><Brand/><LanguageControl/><ThemeControl language={lang}/></header><main className="auth-panel panel"><h1>{enroll?t('Create administrator','Создать администратора'):t('Sign in','Вход')}</h1>
  {state==='loading'?<p role="status">{t('Checking session…','Проверка сессии…')}</p>:<>
