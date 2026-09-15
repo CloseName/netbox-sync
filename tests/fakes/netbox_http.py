@@ -17,7 +17,7 @@ RELATIONS = {
 }
 
 @contextmanager
-def netbox_http(seed, ssl_context=None, authorize=None, behavior=None, bind=('127.0.0.1',0), public_base=None):
+def netbox_http(seed, ssl_context=None, authorize=None, behavior=None, bind=('127.0.0.1',0), public_base=None, requests=None):
     rows={};writes=[]
     for group,names in seed.ENDPOINTS.items():
         for name in names:
@@ -49,6 +49,14 @@ def netbox_http(seed, ssl_context=None, authorize=None, behavior=None, bind=('12
             if authorize and not authorize(self.command,self.headers.get('Authorization','')):
                 return self.reply(403,{})
             path=urlsplit(self.path);parts=path.path.strip('/').split('/')
+            if requests is not None: requests.append((self.command, self.path))
+            query=parse_qs(path.query)
+            # Deliberately strict fixture contract, not a claim about a live NetBox status.
+            if any(part.startswith('-') and part[1:].isdigit() for part in parts) or any(
+                value.startswith('-') and value[1:].isdigit()
+                for key, values in query.items() if key == 'id' or key.endswith('_id')
+                for value in values):
+                return self.reply(400, {'detail': 'Temporary identifier reached HTTP boundary'})
             if len(parts)<3 or parts[0]!='api':return self.reply(404,{})
             endpoint=parts[1]+'.'+parts[2].replace('-','_');table=rows.get(endpoint)
             if table is None:return self.reply(404,{})

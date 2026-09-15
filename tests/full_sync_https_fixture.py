@@ -15,7 +15,7 @@ class Handler(ProbeHandler):
             data={'version':'8.3.2'} if key==('version',) else proxmox_responses().get(key)
             return self.respond(json.dumps({'data':data}).encode(),200 if data is not None else 404)
         if self.path=='/fixture/state':
-            return self.respond(json.dumps({key:len(value) for key,value in rows.items()}).encode())
+            return self.respond(json.dumps({**{key:len(value) for key,value in rows.items()}, 'invalid_virtual_requests':sum('/-' in path or '=-' in path for _,path in requests)}).encode())
         return super().do_GET()
     def do_POST(self):
         body=self.rfile.read(min(int(self.headers.get('Content-Length','0')),65536))
@@ -51,7 +51,8 @@ seed.dcim.device_roles.add(FakeRecord(id=4,name='Server',slug='server'))
 seed.dcim.platforms.add(FakeRecord(id=5,name='Proxmox',slug='proxmox'))
 seed.dcim.device_types.add(FakeRecord(id=6,model='PowerEdge R650',slug='r650',manufacturer=FakeRecord(id=7,name='Dell Inc.')))
 seed.dcim.device_types.add(FakeRecord(id=8,model='Reviewed replacement',slug='replacement',manufacturer=FakeRecord(id=7,name='Dell Inc.')))
-with netbox_http(seed,context,bind=('0.0.0.0',9443),public_base='https://netbox.example.test:9443') as (_api,rows,writes):
+requests=[]
+with netbox_http(seed,context,requests=requests,bind=('0.0.0.0',9443),public_base='https://netbox.example.test:9443') as (_api,rows,writes):
     server=ThreadingHTTPServer(('0.0.0.0',8443),Handler)
     server.socket=context.wrap_socket(server.socket,server_side=True)
     server.serve_forever()

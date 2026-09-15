@@ -37,8 +37,8 @@ def test_esxi_empty_target_full_plan():
 import pytest
 from tests.fakes.netbox_http import netbox_http
 
-@pytest.mark.parametrize('provider',['proxmox','esxi'])
-def test_real_pynetbox_plan_apply_replan_new_source(provider):
+@pytest.mark.parametrize(('provider', 'existing_host'), [('proxmox', False), ('proxmox', True), ('esxi', False)])
+def test_real_pynetbox_plan_apply_replan_new_source(provider, existing_host):
     from tests.test_esxi_runtime import _config, _inventory
     from netbox_sync.netbox_full_apply import apply_full_sync
     from netbox_sync.esxi_runtime import execute_esxi_runtime
@@ -55,7 +55,14 @@ def test_real_pynetbox_plan_apply_replan_new_source(provider):
     mapping=dict(version=1,references=refs,host_types={h.source_id:choice for h in hosts},
                  hosts=[dict(id=h.source_id,manufacturer=None,model=None) for h in hosts])
     config=replace(config,settings={'onboarding_mapping':mapping})
-    with netbox_http(seed) as (api,rows,writes):
+    requests=[]
+    with netbox_http(seed, requests=requests) as (api,rows,writes):
+        if existing_host:
+            from netbox_sync.netbox_apply import apply_hosts
+            apply_hosts(api,hosts,config.target,confirmed=True)
+            assert rows['dcim.devices'] and rows['dcim.interfaces']
+            assert not rows['virtualization.virtual_machines']
+            writes.clear()
         plan=build_runtime_plan(api,hosts,config)
         assert writes==[] and plan.apply_allowed
         assert any(i.action.value=='CREATE' for i in plan.items)
@@ -66,10 +73,14 @@ def test_real_pynetbox_plan_apply_replan_new_source(provider):
         assert len(rows['dcim.devices'])==1
         assert len(rows['virtualization.virtual_machines'])==(2 if provider=='proxmox' else 1)
         assert rows['virtualization.interfaces']
+        if provider=='proxmox':
+            assert rows['dcim.interfaces']
+            assert {r['virtual_machine'] for r in rows['virtualization.interfaces'].values()} == set(rows['virtualization.virtual_machines'])
         writes.clear()
         repeated=build_runtime_plan(api,hosts,config)
         assert writes==[]
         assert not [i for i in repeated.items if i.action.value in ('CREATE','UPDATE')]
+        assert requests and not any('/-' in path or '=-' in path for _,path in requests)
 
 
 def test_esxi_report_only_network_survives_public_discovery_contract():

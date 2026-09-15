@@ -62,6 +62,8 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
     print('PASS production API/preview/discovery/plan/prepare/apply/replan '+provider+' HTTPS 8443',flush=True)
 
     counts=json.loads(run(['docker','exec',peer,'python','-c',"import requests; print(requests.get('https://esxi.probe.test:8443/fixture/state',verify='/fixture/server.crt',timeout=5).text)"]))
+    assert counts['invalid_virtual_requests']==0,counts
+    if provider=='proxmox': assert counts['dcim.interfaces']>=1,counts
     expected_devices+=1;expected_vms+=1 if provider=='esxi' else 2
     assert counts['dcim.devices']==expected_devices,counts
     assert counts['virtualization.virtual_machines']==expected_vms,counts
@@ -111,7 +113,13 @@ if pgmode=='bundled':
     install.start_runtime(prepared,overrides=(overlay,))
     assert source_state()==saved_sources and snapshot()==saved_files
     assert compose('ps','-q','postgres')==database
-    assert run(['docker','inspect',database,'--format','{{json .Mounts}}'])==mounts
+    current_mounts=run(['docker','inspect',database,'--format','{{json .Mounts}}'])
+    # Docker does not promise Mounts array order. Compare every attribute of
+    # every mount, not serialization order; DB container identity is checked above.
+    before_mounts=sorted(json.loads(mounts),key=lambda mount:mount['Destination'])
+    after_mounts=sorted(json.loads(current_mounts),key=lambda mount:mount['Destination'])
+    assert after_mounts==before_mounts, 'Database mount metadata changed'
+    print('PASS exact DB mount metadata; serialization order changed='+str(current_mounts!=mounts),flush=True)
     for _ in range(40):
         try:
             if request(None,'/api/v1/auth/me','GET')['status']==200:break

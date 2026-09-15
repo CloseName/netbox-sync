@@ -1,5 +1,10 @@
 # Source sync and operator editing — local acceptance
 
+Follow-up: the first-sync HTTP fixture was too permissive about virtual IDs. See
+[planned reference fix](planning-virtual-reference-fix.md) for the reproduced
+Proxmox failure, stricter fixture and replacement worker evidence. Earlier green
+results below did not prove absence of virtual ID leakage.
+
 Date: 2026-09-15. Base: `9140682652cf8dd3e65d4ed0fb2485a91ae9f7cf`.
 Implementation commits: backend/runtime `17b08689127ffae1edf0903936b91e64bc421e0c`; UI `425a2be70fdc5e3e00a65c9d094df9315a25f250`.
 

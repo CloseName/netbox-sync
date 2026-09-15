@@ -130,3 +130,71 @@ def test_nested_facade_never_mutates_outer_plan_and_keeps_working_copy():
     assert inner.dcim.devices.get(id=10).name=='changed'
     assert outer.dcim.devices.get(id=10).name=='original'
     assert not outer.mutations and not api.mutations
+
+
+def test_nested_virtual_references_never_reach_http():
+    """Outer host/interface plus inner dependencies retain distinct identities."""
+    from tests.fakes.netbox_http import netbox_http
+    from urllib.parse import parse_qs, urlsplit
+    seed = FakeNetBox()
+    seed.dcim.devices.add(FakeRecord(id=10, name='existing'))
+    seed.dcim.interfaces.add(FakeRecord(id=20, name='existing-nic', device=10))
+    requests = []
+    with netbox_http(seed, requests=requests) as (api, rows, writes):
+        outer = PlanningNetBox(api)
+        host = outer.dcim.devices.create(name='outer-host')
+        nic = outer.dcim.interfaces.create(name='eth0', device=host.id)
+        inner = PlanningNetBox(outer)
+        other = inner.dcim.devices.create(name='inner-host')
+        assert other.id != host.id
+        assert inner.dcim.devices.get(host.id).name == 'outer-host'
+        assert inner.dcim.devices.get(id=other.id) is other
+        assert inner.dcim.interfaces.filter(device_id=host.id)[0].id == nic.id
+        child = inner.dcim.interfaces.create(name='eth1', device=host.id, parent=nic.id)
+        assert {r.id for r in inner.dcim.interfaces.filter(device_id=host.id)} == {nic.id, child.id}
+        assert inner.dcim.interfaces.get(parent_id=nic.id) is child
+        assert inner.dcim.interfaces.filter(device_id=other.id) == []
+        assert {r.id for r in inner.dcim.devices.filter(id=[10, host.id, other.id])} == {10, host.id, other.id}
+        existing = inner.dcim.interfaces.get(id=20)
+        assert existing.device.id == 10
+        existing.name = 'renamed'
+        existing.save()
+        assert inner.dcim.interfaces.get(name='existing-nic') is None
+        assert inner.dcim.interfaces.get(name='renamed').id == 20
+        assert inner.dcim.devices.get(str(host.id)).id == host.id
+        inner.dcim.interfaces.get(nic.id).update({'name': 'inner-name'})
+        assert inner.dcim.interfaces.get(name='inner-name').id == nic.id
+        assert outer.dcim.interfaces.get(nic.id).name == 'eth0'
+        assert len(rows['dcim.devices']) == 1 and not writes
+        assert requests
+        for method, path in requests:
+            assert method == 'GET'
+            assert '/-' not in path
+            assert not any(v.startswith('-') for values in parse_qs(urlsplit(path).query).values() for v in values)
+
+
+def test_http_errors_and_ambiguous_matches_are_not_hidden():
+    import pytest
+    from pynetbox.core.query import RequestError
+    from tests.fakes.netbox_http import netbox_http
+    seed = FakeNetBox()
+    seed.dcim.devices.add(FakeRecord(id=10, name='duplicate'))
+    with netbox_http(seed) as (api, _rows, _writes):
+        facade = PlanningNetBox(api)
+        facade.dcim.devices.create(name='duplicate')
+        with pytest.raises(ValueError, match='Multiple'):
+            facade.dcim.devices.get(name='duplicate')
+    with netbox_http(seed, authorize=lambda *_: False) as (api, _rows, _writes):
+        with pytest.raises(RequestError):
+            PlanningNetBox(PlanningNetBox(api)).dcim.devices.filter(id=10)
+
+
+def test_http_fixture_records_and_rejects_virtual_reference():
+    import pytest
+    from pynetbox.core.query import RequestError
+    from tests.fakes.netbox_http import netbox_http
+    requests = []
+    with netbox_http(FakeNetBox(), requests=requests) as (api, _rows, _writes):
+        with pytest.raises(RequestError):
+            list(api.dcim.interfaces.filter(device_id=-1))
+        assert requests == [('GET', '/api/dcim/interfaces/?device_id=-1&limit=0')]

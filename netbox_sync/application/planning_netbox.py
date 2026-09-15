@@ -25,6 +25,7 @@ class PlanningRecord:
         object.__setattr__(self, '_recorder', recorder)
         serialized = record.serialize() if hasattr(record, 'serialize') else vars(record)
         object.__setattr__(self, '_original', deepcopy(serialized))
+        object.__setattr__(self, '_baseline', deepcopy(serialized))
         object.__setattr__(self, '_changes', deepcopy(serialized) if created else {})
         if not created and 'custom_fields' in serialized:
             self._changes['custom_fields'] = deepcopy(serialized['custom_fields'])
@@ -101,31 +102,75 @@ class PlanningEndpoint:
                 actual = actual.get('id')
             elif hasattr(actual, 'id'):
                 actual = actual.id
-            if actual != expected:
+            alternatives = expected if isinstance(expected, (list, tuple, set)) else [expected]
+            if key == 'id' or key.endswith('_id'):
+                alternatives = [int(value) if isinstance(value, str) and value.lstrip('-').isdigit()
+                                else value for value in alternatives]
+            if actual not in alternatives:
                 return False
         return True
 
+    @staticmethod
+    def _temporary(value):
+        return (isinstance(value, int) and value < 0) or (
+            isinstance(value, str) and value.startswith('-') and value[1:].isdigit())
+
+    def _remote_filters(self, filters):
+        """Strip virtual alternatives only at the real API boundary."""
+        result = dict(filters)
+        for key, value in filters.items():
+            if key != 'id' and not key.endswith('_id'):
+                continue
+            if isinstance(value, (list, tuple, set)):
+                remaining = [item for item in value if not self._temporary(item)]
+                if not remaining:
+                    return None
+                result[key] = remaining
+            elif self._temporary(value):
+                return None
+        return result
+
     def filter(self, **filters):
-        existing = [self._wrap(record) for record in self._endpoint.filter(**filters)]
-        return existing + [record for record in self._created if self._matches(record, filters)]
+        # Nested facades must still search the lower plan's objects. Only the
+        # final boundary may omit a query that cannot match a persisted row.
+        remote_filters = (filters if isinstance(self._endpoint, PlanningEndpoint)
+                          else self._remote_filters(filters))
+        remote = [] if remote_filters is None else self._endpoint.filter(**remote_filters)
+        matches = {}
+        for record in remote:
+            wrapped = self._wrap(record)
+            matches[wrapped.id] = wrapped
+        # Overlay local working copies, including relations changed in this
+        # layer. Never lose lower-layer interfaces by short-circuiting nesting.
+        for record in [*self._wrapped.values(), *self._created]:
+            if self._matches(record, filters):
+                matches[record.id] = record
+            elif record.id in matches and any(
+                    record.serialize().get(field) != record._baseline.get(field)
+                    for field in (key[:-3] if key.endswith('_id') else key for key in filters)):
+                del matches[record.id]
+        return list(matches.values())
 
     def get(self, *args, **filters):
-        existing = self._wrap(self._endpoint.get(*args, **filters))
-        if existing is not None:
-            return existing
-        planned_filters = {'id': args[0]} if args and args[0] else filters
-        created = [
-            record for record in self._created
-            if self._matches(record, planned_filters)
-        ]
-        if len(created) > 1:
-            raise ValueError('Multiple planned records match')
-        return created[0] if created else None
+        if len(args) > 1 or (args and filters):
+            raise TypeError('Use one ID or keyword filters')
+        records = self.filter(**({'id': args[0]} if args else filters))
+        if len(records) > 1:
+            raise ValueError('Multiple records match')
+        return records[0] if records else None
+
+    def _allocate_id(self):
+        # Share allocation across nested layers of this endpoint. Inner creates
+        # must not shadow an outer object with the same virtual ID.
+        if isinstance(self._endpoint, PlanningEndpoint):
+            return self._endpoint._allocate_id()
+        identifier = self._next_id
+        self._next_id -= 1
+        return identifier
 
     def create(self, **fields):
         values = deepcopy(fields)
-        values.setdefault('id', self._next_id)
-        self._next_id -= 1
+        values.setdefault('id', self._allocate_id())
         record = type('PlannedRecord', (), {
             'serialize': lambda current: deepcopy(current._planned_values),
         })()
