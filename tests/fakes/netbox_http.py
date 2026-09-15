@@ -28,6 +28,7 @@ def netbox_http(seed, ssl_context=None, authorize=None, behavior=None, bind=('12
         value['url']=base+'/api/'+endpoint.replace('.','/').replace('_','-')+'/'+str(value['id'])+'/'
         if brief:return {k:v for k,v in value.items() if k in ('id','url','name','slug','model')}
         value.setdefault('custom_fields',{})
+        if endpoint=='virtualization.virtual_machines': value.setdefault('serial','')
         if endpoint in ('dcim.devices','virtualization.virtual_machines'):
             for field in ('primary_ip4','primary_ip6','tenant'):value.setdefault(field,None)
         if endpoint.endswith('interfaces'):
@@ -61,6 +62,8 @@ def netbox_http(seed, ssl_context=None, authorize=None, behavior=None, bind=('12
             endpoint=parts[1]+'.'+parts[2].replace('-','_');table=rows.get(endpoint)
             if table is None:return self.reply(404,{})
             identifier=int(parts[3]) if len(parts)>3 else None
+            if behavior and endpoint in behavior.get('deny_reads', ()) and self.command=='GET':
+                return self.reply(403, {'detail': 'PRIVATE_REMOTE_RESPONSE_MUST_NOT_APPEAR'})
             if self.command=='GET':
                 if identifier is not None:
                     return self.reply(200,project(endpoint,table[identifier])) if identifier in table else self.reply(404,{})
@@ -74,6 +77,8 @@ def netbox_http(seed, ssl_context=None, authorize=None, behavior=None, bind=('12
                 return self.reply(200,{'count':len(matches),'next':None,'previous':None,'results':[project(endpoint,r) for r in matches[offset:offset+limit]]})
             value=json.loads(self.rfile.read(int(self.headers.get('Content-Length','0'))))
             writes.append((self.command,endpoint,deepcopy(value)))
+            if behavior and behavior.pop('fail_next_write',False):
+                return self.reply(503, {'detail': 'PRIVATE_REMOTE_RESPONSE_MUST_NOT_APPEAR'})
             if self.command=='POST':
                 identifier=max(table,default=0)+1;value['id']=identifier;table[identifier]=value
                 if behavior and behavior.pop('drop_next_post',False):

@@ -71,3 +71,13 @@ For each source, explicitly review Discovery and the new plan before prepare/app
 Keep TLS verification enabled. Optional NetBox CA and operator ingress/certificate ownership remain unchanged. Never add a Docker socket to product containers. Verify the broker remains network_mode:none and API/PostgreSQL have no published ports.
 
 The next live Proxmox check is still needed to establish whether the originally observed failure shares the locally reproduced dependency-preflight cause. Use the safe code, stage and event ID if it fails; do not expose raw credentials/configuration or enable unconditional stderr logging.
+
+
+## Scheduled failure after manual sync succeeds
+
+See [scheduled Proxmox diagnosis](scheduled-proxmox-review.md) for the full-path
+regression and safe `SCHEDULED_FAILURE` journal record correlated with Run ID.
+The one-shot scheduler logs to `netbox-sync.service`, not the persistent schedule
+or apply worker. Zero failed-run counts/absent digest do not prove absence of
+writes. Do not retry automatically or broaden provider/NetBox permissions without
+the bounded stage/HTTP evidence. No new migration or credential change is needed.

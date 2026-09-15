@@ -16,7 +16,7 @@ run(['docker','run','-d','--name',peer,'--label','com.docker.compose.project='+p
 run(['docker','network','connect','--alias','netbox.example.test','--alias','esxi.probe.test',project+'_netbox-sync-egress',peer])
 # Only test CA material is mounted; no changes to product network/capabilities.
 extra=json.loads(overlay.read_text())
-for service in ('netbox-sync-discovery-worker','netbox-sync-apply-worker'):
+for service in ('netbox-sync-discovery-worker','netbox-sync-apply-worker','netbox-sync-scheduler'):
     extra['services'][service]={'volumes':[
         {'type':'bind','source':str(fixture/'server.crt'),'target':'/etc/ssl/certs/ca-certificates.crt','read_only':True},
         {'type':'bind','source':str(fixture/'server.crt'),'target':'/usr/local/lib/python3.12/site-packages/certifi/cacert.pem','read_only':True}]}
@@ -90,6 +90,7 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
     assert counts['dcim.devices']==expected_devices,counts
     assert counts['virtualization.virtual_machines']==expected_vms,counts
     if provider=='proxmox': assert counts['virtualization.interfaces']>=2,counts
+    exec(compile(Path('/review/tests/scheduled_full_sync_scenario.py').read_text(), 'scheduled_full_sync_scenario.py', 'exec'))
     original=request(None,base,'GET')['body']
     view=request(None,base+'/placement','GET');assert view['status']==200,('placement-read',view)
     view=view['body']

@@ -29,6 +29,7 @@ def test_production_auth_policy(mode):
                'netbox-sync-probe-host:review')
         arguments=['exec',*(['-e','NETBOX_SYNC_WORKER_FULL_SYNC_TEST=1'] if os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST')=='1' else []),
                    *(['-e','NETBOX_SYNC_BROWSER_FULL_SYNC_TEST=1'] if os.environ.get('NETBOX_SYNC_BROWSER_FULL_SYNC_TEST')=='1' else []),
+                   *(['-e','NETBOX_SYNC_SCHEDULER_BASELINE=1'] if os.environ.get('NETBOX_SYNC_SCHEDULER_BASELINE')=='1' else []),
                    host,'python3','/review/tests/auth_compose_scenario.py',mount+'/netbox-sync-test',project,mode]
         if os.environ.get('NETBOX_SYNC_BROWSER_FULL_SYNC_TEST')!='1':
             result=docker(*arguments,check=False)

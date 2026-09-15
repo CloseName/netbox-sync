@@ -6,6 +6,7 @@ from enum import Enum
 from typing import Optional
 
 from .source_config import SourceConfig
+from . import scheduled_failure
 from .run_history import (ActionCounts, RunStatus, RunTrigger, safe_error_code,
                           safe_error_message, terminal_status)
 
@@ -110,15 +111,19 @@ def run_sources(sources, execute_source, clock=None, run_repository=None):
                     history_error_code=HISTORY_UNAVAILABLE,
                 ))
                 continue
+        evidence, diagnostic_token = scheduled_failure.begin()
         try:
             execution = execute_source(source)
         except (Exception, SystemExit) as exc:  # pylint: disable=broad-exception-caught
+            scheduled_failure.emit(exc, evidence, run.run_id if run else None)
             code = safe_error_code(getattr(exc, 'code', None))
             if run:
                 try:
                     run_repository.finish_run(
                         run.run_id, terminal_status(code), error_code=code,
                         error_message_safe=safe_error_message(code),
+                        plan_digest=getattr(evidence.plan, 'digest', None),
+                        planner_version=getattr(evidence.plan, 'planner_version', None),
                     )
                 except Exception:  # pylint: disable=broad-exception-caught
                     history_status = HistoryStatus.FINALIZE_FAILED
@@ -138,6 +143,8 @@ def run_sources(sources, execute_source, clock=None, run_repository=None):
                 )
             )
             continue
+        finally:
+            scheduled_failure.end(diagnostic_token)
         if run:
             try:
                 run_repository.finish_run(

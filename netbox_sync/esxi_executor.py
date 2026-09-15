@@ -16,6 +16,8 @@ def execute_esxi_source(
         raise ValueError('ESXi executor requires source_type=esxi')
     if source_config.legacy_identity_owner:
         raise ValueError('ESXi source cannot own legacy Proxmox identities')
+    from .scheduled_failure import mark
+    mark('provider')
     api_client = client or EsxiClient()
     with api_client.session(source_config) as service_instance:
         hosts = discover_hosts(service_instance, source_config)

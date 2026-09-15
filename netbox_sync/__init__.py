@@ -24,6 +24,7 @@ from .source_bootstrap import (
 )
 from .secret_resolver import FileSecretResolver, LegacyFileSecretResolver
 from .orchestrator import run_sources
+from .scheduled_failure import mark as _scheduled_stage
 from .source_executor import SourceExecutorDispatch
 from .esxi_executor import execute_esxi_source
 from .esxi_runtime import execute_esxi_runtime
@@ -814,6 +815,7 @@ def execute_proxmox_source(
 ):
     """Execute the existing validated pipeline for one Proxmox source."""
 
+    _scheduled_stage('credentials')
     resolver_class = (
         LegacyFileSecretResolver
         if legacy_secrets
@@ -826,6 +828,7 @@ def execute_proxmox_source(
     # Instantiate connection to the Proxmox VE API
     pve_user = pve_credentials.username
 
+    _scheduled_stage('provider')
     pve_api = ProxmoxAPI(
         host=source_config.address,
         user=pve_user,
@@ -886,6 +889,7 @@ def execute_discovered_source(
     else:
         nb_token_variable = 'NB_API_TOKEN'
 
+    _scheduled_stage('netbox')
     # Read durable truth only inside the trusted scheduled runtime.
     if os.environ.get('NETBOX_SYNC_NETBOX_CONFIG_FILE'):
         from .bootstrap_state import runtime_netbox
@@ -905,24 +909,29 @@ def execute_discovered_source(
         )
         return
 
-    if source_config.source_type == 'esxi' and sync_mode == 'apply':
-        if apply_scope != 'full':
-            raise SystemExit(
-                'Normal ESXi apply requires APPLY_SCOPE=full. '
-                'No changes were written.'
-            )
+    if sync_mode == 'apply' and apply_scope == 'full':
+        # Full scheduled execution uses the same scoped plan/executors as Web.
+        # Do not preload the legacy catalog (disks, VLANs, prefixes, global rows).
         from .application.runtime_plan import build_runtime_plan
+        _scheduled_stage('planning')
         history_plan = build_runtime_plan(nb_api, hosts, source_config)
-        execute_esxi_runtime(
-            nb_api,
-            hosts,
-            source_config,
-            confirmed=(
-                os.getenv('APPLY_CONFIRM', '') == 'FULL_WRITE'
-            ),
-        )
+        _scheduled_stage('planning', history_plan)
+        if not history_plan.apply_allowed:
+            from .scheduled_failure import ScheduledPlanBlocked
+            raise ScheduledPlanBlocked('PLAN_BLOCKED')
+        _scheduled_stage('apply', history_plan)
+        if source_config.source_type == 'esxi':
+            execute_esxi_runtime(nb_api, hosts, source_config,
+                                 confirmed=os.getenv('APPLY_CONFIRM', '') == 'FULL_WRITE')
+        else:
+            apply_full_sync(nb_api, hosts, source_config.target,
+                            confirmed=os.getenv('APPLY_CONFIRM', '') == 'FULL_WRITE')
         return history_plan
 
+    if source_config.source_type == 'esxi' and sync_mode == 'apply':
+        raise SystemExit('Normal ESXi apply requires APPLY_SCOPE=full. No changes were written.')
+
+    _scheduled_stage('legacy_read')
     # Load NetBox objects
     nb_objects = _load_nb_objects(nb_api)
 
@@ -945,6 +954,7 @@ def execute_discovered_source(
         return
 
     if sync_mode == 'apply':
+        _scheduled_stage('apply')
         target_config = source_config.target
 
         if apply_scope == 'host':
@@ -1019,23 +1029,6 @@ def execute_discovered_source(
                 ),
             )
             return
-
-        if apply_scope == 'full':
-            from .application.runtime_plan import build_runtime_plan
-            history_plan = build_runtime_plan(nb_api, hosts, source_config)
-            apply_full_sync(
-                nb_api,
-                hosts,
-                target_config,
-                confirmed=(
-                    os.getenv(
-                        'APPLY_CONFIRM',
-                        ''
-                    )
-                    == 'FULL_WRITE'
-                ),
-            )
-            return history_plan
 
     print('=== APPLY MODE ===')
     print('WARNING: changes to NetBox are enabled.')
@@ -1150,8 +1143,12 @@ def main():
              else os.environ.get('NETBOX_SYNC_REGISTRY_DSN', '')),
             os.environ['NETBOX_SYNC_REGISTRY_SCHEMA'],
         )
+        from contextlib import redirect_stdout
+        def scheduled_execute(config):
+            with open(os.devnull, 'w') as sink, redirect_stdout(sink):
+                return dispatch.execute(config)
         tick = run_scheduler_tick(
-            configs, dispatch.execute, history,
+            configs, scheduled_execute, history,
             stale_seconds=stale_threshold(
                 os.environ.get('NETBOX_SYNC_DIAGNOSTICS_STALE_SECONDS', '7200')),
             execute_due=sync_mode == 'apply',
