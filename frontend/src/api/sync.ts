@@ -90,6 +90,9 @@ const messages: Record<string, string> = {
 };
 export class ManualSyncRequestError extends Error {
   code: string;
+  eventId?: string;
+  reason?: string;
+  categories: string[] = [];
   constructor(message = genericFailure, code = "UNKNOWN") {
     super(message);
     this.name = "ManualSyncRequestError";
@@ -105,10 +108,16 @@ async function errorFor(response: Response): Promise<ManualSyncRequestError> {
       typeof value.error.code === "string"
         ? value.error.code
         : "UNKNOWN";
-    return new ManualSyncRequestError(
+    const error = new ManualSyncRequestError(
       Object.hasOwn(messages, code) ? messages[code] : knownPublicError(code) ? publicError(code).message : genericFailure,
       Object.hasOwn(messages, code) || knownPublicError(code) ? code : "UNKNOWN",
     );
+    if (record(value) && record(value.error)) {
+      if (typeof value.error.event_id === 'string' && /^[0-9a-f-]{36}$/.test(value.error.event_id)) error.eventId = value.error.event_id;
+      if (typeof value.error.reason === 'string' && /^[A-Z_]{1,40}$/.test(value.error.reason)) error.reason = value.error.reason;
+      if (Array.isArray(value.error.difference_categories)) error.categories = value.error.difference_categories.filter((item): item is string => typeof item === 'string' && /^[A-Z_]{1,40}$/.test(item)).slice(0, 8);
+    }
+    return error;
   } catch {
     return new ManualSyncRequestError();
   }

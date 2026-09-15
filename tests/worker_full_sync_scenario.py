@@ -30,7 +30,7 @@ for provider in (('esxi','proxmox') if pgmode=='bundled' else ('proxmox','esxi')
         **({'token_id':'independent-name'} if provider=='proxmox' else {})))
     assert checked['status']==200, ('preview',provider,checked['status'],checked['body'].get('error'))
     refs={kind:request(None,'/api/v1/catalog/'+kind,'GET')['body']['items'][0] for kind in ('site','cluster','platform','device_role','cluster_type')}
-    dtype=request(None,'/api/v1/catalog/device_type','GET')['body']['items'][0]
+    dtype=next(item for item in request(None,'/api/v1/catalog/device_type','GET')['body']['items'] if item['id']==6)
     sid='full-'+provider
     payload=dict(source_type=provider,source_instance=sid,name=sid,address='esxi.probe.test',port=8443,
         verify_ssl=True,sync_interval_seconds=600,confirm_sync_disabled=True,
@@ -45,6 +45,28 @@ for provider in (('esxi','proxmox') if pgmode=='bundled' else ('proxmox','esxi')
     plan=planned['body'];assert plan['apply_allowed'] and any(i['action']=='CREATE' for i in plan['items']),('empty plan',provider,plan)
     operations=request(None,base+'/operations','GET')['body']['operations']
     operation_id=next(o['operation_id'] for o in operations if o['operation_kind']=='PLAN' and o['status']=='READY')
+    if provider=='proxmox':
+        prior_counts=run(['docker','exec',peer,'python','-c',"import requests; print(requests.get('https://esxi.probe.test:8443/fixture/state',verify='/fixture/server.crt',timeout=5).text)"])
+        run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/change-memory',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
+        refused=request(dict(plan_digest=plan['digest'],operation_id=operation_id,confirmed=True),base+'/sync-confirmations')
+        assert refused['status']==409 and refused['body']['error']['code']=='PLAN_STALE'
+        assert refused['body']['error']['reason']=='PLAN_DIGEST'
+        assert 'PLANNED_ACTIONS' in refused['body']['error']['difference_categories']
+        event=refused['body']['error']['event_id']
+        from uuid import UUID
+        UUID(event)
+        logs=subprocess.run(['docker','logs',compose('ps','-q','netbox-sync-api')],capture_output=True,text=True)
+        assert event in logs.stdout+logs.stderr
+        assert run(['docker','exec',peer,'python','-c',"import requests; print(requests.get('https://esxi.probe.test:8443/fixture/state',verify='/fixture/server.crt',timeout=5).text)"])==prior_counts
+        old_id=operation_id
+        old_digest=plan['digest']
+        assert next(o for o in request(None,base+'/operations','GET')['body']['operations'] if o['operation_kind']=='PLAN')['status']=='STALE'
+        plan=request({},base+'/sync-plan')['body']
+        operation_id=next(o['operation_id'] for o in request(None,base+'/operations','GET')['body']['operations'] if o['operation_kind']=='PLAN' and o['status']=='READY')
+        assert operation_id!=old_id and plan['digest']!=old_digest
+        old=request(dict(plan_digest=old_digest,operation_id=old_id,confirmed=True),base+'/sync-confirmations')
+        assert old['status']==409 and old['body']['error']['reason']=='OPERATION_VERSION'
+        print('PASS changed provider rejected before write; correlated event, STALE rebuild and generation fencing',flush=True)
     prepared=request(dict(plan_digest=plan['digest'],operation_id=operation_id,confirmed=True),base+'/sync-confirmations')
     if prepared['status']!=200:
         diagnostic="""import os,json,sys
@@ -64,7 +86,7 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
     counts=json.loads(run(['docker','exec',peer,'python','-c',"import requests; print(requests.get('https://esxi.probe.test:8443/fixture/state',verify='/fixture/server.crt',timeout=5).text)"]))
     assert counts['invalid_virtual_requests']==0,counts
     if provider=='proxmox': assert counts['dcim.interfaces']>=1,counts
-    expected_devices+=1;expected_vms+=1 if provider=='esxi' else 2
+    expected_devices+=1 if provider=='esxi' else 2;expected_vms+=1 if provider=='esxi' else 2
     assert counts['dcim.devices']==expected_devices,counts
     assert counts['virtualization.virtual_machines']==expected_vms,counts
     if provider=='proxmox': assert counts['virtualization.interfaces']>=2,counts
@@ -93,6 +115,22 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
     persisted=request(None,base+'/placement','GET')['body']
     assert all(t['id']==8 for t in persisted['host_types'].values())
     print('PASS production mapping validation/save/concurrent stale revision/plan invalidation/stable source '+provider,flush=True)
+
+    if os.environ.get('NETBOX_SYNC_BROWSER_FULL_SYNC_TEST')=='1':
+        # Synthetic authenticated session is exchanged only through a protected,
+        # test-owned transient file. Browser uses the actual API/worker transport.
+        browser_request=root.parent/'browser-request.json';browser_done=root.parent/'browser-done.json'
+        if browser_done.exists(): browser_done.unlink()
+        fd=os.open(browser_request,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+        with os.fdopen(fd,'w') as stream: json.dump(dict(api=compose('ps','-q','netbox-sync-api'),cookie=session_cookie,source=sid,project=project),stream)
+        for _ in range(240):
+            if browser_done.exists(): break
+            time.sleep(.5)
+        else: raise AssertionError('Browser runtime gate timed out')
+        browser_result=json.loads(browser_done.read_text());browser_done.unlink()
+        assert browser_result['ok'], 'Production browser gate failed'
+        assert not [i for i in request({},base+'/sync-plan')['body']['items'] if i['action'] in ('CREATE','UPDATE')]
+        print('PASS real browser plan/prepare/apply/result/replan '+provider,flush=True)
 
 
 if pgmode=='bundled':

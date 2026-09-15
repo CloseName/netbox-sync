@@ -7,6 +7,9 @@ export interface SyncOutcome {
   status: Status;
   runId?: string;
   code?: string;
+  eventId?: string;
+  reason?: string;
+  categories?: string[];
 }
 const statuses: Record<string, [string, string, Status["tone"]]> = {
   SUCCEEDED: [
@@ -83,7 +86,7 @@ export function applyOutcome(
     result.run_id ?? undefined,
   );
 }
-export function failedOutcome(
+function baseFailedOutcome(
   error: unknown,
   stage: "validating" | "applying",
 ): SyncOutcome {
@@ -121,4 +124,12 @@ export function failedOutcome(
       : undefined,
     code,
   );
+}
+
+export function failedOutcome(error: unknown, stage: 'validating' | 'applying'): SyncOutcome {
+  const result = baseFailedOutcome(error, stage);
+  if (error instanceof ManualSyncRequestError) {
+    result.eventId = error.eventId; result.reason = error.reason; result.categories = error.categories;
+  }
+  return result;
 }

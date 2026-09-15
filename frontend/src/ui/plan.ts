@@ -143,3 +143,29 @@ export function planReason(item:{reason_code:string;reason:string}) {
  };
  return Object.hasOwn(reasons,item.reason_code)?tr(reasons[item.reason_code]):item.reason;
 }
+
+
+/** Presentation only; the canonical plan submitted for confirmation is unchanged. */
+export function readablePlanItem(item: SyncPlanItem, items: SyncPlanItem[]): SyncPlanItem {
+  const temporary = (value: unknown) => typeof value === 'number' && value < 0;
+  const relations: Record<string,string> = {device:'dcim.devices', virtual_machine:'virtualization.virtual_machines',
+    parent:item.object_kind, bridge:item.object_kind, primary_ip4:'ipam.ip_addresses', primary_ip6:'ipam.ip_addresses',
+    primary_mac_address:'dcim.mac_addresses'};
+  const created = (kind:string, id:unknown) => items.find(row=>row.action==='CREATE' && row.object_kind===kind && new Map(row.after).get('id')===id);
+  const label = (row?:SyncPlanItem) => {
+    const values = new Map(row?.after ?? []);
+    return String(values.get('name') ?? values.get('address') ?? values.get('mac_address') ?? 'Planned object');
+  };
+  const own = created(item.object_kind, item.matched_object_id ?? Number(item.external_id));
+  const values = new Map([...item.before, ...item.after]);
+  const present = (pairs:[string,unknown][]):[string,unknown][] => pairs.map(([key,value])=> {
+    if (!temporary(value)) return [key,value];
+    const assigned:Record<string,string> = {'dcim.interface':'dcim.interfaces','virtualization.vminterface':'virtualization.interfaces'};
+    const kind = key==='id' ? item.object_kind : key==='assigned_object_id' ? assigned[String(values.get('assigned_object_type'))] : relations[key];
+    return [key, kind ? label(created(kind,value)) : value];
+  });
+  return {...item, name:/^-\d+$/.test(item.name)?label(own):item.name,
+    external_id:/^-\d+$/.test(item.external_id)?label(own):item.external_id,
+    matched_object_id:temporary(item.matched_object_id)?label(own):item.matched_object_id,
+    before:present(item.before),after:present(item.after)};
+}

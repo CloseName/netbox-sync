@@ -1,3 +1,4 @@
+import {staleReason} from '../ui/planStale';
 import {hasChanges} from '../ui/plan';
 import {publicError} from '../ui/publicErrors';
 import {OperationFeedback} from "../ui/OperationFeedback";
@@ -32,6 +33,7 @@ export function SourceSync({
   const [plan, setPlan] = useState<{
       value: SyncPlan;
       received: string;
+      operationId: string;
     } | null>(null),
     [usable, setUsable] = useState(false);
   const [planningError, setPlanningError] =
@@ -91,7 +93,7 @@ export function SourceSync({
       if (current.status === 'RUNNING') { setStarted(Date.parse(current.started_at)); setUsable(false); setPlanningError(null); }
       else if (current.status === 'READY' && current.result && reviewedId.current !== current.operation_id) {
         reviewedId.current = current.operation_id;
-        setPlan({value: current.result as SyncPlan, received: current.finished_at!}); setUsable(true); setPlanningError(null);
+        setPlan({value: current.result as SyncPlan, received: current.finished_at!, operationId: current.operation_id}); setUsable(true); setPlanningError(null); setResult(previous=>previous && ['OUTCOME_UNCERTAIN','PARTIALLY_APPLIED'].includes(previous.state)?previous:null); setConfirmOpen(false);
       } else if (current.status === 'FAILED' || current.status === 'STALE') {
         setUsable(false); setPlanningError(new ManualSyncRequestError(current.status === 'STALE' ? 'Plan is no longer current. Build a new plan.' : operationReason(current.safe_error_code),current.safe_error_code??"OPERATION_FAILED"));
       }
@@ -123,7 +125,7 @@ export function SourceSync({
   }, [confirmOpen, active]);
   useEffect(() => {
     if (active && (result || planningError) && feedback.current?.offsetParent)
-      feedback.current.focus();
+      { feedback.current.focus(); feedback.current.scrollIntoView({block:'nearest'}); }
   }, [result, planningError, active]);
   const closeDialog = () => {
     setConfirmOpen(false);
@@ -132,7 +134,7 @@ export function SourceSync({
   };
   const launch = async (kind: 'PLAN' | 'DISCOVERY') => {
     if (!detail.enabled || !loaded || operations.some(row => row.operation_kind === kind && row.status === 'RUNNING')) return;
-    if (kind === 'PLAN') { if (busy.current) return; busy.current = true; setPhase('planning'); setStarted(Date.now()); setUsable(false); setPlanningError(null); }
+    if (kind === 'PLAN') { if (busy.current) return; busy.current = true; setPhase('planning'); setStarted(Date.now()); setUsable(false); setPlanningError(null); setResult(previous=>previous && ['OUTCOME_UNCERTAIN','PARTIALLY_APPLIED'].includes(previous.state)?previous:null); setConfirmOpen(false); }
     else { if (discoveryBusy.current) return; discoveryBusy.current = true; setDiscovering(true); setDiscoveryOpen(true); setDiscoveryStarted(Date.now()); setDiscoveryError(''); }
     try {
       const operation = await startOperation(selected, kind, AbortSignal.timeout(15000));
@@ -152,12 +154,14 @@ export function SourceSync({
       !confirmOpen ||
       !plan ||
       !usable ||
-      !planOperation ||
+      !planOperation || planOperation.status !== 'READY' || planOperation.operation_id !== plan.operationId ||
       !plan.value.apply_allowed || !hasChanges(plan.value.items) ||
       !detail.enabled
     )
       return;
     const reviewed = plan.value;
+    const reviewedOperationId = plan.operationId;
+    setResult(null);
     busy.current = true;
     setPhase("validating");
     setStarted(Date.now());
@@ -168,7 +172,7 @@ export function SourceSync({
         selected,
         reviewed.digest,
         AbortSignal.timeout(330000),
-        planOperation?.operation_id,
+        reviewedOperationId,
       );
       // Navigation to another source must not cause a later prepare response to submit apply.
       if (!alive.current) return;
@@ -178,7 +182,7 @@ export function SourceSync({
         selected,
         token,
         AbortSignal.timeout(330000),
-        planOperation?.operation_id,
+        reviewedOperationId,
       );
       if (alive.current) setResult(applyOutcome(value, reviewed.digest));
     } catch (error) {
@@ -187,6 +191,7 @@ export function SourceSync({
       busy.current = false;
       if (alive.current) {
         setPhase("idle");
+        setRefreshOperations(value=>value+1);
         setConfirmOpen(false);
         dialog.current?.close();
       }
@@ -254,7 +259,8 @@ export function SourceSync({
             <h3>
               <Badge value={result.status} />
             </h3>
-            <p>{tr(result.message)}</p>
+            <p>{result.state === 'STALE' ? staleReason(result.reason) : tr(result.message)}</p>
+            {result.state === 'STALE' && <p>{tr('Rejected before write. Build and review a new plan.')}</p>}
             {["FAILED", "OUTCOME_UNCERTAIN", "PARTIALLY_APPLIED"].includes(
               result.state,
             ) && (
@@ -274,7 +280,7 @@ export function SourceSync({
             {result.code && (
               <details>
                 <summary>{tr("Technical details")}{" "}</summary>
-                <code>{result.code}</code>
+                <code>{result.code}</code><p>{result.reason}</p><p>{result.categories?.join(" · ")}</p><p>{result.eventId}</p>
               </details>
             )}
           </section>
@@ -296,13 +302,7 @@ export function SourceSync({
           plan={plan.value}
           received={plan.received}
           previous={!usable}
-        />
-      )}
-      {plan && (
-        <div className="sync-action-bar">
-          <p>
-            {tr("Missing objects are retained in NetBox. No deletes. Only the reviewed plan is submitted.")}{" "}</p>
-          <button
+          toolbar={<button
             ref={confirmButton}
             className="primary"
             disabled={
@@ -313,7 +313,13 @@ export function SourceSync({
             }
             onClick={() => setConfirmOpen(true)}
           >
-            {tr("Review and confirm sync")}{" "}</button>
+            {tr("Review and confirm sync")}{" "}</button>}
+        />
+      )}
+      {plan && (
+        <div className="sync-action-bar">
+          <p>
+            {tr("Missing objects are retained in NetBox. No deletes. Only the reviewed plan is submitted.")}{" "}</p>
         </div>
       )}
       <details

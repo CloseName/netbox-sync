@@ -8,16 +8,31 @@ from tests.fakes import FakeNetBox, FakeRecord
 from tests.netbox_scenarios import add_target
 from tests.fakes.netbox_http import netbox_http
 
+provider_rows=proxmox_responses()
+secondary=proxmox_responses('node-b')
+secondary[('nodes','node-b','qemu')]=[];secondary[('nodes','node-b','lxc')]=[]
+secondary[('nodes','node-b','network')][0]['cidr']='10.20.30.11/24'
+provider_rows.update({key:value for key,value in secondary.items() if key[:2]==('nodes','node-b')})
+provider_rows[('nodes',)].append({'node':'node-b','status':'online'})
+provider_rows[('cluster','status')].append({'type':'node','name':'node-b','ip':'10.20.30.11'})
+node_reads=0
 class Handler(ProbeHandler):
     def do_GET(self):
         if self.path.startswith('/api2/json/'):
             key=tuple(int(p) if p.isdigit() else p for p in self.path.split('?')[0][11:].split('/'))
-            data={'version':'8.3.2'} if key==('version',) else proxmox_responses().get(key)
+            data={'version':'8.3.2'} if key==('version',) else provider_rows.get(key)
+            if key==('nodes',):
+                global node_reads
+                node_reads+=1
+                data=list(reversed(data)) if node_reads%2 else list(data)
             return self.respond(json.dumps({'data':data}).encode(),200 if data is not None else 404)
         if self.path=='/fixture/state':
             return self.respond(json.dumps({**{key:len(value) for key,value in rows.items()}, 'invalid_virtual_requests':sum('/-' in path or '=-' in path for _,path in requests)}).encode())
         return super().do_GET()
     def do_POST(self):
+        if self.path=='/fixture/change-memory':
+            provider_rows[('nodes','node-a','status')]['memory']['total']+=1024**3
+            return self.respond(b'{}')
         body=self.rfile.read(min(int(self.headers.get('Content-Length','0')),65536))
         root=ET.fromstring(body)
         method=next(iter(next(e for e in root if e.tag.endswith('Body'))))
@@ -52,7 +67,7 @@ seed.dcim.platforms.add(FakeRecord(id=5,name='Proxmox',slug='proxmox'))
 seed.dcim.device_types.add(FakeRecord(id=6,model='PowerEdge R650',slug='r650',manufacturer=FakeRecord(id=7,name='Dell Inc.')))
 seed.dcim.device_types.add(FakeRecord(id=8,model='Reviewed replacement',slug='replacement',manufacturer=FakeRecord(id=7,name='Dell Inc.')))
 requests=[]
-with netbox_http(seed,context,requests=requests,bind=('0.0.0.0',9443),public_base='https://netbox.example.test:9443') as (_api,rows,writes):
+with netbox_http(seed,context,requests=requests,behavior={'reverse_reads':True},bind=('0.0.0.0',9443),public_base='https://netbox.example.test:9443') as (_api,rows,writes):
     server=ThreadingHTTPServer(('0.0.0.0',8443),Handler)
     server.socket=context.wrap_socket(server.socket,server_side=True)
     server.serve_forever()

@@ -3,6 +3,9 @@ import os
 from pathlib import Path
 import subprocess
 import uuid
+import json
+import time
+from concurrent.futures import ThreadPoolExecutor
 import pytest
 ROOT=Path(__file__).resolve().parents[1]
 pytestmark=pytest.mark.skipif(os.environ.get('NETBOX_SYNC_AUTH_DOCKER_TEST')!='1',reason='opt-in isolated production probe smoke')
@@ -24,7 +27,31 @@ def test_production_auth_policy(mode):
                '--mount','type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock',
                '--mount','type=bind,source='+str(ROOT)+',target=/review,readonly',
                'netbox-sync-probe-host:review')
-        result=docker('exec',*(['-e','NETBOX_SYNC_WORKER_FULL_SYNC_TEST=1'] if os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST')=='1' else []),host,'python3','/review/tests/auth_compose_scenario.py',mount+'/netbox-sync-test',project,mode,check=False)
+        arguments=['exec',*(['-e','NETBOX_SYNC_WORKER_FULL_SYNC_TEST=1'] if os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST')=='1' else []),
+                   *(['-e','NETBOX_SYNC_BROWSER_FULL_SYNC_TEST=1'] if os.environ.get('NETBOX_SYNC_BROWSER_FULL_SYNC_TEST')=='1' else []),
+                   host,'python3','/review/tests/auth_compose_scenario.py',mount+'/netbox-sync-test',project,mode]
+        if os.environ.get('NETBOX_SYNC_BROWSER_FULL_SYNC_TEST')!='1':
+            result=docker(*arguments,check=False)
+        else:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                pending=executor.submit(docker,*arguments,check=False)
+                while not pending.done():
+                    # Metadata/session stays in subprocess memory, never printed.
+                    ready=docker('exec',host,'python3','-c',
+                        "from pathlib import Path; import sys; p=Path(sys.argv[1]); print(p.read_text() if p.exists() else '')",mount+'/browser-request.json',check=False)
+                    if ready.returncode==0 and ready.stdout.strip():
+                        data=json.loads(ready.stdout)
+                        assert data['project']==project
+                        assert docker('inspect',data['api'],'--format','{{index .Config.Labels "com.docker.compose.project"}}').stdout.strip()==project
+                        browser=subprocess.run(['node',str(ROOT/'frontend/scripts/production-sync-browser.mjs')],
+                            input=json.dumps(data),capture_output=True,text=True,encoding='utf-8',errors='replace',cwd=ROOT,timeout=240)
+                        success=browser.returncode==0
+                        docker('exec',host,'python3','-c',
+                            "from pathlib import Path; import sys; Path(sys.argv[1]).unlink(); Path(sys.argv[2]).write_text(sys.argv[3])",mount+'/browser-request.json',mount+'/browser-done.json',json.dumps({'ok':success}))
+                        if not success: print((browser.stderr or '')[-4000:])
+                    time.sleep(.5)
+                result=pending.result()
+
         assert result.returncode==0,result.stdout[-1500:]+result.stderr[-2500:]
         print(result.stdout[-700:])
     finally:

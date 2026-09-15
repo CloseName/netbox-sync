@@ -1,7 +1,7 @@
-import {planReason} from '../ui/plan';
+import {readablePlanItem,planReason} from '../ui/plan';
 import {hasChanges,emptyPlanLabel} from '../ui/plan';
 import {tr} from "../ui/i18n";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { SyncPlan, SyncPlanItem } from "../api/sync";
 import {
   actionLabels,
@@ -39,10 +39,12 @@ export function PlanReview({
   plan,
   received,
   previous,
+  toolbar,
 }: {
   plan: SyncPlan;
   received: string;
   previous: boolean;
+  toolbar?: ReactNode;
 }) {
   const [view, setView] = useState<PlanView>(
     plan.items.some((item) => item.action === "BLOCKED")
@@ -72,6 +74,7 @@ export function PlanReview({
             icon: previous ? "◷" : plan.apply_allowed ? "✓" : "!",
           }}
         />
+        {toolbar}
       </div>
       <p className="muted">
         {tr("Plan received")}{" "}<Timestamp value={received} />{tr(". The plan is checked again before sync.")}{" "}</p>
@@ -163,7 +166,7 @@ export function PlanReview({
       )}
       <div className="plan-rows">
         {rows.slice(0, limit).map((item) => (
-          <PlanRow key={plan.items.indexOf(item)} item={item} />
+          <PlanRow key={plan.items.indexOf(item)} item={readablePlanItem(item, plan.items)} />
         ))}
       </div>
       {rows.length > limit && (

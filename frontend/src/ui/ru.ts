@@ -679,5 +679,7 @@ export const ru: Record<string,string> = {
   "The server could not return operation state. Reload or ask the operator.": "Сервер не смог вернуть состояние операции. Обновите данные или обратитесь к оператору.",
   "The operation response could not be validated. Reload its state.": "Не удалось проверить ответ о состоянии операции. Обновите данные.",
   "Operation state is unavailable. Reload to check current state.": "Состояние операции недоступно. Обновите данные для проверки.",
-  "Running records": "Записей «Выполняется»"
+  "Running records": "Записей «Выполняется»",
+  'Rejected before write. Build and review a new plan.': 'Отказ до записи. Постройте и проверьте новый план.',
+  'Planned object': 'Планируемый объект',
 };

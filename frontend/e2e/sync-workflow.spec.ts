@@ -595,3 +595,25 @@ test('empty plan cannot be mistaken for ready transfer',async({page})=>{
  await expect(page.getByRole('button',{name:'Review and confirm sync',exact:true})).toBeDisabled();
  await expect(page.getByText('Plan permits sync',{exact:true})).toHaveCount(0);
 });
+
+
+test('fresh generation clears stale result and submits its exact operation', async ({page})=>{
+  const writes=await fixture(page);await build(page);
+  await page.route('**/sync-confirmations',route=>route.fulfill({status:409,json:{error:{code:'PLAN_STALE',reason:'PLAN_DIGEST',event_id:'11111111-1111-4111-8111-111111111111',difference_categories:['NETBOX_OBSERVATION']}}}));
+  await confirm(page);
+  await expect(page.getByText('Rejected before write. Build and review a new plan.')).toBeVisible();
+  await page.locator('[aria-label="Sync result"]').getByText('Technical details').click();
+  await expect(page.getByText('11111111-1111-4111-8111-111111111111',{exact:true})).toBeVisible();
+  await page.screenshot({path:'test-results/plan-stale-diagnostic.png',fullPage:true});
+  await page.route('**/sync-confirmations',route=>{writes.push({path:'/sync-confirmations',body:route.request().postDataJSON()});return route.fulfill({json:{confirmation_token:'b'.repeat(64)}});});
+  await page.getByRole('button',{name:'Rebuild plan',exact:true}).click();
+  await expect(page.getByText('Plan ready for review.')).toBeVisible();
+  await expect(page.getByText('Rejected before write. Build and review a new plan.')).toHaveCount(0);
+  await expect(page.getByRole('region',{name:'Review plan'}).getByRole('button',{name:'Review and confirm sync'})).toBeVisible();
+  await page.screenshot({path:'test-results/plan-ready-rebuilt.png',fullPage:true});
+  await confirm(page);
+  await expect(page.getByRole('heading',{name:'Sync completed',exact:true})).toBeVisible();
+  const prepare=writes.filter(w=>w.path.endsWith('/sync-confirmations')).at(-1);
+  const apply=writes.filter(w=>w.path.endsWith('/sync')).at(-1);
+  expect(prepare.body.plan_digest).toBe(digest);expect(prepare.body.operation_id).toBe(apply.body.operation_id);
+});
