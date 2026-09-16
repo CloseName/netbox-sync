@@ -62,7 +62,7 @@ MAINTENANCE_SERVICES = (
 HOST_LOCAL_COMPOSE_KEYS = (
     'NETBOX_SYNC_COMPOSE_PROJECT', 'NETBOX_SYNC_IMAGE', 'NETBOX_SYNC_CONFIG_DIR',
     'NETBOX_SYNC_INFRA_SECRET_DIR', 'NETBOX_SYNC_SOURCE_SECRET_DIR',
-    'NETBOX_SYNC_NETBOX_SECRET_DIR', 'NETBOX_SYNC_APPLY_LOCK_DIR',
+    'NETBOX_SYNC_NETBOX_SECRET_DIR', 'NETBOX_SYNC_AUTH_SECRET_DIR', 'NETBOX_SYNC_APPLY_LOCK_DIR',
     'NETBOX_SYNC_POSTGRES_VOLUME', 'NETBOX_SYNC_WEB_PORT',
     'NETBOX_SYNC_INGRESS_MODE', 'NETBOX_SYNC_INGRESS_DIR')
 
@@ -222,7 +222,7 @@ def _file_metadata(root):  # pylint: disable=too-many-locals,too-many-nested-blo
                         and (info.st_uid, info.st_gid) != (0, expected_gid)):
                     raise BackupError('persistent state must be owned by root')
                 xattrs = {}
-                if relative.startswith('secrets/sources/'):
+                if relative.startswith(('secrets/sources/', 'secrets/auth/')):
                     try:
                         present = set(os.listxattr(path, follow_symlinks=False)).intersection(
                             BROKER_XATTRS)
@@ -257,7 +257,7 @@ def _validate_canonical_files(root):
     secret_root = root / 'secrets'
     actual_dirs={path.name for path in secret_root.iterdir()}
     if (not set(REQUIRED_SECRET_DIRS).issubset(actual_dirs)
-            or not actual_dirs.issubset(set(REQUIRED_SECRET_DIRS)|{'tls','ca'})
+            or not actual_dirs.issubset(set(REQUIRED_SECRET_DIRS)|{'tls','ca','auth'})
             or any(not path.is_dir() for path in secret_root.iterdir())):
         raise BackupError('secret directory contains non-canonical entries')
     for directory in REQUIRED_SECRET_DIRS:
@@ -435,6 +435,22 @@ class DatabaseTool:
             'source_count': int(sources), 'run_count': int(runs),
         }
 
+    def ldap_secret_reference(self):
+        """Logical immutable key only; never read directory credentials from SQL."""
+        exists = self.query(f"SELECT to_regclass('{SCHEMA_NAME}.auth_state') IS NOT NULL")
+        if exists == ['f']:
+            return None
+        values = self.query(f"SELECT COALESCE(value->'ldap'->>'secret_key',''), "
+                            f"COALESCE(value->'ldap'->'config'->>'enabled','false') FROM {SCHEMA_NAME}.auth_state WHERE id=1")
+        if len(values) != 1 or '|' not in values[0]:
+            raise BackupError('LDAP reference metadata is invalid')
+        key, enabled = values[0].split('|', 1)
+        if not key and enabled == 'false':
+            return None
+        if not re.fullmatch(r'ldap-bind-[a-f0-9]{32}', key):
+            raise BackupError('LDAP reference metadata is invalid')
+        return key
+
     def source_secret_references(self):
         """Read logical credential references without resolving secret values."""
         tombstones = self.query(f"SELECT to_regclass('{SCHEMA_NAME}.source_tombstones') IS NOT NULL") == ['t']
@@ -502,7 +518,8 @@ class DatabaseTool:
 
     def revoke_restored_auth(self):
         # Durable identities/policy/audit survive; old capabilities do not.
-        cleared = json.dumps({'sessions': {}, 'invitation': None, 'receipts': {}, 'attempts': [],
+        cleared = json.dumps({'sessions': {}, 'ldap_sessions': {}, 'ldap_test': {}, 'ldap_attempts': [],
+                              'invitation': None, 'receipts': {}, 'attempts': [],
                               'mode': 'legacy', 'ceiling': None, 'changes': {}})
         self.query(f"UPDATE {SCHEMA_NAME}.auth_state SET value=value || '{cleared}'::jsonb")
         self.query(f"INSERT INTO {SCHEMA_NAME}.auth_audit(event) VALUES ('{{\"action\":\"restore.requires_policy_approval\"}}'::jsonb)")
@@ -647,8 +664,12 @@ def _load_manifest(bundle):
         'source_count', 'run_count', 'secret_file_count', 'config_files',
         'files', 'source_secret_references', 'checksum_algorithm',
     }
-    if set(payload) not in (required, required | {'deployment_identity'}) or payload['backup_format_version'] != FORMAT_VERSION:
+    if (not required.issubset(payload) or set(payload)-required-{'deployment_identity','ldap_secret_reference'}
+            or payload['backup_format_version'] != FORMAT_VERSION):
         raise BackupError('backup format is unsupported')
+    ldap_key = payload.get('ldap_secret_reference')
+    if ldap_key is not None and (not isinstance(ldap_key,str) or not re.fullmatch(r'ldap-bind-[a-f0-9]{32}',ldap_key)):
+        raise BackupError('backup LDAP reference is invalid')
     if 'deployment_identity' in payload:
         validate_deployment_identity(payload['deployment_identity'])
     if payload['checksum_algorithm'] != 'SHA-256':
@@ -726,6 +747,8 @@ def verify_bundle(bundle, database=None, require_complete=True):
     if not set(manifest['config_files']).issubset(archived):
         raise BackupError('backup canonical configuration is incomplete')
     records = {record['path']: record for record in manifest['files']}
+    if manifest.get('ldap_secret_reference') and 'secrets/auth/'+manifest['ldap_secret_reference'] not in archived:
+        raise BackupError('backup LDAP secret reference is unresolved')
     for member in members:
         if not member.isfile():
             continue
@@ -882,6 +905,7 @@ def create_backup(  # pylint: disable=too-many-arguments
                 'config_files': [f'config/{name}' for name in CONFIG_FILES],
                 'files': files,
                 'source_secret_references': database.source_secret_references(),
+                'ldap_secret_reference': database.ldap_secret_reference(),
                 'checksum_algorithm': 'SHA-256',
             }
             _atomic_text(staging / 'manifest.json', json.dumps(
@@ -950,6 +974,7 @@ def _extend_ui6_restored_configuration(stage):
 
 
 def _extend_auth_restored_configuration(stage):
+    install.ensure_directory(stage/'secrets/auth', 0o700)
     config = stage / 'config'
     if (config/'auth.env').exists():
         return
@@ -1174,6 +1199,8 @@ def restore_fresh(root, bundle, database, *, no_systemd=False, check_only=False)
             raise BackupError('restored database did not reach the target migration head')
         if database.source_secret_references() != manifest['source_secret_references']:
             raise BackupError('restored source secret references differ from manifest')
+        if database.ldap_secret_reference() != manifest.get('ldap_secret_reference'):
+            raise BackupError('restored LDAP secret reference differs from manifest')
         transition = _prepare_password_transition(root, stage)
         try:
             environment = os.environ.copy()

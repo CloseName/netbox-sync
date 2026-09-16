@@ -1,3 +1,4 @@
+import {usePermission} from '../AuthGate';
 import {staleReason} from '../ui/planStale';
 import {hasChanges} from '../ui/plan';
 import {publicError} from '../ui/publicErrors';
@@ -28,6 +29,7 @@ export function SourceSync({
   detail: Source;
   active?: boolean;
 }) {
+  const canPlan = usePermission('source.plan'), canApply = usePermission('source.apply');
   const [phase, setPhase] = useState<Phase>("idle"),
     [started, setStarted] = useState(0);
   const [plan, setPlan] = useState<{
@@ -133,7 +135,7 @@ export function SourceSync({
     if (active) confirmButton.current?.focus();
   };
   const launch = async (kind: 'PLAN' | 'DISCOVERY') => {
-    if (!detail.enabled || !loaded || operations.some(row => row.operation_kind === kind && row.status === 'RUNNING')) return;
+    if (!canPlan || !detail.enabled || !loaded || operations.some(row => row.operation_kind === kind && row.status === 'RUNNING')) return;
     if (kind === 'PLAN') { if (busy.current) return; busy.current = true; setPhase('planning'); setStarted(Date.now()); setUsable(false); setPlanningError(null); setResult(previous=>previous && ['OUTCOME_UNCERTAIN','PARTIALLY_APPLIED'].includes(previous.state)?previous:null); setConfirmOpen(false); }
     else { if (discoveryBusy.current) return; discoveryBusy.current = true; setDiscovering(true); setDiscoveryOpen(true); setDiscoveryStarted(Date.now()); setDiscoveryError(''); }
     try {
@@ -149,7 +151,7 @@ export function SourceSync({
   const discover = () => launch('DISCOVERY');
   const submit = async () => {
     if (
-      !active ||
+      !canApply || !active ||
       busy.current ||
       !confirmOpen ||
       !plan ||
@@ -211,14 +213,14 @@ export function SourceSync({
       <div className="page-actions">
         <button
           className="primary"
-          disabled={!loaded || phase !== "idle" || confirmOpen || !detail.enabled}
+          disabled={!canPlan || !loaded || phase !== "idle" || confirmOpen || !detail.enabled}
           onClick={buildPlan}
         >
           {plan ? tr("Rebuild plan") : tr("Build plan")}
         </button>
         <button
           disabled={
-            !loaded || applying || discovering || confirmOpen || !detail.enabled
+            !canPlan || !loaded || applying || discovering || confirmOpen || !detail.enabled
           }
           onClick={discover}
         >
@@ -306,12 +308,12 @@ export function SourceSync({
             ref={confirmButton}
             className="primary"
             disabled={
-              phase !== "idle" ||
+              !canApply || phase !== "idle" ||
               !usable ||
               !plan.value.apply_allowed || !hasChanges(plan.value.items) ||
               !detail.enabled
             }
-            onClick={() => setConfirmOpen(true)}
+            onClick={() => { if (canApply) setConfirmOpen(true); }}
           >
             {tr("Review and confirm sync")}{" "}</button>}
         />
@@ -425,7 +427,7 @@ export function SourceSync({
         <div className="page-actions">
           <button ref={cancelButton} disabled={applying} onClick={closeDialog}>
             {tr("Cancel")}{" "}</button>
-          <button className="primary" disabled={applying} onClick={submit}>
+          <button className="primary" disabled={!canApply || applying} onClick={submit}>
             {tr("Sync to NetBox")}{" "}</button>
         </div>
       </dialog>

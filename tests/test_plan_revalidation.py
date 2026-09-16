@@ -38,8 +38,8 @@ def test_operation_reasons_fail_closed(change, reason):
 def test_prepare_changed_plan_is_refused_with_safe_category(monkeypatch,field,category):
     config=sample_source_config()
     saved=dict(apply_allowed=True,digest='a'*64,planner_version='v',source_fingerprint='s',
-        target_fingerprint='t',provider_fingerprint='p',netbox_fingerprint='n',items=[])
-    current=deepcopy(saved);current[field]=['synthetic-private-inventory'] if field=='items' else 'changed'
+        target_fingerprint='t',provider_fingerprint='p',netbox_fingerprint='n',items=[{'action':'CREATE'}])
+    current=deepcopy(saved);current[field]=[{'action':'CREATE','name':'synthetic-private-inventory'}] if field=='items' else 'changed'
     current['digest']='b'*64
     class Operations:
         @contextmanager
@@ -59,7 +59,7 @@ def test_prepare_changed_plan_is_refused_with_safe_category(monkeypatch,field,ca
 def test_public_event_matches_api_log_and_untrusted_details_are_dropped(caplog):
     event=str(uuid4())
     class Worker(Apply):
-        def prepare(self,*_):
+        def prepare(self,*_,**kwargs):
             raise ApplyRequestError('PLAN_STALE','PLAN_DIGEST',['NETBOX_OBSERVATION','PRIVATE_SECRET'],event)
     client=TestClient(create_app(ApiSettings(allowed_write_hosts=('localhost:8000',)),
         discovery_client=Discovery(),apply_client=Worker()))

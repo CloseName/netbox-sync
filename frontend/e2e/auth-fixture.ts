@@ -7,9 +7,9 @@ export function installAuthFixture(surface:any){
  const register=surface.route.bind(surface);
  surface.route=(url:any,handler:any,options:any)=>register(url,(route:any)=>
   new URL(route.request().url()).pathname==='/api/v1/auth/me'
-   ?route.fulfill({json:{principal_id:'test-admin',username:'admin',permissions:['source.read','policy.read','policy.write']}})
+   ?route.fulfill({json:{principal_id:'test-admin',username:'admin',role:'admin',provider:'local',permissions:["source.read", "run.read", "diagnostics.read", "source.plan", "source.apply", "catalog.create", "policy.read", "policy.write", "source.probe", "source.register", "source.configure", "source.schedule", "source.remove", "bootstrap.manage", "identity.manage"]}})
    :handler(route),options);
- void surface.route('**/api/v1/auth/me',(route:any)=>route.fulfill({json:{principal_id:'test-admin',username:'admin',permissions:['source.read','policy.read','policy.write']}}));
+ void surface.route('**/api/v1/auth/me',(route:any)=>route.fulfill({json:{principal_id:'test-admin',username:'admin',role:'admin',provider:'local',permissions:["source.read", "run.read", "diagnostics.read", "source.plan", "source.apply", "catalog.create", "policy.read", "policy.write", "source.probe", "source.register", "source.configure", "source.schedule", "source.remove", "bootstrap.manage", "identity.manage"]}}));
 }
 export const test=base.extend({
  context:async({context},use)=>{installAuthFixture(context);await use(context);},

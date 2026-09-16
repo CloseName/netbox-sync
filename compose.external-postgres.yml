@@ -1,7 +1,7 @@
 # Optional override. Runtime DSNs must point at the operator-managed database.
 services:
   netbox-sync-auth-worker:
-    networks: !override [netbox-sync-egress]
+    networks: !override [netbox-sync-egress, netbox-sync-ldap-egress]
   postgres:
     profiles: [bundled-postgres]
   netbox-sync-api:

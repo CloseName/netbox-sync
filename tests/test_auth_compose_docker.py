@@ -27,11 +27,11 @@ def test_production_auth_policy(mode):
                '--mount','type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock',
                '--mount','type=bind,source='+str(ROOT)+',target=/review,readonly',
                'netbox-sync-probe-host:review')
-        arguments=['exec',*(['-e','NETBOX_SYNC_WORKER_FULL_SYNC_TEST=1'] if os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST')=='1' else []),
+        arguments=['exec',*(['-e','NETBOX_SYNC_LDAP_COMPOSE_TEST=1'] if os.environ.get('NETBOX_SYNC_LDAP_COMPOSE_TEST')=='1' else []),*(['-e','NETBOX_SYNC_WORKER_FULL_SYNC_TEST=1'] if os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST')=='1' else []),
                    *(['-e','NETBOX_SYNC_BROWSER_FULL_SYNC_TEST=1'] if os.environ.get('NETBOX_SYNC_BROWSER_FULL_SYNC_TEST')=='1' else []),
                    *(['-e','NETBOX_SYNC_SCHEDULER_BASELINE=1'] if os.environ.get('NETBOX_SYNC_SCHEDULER_BASELINE')=='1' else []),
                    host,'python3','/review/tests/auth_compose_scenario.py',mount+'/netbox-sync-test',project,mode]
-        if os.environ.get('NETBOX_SYNC_BROWSER_FULL_SYNC_TEST')!='1':
+        if os.environ.get('NETBOX_SYNC_BROWSER_FULL_SYNC_TEST')!='1' and os.environ.get('NETBOX_SYNC_LDAP_COMPOSE_TEST')!='1':
             result=docker(*arguments,check=False)
         else:
             with ThreadPoolExecutor(max_workers=1) as executor:
@@ -44,7 +44,7 @@ def test_production_auth_policy(mode):
                         data=json.loads(ready.stdout)
                         assert data['project']==project
                         assert docker('inspect',data['api'],'--format','{{index .Config.Labels "com.docker.compose.project"}}').stdout.strip()==project
-                        browser=subprocess.run(['node',str(ROOT/'frontend/scripts/production-sync-browser.mjs')],
+                        browser=subprocess.run(['node',str(ROOT/('frontend/scripts/production-ldap-browser.mjs' if data.get('kind')=='ldap' else 'frontend/scripts/production-sync-browser.mjs'))],
                             input=json.dumps(data),capture_output=True,text=True,encoding='utf-8',errors='replace',cwd=ROOT,timeout=240)
                         success=browser.returncode==0
                         docker('exec',host,'python3','-c',

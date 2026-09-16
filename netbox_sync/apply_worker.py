@@ -94,6 +94,8 @@ def execute_child(payload):
         raise ApplyWorkerError('PLAN_STALE', 'PLAN_FORBIDDEN')
     if plan.digest != payload.get('expected_digest'):
         raise ApplyWorkerError('PLAN_STALE', 'PLAN_DIGEST', differences(payload.get('expected_summary'), plan.canonical_dict()))
+    if not any(item.action.value in ('CREATE', 'UPDATE') for item in plan.items):
+        raise ApplyWorkerError('PLAN_BLOCKED', 'PLAN_FORBIDDEN')
     # Prove all provider-specific prechecks before entering the write call.
     try:
         if config.source_type == 'proxmox':
@@ -218,7 +220,7 @@ class ApplySupervisor:
             raise ApplyWorkerError('APPLY_FAILED')
         return response['result']
 
-    def prepare(self, instance, digest, operation_id=None):
+    def prepare(self, instance, digest, operation_id=None, actor_id=None):
         """Recompute the exact current generation and bind its single-use token."""
         guard = self.operations.review_guard(instance, digest, operation_id) if self.operations else nullcontext()
         try:
@@ -231,23 +233,28 @@ class ApplySupervisor:
                     raise ApplyWorkerError('PLAN_STALE', 'PLANNER_VERSION')
                 if plan['digest'] != digest:
                     raise ApplyWorkerError('PLAN_STALE', 'PLAN_DIGEST', differences(summary(reviewed) if isinstance(reviewed, dict) else None, plan))
+                if not any(isinstance(item, dict) and item.get('action') in ('CREATE', 'UPDATE')
+                           for item in plan.get('items', [])):
+                    raise ApplyWorkerError('PLAN_BLOCKED', 'PLAN_FORBIDDEN')
                 claims = ConfirmationClaims(instance, config.id, digest, plan['planner_version'],
-                    plan['source_fingerprint'], plan['target_fingerprint'], operation_id)
+                    plan['source_fingerprint'], plan['target_fingerprint'], operation_id, actor_id)
                 return {'confirmation_token': self._confirmations.issue(claims), 'expires_in_seconds': 300}
         except OperationError as exc:
             raise ApplyWorkerError(exc.code, getattr(exc, 'reason', None)) from None
 
-    def apply(self, instance, token):
+    def apply(self, instance, token, actor_id=None):
         """Consume, lock, reload and recompute before any write."""
         config = self._source(instance)
         run = self._runs.start_run(
-            instance, config.source_type, RunTrigger.MANUAL, 'web/manual',
+            instance, config.source_type, RunTrigger.MANUAL, actor_id or 'web/manual',
         ) if self._runs else None
         claims = None
         apply_started = False
         try:
             try:
                 claims = self._confirmations.consume(token, instance)
+                if claims.actor_id != actor_id:
+                    raise ConfirmationError('CONFIRMATION_INVALID')
             except ConfirmationError as exc:
                 raise ApplyWorkerError(exc.code) from exc
             import fcntl  # pylint: disable=import-outside-toplevel
@@ -340,6 +347,14 @@ def _receive(connection):
             UUID(request['operation_id'])
         except (ValueError, TypeError, AttributeError):
             raise ApplyWorkerError('REQUEST_INVALID') from None
+    if isinstance(request, dict) and 'actor_id' in request:
+        allowed = allowed | {'actor_id'}
+        from uuid import UUID
+        try:
+            if str(UUID(request['actor_id'])) != request['actor_id']:
+                raise ValueError()
+        except (ValueError, TypeError, AttributeError):
+            raise ApplyWorkerError('REQUEST_INVALID') from None
     if (not isinstance(request, dict) or set(request) != allowed
             or operation not in ('prepare', 'apply')
             or not SOURCE_INSTANCE_PATTERN.fullmatch(request.get('source_instance', ''))
@@ -364,11 +379,12 @@ def _handle_request(supervisor, request):
     """Answer health before any confirmation, lock, credential, or apply boundary."""
     if request['operation'] == 'health':
         return {'status': 'ok'}
+    actor = {'actor_id': request['actor_id']} if 'actor_id' in request else {}
     if request['operation'] == 'prepare':
         if 'operation_id' in request:
-            return supervisor.prepare(request['source_instance'], request['plan_digest'], request['operation_id'])
-        return supervisor.prepare(request['source_instance'], request['plan_digest'])
-    return supervisor.apply(request['source_instance'], request['confirmation_token'])
+            return supervisor.prepare(request['source_instance'], request['plan_digest'], request['operation_id'], **actor)
+        return supervisor.prepare(request['source_instance'], request['plan_digest'], **actor)
+    return supervisor.apply(request['source_instance'], request['confirmation_token'], **actor)
 
 
 def serve(socket_path, supervisor, allowed_uid):

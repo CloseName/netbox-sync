@@ -17,14 +17,13 @@ from argon2.exceptions import VerificationError, InvalidHashError
 from .api.egress import EgressPolicy, validate_host, LOCAL_NAMES
 
 PASSWORDS = PasswordHasher(time_cost=2, memory_cost=19456, parallelism=1, type=Type.ID)
-PERMISSIONS = frozenset({
-    'catalog.create', 'policy.read', 'policy.write', 'source.read', 'source.probe', 'source.register',
-    'source.configure', 'source.schedule', 'source.plan', 'source.apply', 'source.remove',
-    'run.read', 'diagnostics.read', 'bootstrap.manage', 'identity.manage',
-})
+from .roles import ADMIN as PERMISSIONS, permissions
+from .directory_auth import DirectoryAuth
+from .ldap_directory import CODES as LDAP_CODES
+
 CODES = frozenset({'AUTH_REQUIRED', 'AUTH_DENIED', 'AUTH_INVALID', 'AUTH_RATE_LIMITED',
     'AUTH_UNAVAILABLE', 'ENROLLMENT_INVALID', 'POLICY_CONFLICT', 'POLICY_INVALID',
-    'POLICY_HOST_MANAGED', 'PROBE_RECEIPT_INVALID'})
+    'POLICY_HOST_MANAGED', 'PROBE_RECEIPT_INVALID'}) | LDAP_CODES
 
 
 class AuthError(RuntimeError):
@@ -49,9 +48,10 @@ def initial_state():
             'denied_cidrs': [], 'changes': {}, 'receipts': {}}
 
 
-class AuthPolicy:
+class AuthPolicy(DirectoryAuth):
     """Caller must hold the DB state row lock for the whole call, including hash work."""
-    def __init__(self, state, baseline=None, clock=time.time):
+    def __init__(self, state, baseline=None, clock=time.time, directory=None, auth_secrets=None):
+        self.directory, self.auth_secrets = directory, auth_secrets
         self.state = state
         self.baseline = baseline or EgressPolicy()
         self.now = clock()
@@ -73,6 +73,7 @@ class AuthPolicy:
             if action == 'recover':
                 self.state['attempts'] = []
                 self.state['sessions'] = {}
+                self.state['ldap_sessions'] = {}
                 self.state['receipts'] = {}
                 self.state['principal']['disabled'] = True
             self.event('root.' + action)
@@ -88,6 +89,7 @@ class AuthPolicy:
             return {'revision': self.state['revision']}
         if action == 'revoke':
             self.state['sessions'] = {}
+            self.state['ldap_sessions'] = {}
             self.state['receipts'] = {}
             self.event('root.revoke')
             return {'revoked': True}
@@ -102,6 +104,8 @@ class AuthPolicy:
 
     def session(self, token, permission=None):
         value = self.state['sessions'].get(digest(token)) if isinstance(token, str) else None
+        if not value and isinstance(token,str) and digest(token) in self.state.get('ldap_sessions',{}):
+            return self.ldap_session(token,permission)
         principal = self.state['principal']
         if (not value or not principal or principal.get('disabled')
                 or value['expires'] <= self.now or value['last_seen'] + 1800 <= self.now):
@@ -109,7 +113,7 @@ class AuthPolicy:
         if permission is not None and permission not in PERMISSIONS:
             raise AuthError('AUTH_DENIED')
         value['last_seen'] = self.now
-        return principal
+        return {**principal,'role':'admin','provider':'local'}
 
     def issue_session(self):
         self.state['sessions'] = {key: value for key, value in self.state['sessions'].items()
@@ -163,7 +167,10 @@ class AuthPolicy:
             self.state['attempts'] = []
             self.event('enrolled', self.state['principal']['id'])
             return self.issue_session()
+        if action == 'login' and payload.get('provider','local')=='ldap':
+            return self.ldap_login(payload)
         if action == 'login':
+            if payload.get('provider','local')!='local': raise AuthError('AUTH_INVALID')
             self.throttle()
             username = bounded(payload.get('username'), 64)
             password = bounded(payload.get('password'), 256)
@@ -186,9 +193,14 @@ class AuthPolicy:
         principal = self.session(token, payload.get('permission') if action == 'authorize' else None)
         actor = principal['id']
         if action == 'authorize':
-            return {'principal_id': actor, 'username': principal['username'], 'permissions': sorted(PERMISSIONS)}
+            if payload.get('audit') is True:
+                self.event('permission.checked',actor,permission=payload.get('permission'),role=principal['role'])
+            return {'principal_id': actor, 'username': principal['username'], 'role':principal['role'], 'provider':principal['provider'], 'permissions': sorted(permissions(principal['role']))}
+        if action in ('ldap.settings','ldap.test','ldap.save','ldap.revoke','roles'):
+            return self.directory_action(action,payload,principal)
         if action == 'logout':
             self.state['sessions'].pop(digest(token), None)
+            self.state.get('ldap_sessions',{}).pop(digest(token),None)
             self.event('logout', actor)
             return {'logged_out': True}
         if action == 'policy':
@@ -196,8 +208,7 @@ class AuthPolicy:
             return self.policy()
         if action == 'policy.update':
             self.session(token, 'policy.write')
-            if self.state['sessions'][digest(token)]['issued'] + 900 <= self.now:
-                raise AuthError('AUTH_REQUIRED')
+            self.recent(token)
             if self.state['mode'] != 'managed' or self.state['ceiling'] != 'public-ipv4':
                 raise AuthError('POLICY_HOST_MANAGED')
             host = bounded(payload.get('host'), 253)

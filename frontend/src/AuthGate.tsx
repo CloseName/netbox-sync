@@ -3,11 +3,13 @@ import {useLanguage} from './ui/language';
 import {LanguageControl} from './ui/LanguageControl';
 import {ThemeControl} from './ui/ThemeControl';
 import {Brand} from './ui/Brand';
-export type Principal={principal_id:string;username:string;permissions:string[]};
+export type Principal={principal_id:string;username:string;permissions:string[];role?:string;provider?:string};
 const SessionContext=createContext<{principal:Principal;busy:boolean;error:string;logout:()=>Promise<void>}|null>(null);
+export function usePermission(permission:string){return useContext(SessionContext)?.principal.permissions.includes(permission)??false;}
+export function Permission({permission,children}:{permission:string;children:ReactNode}){const can=usePermission(permission),[lang]=useLanguage();return can?<>{children}</>:<p role="status">{lang==='ru'?'Недостаточно прав для этого раздела.':'You do not have permission to open this section.'}</p>;}
 export function SessionControls(){
  const value=useContext(SessionContext);const [lang]=useLanguage();if(!value)return null;
- return <div className="session-controls"><span>{value.principal.username}</span><button onClick={value.logout} disabled={value.busy}>{lang==='ru'?'Выйти':'Sign out'}</button>{value.error&&<span role="alert">{lang==='ru'?'Выход не подтверждён. Повторите запрос.':'Sign out could not be confirmed. Retry.'}</span>}</div>;
+ return <div className="session-controls"><span>{value.principal.username} · {lang==='ru'?({admin:'Администратор',operator:'Оператор',viewer:'Наблюдатель'}[value.principal.role??'admin']):value.principal.role??'admin'}</span><button onClick={value.logout} disabled={value.busy}>{lang==='ru'?'Выйти':'Sign out'}</button>{value.error&&<span role="alert">{lang==='ru'?'Выход не подтверждён. Повторите запрос.':'Sign out could not be confirmed. Retry.'}</span>}</div>;
 }
 
 let installed=false;
@@ -19,7 +21,7 @@ export function installAuthBoundary(){
   const target=String(args[0] instanceof Request?args[0].url:args[0]);
   if(target.includes('/api/v1/')&&!target.includes('/api/v1/auth/')&&[401,403,503].includes(response.status)){
    try{const code=(await response.clone().json()).error?.code;
-    if(['AUTH_REQUIRED','AUTH_UNAVAILABLE','AUTH_DENIED'].includes(code))window.dispatchEvent(new CustomEvent('netbox-sync.auth',{detail:code}));
+    if(['AUTH_REQUIRED','AUTH_UNAVAILABLE'].includes(code))window.dispatchEvent(new CustomEvent('netbox-sync.auth',{detail:code}));
    }catch{/* Never interpret remote text as an auth failure. */}
   }
   return response;
@@ -30,7 +32,7 @@ export async function authRequest(path:string,body?:unknown){
   signal:AbortSignal.timeout(10000),headers:body===undefined?undefined:{'Content-Type':'application/json','X-NetBox-Sync-CSRF':'same-origin'},
   body:body===undefined?undefined:JSON.stringify(body)});
  let data:any;try{data=await response.json();}catch{throw new Error('AUTH_UNAVAILABLE');}
- if(!response.ok)throw new Error(['AUTH_REQUIRED','AUTH_INVALID','AUTH_RATE_LIMITED','AUTH_DENIED','AUTH_UNAVAILABLE','ENROLLMENT_INVALID','POLICY_CONFLICT','POLICY_HOST_MANAGED','POLICY_INVALID'].includes(data.error?.code)?data.error.code:'AUTH_UNAVAILABLE');
+ if(!response.ok)throw new Error(['AUTH_REQUIRED','AUTH_INVALID','AUTH_RATE_LIMITED','AUTH_DENIED','AUTH_UNAVAILABLE','ENROLLMENT_INVALID','POLICY_CONFLICT','POLICY_HOST_MANAGED','POLICY_INVALID','LDAP_INVALID','LDAP_TLS_FAILED','LDAP_UNAVAILABLE','LDAP_BIND_FAILED','LDAP_ACCESS_DENIED','LDAP_CONFLICT'].includes(data.error?.code)?data.error.code:'AUTH_UNAVAILABLE');
  return data;
 }
 export function AuthGate({children}:{children:ReactNode}){
@@ -40,23 +42,24 @@ export function AuthGate({children}:{children:ReactNode}){
  useEffect(()=>{void check();const expire=(event:Event)=>{setPrincipal(null);setState((event as CustomEvent).detail);};window.addEventListener('netbox-sync.auth',expire);return()=>window.removeEventListener('netbox-sync.auth',expire);},[]);
  async function submit(event:FormEvent<HTMLFormElement>){
   event.preventDefault();if(busy)return;setBusy(true);setError('');
-  const form=event.currentTarget,data=new FormData(form),body={username:String(data.get('username')),password:String(data.get('password')),...(enroll?{invitation:String(data.get('invitation'))}:{})};
+  const form=event.currentTarget,data=new FormData(form),body={username:String(data.get('username')),password:String(data.get('password')),provider:String(data.get('provider')??'local'),...(enroll?{invitation:String(data.get('invitation'))}:{})};
   try{await authRequest(enroll?'auth/enroll':'auth/login',body);await check();}catch(e){setError(e instanceof Error?e.message:'AUTH_UNAVAILABLE');}
   finally{form.reset();setBusy(false);}
  }
  async function logout(){if(busy)return;setBusy(true);try{await authRequest('auth/logout',{});setPrincipal(null);setState('AUTH_REQUIRED');}catch(e){if(e instanceof Error&&e.message==='AUTH_REQUIRED'){setPrincipal(null);setState('AUTH_REQUIRED');}else setError('AUTH_UNAVAILABLE');}finally{setBusy(false);}}
  if(principal&&state==='ready')return <SessionContext.Provider value={{principal,busy,error,logout}}>{children}</SessionContext.Provider>;
- const messages:Record<string,string>={AUTH_INVALID:t('Username or password is incorrect.','Неверное имя пользователя или пароль.'),AUTH_RATE_LIMITED:t('Too many attempts. Wait five minutes.','Слишком много попыток. Подождите пять минут.'),ENROLLMENT_INVALID:t('Invitation is invalid, expired or already used. Contact the host administrator.','Приглашение недействительно, истекло или уже использовано. Обратитесь к администратору сервера.'),AUTH_DENIED:t('Access denied. Contact the administrator.','Недостаточно прав. Обратитесь к администратору.'),AUTH_UNAVAILABLE:t('Authentication service is unavailable. No operation was retried.','Служба входа недоступна. Операции повторно не отправлялись.')};
+ const messages:Record<string,string>={AUTH_INVALID:t('Username or password is incorrect.','Неверное имя пользователя или пароль.'),AUTH_RATE_LIMITED:t('Too many attempts. Wait five minutes.','Слишком много попыток. Подождите пять минут.'),ENROLLMENT_INVALID:t('Invitation is invalid, expired or already used. Contact the host administrator.','Приглашение недействительно, истекло или уже использовано. Обратитесь к администратору сервера.'),AUTH_DENIED:t('Access denied. Contact the administrator.','Недостаточно прав. Обратитесь к администратору.'),LDAP_UNAVAILABLE:t('Directory is unavailable. Local emergency administrator login remains available.','Каталог недоступен. Аварийный локальный вход остаётся доступен.'),LDAP_TLS_FAILED:t('Directory certificate could not be verified. Contact the administrator.','Сертификат каталога не прошёл проверку. Обратитесь к администратору.'),LDAP_BIND_FAILED:t('Directory access is unavailable. Contact the administrator.','Доступ к каталогу недоступен. Обратитесь к администратору.'),AUTH_UNAVAILABLE:t('Authentication service is unavailable. No operation was retried.','Служба входа недоступна. Операции повторно не отправлялись.')};
  return <><header className="app-header"><Brand/><LanguageControl/><ThemeControl language={lang}/></header><main className="auth-panel panel"><h1>{enroll?t('Create administrator','Создать администратора'):t('Sign in','Вход')}</h1>
  {state==='loading'?<p role="status">{t('Checking session…','Проверка сессии…')}</p>:<>
  {state==='AUTH_REQUIRED'&&<p>{t('Sign in to continue. After signing in, operation state will be read from the server. Writes are never retried automatically.','Войдите для продолжения. После входа состояние операций будет загружено с сервера. Записи не повторяются автоматически.')}</p>}
  {(messages[state]||error)&&<p role="alert">{messages[error]??messages[state]??messages.AUTH_UNAVAILABLE}</p>}
- {state==='AUTH_UNAVAILABLE'?<button onClick={()=>void check()}>{t('Retry session check','Повторить проверку сессии')}</button>:<form onSubmit={submit}><fieldset disabled={busy}>
+ {state==='AUTH_UNAVAILABLE'&&<button onClick={()=>void check()}>{t('Retry session check','Повторить проверку сессии')}</button>}<form onSubmit={submit}><fieldset disabled={busy}>
+ {!enroll&&<label>{t('Sign-in method','Способ входа')}<select name="provider" defaultValue="local"><option value="local">{t('Local emergency administrator','Локальный аварийный администратор')}</option><option value="ldap">{t('Corporate directory (LDAPS)','Корпоративный каталог (LDAPS)')}</option></select></label>}
  <label>{t('Username','Имя пользователя')}<input name="username" required minLength={3} maxLength={64} autoComplete="username"/></label>
  <label>{t('Password','Пароль')}<input name="password" type="password" required minLength={enroll?15:1} maxLength={256} autoComplete={enroll?'new-password':'current-password'}/></label>
  {enroll&&<><label>{t('One-time invitation','Одноразовое приглашение')}<input name="invitation" type="password" required autoComplete="off"/></label><p>{t('Obtain a 15-minute invitation from the host administrator. Use a password of at least 15 characters.','Получите у администратора сервера приглашение на 15 минут. Пароль — не менее 15 символов.')}</p></>}
  <button type="submit" className="primary">{busy?t('Waiting for server…','Ожидаем ответа сервера…'):enroll?t('Create administrator','Создать администратора'):t('Sign in','Войти')}</button>
- </fieldset></form>}
+ </fieldset></form>
  <button disabled={busy} onClick={()=>{setEnroll(!enroll);setError('');}}>{enroll?t('Back to sign in','Вернуться ко входу'):t('I have an administrator invitation','У меня есть приглашение администратора')}</button>
  </>}</main></>;
 }

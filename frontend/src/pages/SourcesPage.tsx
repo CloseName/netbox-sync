@@ -1,3 +1,4 @@
+import {usePermission} from '../AuthGate';
 import {SourceMappingEditor} from '../components/SourceMappingEditor';
 import {SourceNameEditor} from '../components/SourceNameEditor';
 import {useLanguage} from "../ui/language";
@@ -55,6 +56,7 @@ function RunEvidence({
   );
 }
 export function SourcesPage() {
+  const canConfigure = usePermission('source.configure'), canRemove = usePermission('source.remove');
   const [language]=useLanguage();
   const { sourceInstance = "", "*": suffix = "" } = useParams();
   const tab = suffix
@@ -143,7 +145,7 @@ export function SourcesPage() {
           <header className="source-header">
             <PageHeader
               title={detail.name}
-              titleAction={<SourceNameEditor source={detail.source_instance} name={detail.name} onSaved={source.refresh}/>}
+              titleAction={canConfigure ? <SourceNameEditor source={detail.source_instance} name={detail.name} onSaved={source.refresh}/> : undefined}
               description={
                 detail.type === "proxmox" ? tr("Proxmox VE") : tr("VMware ESXi")
               }
@@ -481,8 +483,8 @@ export function SourcesPage() {
               source={detail}
               scheduleLink={base + "/schedule"}
             />
-            <SourceMappingEditor key={detail.source_instance} source={detail.source_instance} onSaved={source.refresh}/>
-          <SourceLifecyclePanel source={detail} onRemoved={setRemoved} />
+            {canConfigure && <SourceMappingEditor key={detail.source_instance} source={detail.source_instance} onSaved={source.refresh}/>}
+          {canRemove && <SourceLifecyclePanel source={detail} onRemoved={setRemoved} />}
           </>)}
         </>
       )}

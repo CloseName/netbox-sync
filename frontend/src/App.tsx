@@ -1,4 +1,5 @@
-import {SessionControls} from './AuthGate';
+import {SessionControls,Permission,usePermission} from './AuthGate';
+import {AuthenticationSettings} from './pages/AuthenticationSettings';
 import {DestinationPolicyPage} from "./pages/DestinationPolicyPage";
 import {tr} from "./ui/i18n";
 import {useLanguage} from "./ui/language";
@@ -32,6 +33,7 @@ function RunRoute() {
   return <RunsPage key={runId ?? "list"} />;
 }
 export function App() {
+  const admin=usePermission('identity.manage');
   const [language] = useLanguage();
   const location = useLocation();
   const [open, setOpen] = useState(false);
@@ -85,9 +87,9 @@ export function App() {
             </NavLink>
           ))}
           <p className="nav-section">{tr("System")}</p>
-          <NavLink to="/policy">{tr("Source destinations")}</NavLink>
-          <NavLink to="/system">{tr("System health")}{" "}</NavLink>
-          <Link to="/setup">{tr("NetBox connection")}{" "}</Link>
+          {admin&&<><NavLink to="/settings">{language==='ru'?'Настройки':'Settings'}</NavLink><NavLink to="/policy">{tr("Source destinations")}</NavLink>
+          </>}<NavLink to="/system">{tr("System health")}{" "}</NavLink>
+          {admin&&<Link to="/setup">{tr("NetBox connection")}{" "}</Link>}
         </nav>
         <div className="app-content" id="content" ref={content} tabIndex={-1}>
           {!sourceDetail && (
@@ -108,14 +110,15 @@ export function App() {
           <Routes>
             <Route path="/" element={<OverviewPage />} />
             <Route path="/sources" element={<SourcesListPage />} />
-            <Route path="/sources/add" element={<AddSourcePage />} />
+            <Route path="/sources/add" element={<Permission permission="source.register"><AddSourcePage /></Permission>} />
             <Route
               path="/sources/:sourceInstance/*"
               element={<SourceRoute />}
             />
             <Route path="/runs" element={<RunRoute />} />
             <Route path="/runs/:runId" element={<RunRoute />} />
-            <Route path="/policy" element={<DestinationPolicyPage />} />
+            <Route path="/settings" element={<Permission permission="identity.manage"><AuthenticationSettings/></Permission>} />
+            <Route path="/policy" element={<Permission permission="policy.write"><DestinationPolicyPage /></Permission>} />
             <Route path="/system" element={<SystemHealthPage />} />
             <Route path="/diagnostics" element={<DiagnosticsPage />} />
             <Route

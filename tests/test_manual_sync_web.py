@@ -29,11 +29,11 @@ class Apply:
     def __init__(self):
         self.calls = []
 
-    def prepare(self, instance, digest):
+    def prepare(self, instance, digest, actor_id=None):
         self.calls.append(('prepare', instance, digest))
         return {'confirmation_token': 'b' * 64, 'expires_in_seconds': 300}
 
-    def apply(self, instance, token):
+    def apply(self, instance, token, actor_id=None):
         self.calls.append(('apply', instance, token))
         return {'status': 'SUCCEEDED', 'plan_digest': 'a' * 64,
                 'run_id': '11111111-1111-4111-8111-111111111111'}

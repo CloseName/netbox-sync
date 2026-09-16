@@ -1,3 +1,4 @@
+import {usePermission} from '../AuthGate';
 import {tr} from "../ui/i18n";
 import { SourceFilters } from "../ui/SourceFilters";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
@@ -19,6 +20,7 @@ import { composeSources, querySources } from "../ui/operations";
 import { sourcePath, runPath } from "../ui/routes";
 import { staleEvidence } from "../ui/runEvidence";
 export function SourcesListPage() {
+  const canRegister = usePermission('source.register');
   const sources = useResource(fetchSources),
     diagnostics = useResource(fetchDiagnostics);
   const [params, setParams] = useSearchParams();
@@ -84,8 +86,8 @@ export function SourcesListPage() {
               onClick={refresh}
             >
               {tr("Refresh")}{" "}</button>
-            <Link className="button primary" to="/sources/add">
-              {tr("Add Source")}{" "}</Link>
+            {canRegister && <Link className="button primary" to="/sources/add">
+              {tr("Add Source")}{" "}</Link>}
           </>
         }
       />
@@ -111,7 +113,7 @@ export function SourcesListPage() {
         sources.data &&
         (sources.data.length === 0 ? (
           <EmptyState title={tr("No sources have been registered.")}>
-            <Link to="/sources/add">{tr("Add Source")}{" "}</Link>
+            {canRegister && <Link to="/sources/add">{tr("Add Source")}{" "}</Link>}
           </EmptyState>
         ) : result.total === 0 ? (
           <EmptyState title={tr("No sources match these filters.")}>

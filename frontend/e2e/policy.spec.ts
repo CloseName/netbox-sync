@@ -6,7 +6,7 @@ test(`explicit destination permission ${lang} ${theme} ${width}`,async({page})=>
  let allowed=false,revision=1,policyWrites=0,probes=0,conflict=true;
  await page.route('**/api/v1/**',async route=>{
   const path=new URL(route.request().url()).pathname,method=route.request().method();
-  if(path.endsWith('/auth/me'))return route.fulfill({json:{principal_id:'admin-fixture',username:'admin',permissions:['policy.read','policy.write','source.probe']}});
+  if(path.endsWith('/auth/me'))return route.fulfill({json:{principal_id:'admin-fixture',username:'admin',role:'admin',provider:'local',permissions:['identity.manage','source.register','bootstrap.manage','policy.read','policy.write','source.probe']}});
   if(path.endsWith('/bootstrap'))return route.fulfill({json:{revision:1,status:'READY',completed:true,url:'https://netbox.test',read_token_present:true,apply_token_present:true,safe_code:null,validated_at:1,checks:[]}});
   if(path.endsWith('/policy')){
    if(method==='POST'){

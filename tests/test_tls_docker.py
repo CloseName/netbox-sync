@@ -157,7 +157,7 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
         assert request('GET','/api/v1/bootstrap').json()['status']=='FRESH'
         redirect=session.get(f'http://127.0.0.1:{http_port}/setup',headers={'Host':'sync.example.test'},allow_redirects=False)
         assert redirect.status_code==308 and redirect.headers['Location']=='https://sync.example.test/setup'
-        for path in ('/','/setup','/sources','/sources/test-source','/sources/add','/runs','/runs/test-run-id','/diagnostics','/system'):
+        for path in ('/','/settings','/setup','/sources','/sources/test-source','/sources/add','/runs','/runs/test-run-id','/diagnostics','/system'):
             result=request('GET',path);assert result.status_code==200 and '<div id="root">' in result.text
         for path in ('/api/nonexistent','/assets/missing.js','/unknown-frontend-route'):assert request('GET',path).status_code==404
         import re

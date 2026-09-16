@@ -395,6 +395,7 @@ def _configuration_values(root, image):
             'NETBOX_SYNC_CONFIG_DIR': str(root / 'config'),
             'NETBOX_SYNC_INFRA_SECRET_DIR': str(secret_root),
             'NETBOX_SYNC_SOURCE_SECRET_DIR': str(root / 'secrets' / 'sources'),
+            'NETBOX_SYNC_AUTH_SECRET_DIR': str(root / 'secrets' / 'auth'),
             'NETBOX_SYNC_NETBOX_SECRET_DIR': str(root / 'secrets' / 'netbox'),
             'NETBOX_SYNC_APPLY_LOCK_DIR': '/run/netbox-sync',
             'NETBOX_SYNC_POSTGRES_VOLUME': 'netbox-sync-postgres-data',
@@ -482,7 +483,7 @@ def prepare_layout(root, source, release_id, image):
     for directory, mode in (
             (root, 0o755), (root / 'releases', 0o755), (root / 'config', 0o750),
             (root / 'secrets', 0o700), (root / 'secrets' / 'infrastructure', 0o700),
-            (root / 'secrets' / 'sources', 0o700), (root / 'secrets' / 'netbox', 0o700),
+            (root / 'secrets' / 'auth', 0o700), (root / 'secrets' / 'sources', 0o700), (root / 'secrets' / 'netbox', 0o700),
             (root / 'backups', 0o700), (root / 'state', 0o750)):
         ensure_directory(directory, mode)
     release = install_release(source, root / 'releases', release_id)

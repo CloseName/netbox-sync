@@ -71,7 +71,8 @@ def _install_boundaries(app, settings, auth_client):
         status = {'AUTH_REQUIRED':401, 'AUTH_DENIED':403, 'AUTH_INVALID':401,
                   'AUTH_RATE_LIMITED':429, 'ENROLLMENT_INVALID':409,
                   'POLICY_CONFLICT':409, 'POLICY_INVALID':422,
-                  'POLICY_HOST_MANAGED':403, 'PROBE_RECEIPT_INVALID':409}.get(exc.code,503)
+                  'POLICY_HOST_MANAGED':403, 'PROBE_RECEIPT_INVALID':409,
+                  'LDAP_INVALID':422, 'LDAP_CONFLICT':409, 'LDAP_ACCESS_DENIED':403, 'LDAP_BIND_FAILED':422, 'LDAP_TLS_FAILED':422}.get(exc.code,503)
         return _error(request, status, exc.code, 'Authentication or policy request rejected')
 
     @app.exception_handler(ControlError)
@@ -219,6 +220,7 @@ def _install_boundaries(app, settings, auth_client):
                 try:
                     request.state.principal = await run_in_threadpool(
                         auth_client.call, 'authorize', session=request.cookies.get(COOKIE),
+                        audit=request.method not in ('GET','HEAD','OPTIONS'),
                         permission=('source.read' if permission(request.method, request.url.path)=='unmapped.deny'
                                     else permission(request.method, request.url.path)))
                     if permission(request.method, request.url.path)=='unmapped.deny':
@@ -265,6 +267,7 @@ def _install_boundaries(app, settings, auth_client):
             'component': 'api',
             'request_id': request.state.request_id,
             'run_id': request.state.run_id,
+            'actor_id': getattr(request.state, 'principal', {}).get('principal_id'),
             'source_instance': None,
             'error_code': request.state.error_code,
             'message': 'HTTP request completed',
@@ -462,10 +465,13 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
                 pass
 
     @router.post('/sources/{source_instance}/sync-confirmations', response_model=ConfirmationDTO)
-    def prepare_sync(source_instance: str, request: ConfirmationRequestDTO):
+    def prepare_sync(source_instance: str, request: ConfirmationRequestDTO, http_request: Request):
         try:
-            result = (apply_client.prepare(source_instance, request.plan_digest, str(request.operation_id))
-                      if request.operation_id else apply_client.prepare(source_instance, request.plan_digest))
+            # Admission is this fresh server permission check, not possession of a plan.
+            principal = auth_client.call('authorize', session=http_request.cookies.get(COOKIE), permission='source.apply')
+            result = apply_client.prepare(source_instance, request.plan_digest,
+                **({'operation_id': str(request.operation_id)} if request.operation_id else {}),
+                actor_id=principal['principal_id'])
             return ConfirmationDTO.model_validate(result)
         except ApplyRequestError as exc:
             persist_stale(source_instance, request.operation_id, exc)
@@ -474,7 +480,9 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
     @router.post('/sources/{source_instance}/sync', response_model=ApplyResultDTO)
     def apply_sync(source_instance: str, payload: ApplyRequestDTO, request: Request):
         try:
-            result = ApplyResultDTO.model_validate(apply_client.apply(source_instance, payload.confirmation_token))
+            principal = auth_client.call('authorize', session=request.cookies.get(COOKIE), permission='source.apply')
+            result = ApplyResultDTO.model_validate(apply_client.apply(source_instance, payload.confirmation_token,
+                actor_id=principal['principal_id']))
             request.state.run_id = str(result.run_id) if result.run_id else None
             return result
         except ApplyRequestError as exc:
@@ -567,6 +575,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
             raise ValueError('Frontend build is unavailable')
         app.mount('/assets', StaticFiles(directory=root / 'assets'), name='assets')
 
+        @app.get('/settings', include_in_schema=False)
         @app.get('/policy', include_in_schema=False)
         @app.get('/setup', include_in_schema=False)
         @app.get('/sources', include_in_schema=False)

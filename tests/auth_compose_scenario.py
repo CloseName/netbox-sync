@@ -95,7 +95,8 @@ auth_info=json.loads(run(['docker','inspect',compose('ps','-q','netbox-sync-auth
 assert not auth_info['HostConfig']['PortBindings']
 assert auth_info['HostConfig']['Memory']==192*1024*1024
 assert not any('/secrets/' in m['Destination'] or 'docker.sock' in m['Destination'] for m in auth_info['Mounts'])
-assert set(auth_info['NetworkSettings']['Networks'])=={project+('_netbox-sync-db' if pgmode=='bundled' else '_netbox-sync-egress')}
+assert set(auth_info['NetworkSettings']['Networks'])=={project+('_netbox-sync-db' if pgmode=='bundled' else '_netbox-sync-egress'),project+'_netbox-sync-ldap-egress'}
+assert next(m for m in auth_info['Mounts'] if m['Destination']=='/var/lib/netbox-sync/auth-secrets')['RW'] is False
 
 assert info['HostConfig']['ReadonlyRootfs'] and info['HostConfig']['CapDrop'] == ['ALL']
 assert {cap.removeprefix('CAP_') for cap in info['HostConfig']['CapAdd']} == {'SETUID','SETGID','CHOWN','KILL'}, info['HostConfig']['CapAdd']
@@ -157,6 +158,8 @@ assert enrolled['status']==200
 session_cookie=enrolled['cookie'].split(';')[0]
 assert request(None,'/api/v1/auth/me','GET')['status']==200
 assert request(dict(username='admin',password=password,invitation=invitation),'/api/v1/auth/enroll')['status']==409
+if os.environ.get('NETBOX_SYNC_LDAP_COMPOSE_TEST')=='1':
+    exec(compile(Path('/review/tests/ldap_compose_scenario.py').read_text(),'ldap_compose_scenario.py','exec'))
 compose('exec','-T','--user','0','netbox-sync-auth-worker','python','-m','netbox_sync.auth_worker','managed','public-ipv4')
 secret = secrets.token_urlsafe(32)
 body = dict(source_type='esxi',address='esxi.probe.test',verify_ssl=True,username='netbox-sync',secret=secret,preview=True)
@@ -284,6 +287,8 @@ for _ in range(30):
  time.sleep(.3)
 else:raise RuntimeError('Auth state did not survive restart')
 assert request(None,'/api/v1/policy','GET')['body']==policy_before_restart
+if os.environ.get('NETBOX_SYNC_LDAP_COMPOSE_TEST')=='1':
+    assert request(None,'/api/v1/settings/ldap','GET')['body']==ldap_saved
 
 if pgmode == 'bundled' and os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST') != '1':
     # Supported host CLI, not a manual SQL dump or an app HTTP bypass.
@@ -325,10 +330,28 @@ if pgmode == 'bundled' and os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST') !
     assert restored['allowed_hosts']==auth_before['allowed_hosts']
     assert restored['sessions']=={} and restored['invitation'] is None and restored['receipts']=={}
     assert restored['mode']=='legacy' and restored['ceiling'] is None
-    for name in ('sources','netbox'):
+    assert restored.get('ldap')==auth_before.get('ldap')
+    assert restored['ldap_sessions']=={} and restored['ldap_test']=={}
+    for name in ('sources','netbox','auth'):
         for path in (root/'secrets'/name).rglob('*'):
             if path.is_file() and path.name!='bootstrap.lock':
                 assert path.read_bytes()==(target/'secrets'/name/path.relative_to(root/'secrets'/name)).read_bytes()
+    if os.environ.get('NETBOX_SYNC_LDAP_COMPOSE_TEST')=='1':
+        run([*target_cmd,'--profile','tools','run','--rm','netbox-sync-http-init'])
+        run([*target_cmd,'up','-d','--no-build',*install._runtime_services()])
+        run(['docker','network','connect','--alias','ldaps.fixture.test',project+'-restore_netbox-sync-ldap-egress',ldap_name])
+        def restored_request(body,path,method='POST',cookie=''):
+            return json.loads(run([*target_cmd,'exec','-T','--user','10001','netbox-sync-api','python','-c',CLIENT],
+                input=json.dumps({'path':path,'body':body,'cookie':cookie,'method':method})))
+        for _ in range(60):
+            try:
+                if restored_request(None,'/api/v1/auth/me','GET',session_cookie)['status']==401: break
+            except RuntimeError: pass
+            time.sleep(.5)
+        else: raise RuntimeError('Restored API did not revoke old session')
+        assert restored_request(dict(username='admin',password=password),'/api/v1/auth/login')['status']==200
+        assert restored_request(dict(provider='ldap',username='viewer',password=ldap_data['password']),'/api/v1/auth/login')['status']==200
+        print('PASS restored runtime: old sessions rejected, emergency and LDAPS login work with restored CA and bind file',flush=True)
     assert (root/'current').resolve().name=='probe-upgrade'
     assert request(None,'/api/v1/auth/me','GET')['status']==200
     print('PASS actual host CLI backup/create/verify/inspect/fresh-restore: identities, policy, source credentials, READY, service state retained; restored capabilities invalidated',flush=True)

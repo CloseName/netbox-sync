@@ -1,4 +1,5 @@
 export const ru: Record<string,string> = {
+  "Settings": "Настройки",
   "Host networking": "Сеть хоста",
   "ESXi host VMkernel/vSwitch networking is report-only; no host networking writes are supported.": "Сеть VMkernel/vSwitch хоста ESXi показывается только для сведения. Изменение сети хоста не поддерживается.",
   "No supported create operation was produced for this object.": "Для этого объекта не сформирована поддерживаемая операция создания.",

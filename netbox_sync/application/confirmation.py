@@ -18,6 +18,7 @@ class ConfirmationClaims:
     source_fingerprint: str
     target_fingerprint: str
     operation_id: str | None = None
+    actor_id: str | None = None
 
 
 class ConfirmationError(RuntimeError):

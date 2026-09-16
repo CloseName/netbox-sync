@@ -44,6 +44,9 @@ class FakeDatabase:
     def dump(self, destination):
         destination.write_bytes(b'PGDMP\x01fixture')
 
+    def ldap_secret_reference(self):
+        return None
+
     def source_secret_references(self):
         if not self.sources:
             return []
@@ -113,7 +116,7 @@ def _layout(root):
 
 
 def _fake_xattr(path, name, **_kwargs):
-    if 'secrets/sources/' not in Path(path).as_posix():
+    if not any(part in Path(path).as_posix() for part in ('secrets/sources/','secrets/auth/')):
         raise OSError('not a broker file')
     return {
         'user.netbox_sync.operation': b'operation-do-not-disclose',
@@ -124,7 +127,7 @@ def _fake_xattr(path, name, **_kwargs):
 
 def _portable_tar(root, destination):
     def metadata(info):
-        if info.name == 'secrets/sources/source-token':
+        if info.name == 'secrets/sources/source-token' or info.name.startswith('secrets/auth/'):
             path = root / info.name
             for name in os.listxattr(path, follow_symlinks=False):
                 value = os.getxattr(path, name, follow_symlinks=False)
@@ -805,3 +808,32 @@ def test_external_verify_preflight_does_not_require_live_db_or_docker(tmp_path, 
     monkeypatch.setattr(tool, '_run', lambda executable, *a, **k: calls.append(executable))
     tool.preflight()
     assert calls == ['pg_restore']
+
+
+def test_ldap_backup_requires_referenced_file_and_preserves_old_manifest(bundle_setup):
+    root,database=bundle_setup
+    key='ldap-bind-'+'a'*32
+    database.ldap_secret_reference=lambda:key
+    with pytest.raises(backup.BackupError,match='LDAP secret reference is unresolved'):
+        backup.create_backup(root,root/'backups',database)
+    assert not list((root/'backups').glob('netbox-sync-backup-*'))
+    directory=root/'secrets/auth';directory.mkdir(mode=0o700)
+    path=directory/key;path.write_text('fixture-not-a-real-bind-secret');path.chmod(0o600)
+    bundle=backup.create_backup(root,root/'backups',database)
+    manifest=backup.verify_bundle(bundle,database)
+    assert manifest['ldap_secret_reference']==key
+    assert 'fixture-not-a-real-bind-secret' not in (bundle/'manifest.json').read_text()
+    assert 'secrets/auth/'+key in [v['path'] for v in manifest['files']]
+
+
+def test_ldap_manifest_cannot_choose_path_and_old_manifests_remain_valid(bundle_setup):
+    root,database=bundle_setup
+    bundle=backup.create_backup(root,root/'backups',database)
+    path=bundle/'manifest.json';manifest=json.loads(path.read_text())
+    manifest.pop('ldap_secret_reference')
+    path.write_text(json.dumps(manifest));backup._write_checksums(bundle)
+    backup.verify_bundle(bundle,database)
+    manifest['ldap_secret_reference']='../../arbitrary-private-key'
+    path.write_text(json.dumps(manifest));backup._write_checksums(bundle)
+    with pytest.raises(backup.BackupError,match='LDAP reference is invalid'):
+        backup.verify_bundle(bundle,database)

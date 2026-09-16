@@ -1791,3 +1791,17 @@ body, .setup-workspace { font-family: Inter, system-ui, sans-serif; }
 .badge { overflow-wrap: normal; word-break: normal; }
 .language-control select { color:var(--nav-text); background:var(--nav-hover); border-color:var(--nav-muted); }
 .setup-toolbar .language-control select { color:var(--text); background:var(--surface); border-color:var(--border); }
+
+.ldap-mapping{display:flex;gap:1rem;align-items:end;flex-wrap:wrap;margin:1rem 0}.ldap-mapping label{flex:1;min-width:12rem}.panel textarea{max-width:100%;box-sizing:border-box}
+
+.ldap-settings fieldset { display: grid; gap: 1rem; min-width: 0; border: 0; padding: 0; }
+.ldap-settings label { display: grid; gap: .35rem; min-width: 0; }
+.ldap-settings input:not([type="checkbox"]), .ldap-settings textarea { width: 100%; min-width: 0; box-sizing: border-box; }
+.ldap-settings .ldap-enable { display: flex; align-items: center; gap: .5rem; }
+.ldap-settings .actions { display: flex; flex-wrap: wrap; gap: .6rem; }
+.ldap-settings .ldap-mapping label:first-child { flex: 1 1 16rem; }
+.ldap-settings .page-heading { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; justify-content: space-between; }
+
+.ldap-settings .ldap-mapping label { flex: 1 1 10rem; }
+.ldap-settings .ldap-mapping label:first-child { flex-basis: 16rem; }
+.ldap-settings select { max-width: 100%; }

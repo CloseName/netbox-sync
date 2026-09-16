@@ -1,4 +1,4 @@
-"""DB-only auth/policy worker; public peer socket and root-only local control."""
+"""Auth/policy worker with bounded verified directory access; public peer socket and root-only local control."""
 import json
 import multiprocessing
 import os

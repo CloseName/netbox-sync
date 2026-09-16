@@ -10,6 +10,8 @@ from ..local_control import request, ControlError
 COOKIE = '__Host-netbox-sync-session'
 PUBLIC = {('GET', '/api/v1/health'), ('POST', '/api/v1/auth/login'), ('POST', '/api/v1/auth/enroll')}
 ROUTES = (
+    ('GET', r'/api/v1/settings/(ldap|roles)', 'identity.manage'),
+    ('POST', r'/api/v1/settings/ldap(?:/(test|revoke))?', 'identity.manage'),
     ('POST', r'/api/v1/catalog/[^/]+', 'catalog.create'),
     ('GET', r'/api/v1/catalog-operations/[^/]+', 'catalog.create'),
     ('GET', r'/api/v1/catalog/[^/]+', 'source.register'),
@@ -58,6 +60,7 @@ class Login(BaseModel):
     model_config = ConfigDict(extra='forbid')
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=1, max_length=256, repr=False)
+    provider: Literal['local','ldap'] = 'local'
 
 
 class Enrollment(Login):
@@ -87,7 +90,7 @@ def routes(client):
 
     @router.post('/auth/enroll')
     def enroll(payload: Enrollment):
-        return session_response(client.call('enroll', **payload.model_dump()))
+        return session_response(client.call('enroll', **payload.model_dump(exclude={'provider'})))
 
     @router.get('/auth/me')
     def me(request: Request):
@@ -107,5 +110,27 @@ def routes(client):
     @router.post('/policy')
     def update(request: Request, payload: PolicyChange):
         return client.call('policy.update', session=request.cookies.get(COOKIE), **payload.model_dump())
+
+    from .ldap_dto import DirectoryChange
+
+    @router.get('/settings/ldap')
+    def ldap_settings(request: Request):
+        return client.call('ldap.settings',session=request.cookies.get(COOKIE))
+
+    @router.get('/settings/roles')
+    def roles(request: Request):
+        return client.call('roles',session=request.cookies.get(COOKIE))
+
+    @router.post('/settings/ldap/test')
+    def test_ldap(request: Request, payload: DirectoryChange):
+        return client.call('ldap.test',session=request.cookies.get(COOKIE),**payload.model_dump())
+
+    @router.post('/settings/ldap')
+    def save_ldap(request: Request, payload: DirectoryChange):
+        return client.call('ldap.save',session=request.cookies.get(COOKIE),**payload.model_dump())
+
+    @router.post('/settings/ldap/revoke')
+    def revoke_ldap(request: Request):
+        return client.call('ldap.revoke',session=request.cookies.get(COOKIE))
 
     return router

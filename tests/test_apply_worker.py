@@ -288,7 +288,7 @@ def test_prepare_requires_reviewed_generation_and_binds_token(monkeypatch):
     def plan(_):
         calls.append(True)
         return dict(apply_allowed=True, digest='a'*64, planner_version='v',
-                    source_fingerprint='s', target_fingerprint='t')
+                    source_fingerprint='s', target_fingerprint='t', items=[{'action':'CREATE'}])
     monkeypatch.setattr(supervisor, '_child', plan)
     with pytest.raises(ApplyWorkerError, match='PLAN_STALE'):
         supervisor.prepare(config.source_instance, 'a'*64)
@@ -297,3 +297,31 @@ def test_prepare_requires_reviewed_generation_and_binds_token(monkeypatch):
     claims = supervisor._confirmations.consume(response['confirmation_token'], config.source_instance)
     assert claims.operation_id == gate.current
     assert claims.plan_digest == 'a'*64
+
+
+def test_confirmation_actor_binding_prevents_other_operator_apply(monkeypatch):
+    config = sample_source_config()
+    supervisor = ApplySupervisor('', '', '', '', '', '', '/unused-fixture-lock')
+    monkeypatch.setattr(supervisor, '_source', lambda _: config)
+    monkeypatch.setattr(supervisor, '_payload', lambda *_: {})
+    monkeypatch.setattr(supervisor, '_child', lambda _: dict(apply_allowed=True,digest='a'*64,
+        planner_version='v',source_fingerprint='s',target_fingerprint='t',items=[{'action':'CREATE'}]))
+    actor='11111111-1111-4111-8111-111111111111'
+    result=supervisor.prepare(config.source_instance,'a'*64,actor_id=actor)
+    with pytest.raises(ApplyWorkerError,match='CONFIRMATION_INVALID'):
+        supervisor.apply(config.source_instance,result['confirmation_token'],actor_id='22222222-2222-4222-8222-222222222222')
+    # Invalid use consumes the capability and never reaches the lock or child.
+    with pytest.raises(ApplyWorkerError,match='CONFIRMATION_INVALID'):
+        supervisor.apply(config.source_instance,result['confirmation_token'],actor_id=actor)
+
+
+@pytest.mark.parametrize('items',[[],[{'action':'NO_CHANGE'}],[{'action':'UNSUPPORTED'}]])
+def test_empty_manual_plan_cannot_issue_confirmation(monkeypatch,items):
+    config=sample_source_config()
+    supervisor=ApplySupervisor('','','','','','','')
+    monkeypatch.setattr(supervisor,'_source',lambda _:config)
+    monkeypatch.setattr(supervisor,'_payload',lambda *_:{})
+    monkeypatch.setattr(supervisor,'_child',lambda _:dict(apply_allowed=True,digest='a'*64,
+        planner_version='v',source_fingerprint='s',target_fingerprint='t',items=items))
+    with pytest.raises(ApplyWorkerError,match='PLAN_BLOCKED'):
+        supervisor.prepare(config.source_instance,'a'*64)

@@ -1,3 +1,4 @@
+import {usePermission} from '../AuthGate';
 import {tr} from "../ui/i18n";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -93,6 +94,7 @@ export function SourceSchedule({
   evidence?: SourceDiagnostic;
   afterSave: () => void;
 }) {
+  const canSchedule = usePermission('source.schedule');
   const schedule = resource.data;
   const [phase, setPhase] = useState<
     "idle" | "editing" | "saving" | "saved" | "conflict" | "error"
@@ -146,6 +148,7 @@ export function SourceSchedule({
   const invalid = seconds === null;
   async function save(event: React.FormEvent) {
     event.preventDefault();
+    if (!canSchedule) return;
     if (
       busy.current ||
       invalid ||
@@ -212,7 +215,7 @@ export function SourceSchedule({
               <ScheduleSummary schedule={schedule} evidence={evidence} />
               <div className="page-actions">
                 <button
-                  disabled={resource.loading || resource.error}
+                  disabled={!canSchedule || resource.loading || resource.error}
                   onClick={() => {
                     setBaseline(schedule);
                     setEnabled(schedule.sync_enabled);
@@ -229,7 +232,7 @@ export function SourceSchedule({
           )}
           {editing && (
             <form onSubmit={save} aria-label={tr("Edit schedule")} noValidate>
-              <fieldset disabled={phase === "saving" || reloadPending}>
+              <fieldset disabled={!canSchedule || phase === "saving" || reloadPending}>
                 <legend>{tr("Automatic sync")}{" "}</legend>
                 <label className="schedule-toggle">
                   <input
@@ -329,7 +332,7 @@ export function SourceSchedule({
                 </button>
                 <button
                   type="button"
-                  disabled={phase === "saving" || reloadPending}
+                  disabled={!canSchedule || phase === "saving" || reloadPending}
                   onClick={() => {
                     setPhase("idle");
                     setMessage("");

@@ -57,7 +57,7 @@ def test_malformed_operation_never_leaks_data(patch,caplog):
 
 def test_failed_revalidation_invalidates_only_reviewed_uuid():
     row=operation();client=Operations(row)
-    def fail(*_):raise ApplyRequestError('PLAN_STALE')
+    def fail(*_,**kwargs):raise ApplyRequestError('PLAN_STALE')
     with app(client,apply_client=SimpleNamespace(prepare=fail)) as api:
         response=api.post('/api/v1/sources/pve-test/sync-confirmations',headers=HEADERS,
                           json=dict(plan_digest='a'*64,operation_id=row['operation_id'],confirmed=True))

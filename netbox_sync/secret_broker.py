@@ -357,12 +357,27 @@ def main():
     parser.add_argument('--socket', required=True)
     parser.add_argument('--secret-root', required=True)
     parser.add_argument('--allowed-uid', type=int, default=10001)
+    parser.add_argument('--auth-socket')
+    parser.add_argument('--auth-secret-root')
     arguments = parser.parse_args()
+    if bool(arguments.auth_socket) != bool(arguments.auth_secret_root):
+        parser.error('Both auth socket and secret root are required')
+    auth_process = None
+    if arguments.auth_socket:
+        import multiprocessing
+        from .auth_secrets import serve_auth_secrets
+        auth_process = multiprocessing.Process(target=serve_auth_secrets,
+            args=(arguments.auth_socket, arguments.auth_secret_root), daemon=True)
+        auth_process.start()
     try:
         serve(arguments.socket, arguments.secret_root, arguments.allowed_uid)
     except Exception:
         print(json.dumps({'component': 'secret_broker', 'error_code': 'BROKER_FAILED'}))
         raise SystemExit(1) from None
+    finally:
+        if auth_process is not None:
+            auth_process.terminate()
+            auth_process.join(5)
 
 
 if __name__ == '__main__':

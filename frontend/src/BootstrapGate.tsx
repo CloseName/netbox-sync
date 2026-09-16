@@ -1,4 +1,4 @@
-import {SessionControls} from './AuthGate';
+import {SessionControls,usePermission} from './AuthGate';
 import {OperationFeedback} from "./ui/OperationFeedback";
 import {useLanguage} from "./ui/language";
 import {LanguageControl} from "./ui/LanguageControl";
@@ -17,6 +17,11 @@ async function call(action='',body?:unknown):Promise<State>{
 }
 const reasons:Record<string,[string,string]>={NETWORK_UNREACHABLE:['NetBox is unreachable. Check DNS and network.','NetBox недоступен. Проверьте DNS и сеть.'],TLS_FAILED:['NetBox certificate validation failed.','Сертификат NetBox не прошёл проверку.'],AUTH_FAILED:['NetBox rejected a token.','NetBox отклонил токен.'],PERMISSION_DENIED:['Token permissions need review.','Проверьте права токенов.'],PREREQUISITES_MISSING:['Prepare the service fields below. This is expected on a fresh NetBox.','Подготовьте служебные поля ниже. Это нормально для нового NetBox.'],VALIDATION_INTERRUPTED:['Validation was interrupted. Check again.','Проверка прервана. Запустите её повторно.']};
 export function BootstrapGate({children}:{children:ReactNode}){
+ const manage=usePermission('bootstrap.manage');
+ if(!manage)return <>{children}</>;
+ return <AdministratorBootstrap>{children}</AdministratorBootstrap>;
+}
+function AdministratorBootstrap({children}:{children:ReactNode}){
  const [state,setState]=useState<State|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[step,setStep]=useState(1),[replace,setReplace]=useState(false);
  const inFlight=useRef(false); const [action,setAction]=useState(''),[started,setStarted]=useState(0),[,setNow]=useState(Date.now());
  useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),10000);return()=>clearInterval(timer);},[]);

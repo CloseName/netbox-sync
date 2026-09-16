@@ -3,6 +3,8 @@ import re
 from psycopg import connect, sql
 from psycopg.types.json import Jsonb
 from .auth_policy import AuthPolicy, AuthError, initial_state
+from .ldap_directory import DirectoryClient
+from .auth_secrets import AuthSecrets
 
 
 class AuthStore:
@@ -20,7 +22,7 @@ class AuthStore:
                 row = connection.execute(sql.SQL('SELECT value FROM {} WHERE id=1 FOR UPDATE').format(table)).fetchone()
                 if row is None:
                     raise AuthError('AUTH_UNAVAILABLE')
-                service = AuthPolicy(row[0], self.baseline)
+                service = AuthPolicy(row[0], self.baseline, directory=DirectoryClient(), auth_secrets=AuthSecrets())
                 try:
                     result = service.root(payload.get('action'), payload) if root else service.call(payload)
                 except AuthError as exc:
