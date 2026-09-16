@@ -134,3 +134,12 @@ See the [authentication/policy contract](docs/local-admin-policy.md),
 [upgrade and enrollment runbook](docs/local-admin-upgrade-runbook.md), and
 [review evidence with the pending upgrade gate](docs/local-admin-policy-review.md).
 Business APIs require a server session; Origin/CSRF and Bootstrap READY are not login.
+
+
+### LDAPS and fixed roles
+
+Corporate sign-in supports verified LDAPS and explicit direct-group mappings to
+Viewer, Operator and Admin. Local emergency administrator access remains available.
+See [the authorization and directory contract](docs/ldaps-rbac.md),
+[upgrade/recovery runbook](docs/ldaps-upgrade-runbook.md), and
+[local runtime evidence and AD acceptance limits](docs/ldaps-rbac-progress.md).

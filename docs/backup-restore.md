@@ -390,3 +390,13 @@ and requires root reapproval of managed policy under the target host baseline.
 An already-enrolled target is not a fresh restore destination. See
 [the current auth contract](local-admin-policy.md#backup-and-restore) and
 [pending release evidence](local-admin-policy-review.md).
+
+
+## LDAPS state
+
+LDAP-enabled releases include auth_state settings, trusted CA and group mappings,
+plus protected `<root>/secrets/auth` immutable bind files. Verification checks the
+active reference against the archive; arbitrary manifest filesystem destinations
+are never accepted. Restore retains that configuration while revoking sessions and
+pending LDAP test proofs. Older manifests remain supported by the new tool; use
+matching new tools for new bundles. See [LDAPS upgrade/recovery](ldaps-upgrade-runbook.md).
