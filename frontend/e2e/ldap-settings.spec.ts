@@ -1,3 +1,4 @@
+import {openUserMenu,setLanguage} from './menu-helper';
 import {test,expect} from '@playwright/test';
 const read=['source.read','run.read','diagnostics.read'];
 const operate=[...read,'source.plan','source.apply'];
@@ -18,7 +19,7 @@ test(`LDAP settings test save and roles ${lang} ${theme} ${width}`,async({page})
   }
   return route.fulfill({status:503,json:{error:{code:'UNAVAILABLE'}}});
  });
- await page.goto('/settings');await page.getByLabel('Language / Язык').selectOption(lang);
+ await page.goto('/settings');await setLanguage(page,lang);
  const t=(en:string,ru:string)=>lang==='ru'?ru:en;
  const password=page.getByLabel(t('Bind account password','Пароль служебной записи'),{exact:true});
  await expect(password).toHaveValue('');
@@ -45,9 +46,59 @@ for(const role of ['viewer','operator'])test(`restricted navigation ${role}`,asy
   if(path.endsWith('/sources'))return route.fulfill({json:[]});
   return route.fulfill({status:503,json:{error:{code:'UNAVAILABLE'}}});
  });
- await page.goto('/settings');await page.getByLabel('Language / Язык').selectOption('en');
+ await page.goto('/settings');await setLanguage(page,'en');
  await expect(page.getByText('You do not have permission to open this section.')).toBeVisible();
  await expect(page.getByRole('link',{name:'Settings',exact:true})).toHaveCount(0);
  await page.goto('/sources/add');await expect(page.getByText('You do not have permission to open this section.')).toBeVisible();
  expect(privilegedReads).toBe(0);
+});
+
+for(const failure of ['AUTH_UNAVAILABLE','LDAP_TLS_FAILED','API_VALIDATION_FAILED','AUTH_DENIED','timeout'])test(`LDAP draft survives ${failure}`,async({page})=>{
+ let requests=0,code=failure;
+ await page.route('**/api/v1/**',async route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(path.endsWith('/auth/me'))return route.fulfill({json:{principal_id:'draft-owner',username:'admin',role:'admin',permissions:admin}});
+  if(path.endsWith('/bootstrap'))return route.fulfill({json:{revision:1,status:'ATTENTION',completed:true,url:'https://netbox.example.test',read_token_present:true,apply_token_present:true,safe_code:'NETWORK_UNREACHABLE',checks:[]}});
+  if(path.endsWith('/settings/ldap/test')){requests++;if(code==='timeout')return route.abort('timedout');if(code==='OK')return route.fulfill({json:{ok:true}});return route.fulfill({status:code==='AUTH_DENIED'?403:code==='API_VALIDATION_FAILED'?422:503,json:{error:{code}}});}
+  if(path.endsWith('/settings/ldap'))return route.fulfill({json:{revision:1,config,bind_secret_present:true,roles:{viewer:read,operator:operate,admin}}});
+  return route.fulfill({status:503,json:{error:{code:'AUTH_UNAVAILABLE'}}});
+ });
+ await page.goto('/settings');await expect(page.getByRole('heading',{name:'Corporate directory'})).toBeVisible();
+ await page.getByLabel('Directory hostname',{exact:true}).fill('edited.example.test');
+ await page.getByLabel('Bind account password',{exact:true}).fill('transient-secret');
+ await page.getByRole('button',{name:'Add group',exact:true}).click();
+ await page.getByRole('button',{name:'Check configuration',exact:true}).click();
+ expect(requests).toBe(0);await expect(page.getByText('Enter a group DN or remove this row.')).toBeVisible();
+ await page.getByRole('button',{name:'Remove mapping'}).last().click();
+ await page.getByLabel('Trusted CA certificates (PEM)',{exact:true}).fill('not a certificate');
+ await page.getByRole('button',{name:'Check configuration',exact:true}).click();expect(requests).toBe(0);
+ await page.getByLabel('Trusted CA certificates (PEM)',{exact:true}).fill('');
+ await page.getByRole('button',{name:'Check configuration',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Check configuration',exact:true})).toBeEnabled();expect(requests).toBe(1);
+ await expect(page.getByLabel('Directory hostname',{exact:true})).toHaveValue('edited.example.test');
+ await expect(page.getByRole('heading',{name:'Sign in',exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:'Reload settings'}).click();await expect(page.getByRole('button',{name:'Keep editing'})).toBeVisible();await page.getByRole('button',{name:'Keep editing'}).click();
+ code='OK';await page.getByRole('button',{name:'Check configuration',exact:true}).click();
+ await expect(page.getByRole('status')).toContainText('Checked, not saved.');
+ expect(await page.evaluate(()=>JSON.stringify([localStorage,sessionStorage]).includes('transient-secret'))).toBe(false);
+});
+
+test('expired session restores only the same principal non-secret draft',async({page})=>{
+ let actor='first',signed=true;
+ await page.route('**/api/v1/**',r=>{
+  const path=new URL(r.request().url()).pathname;
+  if(path.endsWith('/auth/status'))return r.fulfill({json:{enrollment_available:false}});
+  if(path.endsWith('/auth/me'))return r.fulfill({status:signed?200:401,json:signed?{principal_id:actor,username:actor,role:'admin',permissions:admin}:{error:{code:'AUTH_REQUIRED'}}});
+  if(path.endsWith('/auth/login')){signed=true;actor=r.request().postDataJSON().username;return r.fulfill({json:{authenticated:true}});}
+  if(path.endsWith('/bootstrap'))return r.fulfill({json:{revision:1,status:'READY',completed:true,url:'https://netbox.example.test',read_token_present:true,apply_token_present:true,safe_code:null,checks:[]}});
+  if(path.endsWith('/settings/ldap'))return r.fulfill({json:{revision:1,config,bind_secret_present:true,roles:{viewer:read,operator:operate,admin}}});
+  return r.fulfill({status:401,json:{error:{code:'AUTH_REQUIRED'}}});
+ });
+ await page.goto('/settings');await page.getByLabel('Directory hostname',{exact:true}).fill('retained.example.test');await page.getByLabel('Bind account password',{exact:true}).fill('memory-only-value');
+ for(const name of ['first','second']){
+  signed=false;await page.evaluate(()=>fetch('/api/v1/policy'));
+  await page.locator('[name=username]').fill(name);await page.locator('[name=password]').fill('temporary-login');await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await expect(page.getByLabel('Directory hostname',{exact:true})).toHaveValue(name==='first'?'retained.example.test':config.host);
+  await expect(page.getByLabel('Bind account password',{exact:true})).toHaveValue('');
+ }
 });

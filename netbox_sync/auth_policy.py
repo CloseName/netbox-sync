@@ -148,6 +148,8 @@ class AuthPolicy(DirectoryAuth):
 
     def call(self, payload):
         action = payload.get('action')
+        if action == 'login.status':
+            return {'enrollment_available': not bool(self.state['principal'])}
         if action == 'enroll':
             self.throttle()
             invitation = self.state['invitation']
@@ -167,10 +169,18 @@ class AuthPolicy(DirectoryAuth):
             self.state['attempts'] = []
             self.event('enrolled', self.state['principal']['id'])
             return self.issue_session()
-        if action == 'login' and payload.get('provider','local')=='ldap':
-            return self.ldap_login(payload)
         if action == 'login':
-            if payload.get('provider','local')!='local': raise AuthError('AUTH_INVALID')
+            username = bounded(payload.get('username'), 64)
+            local = self.state['principal']
+            # Reserve case variants too: AD commonly treats names case-insensitively.
+            # Explicit legacy provider hints cannot bypass this reservation.
+            reserved = bool(local and username.casefold() == local['username'].casefold())
+            if not reserved:
+                if self.state.get('ldap', {}).get('config', {}).get('enabled'):
+                    return self.ldap_login(payload)
+                self.throttle()
+                PASSWORDS.hash(bounded(payload.get('password'), 256))
+                raise AuthError('AUTH_INVALID')
             self.throttle()
             username = bounded(payload.get('username'), 64)
             password = bounded(payload.get('password'), 256)

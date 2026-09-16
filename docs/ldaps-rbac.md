@@ -187,3 +187,12 @@ Use [the upgrade runbook](ldaps-upgrade-runbook.md) for an existing installation
 - [ldap3 bind](https://ldap3.readthedocs.io/en/latest/bind.html)
 - [Microsoft userAccountControl flags](https://learn.microsoft.com/en-us/troubleshoot/windows-server/active-directory/useraccountcontrol-manipulate-account-properties)
 - [Microsoft LDAP matching rules](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/4e638665-f466-4597-93c4-12f2ebfabab5)
+
+
+## Unified login after live acceptance
+
+The server reserves the existing local administrator name (including case variants)
+for local verification; all other names use enabled LDAP. No fallback or identity
+merging occurs. Legacy provider hints cannot override routing. See the
+[UX follow-up and compatibility contract](ldaps-ux-acceptance.md), including explicit
+recovery form access and temporary-error behavior.

@@ -1,11 +1,9 @@
 import {SessionControls,usePermission} from './AuthGate';
 import {OperationFeedback} from "./ui/OperationFeedback";
 import {useLanguage} from "./ui/language";
-import {LanguageControl} from "./ui/LanguageControl";
 import {Brand} from "./ui/Brand";
 import {useCallback,useEffect,useRef,useState,type ReactNode,type FormEvent} from 'react';
 import {useLocation,useNavigate} from 'react-router-dom';
-import {ThemeControl} from './ui/ThemeControl';
 
 import {PreparationPlan,type PreparationField as Field} from './PreparationPlan';
 type Preparation={status:string;digest?:string;fields?:Field[];created?:string[];uncertain?:string|null;revocation?:string;local_secret?:string};
@@ -35,13 +33,15 @@ function AdministratorBootstrap({children}:{children:ReactNode}){
  useEffect(()=>{if(state?.status!=='VALIDATING'&&state?.preparation?.status!=='RUNNING')return;const timer=setTimeout(reload,2500);return()=>clearTimeout(timer);},[state,reload]);
  useEffect(()=>{heading.current?.focus();},[step]);
  useEffect(()=>{if(state?.status!=='READY'||location.pathname==='/setup')document.title=t('NetBox setup | NetBox Sync','Настройка NetBox | NetBox Sync');},[state?.status,location.pathname,language]);
+ useEffect(()=>{if(state?.completed&&location.pathname==='/setup')navigate('/settings/netbox',{replace:true});},[state?.completed,location.pathname,navigate]);
  const submit=async(action:string,body:unknown,nextStep?:number)=>{if(inFlight.current)return;inFlight.current=true;setAction(action);setStarted(Date.now());setBusy(true);++sequence.current;setError('');try{let next=await call(action,body);accept(next);
    if(action==='configuration'){setReplace(false);setStep(2);setAction('validate');next=await call('validate',{revision:next.revision});accept(next);}
    if(nextStep)setStep(nextStep);if(action==='finish')navigate('/');
  }catch{setError(action==='finish'?'finish':'request');if(action==='finish')setStep(2);}finally{++sequence.current;inFlight.current=false;setBusy(false);}};
  const configure=(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();const form=event.currentTarget,data=new FormData(form);const body={revision:state!.revision,url:String(data.get('url')),read_token:String(data.get('read_token')),apply_token:String(data.get('apply_token')),replace_credentials:state!.read_token_present};form.reset();void submit('configuration',body);};
  const prepare=(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();const form=event.currentTarget,data=new FormData(form);const body={revision:state!.revision,digest:state!.preparation!.digest,confirm:data.get('confirm')==='on',setup_token:String(data.get('setup_token'))};form.reset();void submit('prerequisites-apply',body);};
- if(state?.status==='READY'&&!error&&location.pathname!=='/setup')return <>{children}</>;
+ if(!state)return <main className="setup-workspace"><div className="setup-toolbar"><Brand/><SessionControls/></div><h1>{t('NetBox connection state','Состояние подключения NetBox')}</h1><p role={error?'alert':'status'}>{error?t('Connection state is unavailable. Initial setup has not been inferred.','Состояние подключения недоступно. Необходимость первоначальной настройки не подтверждена.'):t('Loading connection state…','Загружаем состояние подключения…')}</p>{error&&<button onClick={reload}>{t('Reload connection state','Обновить состояние подключения')}</button>}</main>;
+ if(state?.completed&&location.pathname!=='/settings/netbox'&&location.pathname!=='/setup')return <>{children}</>;
  const titles=[t('Connection','Подключение'),t('Access check','Проверка доступа'),t('Prepare NetBox','Подготовка NetBox'),t('Review and finish','Итоги и завершение')];
  const running=busy||state?.status==='VALIDATING'||state?.preparation?.status==='RUNNING';
  const plan=state?.preparation,fields=plan?.fields??[],missing=fields.filter(f=>f.status==='missing');
@@ -50,9 +50,9 @@ function AdministratorBootstrap({children}:{children:ReactNode}){
  const statusLabel=(status:string)=>({ready:t('Ready','Готово'),missing:t('Will be created','Будет создано'),conflict:t('Conflict — review in NetBox','Конфликт — проверьте в NetBox'),provisioning:t('NetBox is provisioning','NetBox подготавливает поле'),passed:t('Passed','Проверено'),failed:t('Needs attention','Требует внимания'),not_run:t('Not checked','Не проверено'),preliminary:t('Preliminary check only','Только предварительная проверка'),pending:t('Preparation needed','Нужна подготовка')}[status]??t('Not confirmed','Не подтверждено'));
 
  return <main className="setup-workspace" lang={language}>
-  <div className="setup-toolbar"><Brand/><LanguageControl/><ThemeControl language={language}/><SessionControls/></div>
-  <header className="setup-intro"><h1>{t('Welcome to NetBox Sync','Добро пожаловать в NetBox Sync')}</h1><p>{t('Connect NetBox, prepare its service fields, then add your sources.','Подключите NetBox, подготовьте служебные поля, затем добавьте источники.')}</p></header>
-  <nav aria-label={t('Setup progress','Ход настройки')}><ol className="setup-progress">{titles.map((title,i)=><li key={i} aria-current={step===i+1?'step':undefined}><button disabled={running||i+1>step} onClick={()=>setStep(i+1)}><span>{i+1}</span>{title}</button></li>)}</ol></nav>
+  <div className="setup-toolbar"><Brand/><SessionControls/></div>
+  <header className="setup-intro"><h1>{state?.completed?t('NetBox connection','Подключение NetBox'):t('Welcome to NetBox Sync','Добро пожаловать в NetBox Sync')}</h1><p>{state?.completed?t('Maintain the saved connection and verify access.','Обслуживание сохранённого подключения и проверка доступа.'):t('Connect NetBox, prepare its service fields, then add your sources.','Подключите NetBox, подготовьте служебные поля, затем добавьте источники.')}</p></header>
+  {state?.completed?<nav><button onClick={()=>navigate('/settings')}>{t('Settings','Настройки')}</button><button disabled={running} onClick={()=>setStep(1)}>{t('Connection','Подключение')}</button><button disabled={running} onClick={()=>setStep(2)}>{t('Access check','Проверка доступа')}</button></nav>:<nav aria-label={t('Setup progress','Ход настройки')}><ol className="setup-progress">{titles.map((title,i)=><li key={i} aria-current={step===i+1?'step':undefined}><button disabled={running||i+1>step} onClick={()=>setStep(i+1)}><span>{i+1}</span>{title}</button></li>)}</ol></nav>}
   {error&&<div role="alert" className="setup-notice">{error==='finish'?t('Finish was not confirmed. Repeat the access check; saved connection details are retained.','Завершение не подтверждено. Повторите проверку доступа; подключение сохранено.'):t('Request outcome is unconfirmed. Reload server state before retrying; writes are not repeated automatically.','Результат запроса не подтверждён. Обновите состояние перед повтором; записи автоматически не повторяются.')}</div>}
   {running&&<OperationFeedback operation={state?.preparation?.status==='RUNNING'||action==='prerequisites-apply'?t('Preparing service fields','Подготовка служебных полей'):action==='configuration'?t('Saving connection','Сохранение подключения'):t('NetBox access check','Проверка доступа к NetBox')} phase={state?.status==='VALIDATING'||state?.preparation?.status==='RUNNING'?'running':'sending'} started={started||undefined}/>}
   {running&&<p className="muted">{t('The page remains readable. Leaving does not confirm cancellation. Reopen setup to fetch persisted state; uncertain writes are never repeated automatically.','Страница доступна для чтения. Уход не означает отмену. Вернитесь к настройке, чтобы получить сохранённое состояние; неопределённые записи не повторяются автоматически.')}</p>}

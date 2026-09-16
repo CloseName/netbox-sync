@@ -1,4 +1,15 @@
 export const ru: Record<string,string> = {
+"Earlier discovery attempt; a newer run is shown in history.": "Предыдущая попытка обнаружения; в истории есть более поздний запуск.",
+
+"Earlier planning attempt; a newer run is shown in history.": "Предыдущая попытка построения плана; в истории есть более поздний запуск.",
+
+"The saved plan has expired. This is not a synchronization failure.": "Срок сохранённого плана истёк. Это не ошибка синхронизации.",
+"Build a new plan when you want to sync manually.": "Постройте новый план для ручной синхронизации.",
+"An Operator or Admin can build a new plan.": "Новый план может построить Оператор или Администратор.",
+"The discovery result has expired. Run history is unchanged.": "Срок результата обнаружения истёк. История запусков сохранена.",
+"Run discovery to refresh this result.": "Запустите обнаружение для обновления результата.",
+"An Operator or Admin can refresh this result.": "Обновить результат может Оператор или Администратор.",
+
   "Settings": "Настройки",
   "Host networking": "Сеть хоста",
   "ESXi host VMkernel/vSwitch networking is report-only; no host networking writes are supported.": "Сеть VMkernel/vSwitch хоста ESXi показывается только для сведения. Изменение сети хоста не поддерживается.",

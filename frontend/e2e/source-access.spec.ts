@@ -1,3 +1,4 @@
+import {openUserMenu,setLanguage} from './menu-helper';
 import { test, expect } from './operation-fixture';
 import { randomUUID } from 'node:crypto';
 async function fixture(page, code = 'SOURCE_TLS_FAILED') {
@@ -10,7 +11,7 @@ for (const language of ['en','ru']) for (const theme of ['light','dark']) {
   await page.setViewportSize({width:390,height:844});
   await page.emulateMedia({colorScheme:theme});
   await fixture(page);
-  await page.getByLabel('Language / Язык').selectOption(language);
+  await setLanguage(page,language);
   await page.getByLabel(/Hostname or IPv4 address|Имя узла или адрес IPv4/).fill('pve.example.test');
   await page.locator('[name=username]').fill('netbox-sync@pve');
   await page.locator('[name=token_id]').fill('netbox-sync');
@@ -20,8 +21,8 @@ for (const language of ['en','ru']) for (const theme of ['light','dark']) {
   await page.getByText(language==='ru'?'Команды Proxmox CLI':'Proxmox CLI commands',{exact:true}).click();
   await page.getByRole('button',{name:language==='ru'?'Копировать':'Copy',exact:true}).first().click();
   await expect.poll(()=>page.evaluate(()=>navigator.clipboard.readText())).toBe('pveversion');
-  await page.getByLabel('Language / Язык').selectOption(language==='ru'?'en':'ru');
-  await page.getByLabel('Language / Язык').selectOption(language);
+  await setLanguage(page,language==='ru'?'en':'ru');
+  await setLanguage(page,language);
   await expect(page.locator('[name=username]')).toHaveValue('netbox-sync@pve');
   // Never put secret values in an assertion failure or screenshot.
   expect(await page.locator('[name=secret]').evaluate((input:HTMLInputElement,value)=>input.value===value,secret)).toBe(true);
@@ -53,7 +54,7 @@ for (const [code, text] of [['SOURCE_DNS_FAILED','hostname could not be resolved
 
 test('Russian connection failure uses safe local explanation',async({page})=>{
  await fixture(page,'SOURCE_TLS_FAILED');
- await page.getByLabel('Language / Язык').selectOption('ru');
+ await setLanguage(page,'ru');
  await page.getByLabel(/Source type|Тип источника/).selectOption('esxi');
  await page.getByLabel(/Hostname or IPv4 address|Имя узла или адрес IPv4/).fill('esxi.example.test');
  await page.locator('[name=username]').fill('netbox-sync');

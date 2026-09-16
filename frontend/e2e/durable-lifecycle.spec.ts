@@ -1,3 +1,4 @@
+import {openUserMenu,setLanguage} from './menu-helper';
 import {previewResult,installCatalog,selectPlacement} from './source-placement-fixture';
 import {test, expect} from './auth-fixture';
 import {randomUUID} from 'node:crypto';
@@ -112,7 +113,7 @@ test(`operation state failure classification ${lang} ${scenario}`,async({page,co
  const server=backend();await server.attach(context);await page.goto(url+'/sources/source-1/sync');
  await page.getByRole('button',{name:'Build plan',exact:true}).click();
  await expect(page.locator('.operation-feedback')).toContainText('Operation in progress');
- await page.getByLabel('Language / Язык').selectOption(lang);
+ await setLanguage(page,lang);
  await context.route('**/operations',route=>scenario==='transport'?route.abort('failed'):route.fulfill({status:scenario==='denied'?403:scenario==='server'?503:200,body:'REMOTE_SENTINEL'}));
  const reason=lang==='ru'?{denied:'Доступ к состоянию операции отклонён.',server:'Сервер не смог вернуть состояние операции.',invalid:'Не удалось проверить ответ о состоянии операции.',transport:'Ответ не получен.'}:{denied:'Access to operation state was denied.',server:'The server could not return operation state.',invalid:'The operation response could not be validated.',transport:'No response received.'};
  await expect(page.getByText(reason[scenario as keyof typeof reason],{exact:false})).toBeVisible();

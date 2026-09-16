@@ -169,3 +169,11 @@ This is audited root control, not an anonymous endpoint. After restore, old
 sessions/invitations cannot be reused, and policy remains legacy until explicit
 root reapproval. The timer remains stopped under the restore contract; do not
 implicitly enable it while reviewing restored source state.
+
+
+### Recovery form after initial enrollment
+
+The ordinary login hides administrator invitation entry after enrollment. After the
+root recovery command above, open the public HTTPS URL with `?recovery=1` and enter
+the invitation in its password field. Never put the invitation value in the URL.
+The flag only reveals the form; the server still verifies the one-time invitation.

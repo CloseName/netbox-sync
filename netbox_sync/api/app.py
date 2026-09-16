@@ -575,6 +575,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
             raise ValueError('Frontend build is unavailable')
         app.mount('/assets', StaticFiles(directory=root / 'assets'), name='assets')
 
+        @app.get('/settings/netbox', include_in_schema=False)
         @app.get('/settings', include_in_schema=False)
         @app.get('/policy', include_in_schema=False)
         @app.get('/setup', include_in_schema=False)

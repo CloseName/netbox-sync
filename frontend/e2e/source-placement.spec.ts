@@ -1,3 +1,4 @@
+import {openUserMenu,setLanguage} from './menu-helper';
 import {test,expect} from './operation-fixture';
 import {randomUUID} from 'node:crypto';
 import {previewResult,catalogRow,selectPlacement,host} from './source-placement-fixture';
@@ -25,9 +26,9 @@ async function fixture(page:any,scenario='exact'){
 }
 for(const lang of ['en','ru'])for(const theme of ['light','dark'] as const)for(const width of [1440,390])test(`placement ${lang} ${theme} ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});await page.emulateMedia({colorScheme:theme});const f=await fixture(page);
- await page.getByLabel('Language / Язык').selectOption(lang);
+ await setLanguage(page,lang);
  const label=lang==='ru'?'Название источника':'Display name';await page.getByLabel(label,{exact:true}).fill('My host');
- await page.getByLabel('Language / Язык').selectOption(lang==='ru'?'en':'ru');await page.getByLabel('Language / Язык').selectOption(lang);await expect(page.getByLabel(label,{exact:true})).toHaveValue('My host');
+ await setLanguage(page,lang==='ru'?'en':'ru');await setLanguage(page,lang);await expect(page.getByLabel(label,{exact:true})).toHaveValue('My host');
  await expect(page.getByRole('combobox',{name:lang==='ru'?/^Тип устройства.*для/:/^Device type for/})).toContainText('PowerEdge R650');
  expect(f.posts()).toBe(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
  await page.screenshot({path:`test-results/placement-${lang}-${theme}-${width}.png`,fullPage:true});
@@ -139,7 +140,7 @@ for(const outcome of ['CREATED','REFUSED','UNCERTAIN','EXISTS_REVIEW_REQUIRED'])
 
 for(const lang of ['en','ru'])for(const theme of ['light','dark'] as const)for(const width of [1440,390])test(`catalog dialog ${lang} ${theme} ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});await page.emulateMedia({colorScheme:theme});await fixture(page);
- await page.getByLabel('Language / Язык').selectOption(lang);
+ await setLanguage(page,lang);
  await page.getByRole('combobox',{name:lang==='ru'?'Платформа (Platform)':'Platform',exact:true}).click();
  await page.getByRole('button',{name:lang==='ru'?'Создать…':'Create…',exact:true}).click();
  const dialog=page.getByRole('dialog',{name:lang==='ru'?'Создать в NetBox':'Create in NetBox',exact:true});

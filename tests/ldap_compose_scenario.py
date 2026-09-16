@@ -35,7 +35,7 @@ for service in install._runtime_services():
     if service not in ('netbox-sync-auth-worker','netbox-sync-secret-broker'):
         assert not any(m['Destination'] in ('/var/lib/netbox-sync/auth-secrets','/run/netbox-sync-auth-secrets') for m in container['Mounts'])
 for role in ('viewer','operator','admin'):
-    login_response=request(dict(provider='ldap',username=role,password=ldap_data['password']),'/api/v1/auth/login')
+    login_response=request(dict(username=('multi' if role=='admin' else role),password=ldap_data['password']),'/api/v1/auth/login')
     assert login_response['status']==200,login_response
     session_cookie=login_response['cookie'].split(';')[0]
     assert request(None,'/api/v1/auth/me','GET')['body']['role']==role

@@ -8,7 +8,7 @@ from ..auth_policy import AuthError, CODES
 from ..local_control import request, ControlError
 
 COOKIE = '__Host-netbox-sync-session'
-PUBLIC = {('GET', '/api/v1/health'), ('POST', '/api/v1/auth/login'), ('POST', '/api/v1/auth/enroll')}
+PUBLIC = {('GET', '/api/v1/health'), ('GET', '/api/v1/auth/status'), ('POST', '/api/v1/auth/login'), ('POST', '/api/v1/auth/enroll')}
 ROUTES = (
     ('GET', r'/api/v1/settings/(ldap|roles)', 'identity.manage'),
     ('POST', r'/api/v1/settings/ldap(?:/(test|revoke))?', 'identity.manage'),
@@ -49,7 +49,7 @@ class AuthClient:
 
     def call(self, action, **payload):
         try:
-            return request(self.path, {'action': action, **payload})['result']
+            return request(self.path, {'action': action, **payload}, timeout=25)['result']
         except ControlError as exc:
             raise AuthError(exc.code if exc.code in CODES else 'AUTH_UNAVAILABLE') from None
         except Exception:
@@ -60,7 +60,7 @@ class Login(BaseModel):
     model_config = ConfigDict(extra='forbid')
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=1, max_length=256, repr=False)
-    provider: Literal['local','ldap'] = 'local'
+    provider: Literal['local','ldap'] | None = None
 
 
 class Enrollment(Login):
@@ -83,6 +83,10 @@ def routes(client):
         response.set_cookie(COOKIE, result['session'], max_age=result['max_age'],
                             secure=True, httponly=True, samesite='lax', path='/')
         return response
+
+    @router.get('/auth/status')
+    def login_status():
+        return client.call('login.status')
 
     @router.post('/auth/login')
     def login(payload: Login):

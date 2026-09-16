@@ -1,3 +1,4 @@
+import {openUserMenu,setLanguage} from './menu-helper';
 import {previewResult,installCatalog,selectPlacement} from './source-placement-fixture';
 import { installOperationFixtures } from './operation-fixture';
 import { test, expect, chromium } from "./operation-fixture";
@@ -337,6 +338,7 @@ test("themes follow system, persist explicit choice, and do not refetch resource
   await expect(page.locator("#component-api")).toBeVisible();
   await expect(page.locator(":root")).toHaveAttribute("data-theme", "dark");
   const calls = f.requests.length;
+  await openUserMenu(page);
   await page
     .getByRole("combobox", { name: "Theme", exact: true })
     .selectOption("light");
@@ -344,6 +346,7 @@ test("themes follow system, persist explicit choice, and do not refetch resource
   expect(f.requests.length).toBe(calls);
   await page.reload();
   await expect(page.locator(":root")).toHaveAttribute("data-theme", "light");
+  await openUserMenu(page);
   await page
     .getByRole("combobox", { name: "Theme", exact: true })
     .selectOption("system");
@@ -354,6 +357,7 @@ test("themes follow system, persist explicit choice, and do not refetch resource
     localStorage.setItem("netbox-sync.theme", "invalid"),
   );
   await page.reload();
+  await openUserMenu(page);
   await expect(
     page.getByRole("combobox", { name: "Theme", exact: true }),
   ).toHaveValue("system");
@@ -368,6 +372,7 @@ test("theme works when browser storage is unavailable", async ({ page }) => {
   });
   await fixture(page);
   await page.goto("/");
+  await openUserMenu(page);
   await page
     .getByRole("combobox", { name: "Theme", exact: true })
     .selectOption("dark");
@@ -690,8 +695,8 @@ for (const scenario of ["exact", "foreign source", "unavailable history"]) {
 for(const theme of themes)for(const width of [1440,390])test(`shared RU full-page gallery ${theme} ${width}`,async({page})=>{
  await page.setViewportSize({width,height:960});await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});
  const f=await fixture(page,{long:true});
- await page.goto('/');await page.getByLabel('Language / Язык').focus();await page.getByLabel('Language / Язык').selectOption('ru');
- await expect(page.getByLabel('Language / Язык')).toBeFocused();
+ await page.goto('/');await setLanguage(page,'ru');
+ await expect(page.getByRole('button',{name:/User menu|Меню пользователя/})).toBeFocused();
  for(const [route,name] of [['/','overview'],['/sources','sources'],['/sources/source-1','source'],['/sources/source-1/schedule','schedule'],['/sources/source-1/configuration','configuration'],['/runs','runs'],['/runs/'+runId,'run'],['/diagnostics','diagnostics'],['/system','system'],['/sources/add','add']]){
   await page.goto(route);await expect(page.getByRole('heading',{level:1})).toBeVisible();await overflow(page);
   await expect(page.locator('html')).toHaveAttribute('lang','ru');
@@ -715,7 +720,7 @@ test(`Overview editorial ordinary ${lang} ${theme} ${width}`,async({page})=>{
  await fixture(page);
  const ordinary=diagnostics([source(),source(2),source(3)]);ordinary.generated_at=new Date().toISOString();ordinary.sources[0].next_expected_at=new Date(Date.now()+600000).toISOString();
  await page.route('**/api/v1/diagnostics',route=>route.fulfill({json:ordinary}));
- await page.goto('/');await page.getByLabel('Language / Язык').selectOption(lang);
+ await page.goto('/');await setLanguage(page,lang);
  await expect(page.getByRole('heading',{name:lang==='ru'?'Ближайшие запуски':'Next scheduled runs'})).toBeVisible();
  await expect(page.getByText(lang==='ru'?'По данным диагностики. Подключение к источникам здесь не проверяется.':'Diagnostic snapshot; source connectivity is not tested here.')).toBeVisible();
  await expect(page.getByText(/100/)).toBeVisible();await overflow(page);

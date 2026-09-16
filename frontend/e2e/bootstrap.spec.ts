@@ -1,3 +1,4 @@
+import {openUserMenu,setLanguage} from './menu-helper';
 import {test,expect,type BrowserContext} from './auth-fixture';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
@@ -65,8 +66,8 @@ test(`full contract gallery ${language} ${theme} ${width}`,async({page,context},
   model.state={...model.state,revision:1,status:'ATTENTION',url:'https://netbox.example.test',read_token_present:true,apply_token_present:true,
     preparation:{status:scenario==='success'||scenario==='unconfirmed'?'PREPARED':'PLANNED',fields:fields(['success','unconfirmed'].includes(scenario)?'ready':scenario),digest:'a'.repeat(64),local_secret:'NOT_STORED',revocation:scenario==='unconfirmed'?'UNCONFIRMED':scenario==='success'?'CONFIRMED':'NOT_ATTEMPTED'}};
   await page.goto('/setup');
-  await page.getByRole('combobox',{name:'Language / Язык',exact:true}).selectOption(language);
-  await page.getByRole('combobox',{name:language==='ru'?'Тема':'Theme',exact:true}).selectOption(theme);
+  await openUserMenu(page);await page.getByRole('combobox',{name:'Language / Язык',exact:true}).selectOption(language);await page.keyboard.press('Escape');
+  await openUserMenu(page);await page.getByRole('combobox',{name:language==='ru'?'Тема':'Theme',exact:true}).selectOption(theme);await page.keyboard.press('Escape');
   await expect(page.locator('[data-field]')).toHaveCount(16);
   const label=language==='ru'?'Временный токен подготовки':'Temporary setup token';
   if(scenario==='missing'||scenario==='partial'){
@@ -112,8 +113,8 @@ test('setup theme system, keyboard, narrow zoom and honest unchecked evidence',a
  await page.emulateMedia({colorScheme:'dark'});await page.goto('/setup');await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
  await expect(page.getByText(/Not checked$/)).toHaveCount(0);
  await expect(page.getByText('Detailed checks were not recorded in this release. A saved status is not a new access check.')).toBeVisible();
- await page.getByRole('combobox',{name:'Theme',exact:true}).selectOption('light');await page.emulateMedia({colorScheme:'dark'});await expect(page.locator('html')).toHaveAttribute('data-theme','light');
- await page.getByRole('combobox',{name:'Theme',exact:true}).selectOption('system');await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
+ await openUserMenu(page);await page.getByRole('combobox',{name:'Theme',exact:true}).selectOption('light');await page.keyboard.press('Escape');await page.emulateMedia({colorScheme:'dark'});await expect(page.locator('html')).toHaveAttribute('data-theme','light');
+ await openUserMenu(page);await page.getByRole('combobox',{name:'Theme',exact:true}).selectOption('system');await page.keyboard.press('Escape');await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
  await page.setViewportSize({width:780,height:900});await page.evaluate(()=>document.body.style.zoom='2');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.getByRole('button',{name:'Replace credentials',exact:true}).focus();await page.keyboard.press('Enter');
@@ -131,4 +132,19 @@ for(const timestamp of [null,1])test(`historical VALIDATED ${timestamp} cannot f
  model.state.preparation={fields:fields('ready')};
  await page.getByRole('button',{name:'Check access again',exact:true}).click();
  await expect(page.getByRole('button',{name:'Review preparation plan',exact:true})).toBeEnabled();
+});
+
+test('completed onboarding attention stays in app and maintenance belongs to Settings',async({page,context})=>{
+ const model=await mock(context);model.state={...model.state,status:'ATTENTION',completed:true,revision:4,read_token_present:true,apply_token_present:true,url:'https://netbox.example.test',safe_code:'NETWORK_UNREACHABLE'};
+ await page.goto('/settings');await expect(page.getByRole('heading',{name:'Welcome to NetBox Sync'})).toHaveCount(0);
+ await expect(page.getByRole('navigation',{name:'Main navigation'}).getByRole('link',{name:'NetBox connection'})).toHaveCount(0);
+ await page.goto('/setup');await expect(page).toHaveURL(/settings\/netbox$/);await expect(page.getByRole('heading',{name:'NetBox connection',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Connection',exact:true}).click();await expect(page.getByRole('button',{name:'Replace credentials',exact:true})).toBeVisible();
+});
+
+test('unavailable initial state never claims fresh installation',async({page,context})=>{
+ await mock(context);await page.route('**/api/v1/bootstrap',route=>route.fulfill({status:503,json:{error:{code:'BOOTSTRAP_UNAVAILABLE'}}}));
+ await page.goto('/');await expect(page.getByText('Connection state is unavailable. Initial setup has not been inferred.')).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Welcome to NetBox Sync'})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Reload connection state'})).toBeVisible();
 });

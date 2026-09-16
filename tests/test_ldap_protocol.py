@@ -172,7 +172,7 @@ def test_real_directory_through_http_settings_login_and_logout(directory,tmp_pat
         assert files[0].stat().st_mode & 0o777 == 0o600
         assert http.post('/api/v1/auth/logout',headers=headers,json={}).status_code==200
         for role in ('viewer','operator','admin'):
-            response=http.post('/api/v1/auth/login',headers=headers,json=dict(provider='ldap',username=role,password=password))
+            response=http.post('/api/v1/auth/login',headers=headers,json=dict(username=('multi' if role=='admin' else role),password=password))
             assert response.status_code==200
             assert password not in response.text
             cookie=response.headers['set-cookie']

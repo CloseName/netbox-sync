@@ -3,7 +3,6 @@ import {AuthenticationSettings} from './pages/AuthenticationSettings';
 import {DestinationPolicyPage} from "./pages/DestinationPolicyPage";
 import {tr} from "./ui/i18n";
 import {useLanguage} from "./ui/language";
-import {LanguageControl} from "./ui/LanguageControl";
 import {Brand} from "./ui/Brand";
 import {SystemHealthPage} from "./pages/SystemHealthPage";
 import { useEffect, useRef, useState } from "react";
@@ -22,7 +21,6 @@ import { RunsPage } from "./pages/RunsPage";
 import { DiagnosticsPage } from "./pages/DiagnosticsPage";
 import { AddSourcePage } from "./pages/AddSourcePage";
 import { breadcrumbs, navigation } from "./ui/routes";
-import { ThemeControl } from "./ui/ThemeControl";
 import { NavIcon } from "./ui/NavIcon";
 function SourceRoute() {
   const { sourceInstance } = useParams();
@@ -57,7 +55,7 @@ export function App() {
           <Brand />
         </Link>
         <span className="muted">{tr("Source synchronization")}{" "}</span>
-        <LanguageControl /><ThemeControl language={language} /><SessionControls/>
+        <SessionControls/>
         <button
           ref={navToggle}
           className="nav-toggle"
@@ -87,12 +85,12 @@ export function App() {
             </NavLink>
           ))}
           <p className="nav-section">{tr("System")}</p>
-          {admin&&<><NavLink to="/settings">{language==='ru'?'Настройки':'Settings'}</NavLink><NavLink to="/policy">{tr("Source destinations")}</NavLink>
+          {admin&&<><NavLink to="/policy">{tr("Source destinations")}</NavLink>
           </>}<NavLink to="/system">{tr("System health")}{" "}</NavLink>
-          {admin&&<Link to="/setup">{tr("NetBox connection")}{" "}</Link>}
+
         </nav>
         <div className="app-content" id="content" ref={content} tabIndex={-1}>
-          {!sourceDetail && (
+          {!sourceDetail && location.pathname!=='/settings' && (
             <nav aria-label={tr("Breadcrumb")}>
               <ol className="breadcrumbs">
                 {crumbs.map((crumb, i) => (

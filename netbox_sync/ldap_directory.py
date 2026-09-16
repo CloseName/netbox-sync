@@ -48,7 +48,7 @@ def validate(value):
     for mapping in mappings:
         if (not isinstance(mapping,dict) or set(mapping)!={'dn','role'} or mapping['role'] not in ('viewer','operator','admin')
             or not isinstance(mapping['dn'],str) or not 1 <= len(mapping['dn']) <= 1024
-            or '\x00' in mapping['dn'] or mapping['dn'].strip().casefold() in seen):
+            or not mapping['dn'].strip() or '\x00' in mapping['dn'] or mapping['dn'].strip().casefold() in seen):
             raise DirectoryError('LDAP_INVALID')
         seen.add(mapping['dn'].strip().casefold())
     try:

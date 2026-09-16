@@ -25,9 +25,11 @@ type Phase = "idle" | "planning" | "validating" | "applying";
 export function SourceSync({
   detail,
   active = true,
+  latestRunFinishedAt,
 }: {
   detail: Source;
   active?: boolean;
+  latestRunFinishedAt?: string;
 }) {
   const canPlan = usePermission('source.plan'), canApply = usePermission('source.apply');
   const [phase, setPhase] = useState<Phase>("idle"),
@@ -65,6 +67,11 @@ export function SourceSync({
   const reviewedId = useRef('');
   const inspectedId = useRef('');
   const planOperation = operations.find(item => item.operation_kind === 'PLAN');
+  const historicalPlan=!!latestRunFinishedAt&&!!planOperation?.finished_at&&Date.parse(latestRunFinishedAt)>Date.parse(planOperation.finished_at);
+  const expiredPlan=planOperation?.safe_error_code==='RESULT_EXPIRED';
+  const expiredDiscovery=operations.find(row=>row.operation_kind==='DISCOVERY'&&row.safe_error_code==='RESULT_EXPIRED');
+  const inspectionOperation=operations.find(row=>row.operation_kind==='DISCOVERY');
+  const historicalDiscovery=!!latestRunFinishedAt&&!!inspectionOperation?.finished_at&&Date.parse(latestRunFinishedAt)>Date.parse(inspectionOperation.finished_at);
   useEffect(() => {
     if (!active) return;
     const reconnect = () => setRefreshOperations(value=>value+1);
@@ -97,7 +104,7 @@ export function SourceSync({
         reviewedId.current = current.operation_id;
         setPlan({value: current.result as SyncPlan, received: current.finished_at!, operationId: current.operation_id}); setUsable(true); setPlanningError(null); setResult(previous=>previous && ['OUTCOME_UNCERTAIN','PARTIALLY_APPLIED'].includes(previous.state)?previous:null); setConfirmOpen(false);
       } else if (current.status === 'FAILED' || current.status === 'STALE') {
-        setUsable(false); setPlanningError(new ManualSyncRequestError(current.status === 'STALE' ? 'Plan is no longer current. Build a new plan.' : operationReason(current.safe_error_code),current.safe_error_code??"OPERATION_FAILED"));
+        setUsable(false); if(current.safe_error_code==='RESULT_EXPIRED'){setPlanningError(null);}else setPlanningError(new ManualSyncRequestError(current.status === 'STALE' ? 'Plan is no longer current. Build a new plan.' : operationReason(current.safe_error_code),current.safe_error_code??"OPERATION_FAILED"));
       }
     }
     if (!current && !busy.current) setPhase(previous => previous === 'planning' ? 'idle' : previous);
@@ -107,7 +114,7 @@ export function SourceSync({
       if (inspectedId.current !== inspection.operation_id) { inspectedId.current = inspection.operation_id; setDiscoveryOpen(true); }
       setDiscovering(inspection.status === 'RUNNING'); setDiscoveryStarted(Date.parse(inspection.started_at));
       if (inspection.status === 'SUCCEEDED' && inspection.result) { setDiscovery({value: inspection.result as DiscoveryResult, received: inspection.finished_at!}); setDiscoveryError(''); }
-      if (inspection.status === 'FAILED') setDiscoveryError(operationReason(inspection.safe_error_code));
+      if (inspection.status === 'FAILED') setDiscoveryError(inspection.safe_error_code==='RESULT_EXPIRED'?'':operationReason(inspection.safe_error_code));
     }
   }, [operations]);
   useEffect(() => {
@@ -232,8 +239,11 @@ export function SourceSync({
       )}
       {phase !== 'idle' && !applying && <OperationFeedback operation={phase==='planning'?tr('Build plan'):phase==='validating'?tr('Preparing / validating reviewed plan'):tr('Sync to NetBox')} phase={operationError?'uncertain':phase==='planning'&&planOperation?.status==='RUNNING'?'running':'sending'} started={started}/>}
       <div ref={feedback} tabIndex={-1}>
+        {expiredPlan&&<p className="sync-attention" role="status">{tr('The saved plan has expired. This is not a synchronization failure.')} {planOperation?.finished_at&&<Timestamp value={planOperation.finished_at}/>}<br/>{canPlan?tr('Build a new plan when you want to sync manually.'):tr('An Operator or Admin can build a new plan.')}</p>}
         {planningError && (
-          <div className="source-error" role="alert">
+          <div className={historicalPlan?"sync-attention":"source-error"} role={historicalPlan?"status":"alert"}>
+            {historicalPlan&&<p>{tr("Earlier planning attempt; a newer run is shown in history.")}</p>}
+            {planOperation?.finished_at&&<Timestamp value={planOperation.finished_at}/>}
             <strong>{planOperation?.status === 'STALE' ? tr("Plan is no longer current.") : tr("Plan could not be built.")}</strong>
             <p>{tr(planningError.message)}</p>
             <details>
@@ -333,8 +343,10 @@ export function SourceSync({
         <p>
           {tr("Inspect discovered objects and how they match NetBox. No NetBox changes are made.")}{" "}</p>
         {discovering && <OperationFeedback operation={tr('Run discovery')} phase={operationError?'uncertain':operations.some(row=>row.operation_kind==='DISCOVERY'&&row.status==='RUNNING')?'running':'sending'} started={discoveryStarted}/>}
+        {expiredDiscovery&&<p className="sync-attention" role="status">{tr('The discovery result has expired. Run history is unchanged.')} {expiredDiscovery.finished_at&&<Timestamp value={expiredDiscovery.finished_at}/>}<br/>{canPlan?tr('Run discovery to refresh this result.'):tr('An Operator or Admin can refresh this result.')}</p>}
         {discoveryError && (
-          <p role="alert" className="source-error">
+          <p role={historicalDiscovery?"status":"alert"} className={historicalDiscovery?"sync-attention":"source-error"}>
+            {historicalDiscovery&&<>{tr("Earlier discovery attempt; a newer run is shown in history.")}<br/></>}{inspectionOperation?.finished_at&&<Timestamp value={inspectionOperation.finished_at}/>}<br/>
             {tr(discoveryError)}<br/><code>{operations.find(row=>row.operation_kind==='DISCOVERY')?.safe_error_code}</code><br/>
             {operations.find(row=>row.operation_kind==='DISCOVERY')?.operation_id}
           </p>

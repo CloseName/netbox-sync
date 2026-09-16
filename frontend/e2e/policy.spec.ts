@@ -1,3 +1,4 @@
+import {openUserMenu,setLanguage} from './menu-helper';
 import {previewResult} from './source-placement-fixture';
 import {test,expect} from '@playwright/test';
 for(const lang of ['en','ru'])for(const theme of ['light','dark'] as const)for(const width of [1440,390])
@@ -20,7 +21,7 @@ test(`explicit destination permission ${lang} ${theme} ${width}`,async({page})=>
   if(path.endsWith('/sources/test-connection')){probes++;return route.fulfill(allowed?{json:previewResult}:{status:422,json:{error:{code:'SOURCE_DESTINATION_DENIED'}}});}
   return route.fulfill({status:503,json:{error:{code:'UNAVAILABLE'}}});
  });
- await page.goto('/sources/add');await page.getByLabel('Language / Язык').selectOption(lang);
+ await page.goto('/sources/add');await setLanguage(page,lang);
  await page.locator('form select').selectOption('esxi');
  await page.locator('form input[pattern]').fill('esxi.public.example');
  async function probe(){await page.locator('input[name=username]').fill('netbox-sync');await page.locator('input[name=secret]').fill('fixture-only-password');await page.locator('form button.primary').click();}

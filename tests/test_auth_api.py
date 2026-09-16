@@ -19,6 +19,7 @@ def test_business_routes_reject_no_session_even_with_correct_origin():
         response=http.post('/api/v1/sources/test-connection',json={},headers={'Origin':'https://localhost:8000','X-NetBox-Sync-CSRF':'same-origin'})
         assert response.status_code==401
         assert http.get('/api/v1/health').json()=={'status':'healthy'}
+        assert http.get('/api/v1/auth/status').json()=={'enrollment_available':True}
 
 
 def test_login_cookie_csrf_and_worker_outage():
@@ -43,10 +44,23 @@ def test_login_cookie_csrf_and_worker_outage():
 
 def test_all_declared_business_routes_have_explicit_permissions():
     app=create_app(settings=ApiSettings(bootstrap_socket='/test/bootstrap'),auth_client=Client())
-    public={'/api/v1/health','/api/v1/auth/login','/api/v1/auth/enroll'}
+    public={'/api/v1/auth/status','/api/v1/health','/api/v1/auth/login','/api/v1/auth/enroll'}
     for template, methods in app.openapi()['paths'].items():
         if template in public:continue
         import re
         path=re.sub(r'\{[^}]+\}', 'source-1', template)
         for method in methods:
             assert permission(method.upper(),path)!='unmapped.deny',(method,path)
+
+
+def test_ldap_validation_never_returns_input_values():
+    client=Client()
+    invitation=client.service.root('invite',{})['invitation']
+    headers={'Origin':'https://localhost:8000','X-NetBox-Sync-CSRF':'same-origin'}
+    with TestClient(create_app(settings=ApiSettings(bootstrap_socket=''),auth_client=client),base_url='https://localhost:8000') as http:
+        assert http.post('/api/v1/auth/enroll',json=dict(username='admin',password='test-only-long-password',invitation=invitation),headers=headers).status_code==200
+        assert http.get('/api/v1/auth/status').json()=={'enrollment_available':False}
+        response=http.post('/api/v1/settings/ldap/test',json={'expected_revision':0,'config':{'private':'never-return-input'},'bind_password':'never-return-secret'},headers=headers)
+        assert response.status_code==422
+        assert response.json()['error']['code']=='API_VALIDATION_FAILED'
+        assert 'never-return' not in response.text

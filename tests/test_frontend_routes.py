@@ -12,7 +12,7 @@ def client(tmp_path):
     with TestClient(create_app(settings)) as value:
         yield value
 
-@pytest.mark.parametrize('path', ['/', '/settings', '/policy', '/setup', '/sources', '/sources/add', '/sources/pve-dc1',
+@pytest.mark.parametrize('path', ['/', '/settings', '/settings/netbox', '/policy', '/setup', '/sources', '/sources/add', '/sources/pve-dc1',
                                   '/runs', '/runs/11111111-1111-4111-8111-111111111111',
                                   '/diagnostics', '/system', '/sources?provider=esxi',
                                   '/sources/pve-dc1/sync', '/sources/pve-dc1/runs',

@@ -229,3 +229,39 @@ def test_directory_failed_login_budget_is_separate_from_emergency_login():
     with pytest.raises(AuthError,match='AUTH_RATE_LIMITED'):
         service.call(dict(action='login',provider='ldap',username='person',password='incorrect'))
     assert auth(service,local,'identity.manage')['role']=='admin'
+
+
+@pytest.mark.parametrize('hint', [None, 'local', 'ldap'])
+def test_unified_login_reserves_local_name_and_never_falls_back(hint):
+    service, _, _ = configured()
+    service.directory.calls.clear()
+    for name in ('admin', 'ADMIN'):
+        with pytest.raises(AuthError, match='AUTH_INVALID'):
+            service.call(dict(action='login', username=name, password='wrong', provider=hint))
+    assert service.directory.calls == []
+    service.directory.failure='LDAP_UNAVAILABLE'
+    result=service.call(dict(action='login',username='admin',password='fixture-local-password',provider=hint))
+    assert auth(service,result['session'])['provider']=='local'
+    assert service.directory.calls == []
+    with pytest.raises(AuthError,match='LDAP_UNAVAILABLE'):
+        service.call(dict(action='login',username='person',password='fixture-local-password',provider=hint))
+    assert service.directory.calls == ['login']
+
+
+def test_login_status_discloses_only_enrollment_availability():
+    service=AuthPolicy(initial_state())
+    assert service.call({'action':'login.status'}) == {'enrollment_available':True}
+    service, _, _=configured()
+    assert service.call({'action':'login.status'}) == {'enrollment_available':False}
+    service.root('recover', {})
+    assert service.call({'action':'login.status'}) == {'enrollment_available':False}
+
+
+@pytest.mark.parametrize('dn', ['', '   ', '\t'])
+def test_empty_group_mapping_refused_before_directory_access(dn):
+    from netbox_sync.ldap_directory import validate
+    service, _, _=configured()
+    config=copy.deepcopy(service.state['ldap']['config'])
+    config['mappings']=[{'dn':dn,'role':'viewer'}]
+    with pytest.raises(DirectoryError, match='LDAP_INVALID'):
+        validate(config)

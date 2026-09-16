@@ -39,13 +39,13 @@ try {
  await expect(page.getByRole('status')).toContainText('Saved.',{timeout:20000});
  await page.screenshot({path:'frontend/test-results/production-ldap-settings.png',fullPage:true});
  for(const role of ['viewer','operator','admin']) {
-  stage='logout-'+role;await page.getByRole('button',{name:'Sign out',exact:true}).click();
+  stage='logout-'+role;await page.getByRole('button',{name:'User menu'}).click();await page.getByRole('button',{name:'Sign out',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Sign in',exact:true})).toBeVisible();
-  stage='login-'+role;await page.locator('select[name=provider]').selectOption('ldap');
-  await page.locator('input[name=username]').fill(role);
+  stage='login-'+role;
+  await page.locator('input[name=username]').fill(role==='admin'?'multi':role);
   await page.locator('input[name=password]').fill(config.password);
   await page.getByRole('button',{name:'Sign in',exact:true}).click();
-  await expect(page.getByRole('button',{name:'Sign out',exact:true})).toBeVisible({timeout:20000});
+  await expect(page.getByRole('button',{name:'User menu'})).toBeVisible({timeout:20000});await page.getByRole('button',{name:'User menu'}).click();
   stage='navigation-'+role;
   if(role==='admin')await expect(page.getByRole('link',{name:'Settings',exact:true}).first()).toBeVisible();
   else await expect(page.getByRole('link',{name:'Settings',exact:true})).toHaveCount(0);
