@@ -708,3 +708,13 @@ Saved Bootstrap validation is labelled with its timestamp. Missing detailed chec
 are explicitly reported as unavailable historical evidence. An absent/expired
 validated_at cannot enable Finish; the UI uses the current backend 300-second window
 and backend remains authoritative. READY installations remain READY on normal visits.
+
+
+## Live-audit follow-up
+
+[Implementation and local verification](live-audit-progress.md) records durable
+Run recovery, used-plan fencing, truthful unknown counters, grouped plan review,
+source-name search and the address/placement wizard checks. The separate
+[operator acceptance procedure](live-audit-acceptance.md) starts with read-only
+reconciliation of the partially written source; it is not a deployment instruction
+or authorization to repeat an uncertain write.
