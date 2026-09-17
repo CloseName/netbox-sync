@@ -8,7 +8,7 @@ from enum import Enum
 
 
 PLAN_SCHEMA_VERSION = 1
-PLANNER_VERSION = 'web-5a-2'
+PLANNER_VERSION = 'web-5a-3'
 
 
 class SyncAction(str, Enum):

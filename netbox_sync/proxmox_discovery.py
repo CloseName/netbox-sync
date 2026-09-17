@@ -430,6 +430,7 @@ def _discover_virtual_machines(
                     source_config.legacy_identity_owner
                 ),
                 source_id=f'proxmox:{node_name}:{vmid}',
+                description=config.get('description'),
                 node_source_id=node_name,
                 vmid=vmid,
                 original_name=original_name,

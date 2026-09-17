@@ -246,6 +246,7 @@ def build_vm_create_fields(
         'disk': _desired_disk(discovered_vm),
         'start_on_boot': _desired_start_on_boot(discovered_vm),
         'custom_fields': desired_custom_fields,
+        **({'comments': discovered_vm.description} if discovered_vm.description is not None else {}),
     }
 
 
@@ -258,6 +259,8 @@ def _vm_changes(
 ):
     data = existing_vm.serialize()
     changes = {}
+    if discovered_vm.description is not None and (data.get('comments') or '') != discovered_vm.description:
+        changes['comments'] = discovered_vm.description
 
     if data.get('name') != (
         discovered_vm.original_name

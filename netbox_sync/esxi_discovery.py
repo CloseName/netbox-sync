@@ -327,6 +327,7 @@ def _virtual_machine(vm, host, source_config, host_id):
         node_source_id=host_id,
         vmid=external_id,
         external_id=external_id,
+        description=_value(vm, 'config.annotation', None),
         original_name=name,
         normalized_name=name.upper(),
         status=_power_status(power_state),

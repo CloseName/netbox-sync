@@ -114,6 +114,7 @@ class DiscoveredVirtualMachine:
     disks: list[DiscoveredVirtualDisk] = field(default_factory=list)
     interfaces: list[DiscoveredInterface] = field(default_factory=list)
     external_id: Optional[str] = None
+    description: Optional[str] = None
 
 
 @dataclass
