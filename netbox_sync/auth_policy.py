@@ -285,7 +285,7 @@ class AuthPolicy(DirectoryAuth):
                 'provider': bounded(payload.get('provider'), 16), 'expires': self.now + 600}
             self.state['receipts'] = receipts
             return {'issued': True}
-        if action in ('receipt.consume', 'receipt.cancel'):
+        if action in ('receipt.consume', 'receipt.cancel', 'receipt.check'):
             self.session(token, 'source.register')
             key = digest(bounded(payload.get('receipt')))
             value = self.state['receipts'].get(key)
@@ -303,6 +303,9 @@ class AuthPolicy(DirectoryAuth):
                 raise AuthError('PROBE_RECEIPT_INVALID')
             if action == 'receipt.consume' and value.get('consumed'):
                 raise AuthError('PROBE_RECEIPT_INVALID')
+            if action == 'receipt.check':
+                if value.get('consumed'): raise AuthError('PROBE_RECEIPT_INVALID')
+                return {'valid': True}
             value['consumed'] = True
             return {'consumed': True}
         raise AuthError('AUTH_DENIED')

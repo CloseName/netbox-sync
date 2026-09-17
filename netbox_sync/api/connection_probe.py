@@ -110,10 +110,11 @@ def bound_http_reads():
     http.client.HTTPResponse.read=read
 
 
-def execute(credentials, policy, preview=False):
+def execute(credentials, policy, preview=False, destination_only=False):
     """Resolve once; pin all subsequent DNS calls inside this isolated process."""
     port = credentials.api_port
     host, address = policy.resolve(credentials.address, port)
+    if destination_only: return None
     context = ssl.create_default_context() if credentials.verify_ssl else ssl._create_unverified_context()
     with pinned_dns(host, address, port):
         if credentials.source_type == 'proxmox':
@@ -125,14 +126,14 @@ def execute(credentials, policy, preview=False):
             return probe_esxi(credentials, host, context, preview=preview)
 
 
-def run_connection_test(credentials, policy=None, popen=subprocess.Popen, *, child_uid=None, preview=False):
+def run_connection_test(credentials, policy=None, popen=subprocess.Popen, *, child_uid=None, preview=False, destination_only=False):
     """Kill/reap probe on whole-operation timeout, including DNS and initial TLS probe."""
     # Credentials use stdin only, never argv/environment/disk. No production DSN
     # or broker configuration is inherited by the disposable child.
     environ = {key: value for key, value in os.environ.items()
                if key in ('PATH', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL')}
     environ['PYTHONDONTWRITEBYTECODE'] = '1'
-    payload = json.dumps({'credentials': asdict(credentials), 'policy': asdict(policy or EgressPolicy()), 'preview': preview}).encode()
+    payload = json.dumps({'credentials': asdict(credentials), 'policy': asdict(policy or EgressPolicy()), 'preview': preview, 'destination_only': destination_only}).encode()
     identity = {} if child_uid is None else {'user': child_uid, 'group': child_uid, 'extra_groups': []}
     try:
         with popen([sys.executable, '-B', '-m', 'netbox_sync.api.connection_probe'],
@@ -169,7 +170,7 @@ def main():
     try:
         payload = json.loads(sys.stdin.buffer.read(65537))
         if payload.get('preview'): bound_http_reads()
-        preview=execute(PendingCredentials(**payload['credentials']), EgressPolicy(**payload['policy']),payload.get('preview',False))
+        preview=execute(PendingCredentials(**payload['credentials']), EgressPolicy(**payload['policy']),payload.get('preview',False),payload.get('destination_only',False))
         result = {'ok': True}
         if preview is not None: result['preview']=preview
     except Exception as exc:  # pylint: disable=broad-exception-caught

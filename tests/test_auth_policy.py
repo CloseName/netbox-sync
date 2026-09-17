@@ -152,3 +152,12 @@ def test_idempotency_window_never_prevents_revocation():
     assert '0' not in service.state['changes']
     with pytest.raises(AuthError,match='POLICY_CONFLICT'):
         call(service,session,'policy.update',operation='revoke',host='source.example.test',expected_revision=1,request_id='0')
+
+
+def test_readonly_placement_receipt_check_does_not_consume_or_bypass_owner():
+    service,session,_=enrolled()
+    call(service,session,'receipt.issue',receipt='checked-placement',destination='source.example.test',provider='esxi',revision=0)
+    for _ in range(2): assert call(service,session,'receipt.check',receipt='checked-placement')=={'valid':True}
+    with pytest.raises(AuthError): call(service,'foreign','receipt.check',receipt='checked-placement')
+    call(service,session,'receipt.consume',receipt='checked-placement',destination='source.example.test',provider='esxi')
+    with pytest.raises(AuthError,match='PROBE_RECEIPT_INVALID'):call(service,session,'receipt.check',receipt='checked-placement')

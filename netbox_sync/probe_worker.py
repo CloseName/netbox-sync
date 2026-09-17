@@ -12,6 +12,8 @@ CODES = frozenset({ErrorCode.SOURCE_DNS_FAILED, ErrorCode.SOURCE_TIMEOUT, ErrorC
 
 
 def handle(payload):
+    destination_only=payload.pop('destination_only',False)
+    if type(destination_only) is not bool: raise ControlError('CONTROL_REQUEST_INVALID')
     preview=payload.pop('preview',False)
     if type(preview) is not bool: raise ControlError('CONTROL_REQUEST_INVALID')
     if set(payload) == {'credentials', 'session', 'revision'}:
@@ -29,7 +31,7 @@ def handle(payload):
         policy = EgressPolicy(**payload['policy'])
         if credentials.source_type not in ('esxi', 'proxmox') or not isinstance(credentials.verify_ssl, bool):
             raise ValueError()
-        result=run_connection_test(credentials, policy, child_uid=10001, **({'preview':True} if preview else {}))
+        result=run_connection_test(credentials, policy, child_uid=10001, **({'preview':True} if preview else {}), **({'destination_only':True} if destination_only else {}))
         return {'success': True, 'preview':result} if preview else {'success': True}
     except OnboardingError as exc:
         return {'error': exc.code.value if exc.code in CODES else ErrorCode.SOURCE_CONNECTION_FAILED.value}
@@ -52,11 +54,11 @@ def remote_test(path, credentials, policy):
     raise OnboardingError(code)
 
 
-def remote_test_authorized(path, credentials, session, revision, preview=False):
+def remote_test_authorized(path, credentials, session, revision, preview=False, destination_only=False):
     from .auth_policy import AuthError, CODES as AUTH_CODES
     try:
         result = request(path, {'credentials': asdict(credentials), 'session': session,
-                              'revision': revision, **({'preview':True} if preview else {})}, timeout=PROBE_DEADLINE + 3)['result']
+                              'revision': revision, **({'preview':True} if preview else {}), **({'destination_only':True} if destination_only else {})}, timeout=PROBE_DEADLINE + 3)['result']
     except ControlError as exc:
         if exc.code in AUTH_CODES:
             raise AuthError(exc.code) from None

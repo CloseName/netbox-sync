@@ -424,7 +424,11 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         if result.get('result') is not None:
             dto = SyncPlanDTO if result['operation_kind'] == 'PLAN' else DiscoveryResultDTO
             result['result'] = dto.from_worker(result['result']).model_dump(mode='json')
-        return OperationDTO.model_validate(result)
+        dto = OperationDTO.model_validate(result)
+        if dto.operation_kind == 'PLAN' and dto.status == 'READY':
+            used = run_service.plan_run(source, dto.result.digest, dto.finished_at)
+            dto.used_run_id = UUID(used) if used else None
+        return dto
 
     @router.get('/sources/{source_instance}/operations')
     def source_operations(source_instance: str):
@@ -482,7 +486,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         try:
             principal = auth_client.call('authorize', session=request.cookies.get(COOKIE), permission='source.apply')
             result = ApplyResultDTO.model_validate(apply_client.apply(source_instance, payload.confirmation_token,
-                actor_id=principal['principal_id']))
+                actor_id=principal['principal_id'], **({'run_id':str(payload.run_id)} if payload.run_id else {})))
             request.state.run_id = str(result.run_id) if result.run_id else None
             return result
         except ApplyRequestError as exc:
@@ -516,6 +520,20 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         if kind not in ENDPOINTS: raise CatalogError('SELECTION_REQUIRED')
         return catalog_call(settings.bootstrap_socket,{'action':'list','kind':kind,'search':search,'offset':offset})
 
+    from .onboarding_dto import DestinationRequest
+
+    @router.post('/sources/check-destination')
+    def check_destination(payload: DestinationRequest, http: Request):
+        from ..application.onboarding import PendingCredentials
+        from ..probe_worker import remote_test_authorized
+        session=http.cookies.get(COOKIE)
+        policy=auth_client.call('policy',session=session)
+        if not settings.probe_socket: raise AuthError('AUTH_UNAVAILABLE')
+        remote_test_authorized(settings.probe_socket,
+            PendingCredentials(payload.source_type,payload.address,True,'','','',port=payload.port),
+            session,policy['revision'],destination_only=True)
+        return {'allowed': True}
+
     @router.post('/sources/test-connection', response_model=ConnectionResult)
     def connection_test(request: ConnectionRequest, http: Request):
         session = http.cookies.get(COOKIE)
@@ -538,6 +556,15 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
             onboarding_service.cancel(token)
             raise
         return ConnectionResult(onboarding_token=token,preview=preview,suggested_source_instance=request.source_type+'-'+uuid4().hex[:20])
+
+    from .onboarding_dto import PlacementReviewRequest
+
+    @router.post('/sources/review-placement')
+    def review_placement(payload: PlacementReviewRequest, http: Request):
+        auth_client.call('receipt.check', session=http.cookies.get(COOKIE), receipt=payload.onboarding_token)
+        catalog_validate(settings.bootstrap_socket, payload.references, payload.host_types,
+                         onboarding_service.preview(payload.onboarding_token))
+        return {'valid': True}
 
     @router.post('/sources', response_model=SourceDTO, status_code=201)
     def register_source(request: RegistrationRequest, http: Request):

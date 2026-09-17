@@ -4,6 +4,7 @@ from contextlib import contextmanager
 import hashlib
 import json
 import logging
+import time
 from uuid import uuid4
 
 import psycopg
@@ -141,8 +142,11 @@ class OperationStore:
                                         .format(self.table), (operation['operation_id'],)).fetchone()
                 if not current or current['status'] != 'RUNNING':
                     return
+                started = time.monotonic()
+                phase = 'operation'
                 try:
                     result = callback()
+                    phase = 'result_validation'
                     raw = json.dumps(result, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
                     if len(raw.encode()) > MAX_RESULT_BYTES:
                         raise OperationError('RESULT_TOO_LARGE')
@@ -165,13 +169,14 @@ class OperationStore:
                 except Exception as exc:  # Public result never contains exception text.
                     result, status = None, 'FAILED'
                     candidate = getattr(exc, 'code', '')
-                    from .worker_failure import ERRORS, safe_diagnostic
+                    from .worker_failure import ERRORS, safe_diagnostic, diagnostic
                     code = candidate if candidate in set(ERRORS) | {
                         'SOURCE_NOT_FOUND', 'SOURCE_DISABLED', 'CREDENTIAL_UNAVAILABLE',
                         'REGISTRY_UNAVAILABLE', 'DISCOVERY_TIMEOUT', 'PROVIDER_UNAVAILABLE',
                         'NETBOX_UNAVAILABLE', 'DISCOVERY_FAILED', 'RESULT_TOO_LARGE',
                         'RESULT_INVALID'} else 'OPERATION_FAILED'
-                    event=safe_diagnostic(getattr(exc,'diagnostic',None),code)
+                    event=safe_diagnostic(getattr(exc,'diagnostic',None) or diagnostic(exc,'planning'),code)
+                    event.update(duration_ms=int((time.monotonic()-started)*1000), phase=event.get('phase',phase))
                     event.update(event_id=str(operation['operation_id']),source_instance=operation['source_instance'],
                                  operation_kind=operation['operation_kind'])
                     logging.getLogger(__name__).error(json.dumps(event,sort_keys=True))
@@ -203,6 +208,14 @@ class OperationStore:
         if reason:
             raise OperationError('PLAN_STALE', reason)
         return row['result'] if include_result else str(row['operation_id'])
+
+    def plan_time(self, source, operation_id):
+        with self.connect() as connection:
+            row = connection.execute(sql.SQL("SELECT finished_at FROM {} WHERE source_instance=%s "
+                "AND operation_id=%s AND operation_kind='PLAN'").format(self.table),
+                (source, operation_id)).fetchone()
+            if not row or not row['finished_at']: raise OperationError('PLAN_STALE', 'OPERATION_MISSING')
+            return row['finished_at']
 
     @contextmanager
     def review_guard(self, source, digest, operation_id):

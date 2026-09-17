@@ -127,3 +127,21 @@ class RegistrationRequest(PublicModel):
             device_role_slug=self.device_role_slug, device_type_slug=self.device_type_slug,
             cluster_type_slug=self.cluster_type_slug, confirm_sync_disabled=self.confirm_sync_disabled,
         )
+
+
+class PlacementReviewRequest(PublicModel):
+    """Read-only placement revalidation before registration confirmation."""
+    onboarding_token: str = Field(min_length=20, max_length=128, repr=False, exclude=True)
+    references: dict[str, dict] = Field(max_length=5)
+    host_types: dict[str, dict] = Field(max_length=16)
+
+
+class DestinationRequest(PublicModel):
+    source_type: Literal['proxmox','esxi']
+    address: str = Field(min_length=1,max_length=253)
+    port: int | None = Field(default=None,strict=True,ge=1,le=65535)
+
+    @field_validator('address')
+    @classmethod
+    def endpoint(cls,value):
+        return validate_host(value)

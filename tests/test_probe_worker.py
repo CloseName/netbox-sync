@@ -100,3 +100,13 @@ def test_unavailable_worker_never_falls_back_to_api_probe(monkeypatch):
     with pytest.raises(OnboardingError):
         worker.remote_test('/missing.sock', credentials(), EgressPolicy())
     local.assert_not_called()
+
+
+def test_destination_only_resolves_policy_without_provider_auth(monkeypatch):
+    from types import SimpleNamespace
+    from netbox_sync.api.connection_probe import execute
+    calls=[]
+    policy=SimpleNamespace(resolve=lambda host,port:calls.append((host,port)) or (host,'10.0.0.1'))
+    credentials=SimpleNamespace(api_port=8443,address='host.example.test')
+    assert execute(credentials,policy,destination_only=True) is None
+    assert calls==[('host.example.test',8443)]

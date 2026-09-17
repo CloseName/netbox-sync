@@ -25,6 +25,7 @@ class Operations:
     def invalidate_plan(self,source,identity):self.invalidated.append((source,str(identity)))
 
 def app(client, **extra):
+    extra.setdefault('run_service',SimpleNamespace(plan_run=lambda *args: None))
     return TestClient(create_app(ApiSettings(allowed_write_hosts=('localhost:8000',)),
         source_service=SimpleNamespace(get_source=lambda _: object()), discovery_client=client, **extra))
 
@@ -92,3 +93,14 @@ def test_name_edit_is_narrow_and_requires_csrf(monkeypatch):
     assert response.status_code==200 and response.json()['display_name']=='MiXeD Name'
     assert calls==[('pve-test',body,'rename_source')]
     assert permission('PATCH','/api/v1/sources/pve-test/name')=='source.configure'
+
+
+def test_used_plan_projection_survives_history_pagination():
+    row=operation();row.update(status='READY',finished_at=row['started_at'],result=plan('pve-test'))
+    run_id=str(uuid4());calls=[]
+    def lookup(*args):calls.append(args);return run_id
+    with app(Operations(row),run_service=SimpleNamespace(plan_run=lookup)) as api:
+        response=api.get('/api/v1/sources/pve-test/operations')
+    assert response.status_code==200
+    assert response.json()['operations'][0]['used_run_id']==run_id
+    assert calls[0][:2]==('pve-test',row['result']['digest'])

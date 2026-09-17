@@ -121,6 +121,7 @@ class DiscoverySupervisor:
             'netbox_url': netbox_url, 'netbox_token': netbox_token,
             'operation': operation,
         }).encode()
+        started = time.monotonic()
         try:
             with self._popen([sys.executable, '-B', '-m', 'netbox_sync.discovery_worker', '--child'],
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -131,15 +132,15 @@ class DiscoverySupervisor:
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.communicate()
-                    raise WorkerError('DISCOVERY_TIMEOUT') from None
+                    raise WorkerError('DISCOVERY_TIMEOUT', dict(phase='child_wait', termination='timeout', returncode=process.returncode, duration_ms=int((time.monotonic()-started)*1000))) from None
         finally:
             payload = b''
         if process.returncode or len(output) > MAX_RESPONSE:
-            raise WorkerError('DISCOVERY_FAILED')
+            raise WorkerError('DISCOVERY_FAILED', dict(phase='child_response', termination='exit' if process.returncode else 'response_too_large', returncode=process.returncode, duration_ms=int((time.monotonic()-started)*1000)))
         try:
             result = json.loads(output)
         except (UnicodeDecodeError, json.JSONDecodeError):
-            raise WorkerError('DISCOVERY_FAILED') from None
+            raise WorkerError('DISCOVERY_FAILED', dict(phase='child_response', termination='invalid_response', returncode=process.returncode, duration_ms=int((time.monotonic()-started)*1000))) from None
         if not isinstance(result, dict) or set(result) - {'result', 'error', 'diagnostic'}:
             raise WorkerError('DISCOVERY_FAILED')
         if result.get('error'):

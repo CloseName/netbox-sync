@@ -188,3 +188,40 @@ def test_late_completion_is_logged_without_replacing_new_state(operations, caplo
     assert row['operation_id'] == replacement and row['status'] == 'RUNNING' and row['result'] is None
     assert 'OPERATION_COMPLETION_DISCARDED' in caplog.text
     assert str(first['operation_id']) in caplog.text
+
+
+def test_consumed_plan_survives_lost_reply_and_new_generation_can_reconcile(operations):
+    from netbox_sync.run_history import postgres_run_repository, RunTrigger, RunStatus
+    store, source = operations
+    runs = postgres_run_repository(_safe_test_dsn(), store.schema)
+    row, _ = store.start(source, 'PLAN')
+    value = plan(source)
+    store.execute(row, lambda: value)
+    finished = store.plan_time(source, row['operation_id'])
+    run = runs.start_run(source, 'proxmox', RunTrigger.MANUAL, 'test')
+    assert not runs.plan_used(source, value['digest'], finished)
+    runs.bind_plan(run.run_id, value['digest'], value['planner_version'])
+    reopened = postgres_run_repository(_safe_test_dsn(), store.schema)
+    assert reopened.plan_used(source, value['digest'], finished)
+    assert reopened.plan_run(source, value['digest'], finished) == str(run.run_id)
+    assert reopened.get_run(run.run_id).status == RunStatus.RUNNING
+    with pytest.raises(ValueError, match='already bound'):
+        reopened.bind_plan(run.run_id, value['digest'], value['planner_version'])
+    runs.finish_run(run.run_id, RunStatus.OUTCOME_UNCERTAIN,
+                    error_code='OUTCOME_UNCERTAIN', error_message_safe='The final NetBox state may be uncertain.')
+    assert reopened.plan_used(source, value['digest'], finished)
+    fresh, _ = store.start(source, 'PLAN')
+    store.execute(fresh, lambda: value)
+    assert not reopened.plan_used(source, value['digest'], store.plan_time(source, fresh['operation_id']))
+
+
+def test_unknown_plan_failure_logs_class_frames_and_phase(operations, caplog):
+    import json
+    store, source = operations
+    row, _ = store.start(source, 'PLAN')
+    store.execute(row, lambda: None)
+    events=[json.loads(record.message) for record in caplog.records if record.message.startswith('{')]
+    failure=next(e for e in events if e.get('event_id')==str(row['operation_id']))
+    assert failure['exception_class']=='AttributeError'
+    assert failure['frames'] and failure['phase']=='result_validation'
+    assert failure['duration_ms']>=0

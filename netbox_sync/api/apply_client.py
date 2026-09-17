@@ -64,7 +64,7 @@ class ApplyWorkerClient:
         return self._request({'operation': 'prepare', 'source_instance': source_instance,
                               'plan_digest': plan_digest, **({'actor_id': actor_id} if actor_id else {}), **({'operation_id': str(operation_id)} if operation_id else {})})
 
-    def apply(self, source_instance, confirmation_token, actor_id=None):
+    def apply(self, source_instance, confirmation_token, actor_id=None, run_id=None):
         """Consume one opaque capability; never accept operations from the browser."""
         return self._request({'operation': 'apply', 'source_instance': source_instance,
-                              'confirmation_token': confirmation_token, **({'actor_id': actor_id} if actor_id else {})})
+                              'confirmation_token': confirmation_token, **({'run_id':str(run_id)} if run_id else {}), **({'actor_id': actor_id} if actor_id else {})})

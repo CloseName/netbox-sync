@@ -54,6 +54,12 @@ class RunHistoryService:
         except Exception as exc:
             raise RunReadError(RunReadErrorCode.UNAVAILABLE) from exc
 
+    def plan_run(self, source, digest, finished_at):
+        try:
+            return self._reader.plan_run(source, digest, finished_at)
+        except Exception as exc:
+            raise RunReadError(RunReadErrorCode.UNAVAILABLE) from exc
+
     def get_run(self, run_id):
         """Return one record or a stable not-found failure."""
         try:

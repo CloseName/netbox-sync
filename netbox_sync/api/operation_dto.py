@@ -16,6 +16,7 @@ class OperationDTO(BaseModel):
     finished_at: datetime | None
     safe_error_code: str | None
     diagnostic: dict | None = None
+    used_run_id: UUID | None = None
 
     @field_validator('safe_error_code')
     @classmethod

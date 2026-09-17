@@ -30,6 +30,9 @@ class PostgresRunReader:
         """Read bounded newest-first history."""
         return self._repository().list_runs(**filters)
 
+    def plan_run(self, source, digest, finished_at):
+        return self._repository().plan_run(source, digest, finished_at)
+
     def get_run(self, run_id):
         """Read one public UUID."""
         return self._repository().get_run(run_id)

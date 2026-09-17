@@ -359,6 +359,7 @@ class ApplyRequestDTO(PublicModel):
 
     confirmation_token: str = Field(pattern=r'^[a-f0-9]{64}$')
     operation_id: UUID | None = None
+    run_id: UUID | None = None
 
 
 class ApplyResultDTO(PublicModel):

@@ -6,6 +6,7 @@
 
 import argparse
 import logging
+import time
 from uuid import uuid4
 from .plan_diagnostics import summary, differences, safe_reason, safe_categories
 from contextlib import redirect_stdout
@@ -41,8 +42,10 @@ TOKEN_PATTERN = re.compile(r'^[a-f0-9]{64}$')
 class ApplyWorkerError(RuntimeError):
     """Stable, secret-free worker failure."""
 
-    def __init__(self, code, reason=None, categories=None):
+    def __init__(self, code, reason=None, categories=None, diagnostic=None):
         self.code = code
+        self.diagnostic = diagnostic
+        self.run_id = None
         self.reason = safe_reason(reason)
         self.categories = safe_categories(categories)
         super().__init__(code)
@@ -83,11 +86,14 @@ def execute_child(payload):
     import pynetbox
     from .esxi_runtime import execute_esxi_runtime
     from .netbox_full_apply import apply_full_sync
-    config, hosts = _discover(payload)
+    from .worker_failure import failure_stage
+    with failure_stage('provider'):
+        config, hosts = _discover(payload)
     nb_api = pynetbox.api(payload['netbox_url'], token=payload['netbox_token'])
     from .netbox_tls import configure_session
     configure_session(nb_api.http_session)
-    plan = _plan(nb_api, hosts, config)
+    with failure_stage('planning'):
+        plan = _plan(nb_api, hosts, config)
     if payload['operation'] == 'plan':
         return {**plan.canonical_dict(), 'digest': plan.digest}
     if not plan.apply_allowed:
@@ -103,17 +109,23 @@ def execute_child(payload):
         else:
             execute_esxi_runtime(nb_api, hosts, config, confirmed=False)
     except Exception as exc:
-        raise ApplyWorkerError('FAILED_BEFORE_WRITE') from exc
+        raise ApplyWorkerError('FAILED_BEFORE_WRITE', diagnostic=_failure(exc, 'preflight')) from exc
     try:
         if config.source_type == 'proxmox':
             apply_full_sync(nb_api, hosts, config.target, confirmed=True)
         else:
             execute_esxi_runtime(nb_api, hosts, config, confirmed=True)
     except Exception as exc:
-        raise ApplyWorkerError('OUTCOME_UNCERTAIN') from exc
+        raise ApplyWorkerError('OUTCOME_UNCERTAIN', diagnostic=_failure(exc, 'apply')) from exc
     return {'status': 'SUCCEEDED', 'plan_digest': plan.digest,
             'planner_version': plan.planner_version,
             'action_counts': ActionCounts.from_items(plan.items).__dict__}
+
+
+def _failure(exc, phase):
+    from .worker_failure import diagnostic
+    value = getattr(exc, 'diagnostic', None) or diagnostic(exc, 'planning')
+    return {**value, 'phase': value.get('phase', phase)}
 
 
 def child_main():
@@ -124,9 +136,9 @@ def child_main():
             value = execute_child(payload)
         result = {'result': value}
     except ApplyWorkerError as exc:
-        result = {'error': exc.code, 'reason': exc.reason, 'categories': exc.categories}
-    except Exception:  # pylint: disable=broad-exception-caught
-        result = {'error': 'APPLY_FAILED'}
+        result = {'error': exc.code, 'reason': exc.reason, 'categories': exc.categories, 'diagnostic': exc.diagnostic}
+    except Exception as exc:  # No exception text or stderr is forwarded.
+        result = {'error': 'FAILED_BEFORE_WRITE', 'diagnostic': _failure(exc, 'planning')}
     sys.stdout.write(json.dumps(result))
 
 
@@ -182,6 +194,7 @@ class ApplySupervisor:
                 'operation': operation, 'expected_digest': expected_digest}
 
     def _child(self, payload):
+        started = time.monotonic()
         operation = payload['operation']
         raw = json.dumps(payload).encode()
         try:
@@ -196,35 +209,47 @@ class ApplySupervisor:
                     process.communicate()
                     code = ('FAILED_BEFORE_WRITE' if operation == 'plan'
                             else 'OUTCOME_UNCERTAIN')
-                    raise ApplyWorkerError(code) from None
+                    raise ApplyWorkerError(code, diagnostic=dict(phase='child_wait', termination='timeout', returncode=process.returncode, duration_ms=int((time.monotonic()-started)*1000))) from None
         finally:
             raw = b''
             payload = None
         if process.returncode or len(output) > MAX_RESPONSE:
             raise ApplyWorkerError('FAILED_BEFORE_WRITE' if operation == 'plan'
-                                   else 'OUTCOME_UNCERTAIN')
+                                   else 'OUTCOME_UNCERTAIN', diagnostic=dict(phase='child_response',
+                termination='exit' if process.returncode else 'response_too_large', returncode=process.returncode,
+                duration_ms=int((time.monotonic()-started)*1000)))
         try:
             response = json.loads(output)
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise ApplyWorkerError('FAILED_BEFORE_WRITE' if operation == 'plan'
-                                   else 'OUTCOME_UNCERTAIN') from None
-        if not isinstance(response, dict) or set(response) - {'result', 'error', 'reason', 'categories'}:
+                                   else 'OUTCOME_UNCERTAIN', diagnostic=dict(phase='child_response',
+                termination='invalid_response', returncode=process.returncode, duration_ms=int((time.monotonic()-started)*1000))) from None
+        if not isinstance(response, dict) or set(response) - {'result', 'error', 'reason', 'categories', 'diagnostic'}:
             raise ApplyWorkerError('FAILED_BEFORE_WRITE' if operation == 'plan'
-                                   else 'OUTCOME_UNCERTAIN')
+                                   else 'OUTCOME_UNCERTAIN', diagnostic=dict(phase='child_response', termination='invalid_response', returncode=process.returncode, duration_ms=int((time.monotonic()-started)*1000)))
         if response.get('error'):
             allowed = {'PLAN_STALE', 'PLAN_BLOCKED', 'FAILED_BEFORE_WRITE',
                        'OUTCOME_UNCERTAIN', 'APPLY_FAILED', 'SOURCE_UNSUPPORTED'}
             code = response['error'] if response['error'] in allowed else 'APPLY_FAILED'
-            raise ApplyWorkerError(code, response.get('reason'), response.get('categories'))
+            from .worker_failure import safe_diagnostic
+            detail = safe_diagnostic(response.get('diagnostic'), code)
+            detail.update(duration_ms=int((time.monotonic()-started)*1000), returncode=process.returncode)
+            raise ApplyWorkerError(code, response.get('reason'), response.get('categories'), detail)
         if not isinstance(response.get('result'), dict):
-            raise ApplyWorkerError('APPLY_FAILED')
+            raise ApplyWorkerError('FAILED_BEFORE_WRITE' if operation == 'plan' else 'OUTCOME_UNCERTAIN', diagnostic=dict(phase='child_response', termination='invalid_response', returncode=process.returncode, duration_ms=int((time.monotonic()-started)*1000)))
         return response['result']
+
+    def _unused(self, instance, digest, operation_id):
+        if self.operations and self._runs and self._runs.plan_used(
+                instance, digest, self.operations.plan_time(instance, operation_id)):
+            raise ApplyWorkerError('PLAN_STALE', 'OPERATION_STATUS')
 
     def prepare(self, instance, digest, operation_id=None, actor_id=None):
         """Recompute the exact current generation and bind its single-use token."""
         guard = self.operations.review_guard(instance, digest, operation_id) if self.operations else nullcontext()
         try:
             with guard as reviewed:
+                self._unused(instance, digest, operation_id)
                 config = self._source(instance)
                 plan = self._child(self._payload(config, 'plan'))
                 if not plan['apply_allowed']:
@@ -242,11 +267,12 @@ class ApplySupervisor:
         except OperationError as exc:
             raise ApplyWorkerError(exc.code, getattr(exc, 'reason', None)) from None
 
-    def apply(self, instance, token, actor_id=None):
+    def apply(self, instance, token, actor_id=None, run_id=None):
         """Consume, lock, reload and recompute before any write."""
         config = self._source(instance)
         run = self._runs.start_run(
             instance, config.source_type, RunTrigger.MANUAL, actor_id or 'web/manual',
+            **({'run_id':run_id} if run_id else {}),
         ) if self._runs else None
         claims = None
         apply_started = False
@@ -272,9 +298,12 @@ class ApplySupervisor:
                 guard = self.operations.review_guard(instance, claims.plan_digest, claims.operation_id) if self.operations else nullcontext()
                 try:
                     with guard as reviewed:
+                        self._unused(instance, claims.plan_digest, claims.operation_id)
                         config = self._source(instance)
                         if config.id != claims.source_id:
                             raise ApplyWorkerError('PLAN_STALE', 'SOURCE_IDENTITY')
+                        if run:
+                            self._runs.bind_plan(run.run_id, claims.plan_digest, claims.planner_version)
                         apply_started = True
                         payload = self._payload(config, 'apply', claims.plan_digest)
                         if isinstance(reviewed, dict): payload['expected_summary'] = summary(reviewed)
@@ -282,7 +311,7 @@ class ApplySupervisor:
                         if result.get('plan_digest') != claims.plan_digest:
                             # The child may already have crossed the NetBox write boundary.
                             # A response-contract mismatch is therefore not a pre-write stale plan.
-                            raise ApplyWorkerError('OUTCOME_UNCERTAIN')
+                            raise ApplyWorkerError('OUTCOME_UNCERTAIN', diagnostic=dict(phase='result_validation', termination='invalid_response'))
                 except OperationError as exc:
                     raise ApplyWorkerError(exc.code, getattr(exc, 'reason', None)) from None
             finally:
@@ -297,6 +326,7 @@ class ApplySupervisor:
             result.pop('planner_version', None)
             return result
         except ApplyWorkerError as exc:
+            exc.run_id = str(run.run_id) if run else None
             if run:
                 code = safe_error_code(exc.code)
                 self._runs.finish_run(
@@ -315,7 +345,9 @@ class ApplySupervisor:
                     planner_version=claims.planner_version if claims else None,
                     error_code=code, error_message_safe=safe_error_message(code),
                 )
-            raise ApplyWorkerError(code) from exc
+            error = ApplyWorkerError(code, diagnostic=_failure(exc, 'apply' if apply_started else 'preflight'))
+            error.run_id = str(run.run_id) if run else None
+            raise error from exc
 
 
 def _receive(connection):
@@ -347,6 +379,11 @@ def _receive(connection):
             UUID(request['operation_id'])
         except (ValueError, TypeError, AttributeError):
             raise ApplyWorkerError('REQUEST_INVALID') from None
+    if operation == 'apply' and isinstance(request, dict) and 'run_id' in request:
+        from uuid import UUID
+        try: UUID(request['run_id'])
+        except (ValueError, TypeError, AttributeError): raise ApplyWorkerError('REQUEST_INVALID') from None
+        allowed = allowed | {'run_id'}
     if isinstance(request, dict) and 'actor_id' in request:
         allowed = allowed | {'actor_id'}
         from uuid import UUID
@@ -384,7 +421,8 @@ def _handle_request(supervisor, request):
         if 'operation_id' in request:
             return supervisor.prepare(request['source_instance'], request['plan_digest'], request['operation_id'], **actor)
         return supervisor.prepare(request['source_instance'], request['plan_digest'], **actor)
-    return supervisor.apply(request['source_instance'], request['confirmation_token'], **actor)
+    return supervisor.apply(request['source_instance'], request['confirmation_token'], **actor,
+        **({'run_id':request['run_id']} if 'run_id' in request else {}))
 
 
 def serve(socket_path, supervisor, allowed_uid):
@@ -403,17 +441,32 @@ def serve(socket_path, supervisor, allowed_uid):
         while True:
             connection, _ = server.accept()
             with connection:
+                request = {}
+                started = time.monotonic()
                 try:
                     _authorize(connection, allowed_uid)
                     request = _receive(connection)
                     result = _handle_request(supervisor, request)
                     response = {'ok': True, 'result': result}
                 except ApplyWorkerError as exc:
-                    response = {'ok': False, 'error': exc.code, 'reason': exc.reason, 'categories': exc.categories, 'event_id': str(uuid4())}
+                    response = {'ok': False, 'error': exc.code, 'reason': exc.reason, 'categories': exc.categories, 'event_id': str(uuid4()), 'run_id': exc.run_id}
+                    from .worker_failure import safe_diagnostic
+                    detail = safe_diagnostic(exc.diagnostic, exc.code)
+                    logging.getLogger(__name__).error(json.dumps(dict(detail, code=exc.code, event_id=response['event_id'], run_id=exc.run_id, source_instance=request.get('source_instance'), duration_ms=int((time.monotonic()-started)*1000)), sort_keys=True))
                     logging.getLogger(__name__).warning(json.dumps(response, sort_keys=True))
-                except Exception:  # pylint: disable=broad-exception-caught
-                    response = {'ok': False, 'error': 'WORKER_INTERNAL_ERROR'}
-                connection.sendall(json.dumps(response).encode())
+                except Exception as exc:  # pylint: disable=broad-exception-caught
+                    response = {'ok': False, 'error': 'WORKER_INTERNAL_ERROR', 'event_id': str(uuid4())}
+                    from .worker_failure import safe_diagnostic
+                    detail = safe_diagnostic(_failure(exc, 'operation'), 'OPERATION_FAILED')
+                    logging.getLogger(__name__).error(json.dumps(dict(detail, code='WORKER_INTERNAL_ERROR',
+                        event_id=response['event_id'], source_instance=request.get('source_instance'),
+                        duration_ms=int((time.monotonic()-started)*1000)), sort_keys=True))
+                try:
+                    connection.sendall(json.dumps(response).encode())
+                except OSError:
+                    # The operation/result belongs to the supervisor, not its recipient.
+                    logging.getLogger(__name__).warning(json.dumps({'event':'RESPONSE_DELIVERY_LOST',
+                        'run_id': response.get('run_id') or response.get('result',{}).get('run_id')}))
 
 
 def main():

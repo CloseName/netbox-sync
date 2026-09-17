@@ -64,3 +64,22 @@ def test_ldap_validation_never_returns_input_values():
         assert response.status_code==422
         assert response.json()['error']['code']=='API_VALIDATION_FAILED'
         assert 'never-return' not in response.text
+
+
+def test_destination_precheck_passes_current_revision_without_source_credentials(monkeypatch):
+    from uuid import uuid4
+    client=Client();invitation=client.service.root('invite',{})['invitation'];calls=[]
+    def probe(path, credentials, session, revision, **options):
+        assert options=={'destination_only':True}
+        assert not credentials.secret and not credentials.username and not credentials.token_id
+        client.call('probe.authorize',session=session,revision=revision)
+        calls.append(credentials.address)
+    monkeypatch.setattr('netbox_sync.probe_worker.remote_test_authorized',probe)
+    headers={'Origin':'https://localhost:8000','X-NetBox-Sync-CSRF':'same-origin'}
+    with TestClient(create_app(settings=ApiSettings(bootstrap_socket='',probe_socket='/test/probe'),auth_client=client),base_url='https://localhost:8000') as http:
+        body=dict(source_type='esxi',address='esxi.example.test',port=8443)
+        assert http.post('/api/v1/sources/check-destination',json=body,headers=headers).status_code==401
+        assert http.post('/api/v1/auth/enroll',json=dict(username='admin',password=str(uuid4()),invitation=invitation),headers=headers).status_code==200
+        assert http.post('/api/v1/sources/check-destination',json=body,headers=headers).json()=={'allowed':True}
+        assert http.post('/api/v1/sources/check-destination',json={**body,'secret':'not-accepted'},headers=headers).status_code==422
+    assert calls==['esxi.example.test']

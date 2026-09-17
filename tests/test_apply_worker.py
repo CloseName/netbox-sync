@@ -137,6 +137,9 @@ class RunRecorder:
         self.started.append((source_instance, source_type, trigger.value, created_by))
         return run
 
+    def bind_plan(self, run_id, digest, version):
+        self.bound = (run_id, digest, version)
+
     def finish_run(self, run_id, status, counts=None, plan_digest=None,
                    planner_version=None, error_code=None, error_message_safe=None):
         self.finished.append({
@@ -325,3 +328,84 @@ def test_empty_manual_plan_cannot_issue_confirmation(monkeypatch,items):
         planner_version='v',source_fingerprint='s',target_fingerprint='t',items=items))
     with pytest.raises(ApplyWorkerError,match='PLAN_BLOCKED'):
         supervisor.prepare(config.source_instance,'a'*64)
+
+
+def test_used_plan_is_refused_before_prepare_child(monkeypatch):
+    from contextlib import nullcontext
+    supervisor = ApplySupervisor('', '', '', '', '', '', '')
+    supervisor.operations = SimpleNamespace(review_guard=lambda *args: nullcontext({}),
+                                           plan_time=lambda *args: '2026-09-17')
+    supervisor._runs = SimpleNamespace(plan_used=lambda *args: True)
+    monkeypatch.setattr(supervisor, '_child', lambda *args: pytest.fail('must not re-execute'))
+    with pytest.raises(ApplyWorkerError, match='PLAN_STALE') as caught:
+        supervisor.prepare('pve-test', 'a'*64, 'operation')
+    assert caught.value.reason == 'OPERATION_STATUS'
+
+
+def test_child_failure_contains_safe_http_details_without_response(monkeypatch):
+    import requests
+    from pynetbox.core.query import RequestError
+    from netbox_sync.apply_worker import _failure
+    from netbox_sync.worker_failure import safe_diagnostic
+    response = requests.Response()
+    response.status_code = 400
+    response._content = b'RAW_PASSWORD_AND_INFRASTRUCTURE'
+    response.request = requests.Request('POST','https://secret-host/api/ipam/ip-addresses/',
+                                       headers={'Authorization':'SECRET'}).prepare()
+    response.url = response.request.url
+    try:
+        raise RequestError(response)
+    except RequestError as exc:
+        value = safe_diagnostic(_failure(exc, 'apply'), 'OUTCOME_UNCERTAIN')
+    assert value['exception_class'] == 'RequestError'
+    assert value['phase'] == 'apply'
+    assert value['http'] == {'status':400,'method':'POST','endpoint':'ipam.ip_addresses'}
+    assert 'SECRET' not in json.dumps(value) and 'secret-host' not in json.dumps(value)
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason='real Unix peer credentials require Linux')
+@pytest.mark.parametrize('fail', [False, True])
+def test_disconnected_recipient_does_not_kill_real_apply_server(tmp_path, fail):
+    import multiprocessing
+    import os
+    import socket
+    import time
+    from netbox_sync.apply_worker import serve
+    path = str(tmp_path / 'apply.sock')
+    class Supervisor:
+        def apply(self, *args, **kwargs):
+            time.sleep(.1)
+            if fail: raise RuntimeError('PRIVATE_REMOTE_RESPONSE_MUST_NOT_APPEAR')
+            return {'status':'SUCCEEDED','plan_digest':'a'*64}
+    process = multiprocessing.get_context('fork').Process(target=serve,args=(path,Supervisor(),os.getuid()))
+    process.start()
+    try:
+        deadline = time.monotonic()+5
+        while not os.path.exists(path) and time.monotonic()<deadline: time.sleep(.01)
+        with socket.socket(socket.AF_UNIX) as connection:
+            connection.connect(path)
+            connection.sendall(json.dumps({'operation':'apply','source_instance':'pve-test',
+                'confirmation_token':'b'*64}).encode())
+            connection.shutdown(socket.SHUT_WR)
+        time.sleep(.2)
+        if fail:
+            with socket.socket(socket.AF_UNIX) as connection:
+                connection.settimeout(2)
+                connection.connect(path)
+                connection.sendall(json.dumps({'operation':'apply','source_instance':'pve-test',
+                    'confirmation_token':'b'*64}).encode())
+                connection.shutdown(socket.SHUT_WR)
+                response=json.loads(connection.recv(4096))
+                assert response['error']=='WORKER_INTERNAL_ERROR'
+                UUID(response['event_id'])
+                assert 'PRIVATE_REMOTE_RESPONSE_MUST_NOT_APPEAR' not in json.dumps(response)
+        with socket.socket(socket.AF_UNIX) as connection:
+            connection.settimeout(2)
+            connection.connect(path)
+            connection.sendall(b'{"operation":"health"}')
+            connection.shutdown(socket.SHUT_WR)
+            assert json.loads(connection.recv(4096)) == {'ok':True,'result':{'status':'ok'}}
+        assert process.is_alive()
+    finally:
+        process.terminate()
+        process.join(5)

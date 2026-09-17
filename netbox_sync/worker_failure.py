@@ -37,12 +37,18 @@ def diagnostic(exc, stage):
             if re.fullmatch(r'[a-zA-Z_][a-zA-Z0-9_]{0,80}',name):
                 frames.append({'module':filename.stem,'function':name,'line':trace.tb_lineno})
         trace=trace.tb_next
-    return {'code':code,'stage':ERRORS[code]['stage'],'frames':frames[-8:]}
+    from .scheduled_failure import _http
+    name = type(exc).__name__
+    value = {'code':code,'stage':ERRORS[code]['stage'],'frames':frames[-8:],
+             'exception_class': name if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,100}', name) else 'Exception'}
+    http = _http(exc)
+    if http: value['http'] = http
+    return value
 
 
 class DiagnosticFailure(Exception):
     def __init__(self, exc, stage):
-        self.diagnostic=diagnostic(exc,stage);self.code=self.diagnostic['code']
+        self.diagnostic={**diagnostic(exc,stage),'phase':stage};self.code=self.diagnostic['code']
         super().__init__(self.code)
 
 
@@ -59,6 +65,19 @@ def safe_diagnostic(value, code):
     code=code if code in ERRORS else 'OPERATION_FAILED'
     result={'code':code,'stage':ERRORS[code]['stage'],'frames':[]}
     if not isinstance(value,dict):return result
+    name=value.get('exception_class')
+    if isinstance(name,str) and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,100}',name): result['exception_class']=name
+    if value.get('phase') in ('provider','netbox','planning','preflight','apply','child_wait','child_response','result_validation','operation'):
+        result['phase']=value['phase']
+    for key in ('duration_ms','returncode'):
+        if type(value.get(key)) is int and -255 <= value[key] <= 86400000: result[key]=value[key]
+    if value.get('termination') in ('timeout','exit','invalid_response','response_too_large'): result['termination']=value['termination']
+    http=value.get('http')
+    if isinstance(http,dict) and type(http.get('status')) is int and 100<=http['status']<=599:
+        from .scheduled_failure import _ENDPOINTS
+        result['http']={'status':http['status']}
+        if http.get('method') in ('GET','POST','PATCH','PUT','DELETE','HEAD','OPTIONS'): result['http']['method']=http['method']
+        if http.get('endpoint') in _ENDPOINTS: result['http']['endpoint']=http['endpoint']
     frames=value.get('frames',[])
     if not isinstance(frames,list):return result
     for frame in frames[:8]:

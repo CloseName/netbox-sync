@@ -1,4 +1,6 @@
 """Invoked in the isolated auth Compose host with its existing scoped resources."""
+import uuid
+import copy
 assert project.startswith('netbox-sync-probe-test-')
 login()
 # Replace only this test's existing peer, leaving every product service unmodified.
@@ -25,12 +27,21 @@ compose('up','-d','--no-deps','netbox-sync-discovery-worker','netbox-sync-apply-
 state=json.loads(bootstrap.read_text());state['url']='https://netbox.example.test:9443';bootstrap.write_text(json.dumps(state));bootstrap.chmod(0o600)
 expected_devices=expected_vms=0
 for provider in (('esxi','proxmox') if pgmode=='bundled' else ('proxmox','esxi')):
+    destination=request(dict(source_type=provider,address='esxi.probe.test',port=8443),'/api/v1/sources/check-destination')
+    assert destination['status']==200 and destination['body']=={'allowed':True}, destination
+    denied=request(dict(source_type=provider,address='127.0.0.1',port=8443),'/api/v1/sources/check-destination')
+    assert denied['status']>=400 and denied['body']['error']['code']=='SOURCE_DESTINATION_DENIED', denied
     checked=request(dict(source_type=provider,address='esxi.probe.test',port=8443,verify_ssl=True,
         username='netbox-sync@pve' if provider=='proxmox' else 'netbox-sync',secret=secret,preview=True,
         **({'token_id':'independent-name'} if provider=='proxmox' else {})))
     assert checked['status']==200, ('preview',provider,checked['status'],checked['body'].get('error'))
     refs={kind:request(None,'/api/v1/catalog/'+kind,'GET')['body']['items'][0] for kind in ('site','cluster','platform','device_role','cluster_type')}
     dtype=next(item for item in request(None,'/api/v1/catalog/device_type','GET')['body']['items'] if item['id']==6)
+    reviewed=request(dict(onboarding_token=checked['body']['onboarding_token'],references=refs,host_types={h['id']:dtype for h in checked['body']['preview']['hosts']}),'/api/v1/sources/review-placement')
+    assert reviewed['status']==200, reviewed
+    wrong=copy.deepcopy(refs);wrong['cluster']['fingerprint']='0'*64
+    rejected=request(dict(onboarding_token=checked['body']['onboarding_token'],references=wrong,host_types={h['id']:dtype for h in checked['body']['preview']['hosts']}),'/api/v1/sources/review-placement')
+    assert rejected['status']==409 and rejected['body']['error']['code']=='CATALOG_CHANGED', rejected
     sid='full-'+provider
     payload=dict(source_type=provider,source_instance=sid,name=sid,address='esxi.probe.test',port=8443,
         verify_ssl=True,sync_interval_seconds=600,confirm_sync_disabled=True,
@@ -41,6 +52,16 @@ for provider in (('esxi','proxmox') if pgmode=='bundled' else ('proxmox','esxi')
     result=request(payload,'/api/v1/sources');assert result['status']==201,('register',provider,result['status'],result['body'].get('error'))
     base='/api/v1/sources/'+sid
     discovery=request({},base+'/discovery');assert discovery['status']==200,('discovery',provider,discovery)
+    if provider=='esxi':
+        run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/deny-required',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
+        failed=request({},base+'/sync-plan');assert failed['status']>=400
+        failed_operation=next(o for o in request(None,base+'/operations','GET')['body']['operations'] if o['operation_kind']=='PLAN')
+        assert failed_operation['status']=='FAILED'
+        evidence=compose('logs','--no-color','netbox-sync-discovery-worker')
+        assert failed_operation['operation_id'] in evidence and 'RequestError' in evidence and 'dcim.devices' in evidence
+        assert secret not in evidence and 'PRIVATE_REMOTE_RESPONSE_MUST_NOT_APPEAR' not in evidence
+        run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/allow-required',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
+        print('PASS controlled PLAN required-read refusal: persisted operation and correlated safe HTTP/class/frames',flush=True)
     planned=request({},base+'/sync-plan');assert planned['status']==200,('plan',provider,planned)
     plan=planned['body'];assert plan['apply_allowed'] and any(i['action']=='CREATE' for i in plan['items']),('empty plan',provider,plan)
     operations=request(None,base+'/operations','GET')['body']['operations']
@@ -77,7 +98,28 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
         other=json.loads(compose('exec','-T','netbox-sync-apply-worker','python','-c',diagnostic,sid))
         print('PLAN_DIFFERENCES',[(k,plan.get(k),other.get(k)) for k in plan if plan.get(k)!=other.get(k)],flush=True)
     assert prepared['status']==200,('prepare',provider,prepared['body'].get('error'))
-    applied=request(dict(confirmation_token=prepared['body']['confirmation_token'],operation_id=operation_id),base+'/sync')
+    accepted_id=str(uuid.uuid4())
+    if provider=='esxi':
+        run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/partial-apply',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
+        uncertain=request(dict(confirmation_token=prepared['body']['confirmation_token'],operation_id=operation_id,run_id=accepted_id),base+'/sync')
+        assert uncertain['status']==503 and uncertain['body']['error']['code']=='OUTCOME_UNCERTAIN', uncertain
+        history=request(None,'/api/v1/runs/'+accepted_id,'GET')
+        assert history['status']==200 and history['body']['status']=='OUTCOME_UNCERTAIN'
+        assert history['body']['plan_digest']==plan['digest']
+        before_retry=run(['docker','exec',peer,'python','-c',"import requests; print(requests.get('https://esxi.probe.test:8443/fixture/state',verify='/fixture/server.crt',timeout=5).text)"])
+        assert request(dict(confirmation_token=prepared['body']['confirmation_token'],operation_id=operation_id),base+'/sync')['status']==409
+        refused=request(dict(plan_digest=plan['digest'],operation_id=operation_id,confirmed=True),base+'/sync-confirmations')
+        assert refused['status']==409 and refused['body']['error']['reason']=='OPERATION_STATUS', refused
+        after_retry=run(['docker','exec',peer,'python','-c',"import requests; print(requests.get('https://esxi.probe.test:8443/fixture/state',verify='/fixture/server.crt',timeout=5).text)"])
+        assert json.loads(before_retry)['write_requests']==json.loads(after_retry)['write_requests']
+        logs=compose('logs','--no-color','netbox-sync-apply-worker')
+        assert accepted_id in logs and 'RequestError' in logs and 'PRIVATE_REMOTE_RESPONSE_MUST_NOT_APPEAR' not in logs
+        plan=request({},base+'/sync-plan')['body']
+        operation_id=next(o['operation_id'] for o in request(None,base+'/operations','GET')['body']['operations'] if o['operation_kind']=='PLAN')
+        prepared=request(dict(plan_digest=plan['digest'],operation_id=operation_id,confirmed=True),base+'/sync-confirmations')
+        assert prepared['status']==200, prepared
+        print('PASS controlled partial ESXi apply; durable result, consumed-plan/replay refusal, fresh residual plan',flush=True)
+    applied=request(dict(confirmation_token=prepared['body']['confirmation_token'],operation_id=operation_id,run_id=str(uuid.uuid4())),base+'/sync')
     assert applied['status']==200 and applied['body']['status']=='SUCCEEDED',('apply',provider,applied)
     repeated=request({},base+'/sync-plan');assert repeated['status']==200,('replan',provider,repeated)
     assert not [i for i in repeated['body']['items'] if i['action'] in ('CREATE','UPDATE')],('duplicate',provider,repeated)
@@ -89,7 +131,8 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
     expected_devices+=1 if provider=='esxi' else 2;expected_vms+=1 if provider=='esxi' else 2
     assert counts['dcim.devices']==expected_devices,counts
     assert counts['virtualization.virtual_machines']==expected_vms,counts
-    if provider=='proxmox': assert counts['virtualization.interfaces']>=2,counts
+    assert counts['virtualization.interfaces'] >= (2 if provider=='proxmox' else 1),counts
+    assert counts['dcim.mac_addresses']>=1 and counts['ipam.ip_addresses']>=1,counts
     exec(compile(Path('/review/tests/scheduled_full_sync_scenario.py').read_text(), 'scheduled_full_sync_scenario.py', 'exec'))
     original=request(None,base,'GET')['body']
     view=request(None,base+'/placement','GET');assert view['status']==200,('placement-read',view)
@@ -103,19 +146,26 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
     assert rejected['status']==409,('catalog-validation',rejected)
     old_plan=next(o for o in request(None,base+'/operations','GET')['body']['operations'] if o['operation_kind']=='PLAN')
     assert old_plan['status']=='READY'
-    saved=request(change,base+'/placement','PATCH');assert saved['status']==200,('placement-save',saved)
-    assert request(change,base+'/placement','PATCH')['status']==409
-    current=request(None,base,'GET')['body']
-    assert current['source_instance']==original['source_instance'] and current['address']==original['address']
-    assert current['name']==original['name'] and current['sync_enabled']==original['sync_enabled']
-    stale=next(o for o in request(None,base+'/operations','GET')['body']['operations'] if o['operation_kind']=='PLAN')
-    assert stale['status']=='STALE' and stale['result'] is None
-    assert request(dict(plan_digest=old_plan['result']['digest'],operation_id=old_plan['operation_id'],confirmed=True),base+'/sync-confirmations')['status']==409
-    fresh=request({},base+'/sync-plan');assert fresh['status']==200,('mapping-replan',fresh)
-    assert any(i['action']=='UPDATE' and i['object_kind']=='dcim.devices' for i in fresh['body']['items']),fresh
-    persisted=request(None,base+'/placement','GET')['body']
-    assert all(t['id']==8 for t in persisted['host_types'].values())
-    print('PASS production mapping validation/save/concurrent stale revision/plan invalidation/stable source '+provider,flush=True)
+    if provider=='esxi':
+        blocked=request(change,base+'/placement','PATCH')
+        assert blocked['status']==409 and blocked['body']['error']['code']=='SOURCE_APPLY_UNCONFIRMED'
+        assert request(None,base,'GET')['body']==original
+        print('PASS historical uncertainty still blocks placement; successful reconciliation does not erase history',flush=True)
+        run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/change-esxi-memory',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
+    else:
+        saved=request(change,base+'/placement','PATCH');assert saved['status']==200,('placement-save',saved)
+        assert request(change,base+'/placement','PATCH')['status']==409
+        current=request(None,base,'GET')['body']
+        assert current['source_instance']==original['source_instance'] and current['address']==original['address']
+        assert current['name']==original['name'] and current['sync_enabled']==original['sync_enabled']
+        stale=next(o for o in request(None,base+'/operations','GET')['body']['operations'] if o['operation_kind']=='PLAN')
+        assert stale['status']=='STALE' and stale['result'] is None
+        assert request(dict(plan_digest=old_plan['result']['digest'],operation_id=old_plan['operation_id'],confirmed=True),base+'/sync-confirmations')['status']==409
+        fresh=request({},base+'/sync-plan');assert fresh['status']==200,('mapping-replan',fresh)
+        assert any(i['action']=='UPDATE' and i['object_kind']=='dcim.devices' for i in fresh['body']['items']),fresh
+        persisted=request(None,base+'/placement','GET')['body']
+        assert all(t['id']==8 for t in persisted['host_types'].values())
+        print('PASS production mapping validation/save/concurrent stale revision/plan invalidation/stable source '+provider,flush=True)
 
     if os.environ.get('NETBOX_SYNC_BROWSER_FULL_SYNC_TEST')=='1':
         # Synthetic authenticated session is exchanged only through a protected,

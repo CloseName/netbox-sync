@@ -77,6 +77,9 @@ def netbox_http(seed, ssl_context=None, authorize=None, behavior=None, bind=('12
                 return self.reply(200,{'count':len(matches),'next':None,'previous':None,'results':[project(endpoint,r) for r in matches[offset:offset+limit]]})
             value=json.loads(self.rfile.read(int(self.headers.get('Content-Length','0'))))
             writes.append((self.command,endpoint,deepcopy(value)))
+            if behavior and behavior.get('fail_write_number')==len(writes):
+                behavior.pop('fail_write_number')
+                return self.reply(503, {'detail': 'PRIVATE_REMOTE_RESPONSE_MUST_NOT_APPEAR'})
             if behavior and behavior.pop('fail_next_write',False):
                 return self.reply(503, {'detail': 'PRIVATE_REMOTE_RESPONSE_MUST_NOT_APPEAR'})
             if self.command=='POST':

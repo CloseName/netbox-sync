@@ -230,6 +230,27 @@ class RunRepository:
             raise ValueError('run is missing or already terminal')
         return self._row(row)
 
+    def bind_plan(self, run_id, digest, version):
+        """Durably fence the consumed plan before any child can write."""
+        if not re.fullmatch(r'[a-f0-9]{64}', digest): raise ValueError('invalid digest')
+        with self._connect() as connection:
+            row = connection.execute(sql.SQL("UPDATE {} SET plan_digest=%s, planner_version=%s "
+                "WHERE run_id=%s AND status='RUNNING' AND plan_digest IS NULL RETURNING run_id")
+                .format(self._table()), (digest, version, UUID(str(run_id)))).fetchone()
+            if not row: raise ValueError('run already bound')
+
+    def plan_used(self, source, digest, finished_at):
+        """A later accepted attempt consumes this snapshot even if its reply was lost."""
+        return self.plan_run(source, digest, finished_at) is not None
+
+    def plan_run(self, source, digest, finished_at):
+        """Exact persisted evidence, independent of bounded history pagination."""
+        with self._connect() as connection:
+            row = connection.execute(sql.SQL("SELECT run_id FROM {} WHERE source_instance=%s "
+                "AND plan_digest=%s AND started_at >= %s ORDER BY started_at DESC, run_id DESC LIMIT 1").format(self._table()),
+                (source, digest, finished_at)).fetchone()
+            return str(row['run_id'] if isinstance(row, dict) else row[0]) if row else None
+
     def get_run(self, run_id):
         """Read one run by public UUID."""
         try:
