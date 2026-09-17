@@ -16,6 +16,8 @@ import {
   SourceConnectionError,
   connectionMessages,
   inspectConnection,
+  reviewPlacement,
+  checkDestination,
   CatalogFailure,
 } from "../api/onboarding";
 import { SourceAccessHelp } from "../components/SourceAccessHelp";
@@ -42,6 +44,8 @@ export function AddSourcePage() {
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false); const [started,setStarted]=useState(0);
   const [error, setError] = useState("");
+  const [notice,setNotice]=useState('');
+  const [registrationConfirmed,setRegistrationConfirmed]=useState(false);
   const [connectionCode,setConnectionCode]=useState<keyof typeof connectionMessages|null>(null);
   const [identity,setIdentity]=useState({user:'',token:'',edited:false,parsed:false});
   const [expiresAt,setExpiresAt]=useState<number|null>(null);
@@ -78,6 +82,13 @@ export function AddSourcePage() {
     }
   }
 
+  async function checkAddress(){
+    if(inFlight.current)return;inFlight.current=true;setBusy(true);setError('');setNotice('');setConnectionCode(null);
+    try{await checkDestination({source_type:type,address:connection.address,port:connection.port});setNotice(t('Address allowed by current DNS and destination policy. Authentication is not checked; the connection test rechecks the address.','Адрес разрешён текущими DNS и политикой назначений. Вход не проверен; проверка подключения повторно проверит адрес.'));}
+    catch(failure){if(failure instanceof SourceConnectionError)setConnectionCode(failure.code);setError(failure instanceof SourceConnectionError?connectionMessages[failure.code][language==='ru'?1:0]:t('Address could not be checked. No credentials were sent.','Адрес не удалось проверить. Учётные данные не отправлялись.'));}
+    finally{inFlight.current=false;setBusy(false);}
+  }
+
   async function test(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (inFlight.current) return;
@@ -105,9 +116,21 @@ export function AddSourcePage() {
         t("Connection test failed. Re-enter credentials to retry; nothing was registered.", "Проверка подключения не завершена. Введите данные повторно; источник не зарегистрирован."),
       );
     } finally {
-      form.reset();setIdentity({user:'',token:'',edited:false,parsed:false});
+      const secret=form.elements.namedItem('secret') as HTMLInputElement|null;if(secret)secret.value='';
       inFlight.current=false; setBusy(false);
     }
+  }
+
+  async function reviewRegistration(){
+    if(inFlight.current)return;
+    const cluster=draft.references.cluster,site=draft.references.site,kind=draft.references.cluster_type;
+    if(cluster?.scope_type!=='dcim.site'||cluster.scope_id!==site?.id||cluster.type?.id!==kind?.id){
+      setError(t('Cluster: choose the selected site scope and cluster type.','Кластер: выберите привязку к выбранной площадке и соответствующий тип кластера.'));return;
+    }
+    inFlight.current=true;setBusy(true);setError('');
+    try{await reviewPlacement(token,draft.references,draft.host_types);setReview(true);}
+    catch(failure){setError(failure instanceof CatalogFailure&&failure.code==='CATALOG_CLUSTER_SCOPE_MISMATCH'?t('Cluster: its site or type changed. Select a compatible cluster.','Кластер: площадка или тип изменились. Выберите совместимый кластер.'):t('Placement could not be verified. Your selections are retained.','Размещение не удалось проверить. Ваш выбор сохранён.'));}
+    finally{inFlight.current=false;setBusy(false);}
   }
 
   async function register(event: FormEvent<HTMLFormElement>) {
@@ -203,12 +226,13 @@ export function AddSourcePage() {
           setReconciled(response.ok);setError(response.ok?t('A source with this ID exists. Open it and verify the saved configuration.','Источник с этим ID существует. Откройте его и проверьте сохранённую конфигурацию.'):t('The outcome is still unconfirmed. Ask the operator to inspect the operation before retrying.','Результат пока не подтверждён. Перед повтором оператор должен проверить состояние операции.'));
         }catch{setError(t('Could not check server state. No registration was repeated.','Не удалось сверить состояние сервера. Регистрация не повторялась.'));}finally{setBusy(false);}
       }}>{t('Check server state','Сверить состояние сервера')}</button>{reconciled&&<Link to={sourcePath(draft.source_instance)}>{t('Open source for review','Открыть источник для проверки')}</Link>}</section>}
+      {notice&&<p role="status">{notice}</p>}
       {error && (
         <p role="alert" tabIndex={-1} className="source-error">
           {connectionCode?connectionMessages[connectionCode][language==='ru'?1:0]:tr(error)}
         </p>
       )}
-      {connectionCode==='SOURCE_DESTINATION_DENIED'&&<DestinationPermission host={connection.address} done={()=>{setConnectionCode(null);setError(t('Destination allowed. Re-enter credentials and test the connection.','Назначение разрешено. Введите учётные данные и повторите проверку подключения.'));}}/>}
+      {connectionCode==='SOURCE_DESTINATION_DENIED'&&<DestinationPermission host={connection.address} done={()=>{setConnectionCode(null);setError('');setNotice(t('Destination allowed. Test the connection.','Назначение разрешено. Проверьте подключение.'));}}/>}
       {busy && <OperationFeedback operation={token?t('Registering source','Регистрация источника'):t('Checking connection and reading host information','Проверяем подключение и получаем сведения о хостах')} phase="sending" started={started}/>}
       {!token ? (
         <form onSubmit={test} className="source-form" autoComplete="off">
@@ -260,14 +284,17 @@ export function AddSourcePage() {
                 }
               />{" "}
               {tr("Verify TLS certificate")}{" "}</label>
+            <button type="button" disabled={busy||!connection.address} onClick={()=>void checkAddress()}>{t('Check address without credentials','Проверить адрес без учётных данных')}</button>
+            {connection.address&&<details><summary>{t('Review destination permission before entering credentials','Проверить разрешение адреса до ввода учётных данных')}</summary><DestinationPermission host={connection.address} done={()=>{setError('');setConnectionCode(null);setNotice(t('Destination allowed. Test the connection.','Назначение разрешено. Проверьте подключение.'));}}/></details>}
+            <p className="muted">{t('Use the certificate hostname and a complete chain from a CA trusted by the standard worker image. Ask the source operator to correct the certificate or hostname. A separate provider CA upload is not supported yet; the optional NetBox CA does not establish provider trust.','Используйте имя из сертификата и полную цепочку CA, которому доверяет штатный образ обработчиков. Исправить сертификат или имя должен оператор источника. Отдельная загрузка CA источника пока не поддерживается; настройка CA для NetBox не распространяется на источники.')}</p>
             <h2>{t('Source credentials', 'Доступ к источнику')}</h2>
             <p className="muted">
-              {t('Credentials apply only to this source and are cleared from the form after testing.', 'Данные доступа относятся только к этому источнику и удаляются из формы после проверки.')}
+              {t('Credentials apply only to this source. The secret is cleared after testing; the username is retained.', 'Данные доступа относятся только к этому источнику. После проверки секрет удаляется, имя пользователя сохраняется.')}
             </p>
             <div className="form-grid">
               <label>
                 {type === "proxmox" ? tr("Token user (user@realm)") : tr("Username")}
-                <input name="username" required aria-describedby="source-user-hint" value={identity.user} onChange={e=>setIdentity(old=>type==='proxmox'?updateTokenUser(old,e.target.value):{...old,user:e.target.value})} />
+                <input autoComplete="section-source-access username" name="username" required aria-describedby="source-user-hint" value={identity.user} onChange={e=>setIdentity(old=>type==='proxmox'?updateTokenUser(old,e.target.value):{...old,user:e.target.value})} />
                 <small id="source-user-hint">{type === 'proxmox' ? t('Include your actual realm, e.g. netbox-sync@pve. You can paste user@realm!token here; the two fields are separated explicitly.', 'Укажите свой realm, например netbox-sync@pve. Здесь можно вставить user@realm!token — идентификатор будет разделён на два поля.') : t('Local ESXi user, e.g. netbox-sync.', 'Локальный пользователь ESXi, например netbox-sync.')}</small>
               </label>
               {type === "proxmox" && (
@@ -283,7 +310,7 @@ export function AddSourcePage() {
                   type="password"
                   required
                   aria-describedby="source-secret-hint"
-                  autoComplete="new-password"
+                  autoComplete="section-source-access new-password"
                 />
                 <small id="source-secret-hint">{type === 'proxmox' ? t('The value saved at token issuance; not the user password.', 'Значение, сохранённое при выдаче токена; не пароль пользователя.') : t('Separate password for this host’s account.', 'Отдельный пароль пользователя на этом хосте.')}</small>
               </label>
@@ -312,19 +339,16 @@ export function AddSourcePage() {
           </section>
           {preview&&!review&&<fieldset disabled={busy}><SourcePlacement preview={preview} draft={draft} setDraft={setDraft} language={language}/>
           {Object.keys(draft.references).length!==5||preview.hosts.some(h=>!draft.host_types[h.id])?<p role="status">{t('Choose all five placement objects and a device type for each host to continue.','Для продолжения выберите все пять объектов размещения и тип устройства для каждого хоста.')}</p>:null}
-          <button type="button" className="primary" disabled={Object.keys(draft.references).length!==5||preview.hosts.some(h=>!draft.host_types[h.id])||!draft.name.trim()} onClick={event=>{if(event.currentTarget.form?.reportValidity())setReview(true);}}>{t('Review registration','Проверить регистрацию')}</button></fieldset>}
+          <button type="button" className="primary" disabled={Object.keys(draft.references).length!==5||preview.hosts.some(h=>!draft.host_types[h.id])||!draft.name.trim()} onClick={event=>{if(event.currentTarget.form?.reportValidity())void reviewRegistration();}}>{t('Review registration','Проверить регистрацию')}</button></fieldset>}
           {review&&<fieldset disabled={busy}><legend>{t('Confirm registration','Подтверждение регистрации')}</legend>
           <h2>{draft.name}</h2><dl className="source-facts">{Object.entries(draft.references).map(([kind,row])=><div key={kind}><dt>{({site:t('Site','Площадка'),cluster:t('Cluster','Кластер'),platform:t('Platform','Платформа'),device_role:t('Device role','Роль устройства'),cluster_type:t('Cluster type','Тип кластера')} as Record<string,string>)[kind]}</dt><dd>{row.name}</dd></div>)}</dl>
           {preview?.hosts.map(h=><p key={h.id}>{h.name||h.id} → {draft.host_types[h.id]?.manufacturer?.name} / {draft.host_types[h.id]?.name}</p>)}
           <p>{t('Only the source and protected credentials will be saved. NetBox infrastructure objects and automatic synchronization remain unchanged.','Сохранятся только источник и защищённые данные доступа. Инфраструктурные объекты NetBox и автоматическая синхронизация не изменяются.')}</p>
           <button type="button" onClick={()=>setReview(false)}>{t('Back to placement','Вернуться к размещению')}</button>
-            <label>{t('HTTPS port', 'Порт HTTPS')} *
-              <input type="number" min={1} max={65535} step={1} required value={connection.port || ''}
-                onChange={event=>setConnection({...connection,port:Number(event.target.value)})}/>
-              <span className="muted">{t('Used for connection checks and synchronization. No automatic port fallback.', 'Используется для проверки и синхронизации. Автоматического перебора портов нет.')}</span>
-            </label>
-            <label className="checkbox-label">
-              <input name="confirm" type="checkbox" required /> {tr("Register a new source with automatic sync OFF.")}{" "}</label>
+            <p>{t('HTTPS port','Порт HTTPS')}: {connection.port}. {t('Change connection and re-test to edit.','Для изменения вернитесь к подключению и повторите проверку.')}</p>
+            <p><strong>{t('Automatic synchronization','Автоматическая синхронизация')}: {t('Off','Выключена')}</strong></p>
+            <p>{t('Enable a schedule explicitly in the source settings after registration.','Расписание можно явно включить в настройках источника после регистрации.')}</p>
+            <label className="checkbox-label"><input name="confirm" type="checkbox" required checked={registrationConfirmed} onChange={e=>setRegistrationConfirmed(e.target.checked)}/>{t('Confirm source registration','Подтверждаю регистрацию источника')}</label>
             <button className="primary" disabled={busy||uncertain}>
               {busy ? tr("Registering…") : tr("Register Source")}
             </button>

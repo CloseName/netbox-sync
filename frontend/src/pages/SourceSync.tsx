@@ -1,3 +1,5 @@
+import {runStatus} from '../ui/status';
+import {fetchSourceRuns,fetchRun,type SyncRun} from '../api/runs';
 import {usePermission} from '../AuthGate';
 import {staleReason} from '../ui/planStale';
 import {hasChanges} from '../ui/plan';
@@ -26,10 +28,12 @@ export function SourceSync({
   detail,
   active = true,
   latestRunFinishedAt,
+  onRunChange,
 }: {
   detail: Source;
   active?: boolean;
   latestRunFinishedAt?: string;
+  onRunChange?:()=>void;
 }) {
   const canPlan = usePermission('source.plan'), canApply = usePermission('source.apply');
   const [phase, setPhase] = useState<Phase>("idle"),
@@ -66,7 +70,23 @@ export function SourceSync({
   const [refreshOperations, setRefreshOperations] = useState(0);
   const reviewedId = useRef('');
   const inspectedId = useRef('');
+  const [runs,setRuns]=useState<SyncRun[]>([]),[runId,setRunId]=useState(''),[historyLoaded,setHistoryLoaded]=useState(false),[historyError,setHistoryError]=useState(false);
+  const runChanged=useRef(onRunChange); runChanged.current=onRunChange;
+  useEffect(()=>{
+    if(!active)return;
+    let stopped=false;const controller=new AbortController();
+    let previous='';
+    const read=async()=>{try{const rows=await fetchSourceRuns(selected,controller.signal);if(stopped)return;
+      const used=operations.find(row=>row.operation_kind==='PLAN')?.used_run_id;
+      if(used&&!rows.some(row=>row.run_id===used))rows.push(await fetchRun(used,controller.signal));
+      if(stopped)return;setRuns(rows);setHistoryLoaded(true);setHistoryError(false);const signature=rows.map(r=>r.run_id+r.status).join();
+      if(signature!==previous){previous=signature;runChanged.current?.();}
+    }catch{if(!stopped){setHistoryLoaded(false);setHistoryError(true);}}};
+    void read();const timer=setInterval(read,5000);return()=>{stopped=true;controller.abort();clearInterval(timer);};
+  },[selected,active,refreshOperations,operations]);
+  const acceptedRun=runs.find(r=>r.run_id===runId)??runs.find(r=>r.trigger==='manual'&&r.plan_digest===plan?.value.digest&&Date.parse(r.started_at)>=Date.parse(plan?.received??''));
   const planOperation = operations.find(item => item.operation_kind === 'PLAN');
+  const consumed=!!planOperation?.used_run_id||runs.some(r=>r.trigger==='manual'&&r.plan_digest===plan?.value.digest&&Date.parse(r.started_at)>=Date.parse(plan?.received??''));
   const historicalPlan=!!latestRunFinishedAt&&!!planOperation?.finished_at&&Date.parse(latestRunFinishedAt)>Date.parse(planOperation.finished_at);
   const expiredPlan=planOperation?.safe_error_code==='RESULT_EXPIRED';
   const expiredDiscovery=operations.find(row=>row.operation_kind==='DISCOVERY'&&row.safe_error_code==='RESULT_EXPIRED');
@@ -111,7 +131,7 @@ export function SourceSync({
     const inspection = operations.find(row => row.operation_kind === 'DISCOVERY');
     if (!inspection && !discoveryBusy.current) setDiscovering(false);
     if (inspection) {
-      if (inspectedId.current !== inspection.operation_id) { inspectedId.current = inspection.operation_id; setDiscoveryOpen(true); }
+      if (inspectedId.current !== inspection.operation_id) { inspectedId.current = inspection.operation_id; setDiscoveryOpen(inspection.status==='RUNNING'||inspection.status==='FAILED'); }
       setDiscovering(inspection.status === 'RUNNING'); setDiscoveryStarted(Date.parse(inspection.started_at));
       if (inspection.status === 'SUCCEEDED' && inspection.result) { setDiscovery({value: inspection.result as DiscoveryResult, received: inspection.finished_at!}); setDiscoveryError(''); }
       if (inspection.status === 'FAILED') setDiscoveryError(inspection.safe_error_code==='RESULT_EXPIRED'?'':operationReason(inspection.safe_error_code));
@@ -162,7 +182,7 @@ export function SourceSync({
       busy.current ||
       !confirmOpen ||
       !plan ||
-      !usable ||
+      !usable || consumed || !historyLoaded ||
       !planOperation || planOperation.status !== 'READY' || planOperation.operation_id !== plan.operationId ||
       !plan.value.apply_allowed || !hasChanges(plan.value.items) ||
       !detail.enabled
@@ -187,11 +207,13 @@ export function SourceSync({
       if (!alive.current) return;
       stage = "applying";
       setPhase("applying");
+      const nextRunId=crypto.randomUUID();setRunId(nextRunId);
       const value = await applySync(
         selected,
         token,
         AbortSignal.timeout(330000),
         reviewedOperationId,
+        nextRunId,
       );
       if (alive.current) setResult(applyOutcome(value, reviewed.digest));
     } catch (error) {
@@ -200,6 +222,7 @@ export function SourceSync({
       busy.current = false;
       if (alive.current) {
         setPhase("idle");
+        runChanged.current?.();
         setRefreshOperations(value=>value+1);
         setConfirmOpen(false);
         dialog.current?.close();
@@ -238,6 +261,9 @@ export function SourceSync({
           {tr("Source disabled. Planning, discovery and manual sync are unavailable for this source.")}{" "}</p>
       )}
       {phase !== 'idle' && !applying && <OperationFeedback operation={phase==='planning'?tr('Build plan'):phase==='validating'?tr('Preparing / validating reviewed plan'):tr('Sync to NetBox')} phase={operationError?'uncertain':phase==='planning'&&planOperation?.status==='RUNNING'?'running':'sending'} started={started}/>}
+      {(runId||acceptedRun)&&!result?.runId&&<p role="status">{acceptedRun&&<Badge value={runStatus(acceptedRun.status)}/>} {tr(acceptedRun?.status==='RUNNING'?'Run accepted; execution is in progress.':acceptedRun?'Stored run result is available.':'Waiting for durable acceptance; do not resubmit.')} <Link to={runPath(acceptedRun?.run_id??runId)}>{tr('Open run')}</Link></p>}
+      {!historyLoaded&&<p role={historyError?'alert':'status'}>{tr(historyError?'Run history unavailable. Confirmation is disabled until it can be checked.':'Loading run history…')}</p>}
+      {consumed&&<p className="sync-attention">{tr('This plan has been used. Inspect the run and build a fresh plan from current NetBox state before confirming further changes.')}</p>}
       <div ref={feedback} tabIndex={-1}>
         {expiredPlan&&<p className="sync-attention" role="status">{tr('The saved plan has expired. This is not a synchronization failure.')} {planOperation?.finished_at&&<Timestamp value={planOperation.finished_at}/>}<br/>{canPlan?tr('Build a new plan when you want to sync manually.'):tr('An Operator or Admin can build a new plan.')}</p>}
         {planningError && (
@@ -305,7 +331,7 @@ export function SourceSync({
             {tr("Build a plan to review the proposed changes. Discovery is an optional, separate inspection.")}{" "}</p>
         </div>
       )}
-      {usable && phase === "idle" && (
+      {usable && !consumed && historyLoaded && phase === "idle" && (
         <p role="status">{tr("Plan ready for review.")}{" "}</p>
       )}
       {plan && (
@@ -313,13 +339,13 @@ export function SourceSync({
           key={plan.received}
           plan={plan.value}
           received={plan.received}
-          previous={!usable}
+          previous={!usable || consumed}
           toolbar={<button
             ref={confirmButton}
             className="primary"
             disabled={
               !canApply || phase !== "idle" ||
-              !usable ||
+              !usable || consumed || !historyLoaded ||
               !plan.value.apply_allowed || !hasChanges(plan.value.items) ||
               !detail.enabled
             }

@@ -269,6 +269,7 @@ test("review allowed, keyboard modal trap/cancel/return and digest/token exactne
   ).toEqual({ plan_digest: digest, confirmed: true, operation_id: expect.stringMatching(/^[a-f0-9-]{36}$/) });
   expect(writes.find((w) => w.path.endsWith("/sync")).body).toEqual({
     confirmation_token: "b".repeat(64),
+    run_id: expect.stringMatching(/^[a-f0-9-]{36}$/),
     operation_id: expect.stringMatching(/^[a-f0-9-]{36}$/),
   });
   await expect(
@@ -303,7 +304,7 @@ for (const [status, label] of [
     ).toBeVisible();
     await expect(
       page.getByRole("link", { name: "Open run", exact: true }),
-    ).toHaveCount(0);
+    ).toHaveCount(1);
     await expect(
       page.getByRole("button", { name: "Review and confirm sync" }),
     ).toBeDisabled();

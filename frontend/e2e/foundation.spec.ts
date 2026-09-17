@@ -127,6 +127,7 @@ test("sources filters, pagination, no results, schedule off vs disabled", async 
     .getByRole("button", { name: "Clear filters", exact: true })
     .first()
     .click();
+  await page.getByText("More filters", {exact:false}).click();
   await page.getByLabel("Provider", { exact: true }).selectOption("esxi");
   await expect(page.getByText("1–25 of 27")).toBeVisible();
 });
@@ -218,7 +219,8 @@ for (const width of [1440, 1280, 1024, 768])
 test("one source and successful overview", async ({ page }) => {
   await fixture(page);
   await page.goto("/sources");
-  await expect(page.getByText("1–1 of 1")).toBeVisible();
+  await expect(page.getByText("1–1 of 1")).toHaveCount(0);
+  await expect(page.getByRole("row").filter({hasText:"Source 001"})).toBeVisible();
   await page.screenshot({
     path: "test-results/source-one.png",
     fullPage: true,

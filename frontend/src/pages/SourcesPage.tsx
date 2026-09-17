@@ -28,7 +28,7 @@ import type { SourceLifecycle } from "../api/lifecycle";
 import { SourceSync } from "./SourceSync";
 import { SourceSchedule, ScheduleSummary } from "./SourceSchedule";
 import { DiagnosticAttention } from "../ui/DiagnosticAttention";
-import { staleEvidence } from "../ui/runEvidence";
+import { staleEvidence,planActions } from "../ui/runEvidence";
 export const sourceTabs = [
   "Overview",
   "Sync",
@@ -82,6 +82,7 @@ export function SourcesPage() {
     ),
   );
   const diagnostics = useResource(fetchDiagnostics);
+  useEffect(()=>{diagnostics.refresh();},[tab]);
   const detail = source.data;
   const [removed, setRemoved] = useState<SourceLifecycle | null>(null);
   const evidence = diagnosticIndex(diagnostics.data).get(sourceInstance);
@@ -104,7 +105,7 @@ export function SourcesPage() {
       <nav aria-label={tr("Breadcrumb")}>
         <ol className="breadcrumbs">
           <li>
-            <Link to="/sources">{tr("Sources")}{" "}</Link>
+            <Link to={from}>{tr("Back to sources")}{" "}</Link>
           </li>
           <li>
             {tab === "Overview" ? (
@@ -122,7 +123,6 @@ export function SourcesPage() {
           )}
         </ol>
       </nav>
-      <Link to={from}>{tr("Back to sources")}{" "}</Link>
       {source.loading && !detail && (
         <LoadingState label={tr("Loading source configuration…")} />
       )}
@@ -184,7 +184,7 @@ export function SourcesPage() {
                     ? schedule.data.sync_enabled
                       ? tr("On")
                       : tr("Off")
-                    : tr("Unavailable")}
+                    : tr(schedule.loading?"Loading…":"Unavailable")}
                   {schedule.error && schedule.data && tr(" (last loaded)")}
                 </dd>
               </div>
@@ -206,7 +206,7 @@ export function SourcesPage() {
                       }
                     />
                   ) : (
-                    tr("Unavailable")
+                    tr(diagnostics.loading?"Loading…":"Unavailable")
                   )}
                 </dd>
               </div>
@@ -216,7 +216,7 @@ export function SourcesPage() {
                   {evidence ? (
                     <Timestamp value={evidence.latest_success_at} />
                   ) : (
-                    tr("Unavailable")
+                    tr(diagnostics.loading?"Loading…":"Unavailable")
                   )}
                 </dd>
               </div>
@@ -234,7 +234,7 @@ export function SourcesPage() {
                       tr("None reported")
                     )
                   ) : (
-                    tr("Unavailable")
+                    tr(diagnostics.loading?"Loading…":"Unavailable")
                   )}
                 </dd>
               </div>
@@ -250,7 +250,7 @@ export function SourcesPage() {
                 }
                 state={{ from }}
               >
-                {item}
+                {tr(item)}
               </NavLink>
             ))}
           </nav>
@@ -369,7 +369,7 @@ export function SourcesPage() {
           )}
           {/* Keep local operations and edits mounted across tabs; the route wrapper remounts by source identity. */}
           <div hidden={tab !== "Sync"}>
-            <SourceSync detail={detail} active={tab === "Sync"} latestRunFinishedAt={evidence?.latest_run?.finished_at ?? undefined} />
+            <SourceSync onRunChange={diagnostics.refresh} detail={detail} active={tab === "Sync"} latestRunFinishedAt={evidence?.latest_run?.finished_at ?? undefined} />
           </div>
           <div hidden={tab !== "Schedule"}>
             <SourceSchedule
@@ -548,13 +548,7 @@ function SourceRuns({
                     </td>
                     <td>{duration(run.duration_ms)}</td>
                     <td>
-                      {Object.entries(run.actions)
-                        .filter(([, count]) => count > 0)
-                        .map(
-                          ([action, count]) =>
-                            `${action.replaceAll("_", " ")}: ${count}`,
-                        )
-                        .join(" · ") || tr("No actions recorded")}
+                      {planActions(run)}
                     </td>
                   </tr>
                 ))}
@@ -586,8 +580,8 @@ function SourceConfiguration({
       "Connection",
       [
         ["Address", s.address],
-        ["Credentials", "Source-scoped; values are not exposed"],
-        ["Verification", "Connectivity and authentication not checked here"],
+        ["Credentials", tr("Source-scoped; values are not exposed")],
+        ["Verification", tr("Connectivity and authentication not checked here")],
       ],
     ],
     [
@@ -608,14 +602,14 @@ function SourceConfiguration({
     ],
     [
       "TLS",
-      [["Certificate verification", s.verify_ssl ? "Enabled" : "Disabled"]],
+      [["Certificate verification", s.verify_ssl ? tr("Enabled") : tr("Disabled")]],
     ],
   ] as const;
   return (
     <>
       <h2>{tr("Configuration")}{" "}</h2>
       <p className="muted">
-        {tr("Read-only source configuration. Credentials and stable identity are protected.")}{" "}</p>
+        {tr("Read-only source configuration. Credentials and stable identity are protected.")}{" "}</p><p>{tr('Changing an existing connection address or credential is not yet supported in the web interface. Do not remove and recreate a source to rotate credentials.')}</p>
       <div className="source-panels">
         {groups.map(([title, fields]) => (
           <section className="source-panel" key={tr(title)}>

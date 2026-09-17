@@ -1,4 +1,36 @@
 export const ru: Record<string,string> = {
+  "Plan permits sync": "План допускает синхронизацию",
+  "Previous plan — build a new plan": "Предыдущий план — постройте новый",
+  "Create managed object": "Создать объект синхронизации",
+  "Run history unavailable. Confirmation is disabled until it can be checked.": "История запусков недоступна. Подтверждение отключено до её проверки.",
+  "Loading run history…": "Загружаем историю запусков…",
+  "Disabled": "Отключено",
+  "Source outcomes and worker responses. Application connections are checked in System health.": "Результаты источников и ответы обработчиков. Подключения приложения проверяются в состоянии системы.",
+  "Several sources match. Choose the full name and address from the list.": "Найдено несколько источников. Выберите полное название и адрес из списка.",
+  "Showing first": "Показаны первые",
+  "Counts unavailable; this attempt did not start writes.": "Счётчики недоступны; эта попытка не начинала запись.",
+  "Counts are not available while the operation is running.": "Счётчики появятся после завершения операции.",
+  "Unique changed objects": "Уникальные изменяемые объекты",
+  "Raw operation": "Исходная операция",
+
+  "Changing an existing connection address or credential is not yet supported in the web interface. Do not remove and recreate a source to rotate credentials.": "Смена адреса или учётных данных существующего подключения пока не поддерживается в веб-интерфейсе. Не удаляйте и не создавайте источник заново ради смены пароля или токена.",
+
+  "More filters": "Другие фильтры",
+
+  "Unknown": "Неизвестно",
+
+  "Counts unavailable; changes may have been written.": "Счётчики неизвестны; изменения могли быть записаны.",
+  "The recorded terminal result is shown above.": "Сохранённый итог запуска показан выше.",
+  "Run accepted; execution is in progress.": "Запуск принят, выполняется синхронизация.",
+  "Stored run result is available.": "Доступен сохранённый результат запуска.",
+  "Waiting for durable acceptance; do not resubmit.": "Ожидаем подтверждения принятия запуска. Не отправляйте запрос повторно.",
+  "This plan has been used. Inspect the run and build a fresh plan from current NetBox state before confirming further changes.": "Этот план уже использован. Проверьте запуск и постройте новый план по актуальным данным NetBox перед подтверждением дальнейших изменений.",
+  "Show unsupported categories": "Показать неподдерживаемые категории",
+  "Discovered VM (QEMU)": "Обнаруженная ВМ (QEMU)",
+  "Discovered VM": "Обнаруженная ВМ",
+  "MAC address": "MAC-адрес",
+  "Update managed fields": "Обновить поля синхронизации",
+
 "Earlier discovery attempt; a newer run is shown in history.": "Предыдущая попытка обнаружения; в истории есть более поздний запуск.",
 
 "Earlier planning attempt; a newer run is shown in history.": "Предыдущая попытка построения плана; в истории есть более поздний запуск.",

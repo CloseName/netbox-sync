@@ -381,7 +381,7 @@ test("discovery persists across tabs", async ({ page }) => {
 test("source runs uses the API filter and global detail", async ({ page }) => {
   const { calls } = await fixture(page);
   await page.goto("/sources/source-2/runs");
-  await expect(page.getByRole("table")).toContainText("create: 1");
+  await expect(page.getByRole("table")).toContainText("Create 1");
   expect(
     calls.find((c) => c.path === "/api/v1/runs").query.get("source_instance"),
   ).toBe("source-2");

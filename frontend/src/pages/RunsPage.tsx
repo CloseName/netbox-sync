@@ -1,5 +1,6 @@
+import {SourceNames,SourceName,useSourceNames} from '../ui/SourceNames';
 import {tr} from "../ui/i18n";
-import { useCallback, useState } from "react";
+import { useCallback, useState,useEffect } from "react";
 import {
   Link,
   useLocation,
@@ -17,6 +18,7 @@ import { useResource } from "../ui/useResource";
 import { runStatus, runStates } from "../ui/status";
 import { duration, interval } from "../ui/format";
 import {
+  unknownCounts, countExplanation,
   actionLabels,
   planActions,
   planExplanation,
@@ -27,9 +29,10 @@ import {
 
 export function RunsPage() {
   const { runId } = useParams();
-  return runId ? <RunDetail id={runId} /> : <RunHistory />;
+  return <SourceNames>{runId ? <RunDetail id={runId} /> : <RunHistory />}</SourceNames>;
 }
 function RunHistory() {
+  const sources=useSourceNames();
   const [params, setParams] = useSearchParams();
   const sourceParam = params.get("source_instance") ?? "";
   const [draft, setDraft] = useState({
@@ -65,20 +68,22 @@ function RunHistory() {
         title={tr("Run history")}
         description={tr("Recorded manual and scheduled synchronization outcomes.")}
       />
+      <datalist id="run-source-names">{sources.map(s=><option key={s.source_instance} value={s.name+" · "+s.address+" · "+s.source_instance}>{s.address}</option>)}</datalist>
       <form
         className="run-filters"
         onSubmit={(e) => {
           e.preventDefault();
-          update("source_instance", source.trim());
+          const matches=sources.filter(row=>[row.name,row.address,row.source_instance,row.name+' · '+row.address+' · '+row.source_instance].includes(source.trim()));
+          if(matches.length>1){const input=e.currentTarget.elements.namedItem('source') as HTMLInputElement;input.setCustomValidity(tr('Several sources match. Choose the full name and address from the list.'));input.reportValidity();return;}
+          const selected=matches[0];
+          update("source_instance", selected?.source_instance??source.trim());
         }}
       >
         <label>
-          {tr("Source ID")}{" "}<input
+          {tr("Source")}{" "}<input list="run-source-names"
             name="source"
             value={source}
-            onChange={(e) =>
-              setDraft({ origin: sourceParam, value: e.target.value })
-            }
+            onChange={(e) => {e.target.setCustomValidity('');setDraft({ origin: sourceParam, value: e.target.value });}}
           />
         </label>
         <button type="submit">{tr("Filter source")}{" "}</button>
@@ -287,7 +292,7 @@ function RunTable({
                 </td>
                 <td>
                   <Link to={sourcePath(run.source_instance)}>
-                    {run.source_instance}
+                    <SourceName id={run.source_instance}/>
                   </Link>
                   <small>
                     {run.source_type === "proxmox"
@@ -316,6 +321,7 @@ function RunTable({
 }
 function RunDetail({ id }: { id: string }) {
   const run = useResource(useCallback((signal) => fetchRun(id, signal), [id]));
+  useEffect(()=>{if(run.data?.status!=="RUNNING")return;const timer=setInterval(run.refresh,5000);return()=>clearInterval(timer);},[run.data?.status,run.refresh]);
   const diagnostics = useResource(fetchDiagnostics);
   const location = useLocation();
   const query =
@@ -360,7 +366,7 @@ function RunDetail({ id }: { id: string }) {
                 <dt>{tr("Source")}{" "}</dt>
                 <dd>
                   <Link to={sourcePath(data.source_instance)}>
-                    {data.source_instance}
+                    <SourceName id={data.source_instance}/>
                   </Link>
                   <small>
                     {data.source_type === "proxmox"
@@ -406,23 +412,23 @@ function RunDetail({ id }: { id: string }) {
                 {tr("Verify the final state before planning another sync. Recorded plan counts do not confirm what was applied.")}{" "}</p>
             )}
           </section>
-          <section className="source-panel">
-            <h2>{tr("Plan actions")}{" "}</h2>
-            <p className="muted">{tr(planExplanation)}</p>
+          <details className="source-panel" open={data.status!=="SUCCEEDED"}>
+            <summary>{tr("Plan actions")}</summary>
+            <p className="muted">{tr(planExplanation)}</p>{unknownCounts(data)&&<p>{tr(countExplanation(data))}</p>}
             <dl className="source-facts">
               {Object.entries(actionLabels).map(([key, label]) => (
                 <div key={key}>
                   <dt>{tr(label)}</dt>
-                  <dd>{data.actions[key as keyof SyncRun["actions"]]}</dd>
+                  <dd>{unknownCounts(data)?tr("Unknown"):data.actions[key as keyof SyncRun["actions"]]}</dd>
                 </div>
               ))}
             </dl>
-          </section>
-          <section className="source-panel">
+          </details>
+          {(data.status!=="SUCCEEDED"||!data.finished_at)&&<section className="source-panel">
             <h2>{tr("Result message")}{" "}</h2>
             <p>
               {data.error_message_safe ||
-                "No additional result message was recorded."}
+                tr("No additional result message was recorded.")}
             </p>
             <h3>{tr("Recorded lifecycle")}{" "}</h3>
             <ol className="run-lifecycle">
@@ -441,7 +447,7 @@ function RunDetail({ id }: { id: string }) {
                 )}
               </li>
             </ol>
-          </section>
+          </section>}
           <section className="source-panel">
             <h2>{tr("Diagnostic evidence")}{" "}</h2>
             <ResourceFeedback
@@ -454,7 +460,7 @@ function RunDetail({ id }: { id: string }) {
                 {tr("Snapshot:")}{" "}<Timestamp value={diagnostics.data.generated_at} />.{" "}
                 {stale
                   ? tr("This run appears in the stale evidence.")
-                  : tr("No matching stale evidence in this bounded snapshot; this does not establish completion.")}
+                  : data.status!=="RUNNING"?tr("The recorded terminal result is shown above."):tr("No matching stale evidence in this bounded snapshot; this does not establish completion.")}
               </p>
             )}
             <p>

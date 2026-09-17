@@ -41,7 +41,10 @@ export function runAttention(run: DiagnosticRun, stale: boolean): string {
   if (run.status === "RUNNING") return "Completion not recorded";
   return "None reported";
 }
+export function unknownCounts(run:SyncRun){return run.status!=="SUCCEEDED" && !Object.values(run.actions).some(n=>n>0);}
+export function countExplanation(run:SyncRun){return ['FAILED_BEFORE_WRITE','BLOCKED','LOCKED'].includes(run.status)?"Counts unavailable; this attempt did not start writes.":run.status==='RUNNING'?"Counts are not available while the operation is running.":"Counts unavailable; changes may have been written.";}
 export function planActions(run: SyncRun) {
+  if(unknownCounts(run))return tr(countExplanation(run));
   return (
     Object.entries(run.actions)
       .filter(([, n]) => n > 0)

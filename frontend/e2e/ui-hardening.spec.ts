@@ -467,7 +467,7 @@ test("existing Add Source journey clears credentials, focuses review and links r
   await selectPlacement(page);
   await page
     .getByRole("checkbox", {
-      name: "Register a new source with automatic sync OFF.",
+      name: "Confirm source registration",
     })
     .check();
   await page

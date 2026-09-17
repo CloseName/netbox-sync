@@ -1,7 +1,7 @@
-import {readablePlanItem,planReason} from '../ui/plan';
+import {readablePlanItem,planReason,planParent,changedObjectCount} from '../ui/plan';
 import {hasChanges,emptyPlanLabel} from '../ui/plan';
 import {tr} from "../ui/i18n";
-import { useState, type ReactNode } from "react";
+import { useState, Fragment, type ReactNode } from "react";
 import type { SyncPlan, SyncPlanItem } from "../api/sync";
 import {
   actionLabels,
@@ -19,7 +19,7 @@ import { Badge, Timestamp } from "../ui/primitives";
 export function PlanSummary({ plan }: { plan: SyncPlan }) {
   const counts = planCounts(plan.items);
   return (
-    <dl className="sync-summary">
+    <dl className="sync-summary"><div><dt>{tr("Unique changed objects")}</dt><dd>{changedObjectCount(plan.items)}</dd></div>
       {Object.entries(counts)
         .filter(
           ([action, n]) =>
@@ -56,6 +56,7 @@ export function PlanReview({
     [search, setSearch] = useState("");
   const [limit, setLimit] = useState(50);
   const rows = filterPlan(plan.items, view, action, kind, search);
+  const groups=rows.slice(0,limit).reduce((map,item)=>{const name=planParent(item,plan.items)||readablePlanItem(item,plan.items).name;map.set(name,[...(map.get(name)??[]),item]);return map;},new Map<string,SyncPlanItem[]>());
   return (
     <section
       className="source-panel plan-review"
@@ -79,6 +80,7 @@ export function PlanReview({
       <p className="muted">
         {tr("Plan received")}{" "}<Timestamp value={received} />{tr(". The plan is checked again before sync.")}{" "}</p>
       <PlanSummary plan={plan} />
+      {!!planCounts(plan.items).UNSUPPORTED&&<button onClick={()=>{setView('Attention');setAction('UNSUPPORTED');setKind('');setSearch('');setLimit(50);}}>{tr('Show unsupported categories')}</button>}
       <p className="muted">
         {tr("Create and Update count operations, not unique objects. Other counts describe plan rows. Filters change this view only; sync submits the entire reviewed plan.")}{" "}</p>
       {plan.items.filter(policyRow).map((item, i) => (
@@ -105,7 +107,7 @@ export function PlanReview({
                 setLimit(50);
               }}
             >
-              {value}
+              {tr(value)}
             </button>
           ))}
         </div>
@@ -159,15 +161,15 @@ export function PlanReview({
         </label>
       </div>
       <p>
-        {rows.length} {tr("rows in this view")}{" "}{rows.length > limit ? ` · showing first ${limit}` : ""}
+        {rows.length} {tr("rows in this view")}{" "}{rows.length > limit ? ` · ${tr("Showing first")} ${limit}` : ""}
       </p>
       {!rows.length && (
         <p>{tr("No rows in this view. Review the summary or choose All.")}{" "}</p>
       )}
       <div className="plan-rows">
-        {rows.slice(0, limit).map((item) => (
-          <PlanRow key={plan.items.indexOf(item)} item={readablePlanItem(item, plan.items)} />
-        ))}
+        {[...groups].map(([parent,items])=><Fragment key={parent}>{(items.length>1||planParent(items[0],plan.items))&&<h4>{parent}</h4>}{items.map((item) => (
+          <PlanRow key={plan.items.indexOf(item)} item={readablePlanItem(item, plan.items)} raw={item} />
+        ))}</Fragment>)}
       </div>
       {rows.length > limit && (
         <button onClick={() => setLimit(limit + 50)}>{tr("Show 50 more rows")}{" "}</button>
@@ -197,7 +199,7 @@ export function PlanReview({
     </section>
   );
 }
-function PlanRow({ item }: { item: SyncPlanItem }) {
+function PlanRow({ item,raw }: { item: SyncPlanItem;raw:SyncPlanItem }) {
   const fields = managedFields(item);
   return (
     <details className={"plan-row plan-" + item.action.toLowerCase()}>
@@ -257,7 +259,7 @@ function PlanRow({ item }: { item: SyncPlanItem }) {
         <p className="muted">
           {tr("Two-way evidence only. Proposed values are not a separate discovered snapshot.")}{" "}</p>
         <details>
-          <summary>{tr("Row technical details")}{" "}</summary>
+          <summary>{tr("Row technical details")}{" "}</summary><details><summary>{tr("Raw operation")}</summary><pre>{JSON.stringify(raw,null,2)}</pre></details>
           <dl className="source-facts">
             <div>
               <dt>{tr("External ID")}{" "}</dt>

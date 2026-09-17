@@ -40,7 +40,8 @@ function setup(context) {
 
 function event(values) {
   const data = new Map(Object.entries(values));
-  return { preventDefault() {}, currentTarget: { data, cleared: false, reset() {
+  const secret={get value(){return data.get('secret')},set value(value){data.set('secret',value)}};
+  return { preventDefault() {}, currentTarget: { data, elements:{namedItem(name){return name==='secret'?secret:null}}, cleared: false, reset() {
     this.cleared = true;
     for (const key of ['username', 'secret', 'token_id']) this.data.delete(key);
   } } };
@@ -79,7 +80,8 @@ test('test-review-confirm-register clears credentials and keeps sync disabled', 
   });
   const connectionEvent = event({ username: 'user@realm', token_id: 'token', secret: 'FAKE_SECRET' });
   await app.render().find((element) => element.type === 'form').props.onSubmit(connectionEvent);
-  assert.equal(connectionEvent.currentTarget.cleared, true);
+  assert.equal(connectionEvent.currentTarget.data.get('secret'), '');
+  assert.equal(connectionEvent.currentTarget.data.get('username'), 'user@realm');
   assert.ok(!JSON.stringify(app.state).includes('FAKE_SECRET'));
   assert.ok(!app.render().some((element) => element.props?.name === 'secret'));
   const placement=app.render().find(element=>element.props?.setDraft);
@@ -99,7 +101,8 @@ test('failed connection test clears credentials and cannot reach registration', 
   context.mock.method(globalThis, 'fetch', async () => new Response('RAW_SECRET_ERROR', { status: 422 }));
   const input = event({ username: 'user@realm', token_id: 'token', secret: 'FAKE_SECRET' });
   await app.render().find((element) => element.type === 'form').props.onSubmit(input);
-  assert.equal(input.currentTarget.cleared, true);
+  assert.equal(input.currentTarget.data.get('secret'), '');
+  assert.equal(input.currentTarget.data.get('username'), 'user@realm');
   assert.ok(app.render().some((element) => element.props?.role === 'alert'));
   assert.ok(!app.render().some((element) => element.props?.name === 'confirm'));
   assert.ok(!JSON.stringify(app.state).includes('RAW_SECRET_ERROR'));

@@ -91,6 +91,7 @@ for (const [status, label] of Object.entries(labels))
     await expect(
       page.getByText("Completion timestamp not recorded", { exact: true }),
     ).toBeVisible();
+    if(status==="SUCCEEDED")await page.locator("summary").filter({hasText:"Plan actions"}).click();
     await expect(
       page.getByText(
         "Counts describe recorded plan actions, not confirmed applied objects.",
@@ -112,7 +113,7 @@ test("cursor traverses 51 rows with server filters and preserves investigation U
   const fixture = await mock(page, { rows });
   await page.goto("/runs");
   await expect(page.locator(".run-table tbody tr")).toHaveCount(50);
-  await page.getByRole("textbox", { name: "Source ID" }).fill("source-1");
+  await page.getByRole("combobox", { name: "Source", exact: true }).fill("source-1");
   await page
     .getByRole("button", { name: "Filter source", exact: true })
     .click();
@@ -431,7 +432,7 @@ for (const width of [1440, 1280, 1024, 768])
         await expect(page.locator("#component-api")).toBeVisible();
       if (name === "detail")
         await expect(
-          page.getByRole("heading", { name: "Plan actions" }),
+          page.locator("summary").filter({hasText:"Plan actions"}),
         ).toBeVisible();
       expect(
         await page.evaluate(
@@ -565,13 +566,13 @@ test("runs refresh failure retains rows and source filters track browser history
   await page
     .getByRole("button", { name: "Clear filters", exact: true })
     .click();
-  await expect(page.getByRole("textbox", { name: "Source ID" })).toHaveValue(
+  await expect(page.getByRole("combobox", { name: "Source", exact: true })).toHaveValue(
     "",
   );
   await expect(page).toHaveURL(/\/runs$/);
   await page.goBack();
   await expect(page).toHaveURL(/source_instance=source-1/);
-  await expect(page.getByRole("textbox", { name: "Source ID" })).toHaveValue(
+  await expect(page.getByRole("combobox", { name: "Source", exact: true })).toHaveValue(
     "source-1",
   );
 });

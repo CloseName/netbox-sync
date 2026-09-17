@@ -23,18 +23,6 @@ export function SourceFilters({
         />
       </label>
       <div className="filter-field">
-        <label htmlFor="filter-provider">{tr("Provider")}{" "}</label>
-        <select
-          id="filter-provider"
-          value={query.provider}
-          onChange={(e) => change("provider", e.target.value)}
-        >
-          <option value="">{tr("All providers")}{" "}</option>
-          <option value="proxmox">{tr("Proxmox VE")}{" "}</option>
-          <option value="esxi">{tr("VMware ESXi")}{" "}</option>
-        </select>
-      </div>
-      <div className="filter-field">
         <label htmlFor="filter-sync-status">{tr("Sync status")}{" "}</label>
         <select
           id="filter-sync-status"
@@ -47,6 +35,19 @@ export function SourceFilters({
               {tr(value.label)}
             </option>
           ))}
+        </select>
+      </div>
+      <details className="extra-filters"><summary>{tr('More filters')} ({[query.provider,query.schedule,query.attention,query.site].filter(Boolean).length})</summary>
+      <div className="filter-field">
+        <label htmlFor="filter-provider">{tr("Provider")}{" "}</label>
+        <select
+          id="filter-provider"
+          value={query.provider}
+          onChange={(e) => change("provider", e.target.value)}
+        >
+          <option value="">{tr("All providers")}{" "}</option>
+          <option value="proxmox">{tr("Proxmox VE")}{" "}</option>
+          <option value="esxi">{tr("VMware ESXi")}{" "}</option>
         </select>
       </div>
       <div className="filter-field">
@@ -89,30 +90,7 @@ export function SourceFilters({
             ))}
         </select>
       </div>
-      <div className="filter-field">
-        <label htmlFor="filter-sort-by">{tr("Sort by")}{" "}</label>
-        <select
-          id="filter-sort-by"
-          value={query.sort}
-          onChange={(e) => change("sort", e.target.value)}
-        >
-          <option value="name">{tr("Source name")}{" "}</option>
-          <option value="last">{tr("Last run")}{" "}</option>
-          <option value="next">{tr("Next expected")}{" "}</option>
-          <option value="attention">{tr("Attention")}{" "}</option>
-        </select>
-      </div>
-      <div className="filter-field">
-        <label htmlFor="filter-order">{tr("Order")}{" "}</label>
-        <select
-          id="filter-order"
-          value={query.direction}
-          onChange={(e) => change("direction", e.target.value)}
-        >
-          <option value="asc">{tr("Ascending")}{" "}</option>
-          <option value="desc">{tr("Descending")}{" "}</option>
-        </select>
-      </div>
+      </details>
       <button onClick={() => clear()}>{tr("Clear filters")}{" "}</button>
     </div>
   );

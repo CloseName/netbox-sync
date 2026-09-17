@@ -1,5 +1,5 @@
 import {tr} from "./i18n";
-import type { ReactNode } from "react";
+import {useSyncExternalStore,type ReactNode} from "react";
 import type { Status } from "./status";
 import { exactTime, relativeTime } from "./format";
 export function Badge({ value, code }: { value: Status; code?: string }) {
@@ -9,10 +9,13 @@ export function Badge({ value, code }: { value: Status; code?: string }) {
     </span>
   );
 }
+let clockNow=Date.now();const clockListeners=new Set<()=>void>();let clockTimer:ReturnType<typeof setInterval>|undefined;
+function subscribeClock(listener:()=>void){clockListeners.add(listener);if(!clockTimer){clockNow=Date.now();clockTimer=setInterval(()=>{clockNow=Date.now();clockListeners.forEach(fn=>fn());},10000);}return()=>{clockListeners.delete(listener);if(!clockListeners.size){clearInterval(clockTimer);clockTimer=undefined;}};}
 export function Timestamp({ value }: { value: string | null | undefined }) {
+  const now=useSyncExternalStore(subscribeClock,()=>clockNow);
   return value ? (
     <time dateTime={value} title={exactTime(value)}>
-      {relativeTime(value)}
+      {relativeTime(value,now)}
       <span className="sr-only"> ({exactTime(value)})</span>
     </time>
   ) : (
@@ -102,6 +105,7 @@ export function Pagination({
   change: (key: string, value: string) => void;
 }) {
   const pages = Math.max(1, Math.ceil(total / size));
+  if(pages===1)return null;
   return (
     <div className="pagination">
       <label htmlFor="page-size">{tr("Rows per page")}{" "}</label>

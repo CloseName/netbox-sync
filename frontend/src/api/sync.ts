@@ -234,10 +234,11 @@ export async function applySync(
   token: string,
   signal: AbortSignal,
   operationId?: string,
+  runId?: string,
 ): Promise<ApplyResult> {
   const response = await protectedPost(
     `/api/v1/sources/${encodeURIComponent(instance)}/sync`,
-    { confirmation_token: token, ...(operationId ? {operation_id: operationId} : {}) },
+    { confirmation_token: token, ...(operationId ? {operation_id: operationId} : {}), ...(runId ? {run_id:runId}: {}) },
     signal,
   );
   if (!response.ok) throw await errorFor(response);

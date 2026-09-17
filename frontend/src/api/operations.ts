@@ -20,6 +20,7 @@ export interface SourceOperation {
   operation_id: string; source_instance: string; operation_kind: OperationKind;
   status: 'RUNNING' | 'READY' | 'SUCCEEDED' | 'FAILED' | 'STALE';
   started_at: string; updated_at: string; finished_at: string | null;
+  used_run_id?: string | null;
   safe_error_code: string | null; result: SyncPlan | DiscoveryResult | null;
 }
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -31,6 +32,7 @@ export function parseOperation(v: unknown, source: string): SourceOperation {
       || typeof v.updated_at !== 'string' || !Number.isFinite(Date.parse(v.updated_at))
       || !(v.finished_at === null || (typeof v.finished_at === 'string' && Number.isFinite(Date.parse(v.finished_at))))
       || !(v.safe_error_code === null || typeof v.safe_error_code === 'string')) throw new OperationRequestError('INVALID_RESPONSE');
+  if(v.used_run_id!==undefined&&v.used_run_id!==null&&(typeof v.used_run_id!=='string'||! /^[a-f0-9-]{36}$/i.test(v.used_run_id)))throw new OperationRequestError('INVALID_RESPONSE');
   const ready = v.operation_kind === 'PLAN' ? v.status === 'READY' : v.status === 'SUCCEEDED';
   if ((v.operation_kind === 'PLAN' && v.status === 'SUCCEEDED') || (v.operation_kind === 'DISCOVERY' && ['READY','STALE'].includes(String(v.status)))
       || (ready ? !(v.operation_kind === 'PLAN' ? validPlan(v.result, source) : validDiscovery(v.result, source)) : v.result !== null)) throw new OperationRequestError('INVALID_RESPONSE');

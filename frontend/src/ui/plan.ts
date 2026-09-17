@@ -73,7 +73,7 @@ export function filterPlan(
       (view === "All" ||
         (view === "Changes"
           ? ["CREATE", "UPDATE"]
-          : ["REVIEW_REQUIRED", "BLOCKED"]
+          : ["REVIEW_REQUIRED", "BLOCKED", "UNSUPPORTED"]
         ).includes(item.action)) &&
       (!action || item.action === action) &&
       (!kind || item.object_kind === kind) &&
@@ -114,11 +114,12 @@ export function kindLabel(kind: string) {
   const labels: Record<string, string> = {
     host: "Host",
     host_network: "Host networking",
-    qemu: "Virtual machine",
-    vm: "Virtual machine",
+    qemu: "Discovered VM (QEMU)",
+    vm: "Discovered VM",
     lxc: "Container",
     "virtualization.virtual_machines": "Virtual machine",
     "dcim.devices": "Device",
+    "dcim.mac_addresses": "MAC address",
     "ipam.ip_addresses": "IP address",
     "virtualization.interfaces": "VM interface",
     "dcim.interfaces": "Device interface",
@@ -130,18 +131,21 @@ export function kindLabel(kind: string) {
 export const hasChanges = (items:SyncPlanItem[]) => items.some(i=>i.action==='CREATE'||i.action==='UPDATE');
 export function emptyPlanLabel(items:SyncPlanItem[]) {
   const objects=items.filter(i=>!policyRow(i));
-  if(objects.some(i=>i.action==='UNSUPPORTED'))return 'No executable changes: unsupported objects';
+
   if(objects.length&&objects.every(i=>i.action==='IGNORED'))return 'All discovered objects are excluded';
   if(objects.some(i=>i.action==='REVIEW_REQUIRED'))return 'Objects require separate review';
   return 'No changes to apply';
 }
 
-export function planReason(item:{reason_code:string;reason:string}) {
+export function planReason(item:{reason_code:string;reason:string;action?:SyncAction}) {
  const reasons:Record<string,string>={
   ESXI_HOST_NETWORK_UNSUPPORTED:'ESXi host VMkernel/vSwitch networking is report-only; no host networking writes are supported.',
+  MANAGED_FIELD_UPDATE:'Update managed fields',
   EXECUTOR_CREATE_UNSUPPORTED:'No supported create operation was produced for this object.'
  };
- return Object.hasOwn(reasons,item.reason_code)?tr(reasons[item.reason_code]):item.reason;
+ if(Object.hasOwn(reasons,item.reason_code))return tr(reasons[item.reason_code]);
+ if(item.reason==='Existing guarded executor would perform this managed-field mutation.')return tr(item.action==='CREATE'?'Create managed object':'Update managed fields');
+ return item.reason;
 }
 
 
@@ -168,4 +172,32 @@ export function readablePlanItem(item: SyncPlanItem, items: SyncPlanItem[]): Syn
     external_id:/^-\d+$/.test(item.external_id)?label(own):item.external_id,
     matched_object_id:temporary(item.matched_object_id)?label(own):item.matched_object_id,
     before:present(item.before),after:present(item.after)};
+}
+
+/** Resolve presentation context without changing submitted operations or identity. */
+export function planParent(item:SyncPlanItem,items:SyncPlanItem[],seen=new Set<SyncPlanItem>()):string {
+ if(seen.has(item))return '';seen.add(item);
+ const fields=new Map([...item.before,...item.after]);
+ const links:[string,string][]=[['device','dcim.devices'],['virtual_machine','virtualization.virtual_machines']];
+ const assigned=String(fields.get('assigned_object_type')??'');
+ if(assigned==='dcim.interface')links.push(['assigned_object_id','dcim.interfaces']);
+ if(assigned==='virtualization.vminterface')links.push(['assigned_object_id','virtualization.interfaces']);
+ for(const [key,kind] of links){
+  const ref=fields.get(key);if(ref===undefined)continue;
+  const id=typeof ref==='object'&&ref!==null?(ref as {id?:unknown}).id:ref;
+  const parent=items.find(row=>row!==item&&row.object_kind===kind&&(row.matched_object_id===id||new Map(row.after).get('id')===id||row.external_id===String(id)));
+  if(parent)return planParent(parent,items,seen)||readablePlanItem(parent,items).name;
+  if(typeof ref==='object'&&ref!==null&&'name' in ref)return String(ref.name);
+ }
+ return '';
+}
+
+/** Count mutation targets, not operations. Endpoint + canonical target ID keeps
+ * create/update pairs together without conflating same-named objects. */
+export function changedObjectCount(items:SyncPlanItem[]):number {
+ const keys=items.filter(i=>i.action==='CREATE'||i.action==='UPDATE').map(i=>{
+  const id=i.matched_object_id??new Map(i.after).get('id')??i.external_id;
+  return JSON.stringify([i.object_kind,id]);
+ });
+ return new Set(keys).size;
 }

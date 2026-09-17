@@ -122,7 +122,7 @@ export function SourcesListPage() {
         ) : (
           <>
             <div
-              className="source-table scroll-region"
+              className="source-table source-list-table scroll-region"
               tabIndex={0}
               role="region"
               aria-label={tr("Sources table")}
@@ -133,7 +133,7 @@ export function SourcesListPage() {
                 <thead>
                   <tr>
                     {heading("Source", "name")}
-                    <th scope="col">{tr("Provider")}{" "}</th>
+
                     <th scope="col">{tr("Target")}{" "}</th>
                     <th scope="col">{tr("Sync status")}{" "}</th>
                     <th scope="col">{tr("Schedule")}{" "}</th>
@@ -155,14 +155,10 @@ export function SourcesListPage() {
                           >
                             {s.name}
                           </Link>
-                          {s.name !== s.source_instance && (
-                            <small>{s.source_instance}</small>
-                          )}
+<small>{s.type === "proxmox" ? tr("Proxmox VE") : tr("VMware ESXi")}</small>
                           {!s.enabled && <small>{tr("Source disabled")}{" "}</small>}
                         </th>
-                        <td>
-                          {s.type === "proxmox" ? tr("Proxmox VE") : tr("VMware ESXi")}
-                        </td>
+
                         <td>
                           {s.site_slug}
                           <small>{s.cluster_name}</small>
@@ -174,7 +170,7 @@ export function SourcesListPage() {
                               code={d.status}
                             />
                           ) : (
-                            <span className="muted">{tr("Status unavailable")}{" "}</span>
+                            <span className="muted">{tr(diagnostics.loading?"Loading diagnostics…":"Status unavailable")}{" "}</span>
                           )}
                           {!d && diagnostics.loading && (
                             <small>{tr("Loading diagnostics…")}{" "}</small>
@@ -220,7 +216,7 @@ export function SourcesListPage() {
                           ) : d ? (
                             tr("No recorded run")
                           ) : (
-                            tr("Unavailable")
+                            tr(diagnostics.loading?"Loading diagnostics…":"Unavailable")
                           )}
                         </td>
                         <td>
@@ -231,7 +227,7 @@ export function SourcesListPage() {
                           ) : d ? (
                             tr("None reported")
                           ) : (
-                            tr("Unavailable")
+                            tr(diagnostics.loading?"Loading diagnostics…":"Unavailable")
                           )}
                         </td>
                         <td>

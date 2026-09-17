@@ -78,19 +78,19 @@ export function App() {
           }}
         >
           <p className="nav-section">{tr("Operations")}{" "}</p>
-          {navigation.map((item) => (
+          {navigation.filter(item=>item.to!=='/diagnostics').map((item) => (
             <NavLink key={item.to} to={item.to} end={item.to === "/"}>
               <NavIcon path={item.to} />
               {tr(item.label)}
             </NavLink>
           ))}
-          <p className="nav-section">{tr("System")}</p>
+          <p className="nav-section">{tr("System")}</p><NavLink to="/diagnostics">{tr("Diagnostics")}</NavLink>
           {admin&&<><NavLink to="/policy">{tr("Source destinations")}</NavLink>
           </>}<NavLink to="/system">{tr("System health")}{" "}</NavLink>
 
         </nav>
         <div className="app-content" id="content" ref={content} tabIndex={-1}>
-          {!sourceDetail && location.pathname!=='/settings' && (
+          {!sourceDetail && crumbs.length>1 && location.pathname!=='/settings' && (
             <nav aria-label={tr("Breadcrumb")}>
               <ol className="breadcrumbs">
                 {crumbs.map((crumb, i) => (

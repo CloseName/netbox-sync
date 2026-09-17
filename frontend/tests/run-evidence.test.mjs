@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   staleEvidence,
   runAttention,
-  planActions,
+  planActions, unknownCounts, countExplanation,
 } from "../src/ui/runEvidence.ts";
 import {
   aggregateReason,
@@ -123,4 +123,11 @@ test("diagnostic meanings distinguish checks, activity, unknown and bounded cove
   d.components.registry.status = "UNAVAILABLE";
   assert.match(coverage(d), /incomplete/);
   assert.doesNotMatch(aggregateReason(d), /Checked components are available/);
+});
+
+test('missing counters cannot establish zero writes and prewrite refusals stay distinct',()=>{
+ const empty=Object.fromEntries(Object.keys(run().actions).map(key=>[key,0]));
+ const uncertain={...run('OUTCOME_UNCERTAIN'),actions:empty};assert(unknownCounts(uncertain));assert.match(planActions(uncertain),/may have been written/);
+ assert.match(countExplanation({...uncertain,status:'FAILED_BEFORE_WRITE'}),/did not start writes/);
+ assert(!unknownCounts({...uncertain,status:'SUCCEEDED'}));
 });

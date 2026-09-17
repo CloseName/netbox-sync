@@ -1811,3 +1811,9 @@ body, .setup-workspace { font-family: Inter, system-ui, sans-serif; }
 .ldap-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.ldap-fields label{min-width:0}.field-error{color:var(--danger,#b42318);font-size:.9rem}.ldap-settings input[aria-invalid=true],.ldap-settings textarea[aria-invalid=true]{border-color:var(--danger,#b42318)}@media(max-width:700px){.ldap-fields{grid-template-columns:1fr}}
 
 .auth-panel button svg{margin-right:.35rem;vertical-align:middle}
+
+.extra-filters {min-width:14rem}.extra-filters[open] {display:flex;flex-wrap:wrap;gap:.8rem}.extra-filters summary {cursor:pointer}
+.source-list-table table {table-layout:fixed;min-width:0;width:100%}.source-list-table th,.source-list-table td {overflow-wrap:anywhere;white-space:normal;padding:.65rem}.source-list-table th:first-child {width:18%}.source-list-table th:last-child {width:10%}
+@media(max-width:760px){.source-list-table table {min-width:650px}}
+
+.catalog-options [aria-disabled="true"]{opacity:.65;cursor:not-allowed}

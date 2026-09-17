@@ -37,7 +37,7 @@ export interface RegistrationInput {
   references?: Record<string, CatalogItem>; host_types?: Record<string, CatalogItem>;
 }
 
-async function post(path: string, payload: ConnectionInput | RegistrationInput | { onboarding_token: string }): Promise<unknown> {
+async function post(path: string, payload: ConnectionInput | RegistrationInput | { onboarding_token: string } | {source_type: 'esxi' | 'proxmox'; address: string; port: number}): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(path, { method: 'POST', cache: 'no-store',
@@ -45,14 +45,14 @@ async function post(path: string, payload: ConnectionInput | RegistrationInput |
       body: JSON.stringify(payload), signal: AbortSignal.timeout(path==='/api/v1/sources'?40000:20000) });
   } catch { if(path==='/api/v1/sources')throw new RegistrationFailure('REGISTRATION_UNCERTAIN',true);throw new Error('Request failed or timed out. Registration outcome may require operator review.'); }
   if (!response.ok) {
-    if (path === '/api/v1/sources/test-connection') {
+    if (path === '/api/v1/sources/test-connection' || path === '/api/v1/sources/check-destination') {
       let code: unknown;
       try { code = (await response.clone().json())?.error?.code; } catch { /* safe fallback */ }
       if (typeof code === 'string' && Object.hasOwn(connectionMessages, code)) {
         throw new SourceConnectionError(code as keyof typeof connectionMessages);
       }
     }
-    if(path==='/api/v1/sources'){
+    if(path==='/api/v1/sources'||path==='/api/v1/sources/review-placement'){
       let code='';try{code=(await response.clone().json()).error.code;}catch{}
       if(code.startsWith('CATALOG_'))throw new CatalogFailure(code);
       if(['ONBOARDING_TOKEN_INVALID','PROBE_RECEIPT_INVALID','AUTH_REQUIRED','AUTH_DENIED'].includes(code))throw new RegistrationFailure(code);
@@ -118,4 +118,13 @@ export async function inspectConnection(input:ConnectionInput):Promise<{onboardi
  const value=await post('/api/v1/sources/test-connection',{...input,preview:true}) as {onboarding_token:string;preview:SourcePreview;suggested_source_instance:string};
  if(!value||typeof value.onboarding_token!=='string'||!value.preview||!Array.isArray(value.preview.hosts)||!value.preview.hosts.length||value.preview.hosts.length>16)throw new Error('Host information is unavailable; no source was registered.');
  return value;
+}
+
+export async function reviewPlacement(onboarding_token:string,references:Record<string,CatalogItem>,host_types:Record<string,CatalogItem>){
+ const result=await post('/api/v1/sources/review-placement',{onboarding_token,references,host_types});
+ if(typeof result!=='object'||result===null||!('valid' in result)||result.valid!==true)throw new CatalogFailure('CATALOG_RESPONSE_INVALID');
+}
+
+export async function checkDestination(input:{source_type:'esxi'|'proxmox';address:string;port:number}){
+ const result=await post('/api/v1/sources/check-destination',input);if(typeof result!=='object'||result===null||!('allowed' in result)||result.allowed!==true)throw new Error('Destination not confirmed');
 }

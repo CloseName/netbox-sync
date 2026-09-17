@@ -1,3 +1,5 @@
+import {useState} from 'react';
+import {SourceNames,SourceName,useSourceNames} from '../ui/SourceNames';
 import {tr} from "../ui/i18n";
 import { Link } from "react-router-dom";
 import { fetchDiagnostics } from "../api/diagnostics";
@@ -15,14 +17,17 @@ import { diagnosticsUsable } from "../ui/operations";
 import { DiagnosticAttention } from "../ui/DiagnosticAttention";
 import { staleEvidence } from "../ui/runEvidence";
 import { sourcePath, runPath } from "../ui/routes";
-export function DiagnosticsPage() {
+export function DiagnosticsPage(){return <SourceNames><DiagnosticsContent/></SourceNames>;}
+function DiagnosticsContent() {
+  const sources=useSourceNames();const [search,setSearch]=useState('');
+  const matches=(id:string)=>{const source=sources.find(s=>s.source_instance===id);return [id,source?.name,source?.address].some(value=>value?.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));};
   const resource = useResource(fetchDiagnostics),
     data = resource.data;
   return (
     <main className="operations-workspace">
       <PageHeader
         title={tr("Diagnostics")}
-        description={tr("Checks and recorded activity, with evidence for investigation.")}
+        description={tr("Source outcomes and worker responses. Application connections are checked in System health.")}
         actions={
           <button disabled={resource.loading} onClick={resource.refresh}>
             {tr("Refresh")}{" "}</button>
@@ -147,7 +152,7 @@ export function DiagnosticsPage() {
                 aria-label={tr("Source diagnostic evidence")}
                 tabIndex={0}
               >
-                <table>
+                <label>{tr("Search sources")}<input type="search" value={search} onChange={e=>setSearch(e.target.value)}/></label><table>
                   <thead>
                     <tr>
                       {[
@@ -164,13 +169,13 @@ export function DiagnosticsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.sources.map((s) => (
+                    {data.sources.filter(s=>matches(s.source_instance)).map((s) => (
                       <tr key={s.source_instance}>
                         <td>
                           <Link
                             to={sourcePath(s.source_instance) + "/diagnostics"}
                           >
-                            {s.source_instance}
+                            <SourceName id={s.source_instance}/>
                           </Link>
                           <small>
                             {s.source_type === "proxmox"
