@@ -23,7 +23,7 @@ from .ldap_directory import CODES as LDAP_CODES
 
 CODES = frozenset({'AUTH_REQUIRED', 'AUTH_DENIED', 'AUTH_INVALID', 'AUTH_RATE_LIMITED',
     'AUTH_UNAVAILABLE', 'ENROLLMENT_INVALID', 'POLICY_CONFLICT', 'POLICY_INVALID',
-    'POLICY_HOST_MANAGED', 'PROBE_RECEIPT_INVALID'}) | LDAP_CODES
+    'POLICY_HOST_MANAGED', 'PROBE_RECEIPT_INVALID', 'TEAM_INVALID', 'TEAM_CONFLICT'}) | LDAP_CODES
 
 
 class AuthError(RuntimeError):
@@ -213,6 +213,9 @@ class AuthPolicy(DirectoryAuth):
             self.state.get('ldap_sessions',{}).pop(digest(token),None)
             self.event('logout', actor)
             return {'logged_out': True}
+        if action in ('teams','teams.create','teams.rename','teams.assign'):
+            from .source_teams import teams_action
+            return teams_action(self,action,payload,actor)
         if action == 'policy':
             self.session(token, 'policy.read')
             return self.policy()

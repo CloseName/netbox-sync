@@ -70,7 +70,7 @@ def _install_boundaries(app, settings, auth_client):
     async def auth_error(request, exc):
         status = {'AUTH_REQUIRED':401, 'AUTH_DENIED':403, 'AUTH_INVALID':401,
                   'AUTH_RATE_LIMITED':429, 'ENROLLMENT_INVALID':409,
-                  'POLICY_CONFLICT':409, 'POLICY_INVALID':422,
+                  'POLICY_CONFLICT':409, 'POLICY_INVALID':422, 'TEAM_CONFLICT':409, 'TEAM_INVALID':422,
                   'POLICY_HOST_MANAGED':403, 'PROBE_RECEIPT_INVALID':409,
                   'LDAP_INVALID':422, 'LDAP_CONFLICT':409, 'LDAP_ACCESS_DENIED':403, 'LDAP_BIND_FAILED':422, 'LDAP_TLS_FAILED':422}.get(exc.code,503)
         return _error(request, status, exc.code, 'Authentication or policy request rejected')
@@ -329,7 +329,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
                   docs_url=None, redoc_url=None, openapi_url=None, debug=False)
     auth_client = auth_client or AuthClient(settings.auth_socket)
     _install_boundaries(app, settings, auth_client)
-    app.include_router(auth_routes(auth_client))
+    app.include_router(auth_routes(auth_client,source_service))
     router = APIRouter(prefix='/api/v1')
 
     @router.get('/health', response_model=LivenessDTO)

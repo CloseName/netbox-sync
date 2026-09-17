@@ -66,3 +66,21 @@ def test_upgrade_from_exact_pre_auth_head_preserves_source(migration_database):
     assert store.call({'action':'status'},root=True)=={'ready':True,'enrolled':False}
     with pytest.raises(AuthError,match='AUTH_REQUIRED'):
         store.call(dict(action='authorize',session='anonymous'))
+
+
+def test_teams_migration_persistence_and_concurrent_assignment(migration_database):
+    registry,engine=migration_database;_upgrade(registry,engine)
+    store=AuthStore(_safe_test_dsn(),registry.schema)
+    invite=store.call({'action':'invite'},root=True)['invitation']
+    session=store.call(dict(action='enroll',username='admin',password='test-only-password-9284',invitation=invite))['session']
+    data=store.call(dict(action='teams.create',session=session,revision=0,name='Compute'))
+    team=next(iter(data['teams']))
+    barrier=Barrier(2)
+    def assign(i):
+        barrier.wait()
+        try:return store.call(dict(action='teams.assign',session=session,revision=1,team_id=team,source_instance='source-'+str(i)))
+        except AuthError as error:return error.code
+    with ThreadPoolExecutor(2) as pool: results=list(pool.map(assign,range(2)))
+    assert sum(isinstance(row,dict) for row in results)==1 and 'TEAM_CONFLICT' in results
+    result=AuthStore(_safe_test_dsn(),registry.schema).call(dict(action='teams',session=session))
+    assert result['revision']==2 and len(result['assignments'])==1

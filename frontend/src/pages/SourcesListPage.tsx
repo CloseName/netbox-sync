@@ -1,3 +1,5 @@
+import {TeamEditor,useTeams} from '../components/SourceTeams';
+import {useLanguage} from '../ui/language';
 import {usePermission} from '../AuthGate';
 import {tr} from "../ui/i18n";
 import { SourceFilters } from "../ui/SourceFilters";
@@ -20,13 +22,14 @@ import { composeSources, querySources } from "../ui/operations";
 import { sourcePath, runPath } from "../ui/routes";
 import { staleEvidence } from "../ui/runEvidence";
 export function SourcesListPage() {
+  const teams=useTeams();const [language]=useLanguage(),t=(en:string,ru:string)=>language==='ru'?ru:en;
   const canRegister = usePermission('source.register');
   const sources = useResource(fetchSources),
     diagnostics = useResource(fetchDiagnostics);
   const [params, setParams] = useSearchParams();
   const location = useLocation();
   const result = querySources(
-    composeSources(sources.data ?? [], diagnostics.data),
+    composeSources((sources.data ?? []).filter(row=>!params.get('team')||(!!teams.data&&(params.get('team')==='none'?!teams.data?.assignments[row.source_instance]:teams.data?.assignments[row.source_instance]===params.get('team')))), diagnostics.data),
     params,
   );
   // Browser history changes before React commits a navigation transition.
@@ -101,6 +104,9 @@ export function SourcesListPage() {
         name="Diagnostics"
         retry={diagnostics.refresh}
       />
+      <label>{t('Team','Команда')}<select value={params.get('team')??''} disabled={!teams.data} onChange={e=>change('team',e.target.value)}><option value="">{t('All teams','Все команды')}</option><option value="none">{t('No team','Без команды')}</option>{Object.values(teams.data?.teams??{}).map(team=><option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+      {teams.error&&<p role="status">{t('Team filter unavailable','Фильтр команд недоступен')}</p>}
+      <details onToggle={e=>{if(!e.currentTarget.open)teams.refresh();}}><summary>{t('Teams','Команды')}</summary><TeamEditor/></details>
       <SourceFilters
         query={result.query}
         sites={(sources.data ?? []).map((source) => source.site_slug)}

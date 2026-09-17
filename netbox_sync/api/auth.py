@@ -17,6 +17,8 @@ ROUTES = (
     ('GET', r'/api/v1/catalog/[^/]+', 'source.register'),
     ('GET', r'/api/v1/auth/me', 'source.read'),
     ('POST', r'/api/v1/auth/logout', 'source.read'),
+    ('GET', r'/api/v1/teams', 'source.read'),
+    ('POST', r'/api/v1/teams', 'source.configure'),
     ('GET', r'/api/v1/policy', 'policy.read'),
     ('POST', r'/api/v1/policy', 'policy.write'),
     ('GET', r'/api/v1/(system/health|version|diagnostics)', 'diagnostics.read'),
@@ -75,7 +77,7 @@ class PolicyChange(BaseModel):
     request_id: str = Field(min_length=16, max_length=64)
 
 
-def routes(client):
+def routes(client, source_reader=None):
     router = APIRouter(prefix='/api/v1')
 
     def session_response(result):
@@ -106,6 +108,21 @@ def routes(client):
         response = JSONResponse({'logged_out': True})
         response.delete_cookie(COOKIE, secure=True, httponly=True, samesite='lax', path='/')
         return response
+
+    @router.get('/teams')
+    def teams(request: Request):
+        return client.call('teams',session=request.cookies.get(COOKIE))
+
+    @router.post('/teams')
+    def change_teams(request: Request, payload: dict):
+        if payload.get('operation') not in ('create','rename','assign') or set(payload)-{'operation','revision','team_id','name','source_instance'}:
+            raise AuthError('TEAM_INVALID')
+        if payload['operation']=='assign':
+            if not isinstance(payload.get('source_instance'),str): raise AuthError('TEAM_INVALID')
+            if source_reader is None: raise AuthError('AUTH_UNAVAILABLE')
+            source_reader.get_source(payload['source_instance'])
+        values={k:v for k,v in payload.items() if k!='operation'}
+        return client.call('teams.'+payload['operation'],session=request.cookies.get(COOKIE),**values)
 
     @router.get('/policy')
     def policy(request: Request):

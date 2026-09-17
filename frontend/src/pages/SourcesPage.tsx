@@ -1,3 +1,4 @@
+import {TeamEditor} from '../components/SourceTeams';
 import {usePermission} from '../AuthGate';
 import {SourceMappingEditor} from '../components/SourceMappingEditor';
 import {SourceNameEditor} from '../components/SourceNameEditor';
@@ -479,6 +480,7 @@ export function SourcesPage() {
             </section>
           )}
           {tab === "Configuration" && (<>
+            <TeamEditor source={detail.source_instance}/>
             <SourceConfiguration
               source={detail}
               scheduleLink={base + "/schedule"}

@@ -212,6 +212,10 @@ for container in (api,worker):
 assert (root / 'current').resolve() == p.release
 print('PASS authenticated '+pgmode+': real API/SOAP, trusted TLS, auth/timeout/TLS/destination/connection codes, unchanged protected state and isolated production networks',flush=True)
 
+teams=request(None,'/api/v1/teams','GET');assert teams['status']==200
+teams=request(dict(operation='create',revision=teams['body']['revision'],name='Fixture Compute'),'/api/v1/teams');assert teams['status']==200
+team_id=next(iter(teams['body']['teams']))
+
 if pgmode == 'bundled' and os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST') != '1':
     # Exercise installer release preparation/activation against the existing DB.
     # No systemd exists in this disposable host; timer/reboot remains a host gate.
@@ -231,6 +235,7 @@ if pgmode == 'bundled' and os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST') !
     assert (root / 'current').resolve() == prepared.release
     assert compose('ps','-q','postgres') == db_id
     assert sorted(json.loads(run(['docker','inspect',db_id]))[0]['Mounts'], key=lambda m: m['Destination']) == sorted(db_mounts, key=lambda m: m['Destination'])
+    assert request(None,'/api/v1/teams','GET')['body']==teams['body']
     result = request(body)
     assert result['status'] == 200
     assert request({'onboarding_token':result['body']['onboarding_token']},'/api/v1/sources/cancel-onboarding')['status'] == 200
@@ -278,6 +283,8 @@ success=request(body);assert success['status']==200
 registration['onboarding_token']=success['body']['onboarding_token']
 assert request(registration,'/api/v1/sources')['status']==201
 assert request(None,'/api/v1/sources','GET')['body']['sources'][0]['source_instance']=='auth-test'
+team_saved=request(dict(operation='assign',revision=teams['body']['revision'],source_instance='auth-test',team_id=team_id),'/api/v1/teams');assert team_saved['status']==200
+team_saved=team_saved['body']
 policy_before_restart=request(None,'/api/v1/policy','GET')['body']
 compose('stop','netbox-sync-auth-worker')
 assert request(None,'/api/v1/sources','GET')['status']==503
@@ -287,6 +294,7 @@ for _ in range(30):
  time.sleep(.3)
 else:raise RuntimeError('Auth state did not survive restart')
 assert request(None,'/api/v1/policy','GET')['body']==policy_before_restart
+assert request(None,'/api/v1/teams','GET')['body']==team_saved
 if os.environ.get('NETBOX_SYNC_LDAP_COMPOSE_TEST')=='1':
     assert request(None,'/api/v1/settings/ldap','GET')['body']==ldap_saved
 
@@ -327,6 +335,7 @@ if pgmode == 'bundled' and os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST') !
     backup_cli(target,'restore',str(bundle))
     restored=db_state(target_cmd)
     assert restored['principal']==auth_before['principal']
+    assert restored['source_teams']==auth_before['source_teams']==team_saved
     assert restored['allowed_hosts']==auth_before['allowed_hosts']
     assert restored['sessions']=={} and restored['invitation'] is None and restored['receipts']=={}
     assert restored['mode']=='legacy' and restored['ceiling'] is None
@@ -382,6 +391,7 @@ compose('exec','-T','--user','0','netbox-sync-auth-worker','python','-m','netbox
 assert request(None,'/api/v1/sources','GET')['status']==401
 login()
 assert request(None,'/api/v1/policy','GET')['body']==policy_before_restart
+assert request(None,'/api/v1/teams','GET')['body']==team_saved
 assert request({},'/api/v1/auth/logout')['status']==200
 assert request(None,'/api/v1/sources','GET')['status']==401
 print('PASS runtime session idle/absolute expiry, root revocation, fresh login, retained policy',flush=True)
