@@ -72,3 +72,44 @@ rejected command. LDAP's subprocess uses the same UID; it does not require KILL.
    fields and worker restart count. Do not increase deadlines or apply a failed plan.
 7. Independently rehearse partial-run recovery from live-audit-acceptance.md.
    Never automatically resubmit the previous uncertain operation.
+
+## Final local integration evidence (2026-09-17)
+
+- Networkless Linux backend: 1019 passed, 113 skipped, 127.74 s. Skips are
+  opt-in Docker/host suites, PostgreSQL DSN suites and prohibited live tests;
+  they are not reported as successes. The newly affected cross-UID tests ran
+  separately (4 Docker cases above), and auth persistence ran against isolated
+  PostgreSQL (4 passed, 2.15 s). No live systems were used.
+- Follow-up affected validation/API/diagnostic/export tests after final input
+  hardening: 19 passed, 3.80 s. The full backend total above predates four added
+  malformed-team-ID cases; these four passed in the follow-up.
+- Frontend: unit suite, TypeScript and Vite production build passed; complete
+  Playwright suite 266 passed, 5.1 minutes, including EN/RU ownership-team flows.
+  Vite reports its existing bundle-size advisory; there are no build errors.
+- Actual production Compose with bundled and external PostgreSQL: 2 passed,
+  354.13 s. Real API/browser -> workers -> controlled HTTPS endpoints on 8443;
+  ESXi and Proxmox VM/LXC plan/prepare/apply/replan, scheduled no-change and
+  required-read rejection, durable partial-apply result and consumed-plan refusal.
+  Bundled populated upgrade preserved source rows, credentials/config/READY/policy,
+  DB identity and complete mount metadata. No systemd/reboot or live-server claim.
+- A concurrently started second Compose suite initially failed because both
+  fixture instances reserve the same controlled subnet. This was a test-resource
+  collision, not a passing gate. Repeat suites sequentially; never remove another
+  project's networks to make a test pass.
+
+Additional work and limits: [VM comments](vm-description-contract.md),
+[source ownership teams](source-teams.md), [exact ESXi diagnostics](esxi-dev-ba-connection.md),
+[NetBox field presentation proposal](netbox-readable-fields.md). The latter does
+not claim an installed embedded-card extension: the server version is unknown.
+Original slow PLAN and historical live OUTCOME_UNCERTAIN causes remain unproven.
+The audited Bootstrap cross-UID path remains the explicit pending item above.
+
+- Sequential repeat on the final product image: production auth/upgrade/backup
+  Compose suite **2 passed, 198.51 s**, bundled/external PostgreSQL. Bundled path
+  exercised supported host CLI create/verify/inspect and fresh restore, exact
+  ownership-team metadata, source credentials, READY and policy retention, service
+  state restoration and session revocation. External path verified authentication,
+  safe probe outcomes, catalog uncertainty/reconciliation and restart/session flow.
+- Final export-path correction (canonical physical_disks.path): 2 passed, 0.89 s.
+- git diff --check passed. Runtime resources are removed only by each suite's
+  exact ownership labels; no live/foreign resources were changed.
