@@ -152,6 +152,9 @@ class Process:
             'site_slug': 'test-site', 'cluster_name': 'Test Cluster', 'items': [],
         }}).encode(), b'')
 
+    def wait(self, timeout=None):
+        return self.returncode
+
     def kill(self):
         self.killed = True
         self.returncode = -9

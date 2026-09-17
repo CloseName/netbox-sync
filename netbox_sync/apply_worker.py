@@ -4,6 +4,8 @@
 # pylint: disable=line-too-long,missing-class-docstring,missing-function-docstring
 # pylint: disable=too-few-public-methods,import-error,duplicate-code
 
+from .child_process import child_process, stop_child
+
 import argparse
 import logging
 import time
@@ -198,21 +200,21 @@ class ApplySupervisor:
         operation = payload['operation']
         raw = json.dumps(payload).encode()
         try:
-            with self._popen([sys.executable, '-B', '-m', 'netbox_sync.apply_worker', '--child'],
+            with child_process(self._popen, [sys.executable, '-B', '-m', 'netbox_sync.apply_worker', '--child'],
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                              env=_safe_environment(), preexec_fn=_drop_privileges(
                                  self._child_uid, self._child_gid) if os.name == 'posix' else None) as process:
                 try:
                     output, _ = process.communicate(raw, timeout=CHILD_TIMEOUT)
                 except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.communicate()
+                    cleanup = stop_child(process, getattr(self, '_active_lock_fd', None))
                     code = ('FAILED_BEFORE_WRITE' if operation == 'plan'
                             else 'OUTCOME_UNCERTAIN')
-                    raise ApplyWorkerError(code, diagnostic=dict(phase='child_wait', termination='timeout', returncode=process.returncode, duration_ms=int((time.monotonic()-started)*1000))) from None
+                    raise ApplyWorkerError(code, diagnostic=dict(cleanup, phase='child_wait', duration_ms=int((time.monotonic()-started)*1000))) from None
         finally:
             raw = b''
             payload = None
+        logging.getLogger(__name__).info(json.dumps({'event':'CHILD_PHASES','phases':getattr(process,'_phases',[])}))
         if process.returncode or len(output) > MAX_RESPONSE:
             raise ApplyWorkerError('FAILED_BEFORE_WRITE' if operation == 'plan'
                                    else 'OUTCOME_UNCERTAIN', diagnostic=dict(phase='child_response',
@@ -307,7 +309,11 @@ class ApplySupervisor:
                         apply_started = True
                         payload = self._payload(config, 'apply', claims.plan_digest)
                         if isinstance(reviewed, dict): payload['expected_summary'] = summary(reviewed)
-                        result = self._child(payload)
+                        self._active_lock_fd = lock_fd
+                        try:
+                            result = self._child(payload)
+                        finally:
+                            self._active_lock_fd = None
                         if result.get('plan_digest') != claims.plan_digest:
                             # The child may already have crossed the NetBox write boundary.
                             # A response-contract mismatch is therefore not a pre-write stale plan.

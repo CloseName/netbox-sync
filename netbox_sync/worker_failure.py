@@ -56,15 +56,25 @@ from contextlib import contextmanager
 
 @contextmanager
 def failure_stage(stage):
+    import time
+    from .child_process import phase_progress
+    started=time.monotonic();phase_progress(stage)
     try:yield
     except DiagnosticFailure:raise
     except Exception as exc:raise DiagnosticFailure(exc,stage) from None
+    finally:phase_progress(stage,time.monotonic()-started)
 
 
 def safe_diagnostic(value, code):
     code=code if code in ERRORS else 'OPERATION_FAILED'
     result={'code':code,'stage':ERRORS[code]['stage'],'frames':[]}
     if not isinstance(value,dict):return result
+    if value.get('cleanup_error') in ('PermissionError', 'OSError'): result['cleanup_error']=value['cleanup_error']
+    if type(value.get('child_reaped')) is bool: result['child_reaped']=value['child_reaped']
+    phases=value.get('phases')
+    if isinstance(phases,list):
+        from .child_process import PHASES
+        result['phases']=[{k:v for k,v in row.items() if k in ('phase','state','duration_ms')} for row in phases[:16] if isinstance(row,dict) and row.get('phase') in PHASES and row.get('state') in ('started','finished') and (row.get('duration_ms') is None or type(row.get('duration_ms')) is int and 0<=row['duration_ms']<=86400000)]
     name=value.get('exception_class')
     if isinstance(name,str) and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,100}',name): result['exception_class']=name
     if value.get('phase') in ('provider','netbox','planning','preflight','apply','child_wait','child_response','result_validation','operation'):

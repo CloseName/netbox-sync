@@ -42,7 +42,7 @@ def test_bad_worker_responses_are_not_exposed(monkeypatch, result):
 
 def test_probe_child_uid_and_credentials_are_not_argv_or_environment():
     popen = MagicMock()
-    process = popen.return_value.__enter__.return_value
+    process = popen.return_value
     process.communicate.return_value = (b'{"ok":true}', None)
     process.returncode = 0
     run_connection_test(credentials(), EgressPolicy(), popen=popen, child_uid=10001)

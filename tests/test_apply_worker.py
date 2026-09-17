@@ -110,6 +110,9 @@ class TimedOutProcess:
             raise subprocess.TimeoutExpired('child', timeout)
         return b'', b''
 
+    def wait(self, timeout=None):
+        return self.returncode
+
     def kill(self):
         self.returncode = -9
 

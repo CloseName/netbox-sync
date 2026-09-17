@@ -166,8 +166,9 @@ def test_esxi_real_connect_passes_timeout_to_soap_stub():
 
 def test_whole_deadline_kills_and_reaps_child_without_credential_argv(monkeypatch):
     factory = MagicMock()
-    process = factory.return_value.__enter__.return_value
-    process.communicate.side_effect = [subprocess.TimeoutExpired('probe', 15), (b'', b'')]
+    process = factory.return_value
+    process.returncode = -9
+    process.communicate.side_effect = subprocess.TimeoutExpired('probe', 15)
     monkeypatch.setenv('NETBOX_SYNC_REGISTRATION_DSN', 'MUST_NOT_INHERIT')
     with pytest.raises(OnboardingError, match='SOURCE_TIMEOUT') as caught:
         probe.run_connection_test(credentials(), popen=factory)
@@ -175,7 +176,8 @@ def test_whole_deadline_kills_and_reaps_child_without_credential_argv(monkeypatc
     assert 'NETBOX_SYNC_REGISTRATION_DSN' not in factory.call_args.kwargs['env']
     assert process.communicate.call_args_list[0].kwargs['timeout'] == 15
     process.kill.assert_called_once()
-    assert process.communicate.call_count == 2
+    assert process.communicate.call_count == 1
+    process.wait.assert_called_once_with(timeout=2)
     assert factory.call_args.kwargs['stderr'] == subprocess.DEVNULL
 
 

@@ -135,15 +135,16 @@ def run_connection_test(credentials, policy=None, popen=subprocess.Popen, *, chi
     environ['PYTHONDONTWRITEBYTECODE'] = '1'
     payload = json.dumps({'credentials': asdict(credentials), 'policy': asdict(policy or EgressPolicy()), 'preview': preview, 'destination_only': destination_only}).encode()
     identity = {} if child_uid is None else {'user': child_uid, 'group': child_uid, 'extra_groups': []}
+    from ..child_process import child_process, stop_child
     try:
-        with popen([sys.executable, '-B', '-m', 'netbox_sync.api.connection_probe'],
+        with child_process(popen, [sys.executable, '-B', '-m', 'netbox_sync.api.connection_probe'],
                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                    env=environ, **identity) as process:
             try:
                 output, _ = process.communicate(payload, timeout=PROBE_DEADLINE)
             except subprocess.TimeoutExpired:
-                process.kill()
-                process.communicate()
+                detail = stop_child(process)
+                logging.getLogger(__name__).warning(json.dumps(dict(detail, event='PROBE_TIMEOUT')))
                 raise OnboardingError(ErrorCode.SOURCE_TIMEOUT) from None
             if process.returncode != 0 or len(output) > 24576:
                 raise OnboardingError(ErrorCode.SOURCE_CONNECTION_FAILED)

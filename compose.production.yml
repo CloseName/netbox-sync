@@ -194,7 +194,7 @@ services:
       - ${NETBOX_SYNC_SOURCE_SECRET_DIR:-./deploy/example-secrets/sources}:/run/secrets/netbox-sync-sources:ro
       - ${NETBOX_SYNC_NETBOX_SECRET_DIR:-./deploy/example-secrets/netbox}:/run/secrets/netbox:ro
     networks: [netbox-sync-db, netbox-sync-egress]
-    cap_add: [SETUID, SETGID, CHOWN]
+    cap_add: [SETUID, SETGID, CHOWN, KILL]
     restart: unless-stopped
 
   netbox-sync-apply-worker:
@@ -210,7 +210,7 @@ services:
       - ${NETBOX_SYNC_SOURCE_SECRET_DIR:-./deploy/example-secrets/sources}:/run/secrets/netbox-sync-sources:ro
       - ${NETBOX_SYNC_NETBOX_SECRET_DIR:-./deploy/example-secrets/netbox}:/run/secrets/netbox:ro
     networks: [netbox-sync-db, netbox-sync-egress]
-    cap_add: [SETUID, SETGID, CHOWN]
+    cap_add: [SETUID, SETGID, CHOWN, KILL]
     restart: unless-stopped
 
   netbox-sync-schedule-worker:

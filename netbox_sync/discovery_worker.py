@@ -4,6 +4,8 @@
 # pylint: disable=too-many-instance-attributes,too-many-arguments,too-many-positional-arguments
 # pylint: disable=too-many-locals,subprocess-popen-preexec-fn
 
+from .child_process import child_process, stop_child
+
 import argparse
 from contextlib import redirect_stdout
 import json
@@ -123,18 +125,18 @@ class DiscoverySupervisor:
         }).encode()
         started = time.monotonic()
         try:
-            with self._popen([sys.executable, '-B', '-m', 'netbox_sync.discovery_worker', '--child'],
+            with child_process(self._popen, [sys.executable, '-B', '-m', 'netbox_sync.discovery_worker', '--child'],
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                              env=_safe_environment(), preexec_fn=_drop_privileges(
                                  self._child_uid, self._child_gid) if os.name == 'posix' else None) as process:
                 try:
                     output, _ = process.communicate(payload, timeout=DISCOVERY_TIMEOUT)
                 except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.communicate()
-                    raise WorkerError('DISCOVERY_TIMEOUT', dict(phase='child_wait', termination='timeout', returncode=process.returncode, duration_ms=int((time.monotonic()-started)*1000))) from None
+                    cleanup = stop_child(process)
+                    raise WorkerError('DISCOVERY_TIMEOUT', dict(cleanup, phase='child_wait', duration_ms=int((time.monotonic()-started)*1000))) from None
         finally:
             payload = b''
+        logging.getLogger(__name__).info(json.dumps({'event':'CHILD_PHASES','phases':getattr(process,'_phases',[])}))
         if process.returncode or len(output) > MAX_RESPONSE:
             raise WorkerError('DISCOVERY_FAILED', dict(phase='child_response', termination='exit' if process.returncode else 'response_too_large', returncode=process.returncode, duration_ms=int((time.monotonic()-started)*1000)))
         try:
