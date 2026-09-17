@@ -1,0 +1,10 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Discovered hardware</title>
+<style>body{font:16px system-ui;max-width:1000px;margin:2rem auto;padding:1rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #aaa;text-align:left;padding:.5rem}section{margin:2rem 0}h1{overflow-wrap:anywhere}</style>
+<body>{% for obj in queryset %}{% set cf = obj.cf %}<section><h1>{{ obj.name|e }}</h1>
+<table><caption>Host hardware / Оборудование хоста</caption><tbody>
+{% for key,label in [('hypervisor_version','Hypervisor / Гипервизор'),('cpu_model','CPU model / Модель CPU'),('cpu_vendor','CPU vendor / Производитель'),('cpu_sockets','Sockets / Сокеты'),('cpu_cores','Cores / Ядра'),('cpu_threads','Threads / Потоки'),('memory_mb','Memory / Память (MiB)')] %}
+{% if cf.get(key) is not none %}<tr><th>{{ label|e }}</th><td>{{ cf.get(key)|e }}</td></tr>{% endif %}{% endfor %}</tbody></table>
+{% if cf.get('physical_disks') is iterable and cf.get('physical_disks') is not string and cf.get('physical_disks') is not mapping %}
+<table><caption>Physical disks / Физические диски</caption><thead><tr><th>Device / Устройство</th><th>Model / Модель</th><th>Serial / Серийный номер</th><th>Type / Тип</th><th>Size / Размер (GiB)</th><th>Health / Состояние</th></tr></thead><tbody>
+{% for disk in cf.physical_disks if disk is mapping %}<tr>{% for key in ['device','model','serial','type'] %}<td>{{ (disk.get(key) if disk.get(key) is not none else '—')|e }}</td>{% endfor %}<td>{% if disk.get('size_bytes') is number %}{{ (disk.size_bytes / 1073741824)|round(2) }}{% else %}—{% endif %}</td><td>{{ (disk.get('health') or '—')|e }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+<p>Observed data; missing values are unknown. / Обнаруженные данные; отсутствующие значения неизвестны.</p></section>{% endfor %}</body></html>
