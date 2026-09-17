@@ -22,6 +22,10 @@ def test_production_child_timeout(profile,missing):
     services=json.loads(rendered.stdout)['services']
     caps=[cap.removeprefix('CAP_') for cap in services['netbox-sync-discovery-worker']['cap_add']]
     assert set(caps)=={cap.removeprefix('CAP_') for cap in services['netbox-sync-apply-worker']['cap_add']}=={'CHOWN','SETUID','SETGID','KILL'}
+    bootstrap=services['netbox-sync-bootstrap-worker']
+    assert {c.removeprefix('CAP_') for c in bootstrap['cap_add']}==set(caps)
+    assert bootstrap['read_only'] and bootstrap['cap_drop']==['ALL']
+    assert 'no-new-privileges:true' in bootstrap['security_opt']
     name='netbox-sync-timeout-'+uuid.uuid4().hex[:12]
     args=['docker','run','--rm','--name',name,'--label','netbox-sync.timeout-test='+name,'--network','none','--user','0:0','--read-only','--tmpfs','/tmp:rw,size=64m,mode=1777','--security-opt','no-new-privileges:true','--cap-drop','ALL','-e','PYTHONDONTWRITEBYTECODE=1','-e','NETBOX_SYNC_TIMEOUT_TEST=1','-e','NETBOX_SYNC_TEST_NO_KILL='+('1' if missing else '0'),'--mount','type=bind,source='+str(ROOT)+',target=/app,readonly','-w','/app']
     for cap in caps:

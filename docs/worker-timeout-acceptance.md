@@ -43,11 +43,31 @@ underlying reads were slow.
 - Host runner lacks argon2; tests therefore ran in the existing isolated Linux
   dependency image, not by adding packages to the host.
 
-Other audited paths: Bootstrap validation, setup and catalog use subprocess.run
-with cross-UID children and have the same missing-KILL risk. Their additional
-capability change was rejected by automatic approval review and is pending
-explicit permission. No Bootstrap or LDAP modifications have been made by the
-rejected command. LDAP's subprocess uses the same UID; it does not require KILL.
+Bootstrap follow-up: the user explicitly authorized only the bootstrap-worker
+validation timeout fix and minimal KILL capability. `run_probe` now reuses the
+existing bounded child helper; its 45-second deadline and public
+VALIDATION_UNAVAILABLE response remain unchanged. A BOOTSTRAP_PROBE_TIMEOUT log
+preserves the original TimeoutExpired and optional cleanup_error/child_reaped,
+without payload, tokens or stderr. Only KILL was added to bootstrap-worker in
+production/web Compose. No catalog/setup subprocess implementation, shared lock,
+LDAP, API, broker, network, mount or other capability was changed. The earlier
+broad refactor rejection is historical; it does not block this now-authorized fix.
+LDAP uses same-UID children and does not need KILL. General setup/catalog timeout
+refactoring is explicitly out of this follow-up's scope.
+
+Bootstrap follow-up evidence:
+- Actual UID/GID 10001 child, CapEff=0, production/web rendered capability sets:
+  **4 Docker cases passed, 46.56 s** (with and deliberately without KILL).
+  Correct configuration kills/reaps; missing KILL returns promptly with separate
+  PermissionError, accepts a subsequent validation while the old finite fixture
+  is alive, and eventually reaps it. Existing exit-race/apply-lock cases also pass.
+- Bootstrap/transport/preparation/catalog/security Linux suite: **116 passed,
+  1 skipped, 14.46 s**. The zero-source deployment test requires
+  NETBOX_SYNC_DEPLOYMENT_TEST_POSTGRES_DSN, absent in this networkless runner;
+  this unrelated DB startup path was not counted as passing or rerun.
+- Compose read_only, cap_drop ALL and no-new-privileges are asserted. Runtime
+  fixtures are uniquely named, networkless and automatically removed. No live
+  endpoint, secret mount, production resource or published port is involved.
 
 ## Future operator update / acceptance (not executed)
 
@@ -63,7 +83,7 @@ rejected command. LDAP's subprocess uses the same UID; it does not require KILL.
 4. Run the supported installer with `--root "$ROOT" --source "$ROOT/repo"
    --release-id "$RELEASE"` (RELEASE is the exact reviewed commit). Do not use
    prepare-only/no-start for activation and do not overwrite the selected ingress.
-5. Verify installed container metadata for discovery/apply only: User, CapAdd,
+5. Verify installed container metadata for discovery/apply/bootstrap: User, CapAdd,
    CapDrop, SecurityOpt. Expect root supervisor, CHOWN/SETUID/SETGID/KILL, ALL drop,
    no-new-privileges. Image rebuild alone is insufficient: recreate containers via
    installer so changed capabilities take effect. Broker must still be networkless.
@@ -102,7 +122,8 @@ Additional work and limits: [VM comments](vm-description-contract.md),
 [NetBox field presentation proposal](netbox-readable-fields.md). The latter does
 not claim an installed embedded-card extension: the server version is unknown.
 Original slow PLAN and historical live OUTCOME_UNCERTAIN causes remain unproven.
-The audited Bootstrap cross-UID path remains the explicit pending item above.
+The narrowly authorized Bootstrap validation follow-up is recorded above; general
+setup/catalog refactoring remains out of scope.
 
 - Sequential repeat on the final product image: production auth/upgrade/backup
   Compose suite **2 passed, 198.51 s**, bundled/external PostgreSQL. Bundled path

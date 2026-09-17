@@ -174,7 +174,7 @@ services:
     user: "0:0"
     command: [python, -m, netbox_sync.bootstrap_worker]
     networks: [netbox-sync-egress]
-    cap_add: [SETUID, SETGID, CHOWN]
+    cap_add: [SETUID, SETGID, CHOWN, KILL]
     volumes:
       - ${NETBOX_SYNC_CA_DIR:-./deploy/example-secrets/ca}:/run/netbox-sync-ca:ro
       - netbox-sync-bootstrap-socket:/run/netbox-sync-bootstrap

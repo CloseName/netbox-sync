@@ -1,5 +1,6 @@
 """Narrow first-run control: protected NetBox state, no DB or source credentials."""
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -8,16 +9,26 @@ from .bootstrap_setup import Preparation
 from .discovery_worker import _drop_privileges, _safe_environment
 from .local_control import ControlError, serve
 from .source_lifecycle import apply_lock
+from .child_process import child_process, stop_child
+
+PROBE_TIMEOUT = 45
 
 
 def run_probe(value):
     try:
-        result = subprocess.run([sys.executable, '-B', '-m', 'netbox_sync.bootstrap_probe'],
-            input=json.dumps(value).encode(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            timeout=45, check=True, env=_safe_environment(), preexec_fn=_drop_privileges(10001, 10001))
-        if len(result.stdout) > 16384:
-            raise ValueError()
-        return json.loads(result.stdout)
+        with child_process(subprocess.Popen, [sys.executable, '-B', '-m', 'netbox_sync.bootstrap_probe'],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                env=_safe_environment(), preexec_fn=_drop_privileges(10001, 10001)) as process:
+            try:
+                output, _ = process.communicate(json.dumps(value).encode(), timeout=PROBE_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                detail = stop_child(process)
+                logging.getLogger(__name__).warning(json.dumps({
+                    'code': 'BOOTSTRAP_PROBE_TIMEOUT', **detail}, sort_keys=True))
+                return {'safe_code': 'VALIDATION_UNAVAILABLE', 'checks': []}
+            if process.returncode or len(output) > 16384:
+                raise ValueError()
+            return json.loads(output)
     except Exception:
         return {'safe_code': 'VALIDATION_UNAVAILABLE', 'checks': []}
 

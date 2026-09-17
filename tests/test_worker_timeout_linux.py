@@ -82,3 +82,36 @@ def test_race_and_shared_lock_retention(tmp_path, monkeypatch):
         fcntl.flock(other,fcntl.LOCK_EX|fcntl.LOCK_NB)
         with pytest.raises(ChildProcessError): os.waitpid(process.pid,os.WNOHANG)
     finally: os.close(other)
+
+
+def test_bootstrap_timeout_and_next_job(monkeypatch, caplog):
+    from netbox_sync import bootstrap_worker as worker, child_process as cleanup
+    monkeypatch.setattr(worker, 'PROBE_TIMEOUT', .8)
+    monkeypatch.setattr(cleanup, 'REAP_TIMEOUT', .1)
+    original_popen = subprocess.Popen
+    processes = []
+    def spawn(_args, **kwargs):
+        code = "import os,time,json; from pathlib import Path; assert os.getuid()==10001; assert os.getgid()==10001; assert int(next(x.split()[1] for x in Path('/proc/self/status').read_text().splitlines() if x.startswith('CapEff:')),16)==0; "
+        code += "time.sleep(2)" if not processes else "print(json.dumps({'safe_code':None,'checks':[]}))"
+        process = original_popen([sys.executable, '-c', code], **kwargs)
+        processes.append(process)
+        return process
+    monkeypatch.setattr(worker.subprocess, 'Popen', spawn)
+    started = time.monotonic()
+    assert worker.run_probe({'read_token':'DO_NOT_LOG_SECRET'}) == {'safe_code':'VALIDATION_UNAVAILABLE','checks':[]}
+    assert time.monotonic()-started < 1.8
+    detail = json.loads(next(r.message for r in caplog.records if 'BOOTSTRAP_PROBE_TIMEOUT' in r.message))
+    assert detail['exception_class']=='TimeoutExpired' and detail['termination']=='timeout'
+    assert 'DO_NOT_LOG_SECRET' not in caplog.text
+    missing = os.environ.get('NETBOX_SYNC_TEST_NO_KILL')=='1'
+    assert detail['child_reaped'] is not missing
+    if missing:
+        assert detail['cleanup_error']=='PermissionError'
+    else:
+        assert processes[0].returncode == -9 and 'cleanup_error' not in detail
+    # Accept a new read-only validation even while a misconfigured child is being reaped.
+    assert worker.run_probe({}) == {'safe_code':None,'checks':[]}
+    assert processes[1].returncode==0
+    if missing: time.sleep(2.1)
+    for process in processes:
+        with pytest.raises(ChildProcessError): os.waitpid(process.pid, os.WNOHANG)
