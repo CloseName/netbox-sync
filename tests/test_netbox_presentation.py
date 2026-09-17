@@ -16,6 +16,7 @@ def test_presentation_is_allowlisted_and_never_changes_machine_contract():
 
 def test_structured_export_escapes_source_text_and_omits_identity_data():
     template=Environment().from_string(Path('deploy/netbox/hardware-export.html.j2').read_text())
-    html=template.render(queryset=[SimpleNamespace(name='<script>x</script>',cf={'memory_mb':4096,'sync_identities':['PRIVATE-ID'],'physical_disks':[{'device':'sda','model':'<b>model</b>','size_bytes':1073741824}]})])
+    html=template.render(queryset=[SimpleNamespace(name='<script>x</script>',cf={'memory_mb':4096,'sync_identities':['PRIVATE-ID'],'physical_disks':[{'path':'/dev/sda','model':'<b>model</b>','size_bytes':1073741824}]})])
     assert '<script>' not in html and '&lt;script&gt;' in html and '&lt;b&gt;' in html
+    assert '/dev/sda' in html
     assert 'PRIVATE-ID' not in html and '1.0' in html and '4096' in html
