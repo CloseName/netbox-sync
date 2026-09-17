@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 
 from .secret_resolver import FileSecretResolver
+from .esxi_inventory import stage
 
 
 ESXI_IO_TIMEOUT = 15
@@ -74,13 +75,14 @@ class EsxiClient:
             source_config.credentials.password_reference
         )
         try:
-            service_instance = self._connector(
-                source_config.address,
-                source_config.credentials.username,
-                password,
-                source_config.verify_ssl,
-                **({"port": source_config.api_port} if source_config.api_port != 443 else {}),
-            )
+            with stage('esxi_connect'):
+                service_instance = self._connector(
+                    source_config.address,
+                    source_config.credentials.username,
+                    password,
+                    source_config.verify_ssl,
+                    **({"port": source_config.api_port} if source_config.api_port != 443 else {}),
+                )
         except Exception as exc:  # pylint: disable=broad-exception-caught
             from .worker_failure import classify
             raise EsxiConnectionError('ESXi connection failed',classify(exc,'provider')) from None
@@ -89,7 +91,8 @@ class EsxiClient:
             yield service_instance
         finally:
             try:
-                self._disconnecter(service_instance)
+                with stage('esxi_disconnect'):
+                    self._disconnecter(service_instance)
             except Exception:  # pylint: disable=broad-exception-caught
                 pass
 

@@ -136,7 +136,7 @@ class DiscoverySupervisor:
                     raise WorkerError('DISCOVERY_TIMEOUT', dict(cleanup, phase='child_wait', duration_ms=int((time.monotonic()-started)*1000))) from None
         finally:
             payload = b''
-        logging.getLogger(__name__).info(json.dumps({'event':'CHILD_PHASES','phases':getattr(process,'_phases',[])}))
+        logging.getLogger(__name__).info(json.dumps({'event':'CHILD_PHASES','source_instance':instance,'operation':operation,'phases':getattr(process,'_phases',[])}))
         if process.returncode or len(output) > MAX_RESPONSE:
             raise WorkerError('DISCOVERY_FAILED', dict(phase='child_response', termination='exit' if process.returncode else 'response_too_large', returncode=process.returncode, duration_ms=int((time.monotonic()-started)*1000)))
         try:
@@ -148,7 +148,9 @@ class DiscoverySupervisor:
         if result.get('error'):
             from .worker_failure import ERRORS, safe_diagnostic
             code=result['error'] if result['error'] in ERRORS or result['error']=='CREDENTIAL_UNAVAILABLE' else 'DISCOVERY_FAILED'
-            raise WorkerError(code, safe_diagnostic(result.get('diagnostic'),code))
+            detail = dict(result['diagnostic']) if isinstance(result.get('diagnostic'), dict) else {}
+            detail['phases'] = getattr(process, '_phases', [])
+            raise WorkerError(code, safe_diagnostic(detail,code))
         return result.get('result')
 
 
@@ -400,6 +402,10 @@ def main():
     if args.child:
         child_main()
         return
+    telemetry = logging.getLogger(__name__)
+    telemetry.setLevel(logging.INFO)
+    telemetry.addHandler(logging.StreamHandler())
+    telemetry.propagate = False
     supervisor = DiscoverySupervisor(args.registry_dsn or os.environ.get('NETBOX_SYNC_DISCOVERY_REGISTRY_DSN', ''),
                                      args.registry_schema or os.environ.get('NETBOX_SYNC_REGISTRY_SCHEMA', ''),
                                      args.secret_root, args.source_secret_root,

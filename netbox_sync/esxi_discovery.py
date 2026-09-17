@@ -1,6 +1,5 @@
 """Map standalone ESXi API inventory into generic discovery models."""
 
-import logging
 import re
 from uuid import UUID
 
@@ -27,9 +26,6 @@ def _value(obj, path, default=None):
 
 def _items(value):
     return tuple(value or ())
-
-
-LOGGER = logging.getLogger(__name__)
 
 
 def _normalized_uuid(value):
@@ -67,8 +63,14 @@ def _managed_object_id(obj):
 def _vm_external_id(vm):
     """Use instance UUID, then BIOS UUID, then the managed-object ID."""
 
-    for path in ('config.instanceUuid', 'summary.config.instanceUuid', 'config.uuid'):
-        candidate = _normalized_uuid(_value(vm, path))
+    config = getattr(vm, 'config', None)
+    if config is None:
+        raise ValueError('ESXi VM configuration unavailable')
+    candidates = (lambda: getattr(config, 'instanceUuid', None),
+                  lambda: _value(vm, 'summary.config.instanceUuid'),
+                  lambda: getattr(config, 'uuid', None))
+    for read in candidates:
+        candidate = _normalized_uuid(read())
         if candidate is not None:
             return candidate
     managed_id = _managed_object_id(vm)
@@ -342,18 +344,9 @@ def _virtual_machine(vm, host, source_config, host_id):
 
 
 def _virtual_machines(host, source_config, host_id):
-    result = []
-    for vm in _items(getattr(host, 'vm', ())):
-        try:
-            result.append(_virtual_machine(vm, host, source_config, host_id))
-        except (AttributeError, TypeError, ValueError):
-            # A malformed object is retained in NetBox by the global no-delete
-            # policy. Do not let one bad SDK object hide the rest of the host.
-            LOGGER.warning(
-                'Ignoring malformed ESXi VM during discovery',
-                extra={'source_instance': source_config.source_instance},
-            )
-    return result
+    # A malformed VM is not a successful complete inventory.
+    return [_virtual_machine(vm, host, source_config, host_id)
+            for vm in _items(getattr(host, 'vm', ()))]
 
 
 def _walk_hosts(entity, seen=None):
@@ -385,13 +378,11 @@ def _walk_hosts(entity, seen=None):
         yield from _walk_hosts(child, seen)
 
 
-def discover_hosts(service_instance, source_config):
+def _convert_hosts(hosts, source_config):
     """Discover standalone ESXi hosts and VMs without leaking SDK objects."""
 
-    content = service_instance.RetrieveContent()
-    root = getattr(content, 'rootFolder', content)
     result = []
-    for host in _walk_hosts(root):
+    for host in hosts:
         host_id = _host_external_id(host)
         name = str(getattr(host, 'name', host_id))
         product = _value(host, 'summary.config.product')
@@ -433,3 +424,33 @@ def discover_hosts(service_instance, source_config):
     if not result:
         raise RuntimeError('ESXi inventory contains no hosts')
     return result
+
+
+def discover_hosts(service_instance, source_config):
+    from .esxi_inventory import InventoryReads, stage
+    with InventoryReads(service_instance) as reads:
+        with stage('esxi_inventory', reads) as stats:
+            content = service_instance.RetrieveContent()
+            hosts = list(_walk_hosts(getattr(content, 'rootFolder', content)))
+            vms = [vm for host in hosts for vm in _items(host.vm)]
+            stats['objects'] = len(hosts) + len(vms)
+        with stage('esxi_properties', reads) as stats:
+            if reads.stub is not None:
+                reads.virtual_machines(content.propertyCollector, vms)
+            stats['objects'] = len(vms)
+        with stage('esxi_additional', reads) as stats:
+            for host in hosts:
+                for name in ('name', 'config', 'hardware', 'summary', 'datastore'):
+                    getattr(host, name, None)
+                for datastore in _items(getattr(host, 'datastore', ())):
+                    getattr(datastore, 'summary', None)
+                    getattr(datastore, 'name', None)
+            for vm in vms:
+                for device in _items(_value(vm, 'config.hardware.device', ())):
+                    if hasattr(device, 'capacityInKB'):
+                        _value(device, 'backing.datastore.name')
+            stats['objects'] = len(hosts)
+        with stage('esxi_conversion', reads) as stats:
+            result = _convert_hosts(hosts, source_config)
+            stats['objects'] = sum(1+len(host.virtual_machines) for host in result)
+            return result

@@ -57,3 +57,19 @@ def test_esxi_client_preserves_only_safe_error_classification(error,code):
     assert classify(caught.value,'provider')==code
     assert str(caught.value)=='ESXi connection failed'
     assert 'private' not in json.dumps(diagnostic(caught.value,'provider'))
+
+
+def test_provider_progress_counts_are_closed_and_content_free():
+    result=safe_diagnostic({'phases':[{'phase':'esxi_properties','state':'failed','duration_ms':100,
+        'requests':2,'objects':'secret description','token':'private'}]},'DISCOVERY_TIMEOUT')
+    assert result['phases']==[{'phase':'esxi_properties','state':'failed','duration_ms':100,'requests':2}]
+
+
+def test_failed_stage_is_not_reported_as_successful_completion(monkeypatch):
+    from netbox_sync.worker_failure import failure_stage, DiagnosticFailure
+    values=[]
+    monkeypatch.setattr('netbox_sync.child_process.phase_progress',lambda *args,**kwargs:values.append((args,kwargs)))
+    with pytest.raises(DiagnosticFailure):
+        with failure_stage('provider'):raise ValueError('private')
+    assert values[0][0]==('provider',)
+    assert values[-1][1]=={'failed':True}

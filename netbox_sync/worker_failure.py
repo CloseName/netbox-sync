@@ -59,10 +59,13 @@ def failure_stage(stage):
     import time
     from .child_process import phase_progress
     started=time.monotonic();phase_progress(stage)
-    try:yield
+    failed = True
+    try:
+        yield
+        failed = False
     except DiagnosticFailure:raise
     except Exception as exc:raise DiagnosticFailure(exc,stage) from None
-    finally:phase_progress(stage,time.monotonic()-started)
+    finally:phase_progress(stage,time.monotonic()-started,failed=failed)
 
 
 def safe_diagnostic(value, code):
@@ -74,7 +77,7 @@ def safe_diagnostic(value, code):
     phases=value.get('phases')
     if isinstance(phases,list):
         from .child_process import PHASES
-        result['phases']=[{k:v for k,v in row.items() if k in ('phase','state','duration_ms')} for row in phases[:16] if isinstance(row,dict) and row.get('phase') in PHASES and row.get('state') in ('started','finished') and (row.get('duration_ms') is None or type(row.get('duration_ms')) is int and 0<=row['duration_ms']<=86400000)]
+        result['phases']=[{k:v for k,v in row.items() if k in ('phase','state','duration_ms') or k in ('requests','objects') and type(v) is int and 0<=v<=10000000} for row in phases[:32] if isinstance(row,dict) and row.get('phase') in PHASES and row.get('state') in ('started','finished','failed') and (row.get('duration_ms') is None or type(row.get('duration_ms')) is int and 0<=row['duration_ms']<=86400000)]
     name=value.get('exception_class')
     if isinstance(name,str) and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,100}',name): result['exception_class']=name
     if value.get('phase') in ('provider','netbox','planning','preflight','apply','child_wait','child_response','result_validation','operation'):

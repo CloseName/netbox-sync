@@ -280,43 +280,23 @@ def test_invalid_vm_uuid_falls_back_deterministically(
     assert discovered.external_id == expected
 
 
-def test_malformed_vm_is_isolated_without_hiding_valid_inventory(monkeypatch):
+def test_malformed_vm_refuses_partial_inventory():
     service = fake_esxi_service()
-    warnings = []
-    monkeypatch.setattr(
-        'netbox_sync.esxi_discovery.LOGGER.warning',
-        lambda message, **_values: warnings.append(message),
-    )
     malformed = deepcopy(service.host.vm[0])
     malformed.config.instanceUuid = 'invalid'
     malformed.config.uuid = 'invalid'
     malformed._moId = None
     service.host.vm.insert(0, malformed)
 
-    discovered = discover_hosts(service, esxi_config())[0]
-
-    assert [vm.external_id for vm in discovered.virtual_machines] == [
-        '503c5ad7-0000-1111-2222-0123456789ab'
-    ]
-    assert warnings == ['Ignoring malformed ESXi VM during discovery']
+    with pytest.raises(ValueError, match='stable external identifier'):
+        discover_hosts(service, esxi_config())
 
 
-def test_malformed_nic_isolates_only_its_vm(monkeypatch):
+def test_malformed_nic_fails_complete_inventory():
     service = fake_esxi_service()
-    warnings = []
-    monkeypatch.setattr(
-        'netbox_sync.esxi_discovery.LOGGER.warning',
-        lambda message, **_values: warnings.append(message),
-    )
-    malformed = deepcopy(service.host.vm[0])
-    malformed.config.instanceUuid = '503c5ad7-aaaa-bbbb-cccc-0123456789ab'
-    malformed.config.hardware.device[-1].key = None
-    service.host.vm.append(malformed)
-
-    discovered = discover_hosts(service, esxi_config())[0]
-
-    assert len(discovered.virtual_machines) == 1
-    assert warnings == ['Ignoring malformed ESXi VM during discovery']
+    service.host.vm[0].config.hardware.device[-1].key = None
+    with pytest.raises(ValueError, match='stable device key'):
+        discover_hosts(service, esxi_config())
 
 
 def test_missing_vmware_tools_and_optional_hardware_are_safe():

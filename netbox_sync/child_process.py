@@ -55,18 +55,21 @@ def stop_child(process, lock_fd=None):
     return detail
 
 
-PHASES = ('provider', 'netbox', 'planning', 'preflight', 'apply')
+PHASES = ('provider', 'netbox', 'planning', 'preflight', 'apply', 'esxi_connect', 'esxi_inventory',
+          'esxi_properties', 'esxi_additional', 'esxi_conversion', 'esxi_disconnect')
 
 
-def phase_progress(stage, elapsed=None):
+def phase_progress(stage, elapsed=None, *, failed=False, requests=None, objects=None):
     """Separate bounded metadata pipe: no source data, payload or stderr."""
     if stage not in PHASES:
         return
     try:
         fd = int(os.environ.get('NETBOX_SYNC_PROGRESS_FD', '-1'))
-        value = {'phase': stage, 'state': 'started' if elapsed is None else 'finished'}
+        value = {'phase': stage, 'state': 'started' if elapsed is None else ('failed' if failed else 'finished')}
         if elapsed is not None:
             value['duration_ms'] = min(86400000, max(0, int(elapsed * 1000)))
+        for key, count in (('requests', requests), ('objects', objects)):
+            if type(count) is int and 0 <= count <= 10000000: value[key] = count
         os.write(fd, (json.dumps(value)+'\n').encode())
     except (ValueError, OSError):
         pass
@@ -83,14 +86,17 @@ def read_progress(process):
         for line in raw.splitlines():
             try:
                 value = json.loads(line)
-                if value.get('phase') in PHASES and value.get('state') in ('started','finished'):
+                if value.get('phase') in PHASES and value.get('state') in ('started','finished','failed'):
                     row = {'phase': value['phase'], 'state': value['state']}
                     if type(value.get('duration_ms')) is int and 0 <= value['duration_ms'] <= 86400000:
                         row['duration_ms'] = value['duration_ms']
+                    for key in ('requests','objects'):
+                        if type(value.get(key)) is int and 0 <= value[key] <= 10000000:
+                            row[key] = value[key]
                     rows.append(row)
             except (ValueError, AttributeError):
                 pass
-    process._phases = rows[-16:]
+    process._phases = rows[-32:]
     return process._phases
 
 
