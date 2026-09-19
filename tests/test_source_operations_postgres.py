@@ -225,3 +225,26 @@ def test_unknown_plan_failure_logs_class_frames_and_phase(operations, caplog):
     assert failure['exception_class']=='AttributeError'
     assert failure['frames'] and failure['phase']=='result_validation'
     assert failure['duration_ms']>=0
+
+
+def test_structured_conflict_survives_worker_reopen(operations):
+    import json
+    from netbox_sync.application.inventory_conflicts import InventoryConflict, ConflictParticipant
+    from netbox_sync.application.sync_plan import SyncPlanItem, SyncAction
+    from netbox_sync.api.dto import SyncPlanDTO
+    store, source = operations
+    conflict = InventoryConflict('VM_IDENTITY', 'uuid', (
+        ConflictParticipant('VM A', 'uuid', 'vm-1', 'host'),
+        ConflictParticipant('VM B', 'uuid', 'vm-2', 'host')))
+    value = SyncPlan(source, source, 'proxmox', 's', 't', 'p', 'n', (
+        SyncPlanItem('vm', 'uuid', 'VM', SyncAction.BLOCKED, 'VM_IDENTITY', 'Inventory conflict'),),
+        conflicts=(conflict,))
+    payload = json.loads(value.canonical_json()) | {'digest': value.digest}
+    row, _ = store.start(source, 'PLAN')
+    store.execute(row, lambda: payload)
+    reopened = OperationStore(_safe_test_dsn(), store.schema)
+    saved = reopened.latest(source)[0]
+    assert saved['status'] == 'READY' and saved['safe_error_code'] is None
+    public = SyncPlanDTO.from_worker(saved['result'])
+    assert not public.apply_allowed
+    assert {p.provider_object_id for p in public.conflicts[0].participants} == {'vm-1', 'vm-2'}

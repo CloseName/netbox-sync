@@ -87,7 +87,11 @@ export function SourcesPage() {
   const detail = source.data;
   const [removed, setRemoved] = useState<SourceLifecycle | null>(null);
   const evidence = diagnosticIndex(diagnostics.data).get(sourceInstance);
-  const concern = attention(evidence);
+  const [blockedPlan, setBlockedPlan] = useState(false);
+  useEffect(()=>setBlockedPlan(false),[sourceInstance]);
+  const runConcern = attention(evidence);
+  const concern = blockedPlan && (!runConcern || runConcern.priority > 1)
+    ? {priority:2,label:'Plan blocked: conflicts detected'} : runConcern;
   const base = sourcePath(sourceInstance);
   useEffect(() => {
     document.title = `${detail?.name ?? sourceInstance}${tab && tab !== "Overview" ? " / " + tr(tab) : ""} | NetBox Sync`;
@@ -370,7 +374,7 @@ export function SourcesPage() {
           )}
           {/* Keep local operations and edits mounted across tabs; the route wrapper remounts by source identity. */}
           <div hidden={tab !== "Sync"}>
-            <SourceSync onRunChange={diagnostics.refresh} detail={detail} active={tab === "Sync"} latestRunFinishedAt={evidence?.latest_run?.finished_at ?? undefined} />
+            <SourceSync onPlanBlocked={setBlockedPlan} onRunChange={diagnostics.refresh} detail={detail} active={tab === "Sync"} latestRunFinishedAt={evidence?.latest_run?.finished_at ?? undefined} />
           </div>
           <div hidden={tab !== "Schedule"}>
             <SourceSchedule

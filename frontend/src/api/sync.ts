@@ -19,6 +19,12 @@ export interface SyncPlanItem {
   before: [string, unknown][];
   after: [string, unknown][];
 }
+export interface InventoryConflict {
+  kind: 'VM_IDENTITY' | 'IP_ASSIGNMENT';
+  value: string;
+  participants: {name: string; external_id: string; provider_object_id: string | null;
+    host_id: string; interface: string | null; interface_id: string | null; address: string | null}[];
+}
 export interface SyncPlan {
   source_instance: string;
   source_type: "proxmox" | "esxi";
@@ -29,6 +35,7 @@ export interface SyncPlan {
   schema_version: number;
   planner_version: string;
   items: SyncPlanItem[];
+  conflicts?: InventoryConflict[];
   apply_allowed: boolean;
   digest: string;
 }
@@ -145,6 +152,11 @@ export const validPlan = (value: unknown, instance: string): value is SyncPlan =
   ].every((key) => typeof value[key] === "string") &&
   Number.isSafeInteger(value.schema_version) &&
   typeof value.apply_allowed === "boolean" &&
+  (value.conflicts === undefined || (Array.isArray(value.conflicts) && value.conflicts.every(c =>
+    record(c) && ['VM_IDENTITY','IP_ASSIGNMENT'].includes(String(c.kind)) && typeof c.value === 'string' &&
+    Array.isArray(c.participants) && c.participants.every(p => record(p) &&
+      ['name','external_id','host_id'].every(k => typeof p[k] === 'string') &&
+      ['provider_object_id','interface','interface_id','address'].every(k => p[k] === null || typeof p[k] === 'string'))))) &&
   Array.isArray(value.items) &&
   value.items.every(
     (item) =>

@@ -145,3 +145,21 @@ test('name concurrency conflict requires reloading before retry',async({page,con
  await dialog.getByRole('button',{name:'Save',exact:true}).click();await expect(dialog.getByRole('alert')).toContainText('reopen');
  await expect(dialog.getByRole('button',{name:'Save',exact:true})).toBeDisabled();
 });
+
+
+for (const locale of ['en','ru']) test(`inventory conflict survives reload and blocks confirmation ${locale}`,async({page,context})=>{
+  const server=backend();await server.attach(context);
+  const now=new Date().toISOString();
+  const participant={name:'VM Alpha',external_id:'shared-uuid',provider_object_id:'vm-1000',host_id:'host-uuid',interface:null,interface_id:null,address:null};
+  server.slots.set('source-1PLAN',{operation_id:randomUUID(),source_instance:'source-1',operation_kind:'PLAN',status:'READY',started_at:now,updated_at:now,finished_at:now,safe_error_code:null,result:{...canonical('source-1'),apply_allowed:false,items:[{object_kind:'source',external_id:'shared-uuid',name:'Source 1',action:'BLOCKED',reason_code:'VM_IDENTITY',reason:'Inventory conflict',matched_object_id:null,before:[],after:[]}],conflicts:[{kind:'VM_IDENTITY',value:'shared-uuid',participants:[participant,{...participant,name:'VM Beta',provider_object_id:'vm-2000'}]}]}});
+  await page.goto(url+'/sources/source-1/sync');
+  if(locale==='ru') await setLanguage(page,'ru');
+  const title=locale==='ru'?'План заблокирован: обнаружены конфликты':'Plan blocked: conflicts detected';
+  await expect(page.getByRole('heading',{name:title})).toBeVisible();
+  await page.locator('summary').filter({hasText:'shared-uuid'}).click();
+  await expect(page.getByText('vm-1000',{exact:true})).toBeVisible();
+  await expect(page.getByText('vm-2000',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:/Review and confirm sync|Проверить и подтвердить/})).toBeDisabled();
+  await page.reload();await expect(page.getByRole('heading',{name:title})).toBeVisible();
+  await page.goto(url+'/sources/source-1');await expect(page.getByText(title).first()).toBeVisible();
+});

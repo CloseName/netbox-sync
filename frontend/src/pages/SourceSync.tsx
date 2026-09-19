@@ -29,11 +29,13 @@ export function SourceSync({
   active = true,
   latestRunFinishedAt,
   onRunChange,
+  onPlanBlocked,
 }: {
   detail: Source;
   active?: boolean;
   latestRunFinishedAt?: string;
   onRunChange?:()=>void;
+  onPlanBlocked?:(blocked:boolean)=>void;
 }) {
   const canPlan = usePermission('source.plan'), canApply = usePermission('source.apply');
   const [phase, setPhase] = useState<Phase>("idle"),
@@ -68,6 +70,7 @@ export function SourceSync({
   const [operationError, setOperationError] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [refreshOperations, setRefreshOperations] = useState(0);
+  const reportBlocked = useRef(onPlanBlocked); reportBlocked.current = onPlanBlocked;
   const reviewedId = useRef('');
   const inspectedId = useRef('');
   const [runs,setRuns]=useState<SyncRun[]>([]),[runId,setRunId]=useState(''),[historyLoaded,setHistoryLoaded]=useState(false),[historyError,setHistoryError]=useState(false);
@@ -99,7 +102,6 @@ export function SourceSync({
     return () => window.removeEventListener('focus', reconnect);
   }, [active]);
   useEffect(() => {
-    if (!active) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
@@ -107,6 +109,8 @@ export function SourceSync({
         const rows = await fetchOperations(selected, AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]));
         if (controller.signal.aborted) return;
         setOperations(rows); setLoaded(true); setOperationError('');
+        const latest = rows.find(row => row.operation_kind === 'PLAN');
+        reportBlocked.current?.(latest?.status === 'READY' && !!latest.result && !(latest.result as SyncPlan).apply_allowed);
         if (rows.some(row => row.status === 'RUNNING')) timer = setTimeout(poll, 2500);
       } catch (error) {
         if (!controller.signal.aborted) { setOperationError(operationRequestMessage(error)); setLoaded(false); setUsable(false); }

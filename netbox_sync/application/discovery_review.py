@@ -90,6 +90,10 @@ def _generic_item(discovered, kind, identity, all_records, target_records):
         return ReviewItem(kind, discovered.original_name, identity.external_id,
                           ReviewClassification.CONFLICT, 'IDENTITY_SCOPE_CONFLICT',
                           'The stable identity is duplicated or outside the configured target.', 'review')
+    if any(_identities(record) for record in names):
+        return ReviewItem(kind, discovered.original_name, identity.external_id,
+                          ReviewClassification.CONFLICT, 'OTHER_SOURCE_OWNERSHIP',
+                          'A matching object retains another source identity. Re-registration does not restore ownership.', 'review')
     if names:
         return ReviewItem(kind, discovered.original_name, identity.external_id,
                           ReviewClassification.REVIEW_REQUIRED, 'NAME_ONLY_CANDIDATE',
@@ -114,6 +118,11 @@ def _proxmox_host_item(host, devices, target_devices):
             ReviewClassification.CONFLICT, 'MANAGEMENT_IP_CONFLICT',
             'Management IP evidence is ambiguous or outside the configured target.', 'review')
     record = matches[0]
+    if _identities(record):
+        return ReviewItem('host', host.original_name, host_source_identity(host).external_id,
+                          ReviewClassification.CONFLICT, 'OTHER_SOURCE_OWNERSHIP',
+                          'A matching object retains another source identity. Re-registration does not restore ownership.',
+                          'review', record.id, getattr(record, 'name', None))
     return ReviewItem(
         'host', host.original_name, host_source_identity(host).external_id,
         ReviewClassification.REVIEW_REQUIRED, 'MANAGEMENT_IP_CANDIDATE',

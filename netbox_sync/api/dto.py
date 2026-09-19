@@ -312,6 +312,22 @@ class SyncPlanItemDTO(PublicModel):
     after: list[list[object]]
 
 
+class ConflictParticipantDTO(PublicModel):
+    name: str
+    external_id: str
+    provider_object_id: str | None
+    host_id: str
+    interface: str | None = None
+    interface_id: str | None = None
+    address: str | None = None
+
+
+class InventoryConflictDTO(PublicModel):
+    kind: Literal['VM_IDENTITY', 'IP_ASSIGNMENT']
+    value: str
+    participants: list[ConflictParticipantDTO]
+
+
 class SyncPlanDTO(PublicModel):
     """Secret-free plan returned by the read-only worker."""
 
@@ -324,6 +340,7 @@ class SyncPlanDTO(PublicModel):
     schema_version: int
     planner_version: str
     items: list[SyncPlanItemDTO]
+    conflicts: list[InventoryConflictDTO] = Field(default_factory=list)
     apply_allowed: bool
     digest: str = Field(pattern=r'^[a-f0-9]{64}$')
 

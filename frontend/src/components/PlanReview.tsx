@@ -96,6 +96,23 @@ export function PlanReview({
         <p className="source-error" role="alert">
           {tr("This plan cannot be applied. Resolve the reported conditions and rebuild the plan.")}{" "}</p>
       )}
+      {!!plan.conflicts?.length && <section aria-label={tr('Inventory conflicts')}>
+        <h4>{tr('Plan blocked: conflicts detected')}</h4>
+        <p>{tr('Compare the listed objects in the source. Correct ambiguous identities or network assignments, then build a new plan. No objects are excluded automatically.')}</p>
+        <p>{tr('Source')}: {plan.source_instance}</p>
+        {plan.conflicts.map((conflict,index)=><details key={index}>
+          <summary>{tr(conflict.kind === 'VM_IDENTITY' ? 'Shared VM identifier' : 'Conflicting IP assignment')}: {conflict.value} ({conflict.participants.length})</summary>
+          <ul>{conflict.participants.map((p,i)=><li key={i}>
+            <strong>{p.name}</strong><dl>
+              <dt>{tr('Host identifier')}</dt><dd>{p.host_id}</dd>
+              <dt>{tr('VM identifier')}</dt><dd>{p.external_id}</dd>
+              {p.provider_object_id && <><dt>{tr('Provider object identifier')}</dt><dd>{p.provider_object_id}</dd></>}
+              {p.interface && <><dt>{tr('Interface')}</dt><dd>{p.interface} ({p.interface_id})</dd></>}
+              {p.address && <><dt>{tr('IP address')}</dt><dd>{p.address}</dd></>}
+            </dl>
+          </li>)}</ul>
+        </details>)}
+      </section>}
       <div className="sync-filters">
         <div className="view-options" role="group" aria-label={tr("Plan view")}>
           {(["Changes", "Attention", "All"] as PlanView[]).map((value) => (

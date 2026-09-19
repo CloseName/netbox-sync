@@ -5,10 +5,11 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass, replace
 from enum import Enum
+from .inventory_conflicts import InventoryConflict
 
 
 PLAN_SCHEMA_VERSION = 1
-PLANNER_VERSION = 'web-5a-3'
+PLANNER_VERSION = 'web-5a-4'
 
 
 class SyncAction(str, Enum):
@@ -51,6 +52,7 @@ class SyncPlan:
     provider_fingerprint: str
     netbox_fingerprint: str
     items: tuple[SyncPlanItem, ...]
+    conflicts: tuple[InventoryConflict, ...] = ()
     schema_version: int = PLAN_SCHEMA_VERSION
     planner_version: str = PLANNER_VERSION
 
@@ -64,6 +66,9 @@ class SyncPlan:
         value = asdict(self)
         value['items'] = sorted(value['items'], key=lambda item: (
             item['object_kind'], item['external_id'], item['action'], item['reason_code']))
+        value['conflicts'] = sorted((dict(c, participants=sorted(c['participants'],
+            key=lambda p: json.dumps(p, sort_keys=True))) for c in value['conflicts']),
+            key=lambda c: json.dumps(c, sort_keys=True))
         value['apply_allowed'] = self.apply_allowed
         return value
 

@@ -12,6 +12,22 @@ def build_runtime_plan(nb_api, hosts, config):
     """Run guarded executors on a write-recording facade and return one canonical plan."""
     from .inventory_order import canonical_hosts
     hosts = canonical_hosts(hosts)
+    from .inventory_conflicts import inventory_conflicts
+    from .sync_plan import (SyncPlan, SyncPlanItem, SyncAction, safe_source_fingerprint,
+                            target_fingerprint, stable_fingerprint)
+    conflicts = inventory_conflicts(hosts)
+    if conflicts:
+        from dataclasses import asdict
+        return SyncPlan(
+            source_instance=config.source_instance, source_id=config.id,
+            source_type=config.source_type, source_fingerprint=safe_source_fingerprint(config),
+            target_fingerprint=target_fingerprint(config),
+            provider_fingerprint=stable_fingerprint([asdict(c) for c in conflicts]),
+            netbox_fingerprint=stable_fingerprint(None), conflicts=conflicts,
+            items=tuple(SyncPlanItem(object_kind='source', external_id=c.value,
+                name=config.name, action=SyncAction.BLOCKED, reason_code=c.kind,
+                reason='Inventory conflict. Resolve the ambiguity and build a new plan.')
+                for c in conflicts))
     from ..host_mapping import validate
     validate(nb_api,config.target,hosts)
     review = (build_proxmox_review(nb_api, hosts, config) if config.source_type == 'proxmox'

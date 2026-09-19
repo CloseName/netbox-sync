@@ -139,6 +139,9 @@ export function emptyPlanLabel(items:SyncPlanItem[]) {
 
 export function planReason(item:{reason_code:string;reason:string;action?:SyncAction}) {
  const reasons:Record<string,string>={
+  OTHER_SOURCE_OWNERSHIP:'A matching object retains another source identity. Re-registration does not restore ownership.',
+  VM_IDENTITY:'Shared VM identifier',
+  IP_ASSIGNMENT:'Conflicting IP assignment',
   ESXI_HOST_NETWORK_UNSUPPORTED:'ESXi host VMkernel/vSwitch networking is report-only; no host networking writes are supported.',
   MANAGED_FIELD_UPDATE:'Update managed fields',
   EXECUTOR_CREATE_UNSUPPORTED:'No supported create operation was produced for this object.'

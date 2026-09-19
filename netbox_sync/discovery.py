@@ -115,6 +115,7 @@ class DiscoveredVirtualMachine:
     interfaces: list[DiscoveredInterface] = field(default_factory=list)
     external_id: Optional[str] = None
     description: Optional[str] = None
+    provider_object_id: Optional[str] = None
 
 
 @dataclass

@@ -244,9 +244,9 @@ def _guest_addresses(vm):
         key = getattr(network, 'deviceConfigId', None)
         mac = getattr(network, 'macAddress', None)
         if key is not None:
-            by_key[str(key)] = addresses
+            by_key[str(key)] = list(dict.fromkeys(by_key.get(str(key), []) + addresses))
         if mac:
-            by_mac[str(mac).casefold()] = addresses
+            by_mac[str(mac).casefold()] = list(dict.fromkeys(by_mac.get(str(mac).casefold(), []) + addresses))
     return by_key, by_mac
 
 
@@ -329,6 +329,7 @@ def _virtual_machine(vm, host, source_config, host_id):
         node_source_id=host_id,
         vmid=external_id,
         external_id=external_id,
+        provider_object_id=_managed_object_id(vm),
         description=_value(vm, 'config.annotation', None),
         original_name=name,
         normalized_name=name.upper(),
@@ -345,8 +346,15 @@ def _virtual_machine(vm, host, source_config, host_id):
 
 def _virtual_machines(host, source_config, host_id):
     # A malformed VM is not a successful complete inventory.
-    return [_virtual_machine(vm, host, source_config, host_id)
-            for vm in _items(getattr(host, 'vm', ()))]
+    seen = set()
+    result = []
+    for vm in _items(getattr(host, 'vm', ())):
+        key = (type(vm), _managed_object_id(vm) or id(vm))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(_virtual_machine(vm, host, source_config, host_id))
+    return result
 
 
 def _walk_hosts(entity, seen=None):

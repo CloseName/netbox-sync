@@ -20,7 +20,7 @@ from netbox_sync.esxi_discovery import discover_hosts, _walk_hosts, _convert_hos
 
 
 @contextmanager
-def endpoint(tmp_path, monkeypatch, count=147, delay=0, incomplete=False):
+def endpoint(tmp_path, monkeypatch, count=147, delay=0, incomplete=False, identity_conflict=False):
     cert=tmp_path/'cert.pem';key=tmp_path/'key.pem'
     subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1',
         '-keyout',str(key),'-out',str(cert),'-subj','/CN=localhost','-addext','subjectAltName=IP:127.0.0.1'],
@@ -33,7 +33,7 @@ def endpoint(tmp_path, monkeypatch, count=147, delay=0, incomplete=False):
         for field in ('name','config','guest','runtime','summary'):
             value=properties[('vm-42',field)]
             if field=='config':
-                value=value.replace('503c5ad7-0000-1111-2222-0123456789ab','503c5ad7-0000-1111-2222-'+format(i,'012x'))
+                value=value.replace('503c5ad7-0000-1111-2222-0123456789ab','503c5ad7-0000-1111-2222-'+format(0 if identity_conflict else i,'012x'))
                 value=value.replace('<name>ESXI-VM</name>','<name>ESXI-VM</name><annotation>'+('Notes\n'*80)+'</annotation>')
             rows[(ident,field)]=value
     rows[('ha-host','vm')]='<val xsi:type="ArrayOfManagedObjectReference">'+''.join(refs)+'</val>'
@@ -129,7 +129,7 @@ def test_pagination_faults_and_missing_properties_fail_closed():
 
 
 @pytest.mark.skipif(__import__('os').name!='posix' or __import__('os').environ.get('NETBOX_SYNC_TIMEOUT_TEST')!='1',reason='isolated root cross-UID runtime')
-@pytest.mark.parametrize('hang',[False,True])
+@pytest.mark.parametrize('hang',[False,True,'ip-conflict','identity-conflict'])
 def test_actual_worker_plan_or_bounded_provider_hang(tmp_path,monkeypatch,hang):
     import os
     import tempfile
@@ -139,12 +139,12 @@ def test_actual_worker_plan_or_bounded_provider_hang(tmp_path,monkeypatch,hang):
     from tests.fakes import FakeNetBox
     from tests.fakes.netbox_http import netbox_http
     from tests.test_first_sync import target
-    monkeypatch.setattr(worker,'DISCOVERY_TIMEOUT',1.5 if hang else 20)
+    monkeypatch.setattr(worker,'DISCOVERY_TIMEOUT',1.5 if hang is True else 20)
     for name in ('password','netbox-token'): (tmp_path/name).write_text('controlled-fixture')
     processes=[]
     def spawn(*args,**kwargs):
         process=subprocess.Popen(*args,**kwargs);processes.append(process);return process
-    with endpoint(tmp_path,monkeypatch,count=1,delay=4 if hang else 0) as (config,calls):
+    with endpoint(tmp_path,monkeypatch,count=2 if isinstance(hang,str) else 1,delay=4 if hang is True else 0,identity_conflict=hang=='identity-conflict') as (config,calls):
         config=replace(config,credentials=SourceCredentials.for_password('fixture',SecretReference('file','password')))
         seed=FakeNetBox();target(seed,config)
         with tempfile.TemporaryDirectory(prefix='netbox-sync-esxi-ca-') as directory:
@@ -156,7 +156,7 @@ def test_actual_worker_plan_or_bounded_provider_hang(tmp_path,monkeypatch,hang):
                 supervisor=worker.DiscoverySupervisor('reader','netbox_sync',tmp_path,tmp_path,api.base_url.rstrip('/').removesuffix('/api'),tmp_path/'netbox-token',10001,10001,popen=spawn)
                 monkeypatch.setattr(supervisor,'_source',lambda _:config)
                 started=time.monotonic()
-                if hang:
+                if hang is True:
                     with pytest.raises(worker.WorkerError) as caught:supervisor.run(config.source_instance,'plan')
                     error=caught.value
                     assert error.code=='DISCOVERY_TIMEOUT'
@@ -167,6 +167,11 @@ def test_actual_worker_plan_or_bounded_provider_hang(tmp_path,monkeypatch,hang):
                     try: plan=supervisor.run(config.source_instance,'plan')
                     except worker.WorkerError as error: pytest.fail(json.dumps(error.diagnostic))
                     assert plan['digest'] and plan['items']
-                    assert any(item['object_kind']=='virtualization.virtual_machines' and item['action']=='CREATE' for item in plan['items'])
+                    if isinstance(hang,str):
+                        assert not plan['apply_allowed']
+                        assert any(c['kind']==('VM_IDENTITY' if hang=='identity-conflict' else 'IP_ASSIGNMENT') for c in plan['conflicts'])
+                        assert all(item['action']=='BLOCKED' for item in plan['items'])
+                    else:
+                        assert any(item['object_kind']=='virtualization.virtual_machines' and item['action']=='CREATE' for item in plan['items'])
                 assert writes==[]
                 with pytest.raises(ChildProcessError):os.waitpid(processes[0].pid,os.WNOHANG)
