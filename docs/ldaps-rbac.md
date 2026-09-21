@@ -20,12 +20,14 @@ sessions remain separate and retain their existing enrollment/recovery procedure
 | Role | Permissions |
 | --- | --- |
 | Viewer | Read sources, discovery/plan results, schedules, runs and diagnostics. |
-| Operator | Viewer plus Discovery, Build Plan and confirmed manual Sync. |
-| Admin | Operator plus onboarding, source/credential/mapping management, schedules, destination policy, LDAP settings and group mappings. |
+| Operator | Viewer plus source registration (including the bounded registration cluster step), schedules, Discovery, Build Plan and confirmed manual Sync. |
+| Admin | Operator plus onboarding, source removal/restoration/credential/mapping management, teams, destination policy, LDAP settings and individual user roles. |
 
-There are no custom roles or source-scoped grants. An account must be in at least
-one explicitly mapped direct group. Multiple matches select Admin over Operator
-over Viewer. Nested groups and AD primary-group membership are not expanded.
+There are no custom roles or source-scoped grants. The configured Group DN permits
+login only. Every new stable directory identity receives Viewer, irrespective of
+other AD memberships. Admin assigns individual roles in Users. Synchronization
+preserves those roles but never overrides a denied membership/account check.
+Nested groups and AD primary-group membership are not expanded.
 Use dedicated direct groups. Disabling referrals prevents silently extending the
 trusted directory/search boundary; use search bases in the configured directory.
 
@@ -44,9 +46,12 @@ Public endpoints are health and the bounded login/enrollment exchanges only.
 | GET system/health, version, diagnostics | yes | yes | yes |
 | POST sources/{id}/discovery, /operations/discovery, /operations/plan, /sync-plan | no | yes | yes |
 | POST sources/{id}/sync-confirmations, /sync | no | yes | yes |
-| POST sources/test-connection, sources, sources/cancel-onboarding | no | no | yes |
-| GET/PATCH sources/{id}/placement; PATCH /name, /schedule; POST /remove | no | no | yes |
-| GET/POST catalog/{kind}; GET catalog-operations/{id} | no | no | yes |
+| POST sources/test-connection, sources and registration helper routes | no | yes | yes |
+| PATCH sources/{id}/schedule | no | yes | yes |
+| GET/PATCH sources/{id}/placement; PATCH /name; POST /remove | no | no | yes |
+| GET catalog/{kind} | no | yes | yes |
+| POST catalog/{kind}; GET catalog-operations/{id} | no | no | yes |
+| GET users; POST users/sync, users/role | no | no | yes |
 | GET/POST policy | no | no | yes |
 | GET/POST bootstrap and its helper routes | no | no | yes |
 | GET settings/ldap, settings/roles; POST settings/ldap, /test, /revoke | no | no | yes |
@@ -74,14 +79,14 @@ apply lock, digest/generation revalidation and source isolation remain necessary
 - Trusted issuer CA certificate(s) as PEM, without private keys. Blank uses system
   trust; it does not disable validation. The directory must present its intermediates.
 - Bind account DN and its password. Use a dedicated read-only account, never a domain
-  administrator. It needs LDAP bind and read/search of the selected users, mapped
-  groups, stable identity and account-state attributes; no create/update/delete rights.
+  administrator. It needs LDAP bind and read/search of the selected users, admission
+  group, stable identity and account-state attributes; no create/update/delete rights.
 - User and group base DNs in the served directory, user lookup attribute and object
   class, group class and member attribute, stable identity and account-control
   attribute. AD defaults: sAMAccountName/user, group/member, objectGUID and
   userAccountControl. Use the account's login attribute value at sign-in.
-- Exact direct group DNs and fixed roles. Confirm that the bind account can read
-  these groups and user accountExpires, pwdLastSet and
+- Exact admission Group DN. Confirm that the bind account can read the group,
+  user memberOf and accountExpires, pwdLastSet and
   msDS-User-Account-Control-Computed attributes used for account checks.
 
 The client checks disabled accounts and, when returned by the directory, lockout,
@@ -97,8 +102,8 @@ responses, passwords and authorization headers are never public diagnostics.
 ## Settings, storage and revocation
 
 Sign in with a recent administrator session; open Settings → Authentication / LDAP.
-Fill parameters, map groups, then Check configuration and Save settings. The check
-verifies bind, search bases and mapped groups; it does not prove a user's login.
+Fill parameters and Group DN, then Check configuration and Save settings. The check
+verifies bind, search bases and the admission group; it does not prove a user's login.
 An exact configuration/secret proof expires after five minutes and is bound to the
 administrator and current revision. A competing save requires reload and review.
 
@@ -131,7 +136,7 @@ an older recovery point. Protect backup archives as credentials, not ordinary lo
 
 Sessions: eight-hour absolute / 30-minute idle lifetime. Read authorization can use
 cached directory membership for at most 30 seconds; writes force revalidation.
-Revalidation failure revokes the session and fails closed. Settings/group mapping
+Revalidation failure revokes the session and fails closed. Settings/Group DN
 save and explicit directory-session revoke clear all directory sessions immediately.
 Local sessions survive directory configuration changes and directory outages.
 Sensitive settings/policy changes require a login within the preceding 15 minutes.
@@ -139,6 +144,15 @@ Twenty failed corporate logins in five minutes throttle directory login; the loc
 emergency login has its existing independent budget. Successful logins do not consume
 the corporate failure budget. Authentication changes/role changes/revocations and
 permission checks enter auth_audit without secrets.
+
+## Individual users and migration
+
+See [the current migration, synchronization bounds and evidence](live-audit-20260921.md).
+User membership snapshots are automatic every 300 seconds (up to 30 seconds polling
+delay), with a manual Admin action. Directory paging uses 200 entries and a 5000-user
+limit; incomplete/error responses preserve the prior snapshot. The Users API returns
+10 users per page to fit the existing 32 KiB Unix transport even with long Unicode
+names. Local emergency Admin cannot be modified through this page.
 
 ## Upgrade, backup and recovery
 
@@ -159,7 +173,7 @@ a missing referenced file fails verification. Older manifests remain readable.
 Use the new backup tool to read new manifests; older tools may reject new fields.
 Restore rewrites host-local mounts from the target root, never from a manifest path.
 It revokes local/LDAP sessions and transient LDAP check proofs/attempts, while retaining
-settings, CA, group mappings and secret references. Log in again after restore.
+settings, CA, individual users/roles and secret references. Log in again after restore.
 
 Host-side local administrator recovery remains the existing documented procedure.
 Never resolve directory outages by disabling TLS, assigning everyone Admin or

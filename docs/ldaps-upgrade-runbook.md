@@ -29,6 +29,15 @@ Use the installed backup tool before activation. A database-only manual dump is 
 an equivalent recovery point. Preserve the verified bundle with credential-level
 access restrictions and confirm the original service/timer state was restored.
 
+## Individual-role migration prerequisite
+
+Verify local emergency Admin login before upgrading. The current release migrates
+legacy group-role settings transactionally: one mapping becomes Group DN; multiple
+mappings disable directory login until Admin chooses and tests one Group DN. No
+group privileges are copied. Old LDAP sessions are revoked, and newly synchronized
+users start as Viewer. Assign individual roles in Users. Local Admin is preserved.
+See [the migration and acceptance details](live-audit-20260921.md).
+
 ## Select and install the reviewed release
 
 Set RELEASE_COMMIT to the approved published full SHA. Stop on a dirty checkout,
@@ -71,7 +80,7 @@ credentials, history, policies, local identity and DB volume must remain unchang
 
 Open the existing HTTPS public URL, sign in locally, then Settings → Authentication
 / LDAP. Supply verified CA/DNs/groups from the directory administrator, check and
-save, then test all three roles and the emergency local path. Follow the separate
+save, synchronize Users, assign individual roles, then test all three roles and the emergency local path. Follow the separate
 Microsoft AD acceptance list; isolated OpenLDAP tests do not establish AD acceptance.
 Run a reviewed manual sync and a scheduled cycle for each provider on the acceptance
 installation only when separately authorized. A manual empty plan is refused;

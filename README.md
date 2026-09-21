@@ -138,8 +138,10 @@ Business APIs require a server session; Origin/CSRF and Bootstrap READY are not 
 
 ### LDAPS and fixed roles
 
-Corporate sign-in supports verified LDAPS and explicit direct-group mappings to
-Viewer, Operator and Admin. Local emergency administrator access remains available.
+Corporate sign-in supports verified LDAPS and one explicit admission Group DN.
+New users receive Viewer; administrators assign individual Operator/Admin roles
+in Users. Local emergency administrator access remains available.
+See the [individual-role migration and live-audit evidence](docs/live-audit-20260921.md).
 See [the authorization and directory contract](docs/ldaps-rbac.md),
 [upgrade/recovery runbook](docs/ldaps-upgrade-runbook.md), and
 [local runtime evidence and AD acceptance limits](docs/ldaps-rbac-progress.md).

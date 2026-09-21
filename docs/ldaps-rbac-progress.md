@@ -1,5 +1,9 @@
 # LDAPS/RBAC — local validation evidence
 
+Current individual-user roles and Group DN supersede the original group-role model.
+See [the 2026-09-21 implementation and migration](live-audit-20260921.md).
+The original evidence below is historical.
+
 Base main: `5acd4c12d62c62072049b22f98e22d19a980a5af`, initially clean.
 Implementation and local gates completed. No push, deployment, live AD/hypervisor
 or VM connection was performed. Microsoft AD acceptance remains open.
