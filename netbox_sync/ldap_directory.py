@@ -20,7 +20,7 @@ class DirectoryError(RuntimeError):
 DEFAULT = dict(enabled=False, host='', port=636, bind_dn='', user_base='', group_base='',
     user_attribute='sAMAccountName', user_object_class='user', group_object_class='group',
     member_attribute='member', identity_attribute='objectGUID', account_control_attribute='userAccountControl',
-    ca_pem='', mappings=[])
+    ca_pem='', group_dn='')
 
 def validate(value):
     if not isinstance(value, dict) or set(value) != set(DEFAULT):
@@ -41,16 +41,8 @@ def validate(value):
     for key in ('user_attribute','user_object_class','group_object_class','member_attribute','identity_attribute','account_control_attribute'):
         if not isinstance(result[key],str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9-]{0,63}',result[key]):
             raise DirectoryError('LDAP_INVALID')
-    mappings=result['mappings']
-    if not isinstance(mappings,list) or not 1 <= len(mappings) <= 32:
+    if not isinstance(result['group_dn'],str) or not 1<=len(result['group_dn'])<=1024 or not result['group_dn'].strip() or '\x00' in result['group_dn']:
         raise DirectoryError('LDAP_INVALID')
-    seen=set()
-    for mapping in mappings:
-        if (not isinstance(mapping,dict) or set(mapping)!={'dn','role'} or mapping['role'] not in ('viewer','operator','admin')
-            or not isinstance(mapping['dn'],str) or not 1 <= len(mapping['dn']) <= 1024
-            or not mapping['dn'].strip() or '\x00' in mapping['dn'] or mapping['dn'].strip().casefold() in seen):
-            raise DirectoryError('LDAP_INVALID')
-        seen.add(mapping['dn'].strip().casefold())
     try:
         ssl.create_default_context(cadata=result['ca_pem'] or None)
     except (ssl.SSLError, ValueError):
@@ -66,7 +58,7 @@ class DirectoryClient:
             child=subprocess.run([sys.executable,'-B','-m','netbox_sync.ldap_directory'],
                 input=json.dumps(payload).encode(),stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
                 timeout=8,env={k:v for k,v in os.environ.items() if k in ('PATH','PYTHONPATH','SYSTEMROOT')})
-            if child.returncode or len(child.stdout)>8192:
+            if child.returncode or len(child.stdout)>2097152:
                 raise DirectoryError('LDAP_UNAVAILABLE')
             value=json.loads(child.stdout)
             if 'error' in value: raise DirectoryError(value['error'])
@@ -108,41 +100,65 @@ def execute(payload):
                 for base in (config['user_base'],config['group_base']):
                     if len(search(base,'(objectClass=*)',['objectClass'],ldap3.BASE,1))!=1:
                         raise DirectoryError('LDAP_ACCESS_DENIED')
-                # Every configured mapping must refer to a readable, existing group.
-                for mapping in config['mappings']:
-                    if len(search(mapping['dn'],'(objectClass='+escape_filter_chars(config['group_object_class'])+')',['objectClass'],ldap3.BASE,1))!=1:
-                        raise DirectoryError('LDAP_ACCESS_DENIED')
+                if len(search(config['group_dn'],'(objectClass='+escape_filter_chars(config['group_object_class'])+')',['objectClass'],ldap3.BASE,1))!=1:
+                    raise DirectoryError('LDAP_ACCESS_DENIED')
                 return {'ok':True,'nested_groups':False}
+            attrs=[config['identity_attribute'],config['account_control_attribute'],config['user_attribute'],'displayName','accountExpires','msDS-User-Account-Control-Computed','pwdLastSet']
+            def project(entry):
+                raw={k.casefold():v for k,v in entry.entry_raw_attributes.items()}
+                ids=raw.get(config['identity_attribute'].casefold(),[])
+                flags=raw.get(config['account_control_attribute'].casefold(),[])
+                names=raw.get(config['user_attribute'].casefold(),[])
+                if len(ids)!=1 or not ids[0] or len(flags)!=1 or len(names)!=1:
+                    raise DirectoryError('LDAP_ACCESS_DENIED')
+                try:
+                    import time
+                    expiry=int((raw.get('accountexpires') or [b'0'])[0])
+                    disabled=bool(int(flags[0]) & 2 or int((raw.get('msds-user-account-control-computed') or [b'0'])[0]) & (16|8388608)
+                        or raw.get('pwdlastset')==[b'0'] or expiry not in (0,9223372036854775807) and expiry/10000000-11644473600<=time.time())
+                    username=names[0].decode('utf-8')
+                    display=(raw.get('displayname') or names)[0].decode('utf-8')
+                    if not 1<=len(username)<=128 or len(display)>256: raise ValueError()
+                except (ValueError,TypeError,UnicodeError): raise DirectoryError('LDAP_ACCESS_DENIED') from None
+                return {'identity':ids[0].hex(),'username':username,'display_name':display,'active':not disabled}
+            if payload['operation']=='sync':
+                if len(search(config['group_dn'],'(objectClass='+escape_filter_chars(config['group_object_class'])+')',['objectClass'],ldap3.BASE,1))!=1:
+                    raise DirectoryError('LDAP_ACCESS_DENIED')
+                # Direct AD membership only; no recursive or primary-group expansion.
+                expression='(&(objectClass='+escape_filter_chars(config['user_object_class'])+')(memberOf='+escape_filter_chars(config['group_dn'])+'))'
+                users=[];cookie=None;seen=set();cookies=set()
+                for _ in range(40):
+                    bind.search(config['user_base'],expression,attributes=attrs,paged_size=200,paged_cookie=cookie,time_limit=2)
+                    if bind.result.get('result')!=0 or any(r.get('type')!='searchResEntry' for r in bind.response): raise DirectoryError('LDAP_UNAVAILABLE')
+                    for entry in bind.entries:
+                        row=project(entry)
+                        if row['identity'] in seen: raise DirectoryError('LDAP_UNAVAILABLE')
+                        seen.add(row['identity']);users.append(row)
+                    if len(users)>5000: raise DirectoryError('LDAP_UNAVAILABLE')
+                    control=bind.result.get('controls',{}).get('1.2.840.113556.1.4.319')
+                    if not control: raise DirectoryError('LDAP_UNAVAILABLE')
+                    cookie=control['value']['cookie']
+                    if not cookie: return {'users':users,'complete':True}
+                    if cookie in cookies: raise DirectoryError('LDAP_UNAVAILABLE')
+                    cookies.add(cookie)
+                raise DirectoryError('LDAP_UNAVAILABLE')
             username=payload.get('username')
             if not isinstance(username,str) or not 1<=len(username)<=128 or '\x00' in username:
                 raise DirectoryError('LDAP_ACCESS_DENIED')
             expression='(&(objectClass='+escape_filter_chars(config['user_object_class'])+')('+config['user_attribute']+'='+escape_filter_chars(username)+'))'
-            attrs=[config['identity_attribute'],config['account_control_attribute'],'accountExpires','msDS-User-Account-Control-Computed','pwdLastSet']
+            if payload.get('expected_id'):
+                identity=payload['expected_id']
+                if not isinstance(identity,str) or not re.fullmatch(r'[0-9a-f]{2,128}',identity) or len(identity)%2: raise DirectoryError('LDAP_ACCESS_DENIED')
+                encoded=''.join('\\'+identity[i:i+2] for i in range(0,len(identity),2))
+                expression='(&(objectClass='+escape_filter_chars(config['user_object_class'])+')('+config['identity_attribute']+'='+encoded+'))'
             entries=search(config['user_base'],expression,attrs,limit=2)
             if len(entries)!=1: raise DirectoryError('LDAP_ACCESS_DENIED')
             entry=entries[0]
-            rawattrs={k.casefold():v for k,v in entry.entry_raw_attributes.items()}
-            identifiers=rawattrs.get(config['identity_attribute'].casefold(),[])
-            flags=rawattrs.get(config['account_control_attribute'].casefold(),[])
-            if len(identifiers)!=1 or not identifiers[0] or len(flags)!=1:
-                raise DirectoryError('LDAP_ACCESS_DENIED')
-            try:
-                if int(flags[0]) & 2: raise DirectoryError('LDAP_ACCESS_DENIED')
-                if int((rawattrs.get('msds-user-account-control-computed') or [b'0'])[0]) & (16 | 8388608):
-                    raise DirectoryError('LDAP_ACCESS_DENIED')
-                expiry=int((rawattrs.get('accountexpires') or [b'0'])[0])
-                import time
-                if expiry not in (0,9223372036854775807) and expiry/10000000-11644473600 <= time.time():
-                    raise DirectoryError('LDAP_ACCESS_DENIED')
-                if rawattrs.get('pwdlastset')==[b'0']: raise DirectoryError('LDAP_ACCESS_DENIED')
-            except (ValueError,TypeError): raise DirectoryError('LDAP_ACCESS_DENIED') from None
-            identifier=identifiers[0].hex()
-            if payload.get('expected_id') and payload['expected_id']!=identifier:
-                raise DirectoryError('LDAP_ACCESS_DENIED')
-            groups=search(config['group_base'],'(&(objectClass='+escape_filter_chars(config['group_object_class'])+')('+config['member_attribute']+'='+escape_filter_chars(entry.entry_dn)+'))',['objectClass'])
-            dns={group.entry_dn.strip().casefold() for group in groups}
-            roles={mapping['role'] for mapping in config['mappings'] if mapping['dn'].strip().casefold() in dns}
-            if not roles: raise DirectoryError('LDAP_ACCESS_DENIED')
+            projected=project(entry)
+            if not projected['active']: raise DirectoryError('LDAP_ACCESS_DENIED')
+            if payload.get('expected_id') and payload['expected_id']!=projected['identity']: raise DirectoryError('LDAP_ACCESS_DENIED')
+            groups=search(config['group_dn'],'(&(objectClass='+escape_filter_chars(config['group_object_class'])+')('+config['member_attribute']+'='+escape_filter_chars(entry.entry_dn)+'))',['objectClass'],ldap3.BASE,1)
+            if len(groups)!=1: raise DirectoryError('LDAP_ACCESS_DENIED')
             if payload['operation']=='login':
                 password=payload.get('password')
                 if not isinstance(password,str) or not password or len(password)>256: raise DirectoryError('LDAP_ACCESS_DENIED')
@@ -151,8 +167,7 @@ def execute(payload):
                     if not user.bind(): raise DirectoryError('LDAP_ACCESS_DENIED')
                 finally: user.unbind()
             elif payload['operation']!='refresh': raise DirectoryError('LDAP_INVALID')
-            role=next(value for value in ('admin','operator','viewer') if value in roles)
-            return {'identity':identifier,'role':role}
+            return projected
         finally: bind.unbind()
 
 if __name__=='__main__':

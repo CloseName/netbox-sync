@@ -7,7 +7,9 @@ import uuid
 from .ldap_directory import DEFAULT, DirectoryError, validate
 from .roles import READ, permissions, matrix
 
-class DirectoryAuth:
+from .directory_users import DirectoryUsers
+
+class DirectoryAuth(DirectoryUsers):
     def settings(self):
         saved=self.state.get('ldap',{})
         return {'revision':saved.get('revision',0),'config':copy.deepcopy(saved.get('config',DEFAULT)),
@@ -27,15 +29,22 @@ class DirectoryAuth:
             try:
                 checked=self.directory.call(saved['config'],self.auth_secrets.read(saved['secret_key']),
                     'refresh',username=principal['username'],expected_id=principal['identity'])
-                if checked['role'] not in ('viewer','operator','admin') or checked['identity']!=principal['identity']:
+                if checked['identity']!=principal['identity'] or not checked.get('active'):
                     raise DirectoryError('LDAP_ACCESS_DENIED')
             except Exception as exc:
                 del self.state['ldap_sessions'][key]
                 self.event('ldap.session.revoked',principal['id'])
                 raise AuthError('AUTH_REQUIRED' if isinstance(exc,DirectoryError) and exc.code=='LDAP_ACCESS_DENIED' else 'AUTH_UNAVAILABLE') from None
+            user=self.directory_user(checked)
+            self.state.setdefault('ldap_users',{})[user['identity']]=user
+            checked['role']=user['role']
+            principal['username']=user['username']
             if principal['role']!=checked['role']:
                 self.event('ldap.role.changed',principal['id'],previous_role=principal['role'],role=checked['role'])
             principal['role']=checked['role'];value['checked']=self.now
+        user=self.state.get('ldap_users',{}).get(principal['identity'])
+        if not user or not user['active']: raise AuthError('AUTH_REQUIRED')
+        principal['role']=user['role']
         if permission is not None and permission not in permissions(principal['role']):
             raise AuthError('AUTH_DENIED')
         value['last_seen']=self.now
@@ -56,11 +65,13 @@ class DirectoryAuth:
             self.event('ldap.login.denied')
             raise AuthError('AUTH_INVALID' if exc.code=='LDAP_ACCESS_DENIED' else exc.code) from None
         except Exception: raise AuthError('AUTH_UNAVAILABLE') from None
-        if user.get('role') not in ('viewer','operator','admin') or not isinstance(user.get('identity'),str):
-            raise AuthError('AUTH_UNAVAILABLE')
+        try: user=self.directory_user(user)
+        except DirectoryError: raise AuthError('AUTH_UNAVAILABLE') from None
+        if not user['active']: raise AuthError('AUTH_INVALID')
+        self.state.setdefault('ldap_users',{})[user['identity']]=user
         attempts.pop()  # Successful corporate logins do not consume the failure budget.
         actor=str(uuid.uuid5(uuid.UUID(config['directory_id']),user['identity']))
-        principal=dict(id=actor,username=username,identity=user['identity'],role=user['role'],provider='ldap')
+        principal=dict(id=actor,username=user['username'],identity=user['identity'],role=user['role'],provider='ldap')
         sessions={k:v for k,v in self.state.get('ldap_sessions',{}).items() if v['expires']>self.now and v['last_seen']+1800>self.now}
         if len(sessions)>=256:
             del sessions[min(sessions,key=lambda k:sessions[k]['last_seen'])]
@@ -121,7 +132,11 @@ class DirectoryAuth:
         try: key=self.auth_secrets.create(password) if payload.get('bind_password') else previous['secret_key']
         except Exception: raise AuthError('AUTH_UNAVAILABLE') from None
         self.state['ldap']={'config':config,'secret_key':key,'revision':previous.get('revision',0)+1,
-            'directory_id':previous.get('directory_id') or str(uuid.uuid4())}
+            'directory_id':previous.get('directory_id') or str(uuid.uuid4()),'user_model':2}
+        if previous and any(config[k]!=previous['config'][k] for k in ('host','port','user_base','identity_attribute')):
+            self.state['ldap']['directory_id']=str(uuid.uuid4());self.state['ldap_users']={}
+        self.state['ldap_sync']={}
+        self.state['ldap_user_revision']=self.state.get('ldap_user_revision',0)+1
         self.state['ldap_sessions']={};self.state.pop('ldap_test',None)
         self.event('ldap.config.updated',principal['id'],revision=self.state['ldap']['revision'],enabled=config['enabled'])
         return self.settings()

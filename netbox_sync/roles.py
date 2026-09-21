@@ -1,6 +1,6 @@
 """Fixed roadmap roles. No client role assertion is authoritative."""
 READ = frozenset({'source.read', 'run.read', 'diagnostics.read'})
-OPERATE = READ | {'source.plan', 'source.apply', 'source.probe', 'source.register'}
+OPERATE = READ | {'source.plan', 'source.apply', 'source.probe', 'source.register', 'source.schedule'}
 ADMIN = OPERATE | {'catalog.create', 'policy.read', 'policy.write', 'source.probe',
     'source.register', 'source.configure', 'source.schedule', 'source.remove',
     'bootstrap.manage', 'identity.manage'}

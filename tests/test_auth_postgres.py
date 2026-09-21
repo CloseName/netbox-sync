@@ -84,3 +84,40 @@ def test_teams_migration_persistence_and_concurrent_assignment(migration_databas
     assert sum(isinstance(row,dict) for row in results)==1 and 'TEAM_CONFLICT' in results
     result=AuthStore(_safe_test_dsn(),registry.schema).call(dict(action='teams',session=session))
     assert result['revision']==2 and len(result['assignments'])==1
+
+
+def test_directory_migration_roles_sync_failure_and_restart_are_durable(migration_database,monkeypatch):
+    import copy
+    from psycopg.types.json import Jsonb
+    from tests.test_directory_auth import configured
+    from tests.test_directory_users import Snapshot
+    registry,engine=migration_database;_upgrade(registry,engine)
+    service,session,_=configured('admin')
+    # Fixture session timestamps must be current for the real clock in AuthStore.
+    import time
+    for value in service.state['sessions'].values():
+        value.update(issued=time.time(),last_seen=time.time(),expires=time.time()+3600)
+    saved=service.state['ldap'];saved.pop('user_model');saved['config'].pop('group_dn')
+    saved['config']['mappings']=[{'dn':'cn=allowed,dc=test','role':'admin'}]
+    with psycopg.connect(_safe_test_dsn()) as connection:
+        connection.execute(sql.SQL('UPDATE {} SET value=%s WHERE id=1').format(sql.Identifier(registry.schema,'auth_state')),(Jsonb(service.state),))
+    directory=Snapshot()
+    monkeypatch.setattr('netbox_sync.auth_store.DirectoryClient',lambda:directory)
+    monkeypatch.setattr('netbox_sync.auth_store.AuthSecrets',lambda:service.auth_secrets)
+    store=AuthStore(_safe_test_dsn(),registry.schema)
+    assert store.call(dict(action='ldap.users',session=session))['users']==[]
+    store.call(dict(action='ldap.users.sync',session=session))
+    users=store.call(dict(action='ldap.users',session=session));row=users['users'][0]
+    assert row['role']=='viewer'
+    store.call(dict(action='ldap.users.role',session=session,id=row['id'],role='operator',revision=users['revision']))
+    directory.failure='LDAP_UNAVAILABLE'
+    with pytest.raises(AuthError,match='LDAP_UNAVAILABLE'):store.call(dict(action='ldap.users.sync',session=session))
+    reopened=AuthStore(_safe_test_dsn(),registry.schema)
+    current=reopened.call(dict(action='ldap.users',session=session))
+    assert current['users'][0]['role']=='operator' and current['users'][0]['active']
+    assert current['sync']['error']=='LDAP_UNAVAILABLE' and current['sync']['success_at']
+    with psycopg.connect(_safe_test_dsn()) as connection:
+        events=connection.execute(sql.SQL('SELECT event FROM {}').format(sql.Identifier(registry.schema,'auth_audit'))).fetchall()
+    assert sum(e[0]['action']=='ldap.individual_roles.migrated' for e in events)==1
+    assert any(e[0]['action']=='ldap.user.role_changed' for e in events)
+    assert session not in str(events)

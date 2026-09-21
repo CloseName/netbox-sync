@@ -1,3 +1,4 @@
+import {DirectoryUsersPage} from './pages/DirectoryUsersPage';
 import {SessionControls,Permission} from './AuthGate';
 import {AuthenticationSettings} from './pages/AuthenticationSettings';
 import {DestinationPolicyPage} from "./pages/DestinationPolicyPage";
@@ -119,6 +120,7 @@ export function App() {
             />
             <Route path="/runs" element={<RunRoute />} />
             <Route path="/runs/:runId" element={<RunRoute />} />
+            <Route path="/users" element={<Permission permission="identity.manage"><DirectoryUsersPage/></Permission>}/>
             <Route path="/settings" element={<Permission permission="identity.manage">{location.search.includes('section=destinations')?<DestinationPolicyPage/>:<AuthenticationSettings/>}</Permission>} />
             <Route path="/policy" element={<Navigate replace to="/settings?section=destinations"/>} />
             <Route path="/system" element={<Navigate replace to="/#health"/>} />

@@ -14,7 +14,7 @@ class Directory:
     def call(self, config, secret, operation, **kwargs):
         self.calls.append(operation)
         if self.failure: raise DirectoryError(self.failure)
-        return {'identity': self.identity, 'role': self.role}
+        return {'identity': self.identity, 'username':kwargs.get('username','person'), 'display_name':'Person','active':True}
 
 class Secrets:
     def __init__(self): self.values = {'bind-ref': 'fixture-bind-only'}
@@ -29,11 +29,12 @@ def configured(role='viewer'):
     service = AuthPolicy(initial_state(), clock=lambda:1000, directory=directory, auth_secrets=Secrets())
     invite = service.root('invite', {})['invitation']
     local = service.call(dict(action='enroll', invitation=invite, username='admin', password='fixture-local-password'))['session']
-    service.state['ldap'] = dict(revision=1, directory_id=str(uuid.uuid4()), secret_key='bind-ref', config={
+    service.state['ldap'] = dict(user_model=2, revision=1, directory_id=str(uuid.uuid4()), secret_key='bind-ref', config={
         **copy.deepcopy(DEFAULT), 'enabled':True, 'host':'directory.example.test',
         'bind_dn':'cn=reader,dc=test', 'user_base':'ou=people,dc=test', 'group_base':'ou=groups,dc=test',
-        'mappings':[{'dn':'cn=readers,ou=groups,dc=test','role':'viewer'}]})
+        'group_dn':'cn=readers,ou=groups,dc=test'})
     token = service.call(dict(action='login', provider='ldap', username='person', password='fixture-user-password'))['session']
+    service.state['ldap_users'][directory.identity]['role']=role
     return service, local, token
 
 def auth(service, token, permission=None):
@@ -56,8 +57,8 @@ def test_exact_role_permissions_and_no_caller_role_assertion(role):
 
 def test_read_cache_bound_write_revalidation_and_no_privilege_after_outage():
     service, local, token = configured('operator')
-    service.directory.role = 'viewer'
-    assert auth(service, token, 'source.read')['role'] == 'operator'
+    service.state['ldap_users'][service.directory.identity]['role'] = 'viewer'
+    assert auth(service, token, 'source.read')['role'] == 'viewer'
     with pytest.raises(AuthError, match='AUTH_DENIED'): auth(service, token, 'source.apply')
     assert auth(service, token)['role'] == 'viewer'
     service.directory.failure = 'LDAP_UNAVAILABLE'
@@ -112,7 +113,7 @@ def test_test_save_revision_proof_and_secret_projection():
     payload = dict(session=local, expected_revision=1, config=config, bind_password='')
     with pytest.raises(AuthError, match='LDAP_INVALID'): service.call(dict(action='ldap.save', **payload))
     service.call(dict(action='ldap.test', **payload))
-    altered = copy.deepcopy(payload); altered['config']['mappings'][0]['role']='operator'
+    altered = copy.deepcopy(payload); altered['config']['group_dn']='cn=other,dc=test'
     with pytest.raises(AuthError, match='LDAP_INVALID'): service.call(dict(action='ldap.save', **altered))
     result = service.call(dict(action='ldap.save', **payload))
     assert result['revision'] == 2 and result['bind_secret_present'] is True
@@ -211,7 +212,7 @@ def test_role_revocation_after_prepare_blocks_apply_dispatch():
         response=http.post('/api/v1/sources/pve-fixture/sync-confirmations',headers=headers,json={'plan_digest':'b'*64,'confirmed':True})
         assert response.status_code==200
         assert worker.actor==auth(service,token)['principal_id']
-        service.directory.role='viewer'
+        service.state['ldap_users'][service.directory.identity]['role']='viewer'
         response=http.post('/api/v1/sources/pve-fixture/sync',headers=headers,json={'confirmation_token':'a'*64})
         assert response.status_code==403 and response.json()['error']['code']=='AUTH_DENIED'
         assert not worker.applied
@@ -262,6 +263,34 @@ def test_empty_group_mapping_refused_before_directory_access(dn):
     from netbox_sync.ldap_directory import validate
     service, _, _=configured()
     config=copy.deepcopy(service.state['ldap']['config'])
-    config['mappings']=[{'dn':dn,'role':'viewer'}]
+    config['group_dn']=dn
     with pytest.raises(DirectoryError, match='LDAP_INVALID'):
         validate(config)
+
+
+@pytest.mark.parametrize('role',['viewer','operator','admin'])
+def test_http_schedule_permission_reaches_handler_only_for_operator_and_admin(role):
+    from types import SimpleNamespace
+    from fastapi.testclient import TestClient
+    from netbox_sync.api.app import create_app
+    from netbox_sync.api.settings import ApiSettings
+    from netbox_sync.api.auth import COOKIE
+    service,_,token=configured(role)
+    class Transport:
+        def call(self,action,**payload): return service.call(dict(action=action,**payload))
+    updates=[]
+    class Schedule:
+        def update(self,source,payload):
+            updates.append((source,payload))
+            return SimpleNamespace(source_instance=source,sync_enabled=payload['sync_enabled'],
+                sync_interval_seconds=payload['sync_interval_seconds'],scheduler_state='WAITING',
+                last_scheduled_run_at=None,next_expected_at=None)
+    with TestClient(create_app(settings=ApiSettings(bootstrap_socket=''),auth_client=Transport(),
+                    schedule_service=Schedule()),base_url='https://localhost:8000') as http:
+        http.cookies.set(COOKIE,token)
+        response=http.patch('/api/v1/sources/pve-fixture/schedule',
+            headers={'Origin':'https://localhost:8000','X-NetBox-Sync-CSRF':'same-origin'},
+            json={'sync_enabled':True,'sync_interval_seconds':600,'expected_sync_enabled':False,'expected_sync_interval_seconds':600})
+    assert response.status_code==(403 if role=='viewer' else 200)
+    assert len(updates)==(0 if role=='viewer' else 1)
+    if role!='viewer': assert service.directory.calls[-1]=='refresh'

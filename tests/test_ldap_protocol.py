@@ -38,7 +38,8 @@ def directory(tmp_path):
 attributetype ( 1.3.6.1.4.1.55555.100.2 NAME 'accountExpires' EQUALITY integerMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
 attributetype ( 1.3.6.1.4.1.55555.100.3 NAME 'pwdLastSet' EQUALITY integerMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
 attributetype ( 1.3.6.1.4.1.55555.100.4 NAME 'msDS-User-Account-Control-Computed' EQUALITY integerMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
-objectclass ( 1.3.6.1.4.1.55555.100.5 NAME 'fixtureAccount' SUP top AUXILIARY MAY ( userAccountControl $ accountExpires $ pwdLastSet $ msDS-User-Account-Control-Computed ) )
+attributetype ( 1.3.6.1.4.1.55555.100.6 NAME 'memberOf' EQUALITY distinguishedNameMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.12 )
+objectclass ( 1.3.6.1.4.1.55555.100.5 NAME 'fixtureAccount' SUP top AUXILIARY MAY ( memberOf $ userAccountControl $ accountExpires $ pwdLastSet $ msDS-User-Account-Control-Computed ) )
 """)
     db = tmp_path/'database'; db.mkdir()
     root_secret, bind_secret, user_secret = (secrets.token_urlsafe(24) for _ in range(3))
@@ -68,6 +69,8 @@ access to * by users read by * none
         entries.append(f"dn: uid={name},ou=people,dc=fixture\nobjectClass: inetOrgPerson\nobjectClass: fixtureAccount\nuid: {name}\ncn: {name}\nsn: {name}\nuserAccountControl: 512\nuserPassword: {user_secret}")
     for role in ('viewer','operator','admin'):
         entries.append(f"dn: cn={role},ou=groups,dc=fixture\nobjectClass: groupOfNames\ncn: {role}\nmember: uid={role},ou=people,dc=fixture\nmember: uid=multi,ou=people,dc=fixture")
+    entries=[entry+('\nmemberOf: cn=allowed,ou=groups,dc=fixture' if entry.startswith('dn: uid=') and not entry.startswith('dn: uid=unmapped,') else '') for entry in entries]
+    entries.append('dn: cn=allowed,ou=groups,dc=fixture\nobjectClass: groupOfNames\ncn: allowed\n'+'\n'.join('member: uid='+name+',ou=people,dc=fixture' for name in ('viewer','operator','admin','multi')))
     ldif = tmp_path/'seed.ldif'; protected(ldif,'\n\n'.join(entries)+'\n')
     quiet(['slapadd','-f',str(configfile),'-l',str(ldif)])
     with socket.socket() as sock:
@@ -82,7 +85,7 @@ access to * by users read by * none
         config={**copy.deepcopy(DEFAULT),'enabled':True,'host':'localhost','port':port,'bind_dn':'cn=reader,dc=fixture',
             'user_base':'ou=people,dc=fixture','group_base':'ou=groups,dc=fixture','user_attribute':'uid',
             'user_object_class':'inetOrgPerson','group_object_class':'groupOfNames','identity_attribute':'entryUUID',
-            'ca_pem':ca.read_text(),'mappings':[{'dn':f'cn={role},ou=groups,dc=fixture','role':role} for role in ('viewer','operator','admin')]}
+            'ca_pem':ca.read_text(),'group_dn':'cn=allowed,ou=groups,dc=fixture'}
         tls=ldap3.Tls(validate=ssl.CERT_REQUIRED,ca_certs_file=str(ca),valid_names=['localhost'])
         manager=ldap3.Connection(ldap3.Server('localhost',port=port,use_ssl=True,tls=tls),user='cn=manager,dc=fixture',password=root_secret,auto_bind=True)
         yield config,bind_secret,user_secret,manager
@@ -96,7 +99,7 @@ def test_real_ldaps_roles_password_filter_and_refresh(directory):
     assert client.call(config,bind,'test')['ok']
     for role in ('viewer','operator','admin','multi'):
         result=client.call(config,bind,'login',username=role,password=user)
-        assert result['role']==('admin' if role=='multi' else role)
+        assert result['active'] and result['username']==role and 'role' not in result
         assert client.call(config,bind,'refresh',username=role,expected_id=result['identity'])==result
     for name,password in [('viewer','incorrect'),('unknown',user),('unmapped',user),('*',user),('viewer)(uid=*)',user)]:
         with pytest.raises(DirectoryError,match='LDAP_ACCESS_DENIED'): client.call(config,bind,'login',username=name,password=password)
@@ -116,7 +119,7 @@ def test_real_ldaps_role_revocation_disable_expiry(directory):
     import ldap3
     config,bind,user,manager=directory; client=DirectoryClient()
     identity=client.call(config,bind,'login',username='operator',password=user)['identity']
-    assert manager.modify('cn=operator,ou=groups,dc=fixture',{'member':[(ldap3.MODIFY_DELETE,['uid=operator,ou=people,dc=fixture'])]})
+    assert manager.modify('cn=allowed,ou=groups,dc=fixture',{'member':[(ldap3.MODIFY_DELETE,['uid=operator,ou=people,dc=fixture'])]})
     with pytest.raises(DirectoryError,match='LDAP_ACCESS_DENIED'): client.call(config,bind,'refresh',username='operator',expected_id=identity)
     for attribute,value in [('userAccountControl','514'),('msDS-User-Account-Control-Computed','16'),('accountExpires','1'),('pwdLastSet','0')]:
         assert manager.modify('uid=viewer,ou=people,dc=fixture',{attribute:[(ldap3.MODIFY_REPLACE,[value])]})
@@ -170,6 +173,13 @@ def test_real_directory_through_http_settings_login_and_logout(directory,tmp_pat
         assert bind not in saved.text and 'secret_key' not in saved.text
         files=list(secret_root.iterdir()); assert len(files)==1
         assert files[0].stat().st_mode & 0o777 == 0o600
+        assert http.post('/api/v1/users/sync',headers=headers,json={}).status_code==200
+        users=http.get('/api/v1/users').json()
+        assert len(users['users'])==4 and all(row['role']=='viewer' for row in users['users'])
+        for username,role in [('operator','operator'),('multi','admin')]:
+            users=http.get('/api/v1/users').json()
+            row=next(row for row in users['users'] if row['username']==username)
+            assert http.post('/api/v1/users/role',headers=headers,json={'id':row['id'],'role':role,'revision':users['revision']}).status_code==200
         assert http.post('/api/v1/auth/logout',headers=headers,json={}).status_code==200
         for role in ('viewer','operator','admin'):
             response=http.post('/api/v1/auth/login',headers=headers,json=dict(username=('multi' if role=='admin' else role),password=password))
@@ -183,3 +193,39 @@ def test_real_directory_through_http_settings_login_and_logout(directory,tmp_pat
             assert http.get('/api/v1/auth/me').status_code==401
         assert bind not in caplog.text and password not in caplog.text
         assert bind not in str(service.state) and password not in str(service.state)
+
+
+def test_real_paged_sync_before_login_rename_and_disabled_account(directory):
+    import ldap3
+    config,bind,user,manager=directory
+    for index in range(205):
+        assert manager.add(f'uid=bulk{index},ou=people,dc=fixture',['inetOrgPerson','fixtureAccount'],
+            {'uid':f'bulk{index}','cn':f'Bulk {index}','sn':'Fixture','userAccountControl':512,
+             'memberOf':config['group_dn']})
+    client=DirectoryClient()
+    snapshot=client.call(config,bind,'sync')
+    assert snapshot['complete'] and len(snapshot['users'])==209
+    prior=next(row for row in snapshot['users'] if row['username']=='viewer')
+    assert manager.modify_dn('uid=viewer,ou=people,dc=fixture','uid=renamed')
+    assert manager.modify(config['group_dn'],{'member':[(ldap3.MODIFY_DELETE,['uid=viewer,ou=people,dc=fixture']),(ldap3.MODIFY_ADD,['uid=renamed,ou=people,dc=fixture'])]})
+    assert manager.modify('uid=renamed,ou=people,dc=fixture',{'displayName':[(ldap3.MODIFY_REPLACE,['Renamed person'])]})
+    current=client.call(config,bind,'refresh',username='viewer',expected_id=prior['identity'])
+    assert current['username']=='renamed' and current['identity']==prior['identity']
+    assert manager.modify('uid=renamed,ou=people,dc=fixture',{'userAccountControl':[(ldap3.MODIFY_REPLACE,[514])]})
+    snapshot=client.call(config,bind,'sync')
+    assert not next(row for row in snapshot['users'] if row['identity']==prior['identity'])['active']
+
+
+def test_nested_group_members_are_not_admitted_or_synchronized(directory):
+    config,bind,password,manager=directory
+    import ldap3
+    user='uid=unmapped,ou=people,dc=fixture'
+    child='cn=nested,ou=groups,dc=fixture'
+    assert manager.add(child,['groupOfNames'],{'cn':'nested','member':user})
+    assert manager.modify(config['group_dn'],{'member':[(ldap3.MODIFY_ADD,[child])]})
+    assert manager.modify(user,{'memberOf':[(ldap3.MODIFY_ADD,[child])]})
+    client=DirectoryClient()
+    users=client.call(config,bind,'sync')['users']
+    assert 'unmapped' not in {u['username'] for u in users}
+    with pytest.raises(DirectoryError,match='LDAP_ACCESS_DENIED'):
+        client.call(config,bind,'login',username='unmapped',password=password)

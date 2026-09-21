@@ -20,7 +20,8 @@ with tempfile.TemporaryDirectory() as temporary:
                 payload=json.loads(command.read_text());command.unlink()
                 action=payload['action']
                 if action in ('remove-operator','add-operator'):
-                    ok=manager.modify('cn=operator,ou=groups,dc=fixture',{'member':[(ldap3.MODIFY_DELETE if action=='remove-operator' else ldap3.MODIFY_ADD,['uid=operator,ou=people,dc=fixture'])]})
+                    ok=manager.modify('cn=allowed,ou=groups,dc=fixture',{'member':[(ldap3.MODIFY_DELETE if action=='remove-operator' else ldap3.MODIFY_ADD,['uid=operator,ou=people,dc=fixture'])]})
+                    ok = ok and manager.modify('uid=operator,ou=people,dc=fixture', {'memberOf': [(ldap3.MODIFY_DELETE if action=='remove-operator' else ldap3.MODIFY_ADD, ['cn=allowed,ou=groups,dc=fixture'])]})
                 elif action in ('disable-operator','enable-operator'):
                     ok=manager.modify('uid=operator,ou=people,dc=fixture',{'userAccountControl':[(ldap3.MODIFY_REPLACE,['514' if action=='disable-operator' else '512'])]})
                 else: ok=False

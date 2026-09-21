@@ -352,6 +352,8 @@ if pgmode == 'bundled' and os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST') !
     assert restored['sessions']=={} and restored['invitation'] is None and restored['receipts']=={}
     assert restored['mode']=='legacy' and restored['ceiling'] is None
     assert restored.get('ldap')==auth_before.get('ldap')
+    assert restored.get('ldap_users')==auth_before.get('ldap_users')
+    assert restored.get('ldap_user_revision')==auth_before.get('ldap_user_revision')
     assert restored['ldap_sessions']=={} and restored['ldap_test']=={}
     for name in ('sources','netbox','auth'):
         for path in (root/'secrets'/name).rglob('*'):

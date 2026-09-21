@@ -56,11 +56,13 @@ class AuthPolicy(DirectoryAuth):
         self.baseline = baseline or EgressPolicy()
         self.now = clock()
         self.audit = []
+        self.migrate_directory()
 
     def event(self, action, actor=None, **details):
         self.audit.append({'action': action, 'actor': actor, 'at': self.now, **details})
 
     def root(self, action, payload):
+        if action == 'ldap.sync.due': return self.sync_directory(due=True)
         if action == 'status':
             return {'ready': True, 'enrolled': bool(self.state['principal'])}
         if action in ('invite', 'recover'):
@@ -206,6 +208,8 @@ class AuthPolicy(DirectoryAuth):
             if payload.get('audit') is True:
                 self.event('permission.checked',actor,permission=payload.get('permission'),role=principal['role'])
             return {'principal_id': actor, 'username': principal['username'], 'role':principal['role'], 'provider':principal['provider'], 'permissions': sorted(permissions(principal['role']))}
+        if action in ('ldap.users','ldap.users.sync','ldap.users.role'):
+            return self.users_action(action,payload,principal)
         if action in ('ldap.settings','ldap.test','ldap.save','ldap.revoke','roles'):
             return self.directory_action(action,payload,principal)
         if action == 'logout':

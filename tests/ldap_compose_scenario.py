@@ -34,6 +34,20 @@ for service in install._runtime_services():
         assert project+'_netbox-sync-ldap-egress' not in container['NetworkSettings']['Networks']
     if service not in ('netbox-sync-auth-worker','netbox-sync-secret-broker'):
         assert not any(m['Destination'] in ('/var/lib/netbox-sync/auth-secrets','/run/netbox-sync-auth-secrets') for m in container['Mounts'])
+def assign_individual_fixture_roles():
+    assert request({},'/api/v1/users/sync')['status']==200
+    for username,role in [('operator','operator'),('multi','admin')]:
+        users=request(None,'/api/v1/users','GET')['body']
+        row=next(u for u in users['users'] if u['username']==username and u['active'])
+        assert request(dict(id=row['id'],role=role,revision=users['revision']),'/api/v1/users/role')['status']==200
+# The background process must populate the group before any directory login.
+for _ in range(80):
+    first_users=request(None,'/api/v1/users','GET')['body']
+    if first_users['users']: break
+    time.sleep(.5)
+else: raise RuntimeError('Automatic directory synchronization did not populate users')
+assert all(u['role']=='viewer' for u in first_users['users'])
+assign_individual_fixture_roles()
 for role in ('viewer','operator','admin'):
     login_response=request(dict(username=('multi' if role=='admin' else role),password=ldap_data['password']),'/api/v1/auth/login')
     assert login_response['status']==200,login_response
@@ -84,6 +98,7 @@ change=dict(expected_revision=1,config=ldap_config,bind_password=ldap_data['bind
 assert request(change,'/api/v1/settings/ldap/test')['status']==200
 assert request(change,'/api/v1/settings/ldap')['status']==200
 ldap_saved=request(None,'/api/v1/settings/ldap','GET')['body']
+assign_individual_fixture_roles()
 print('PASS production LDAPS: Settings/test/save/login roles, CAS, CA rejection, read-only secret mount, network isolation and emergency access during outage',flush=True)
 
 from concurrent.futures import ThreadPoolExecutor

@@ -1,10 +1,6 @@
 """Strict write contract; bind secrets are never part of a read projection."""
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
-class GroupRole(BaseModel):
-    model_config=ConfigDict(extra='forbid')
-    dn: str=Field(min_length=1,max_length=1024)
-    role: Literal['viewer','operator','admin']
 class DirectoryConfig(BaseModel):
     model_config=ConfigDict(extra='forbid')
     enabled: bool
@@ -20,7 +16,7 @@ class DirectoryConfig(BaseModel):
     identity_attribute: str=Field(min_length=1,max_length=64)
     account_control_attribute: str=Field(min_length=1,max_length=64)
     ca_pem: str=Field(max_length=8192)
-    mappings: list[GroupRole]=Field(min_length=1,max_length=32)
+    group_dn: str=Field(min_length=1,max_length=1024)
 class DirectoryChange(BaseModel):
     model_config=ConfigDict(extra='forbid')
     expected_revision: int=Field(ge=0,strict=True)

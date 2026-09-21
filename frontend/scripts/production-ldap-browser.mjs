@@ -50,7 +50,7 @@ try {
   if(role==='admin')await expect(page.getByRole('link',{name:'Settings',exact:true}).first()).toBeVisible();
   else await expect(page.getByRole('link',{name:'Settings',exact:true})).toHaveCount(0);
   await page.goto('https://sync.example.test/sources');
-  if(role==='admin')await expect(page.getByRole('link',{name:'Add Source',exact:true}).first()).toBeVisible();
+  if(role!=='viewer')await expect(page.getByRole('link',{name:'Add Source',exact:true}).first()).toBeVisible();
   else await expect(page.getByRole('link',{name:'Add Source',exact:true})).toHaveCount(0);
   await page.screenshot({path:'frontend/test-results/production-ldap-'+role+'.png',fullPage:true});
  }

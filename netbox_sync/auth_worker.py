@@ -23,6 +23,14 @@ def admin():
     serve(ADMIN_SOCKET, lambda payload: store().call(payload, root=True), allowed_uid=0)
 
 
+def directory_sync():
+    import time
+    while True:
+        try: store().call({'action':'ldap.sync.due'},root=True)
+        except Exception: pass  # Safe error and last success are persisted by AuthStore.
+        time.sleep(30)
+
+
 def main():
     if len(sys.argv) > 1:
         if os.geteuid() != 0:
@@ -44,9 +52,13 @@ def main():
     signal.signal(signal.SIGTERM, stop)
     process = multiprocessing.Process(target=admin)
     process.start()
+    sync_process=multiprocessing.Process(target=directory_sync)
+    sync_process.start()
     try:
         serve(SOCKET, lambda payload: store().call(payload), allowed_uid=10001, additional_uids=(0,))
     finally:
+        sync_process.terminate()
+        sync_process.join(5)
         process.terminate()
         process.join(5)
 

@@ -1,7 +1,7 @@
 """Explicit server route permissions and bounded auth RPC."""
 import re
 from typing import Literal
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from ..auth_policy import AuthError, CODES
@@ -10,6 +10,8 @@ from ..local_control import request, ControlError
 COOKIE = '__Host-netbox-sync-session'
 PUBLIC = {('GET', '/api/v1/health'), ('GET', '/api/v1/auth/status'), ('POST', '/api/v1/auth/login'), ('POST', '/api/v1/auth/enroll')}
 ROUTES = (
+    ('GET', r'/api/v1/users', 'identity.manage'),
+    ('POST', r'/api/v1/users/(sync|role)', 'identity.manage'),
     ('GET', r'/api/v1/settings/(ldap|roles)', 'identity.manage'),
     ('POST', r'/api/v1/settings/ldap(?:/(test|revoke))?', 'identity.manage'),
     ('POST', r'/api/v1/catalog/[^/]+', 'catalog.create'),
@@ -75,6 +77,13 @@ class PolicyChange(BaseModel):
     host: str = Field(min_length=1, max_length=253)
     expected_revision: int = Field(ge=0, strict=True)
     request_id: str = Field(min_length=16, max_length=64)
+
+
+class DirectoryRoleChange(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    id: str=Field(min_length=36,max_length=36)
+    role: Literal['viewer','operator','admin']
+    revision: int=Field(ge=0,strict=True)
 
 
 def routes(client, source_reader=None):
@@ -153,5 +162,17 @@ def routes(client, source_reader=None):
     @router.post('/settings/ldap/revoke')
     def revoke_ldap(request: Request):
         return client.call('ldap.revoke',session=request.cookies.get(COOKIE))
+
+    @router.get('/users')
+    def directory_users(request: Request, q: str=Query(default='',max_length=128), offset: int=Query(default=0,ge=0,le=10000)):
+        return client.call('ldap.users',session=request.cookies.get(COOKIE),q=q,offset=offset)
+
+    @router.post('/users/sync')
+    def sync_users(request: Request):
+        return client.call('ldap.users.sync',session=request.cookies.get(COOKIE))
+
+    @router.post('/users/role')
+    def user_role(request: Request, payload: DirectoryRoleChange):
+        return client.call('ldap.users.role',session=request.cookies.get(COOKIE),**payload.model_dump())
 
     return router

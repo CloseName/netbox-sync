@@ -3,7 +3,7 @@ import {test,expect} from '@playwright/test';
 const read=['source.read','run.read','diagnostics.read'];
 const operate=[...read,'source.plan','source.apply'];
 const admin=[...operate,'identity.manage','bootstrap.manage','policy.read','policy.write','source.register','source.configure','source.schedule','source.remove'];
-const config={enabled:false,host:'directory.example.test',port:636,bind_dn:'cn=reader,dc=example,dc=test',user_base:'ou=people,dc=example,dc=test',group_base:'ou=groups,dc=example,dc=test',user_attribute:'sAMAccountName',user_object_class:'user',group_object_class:'group',member_attribute:'member',identity_attribute:'objectGUID',account_control_attribute:'userAccountControl',ca_pem:'',mappings:[{dn:'cn=operators,ou=groups,dc=example,dc=test',role:'operator'}]};
+const config={enabled:false,host:'directory.example.test',port:636,bind_dn:'cn=reader,dc=example,dc=test',user_base:'ou=people,dc=example,dc=test',group_base:'ou=groups,dc=example,dc=test',user_attribute:'sAMAccountName',user_object_class:'user',group_object_class:'group',member_attribute:'member',identity_attribute:'objectGUID',account_control_attribute:'userAccountControl',ca_pem:'',group_dn:'cn=operators,ou=groups,dc=example,dc=test'};
 for(const lang of ['en','ru'])for(const theme of ['light','dark'] as const)for(const width of [1440,390])
 test(`LDAP settings test save and roles ${lang} ${theme} ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});await page.emulateMedia({colorScheme:theme});
@@ -66,10 +66,10 @@ for(const failure of ['AUTH_UNAVAILABLE','LDAP_TLS_FAILED','API_VALIDATION_FAILE
  await page.goto('/settings');await expect(page.getByRole('heading',{name:'Corporate directory'})).toBeVisible();
  await page.getByLabel('Directory hostname',{exact:true}).fill('edited.example.test');
  await page.getByLabel('Bind account password',{exact:true}).fill('transient-secret');
- await page.getByRole('button',{name:'Add group',exact:true}).click();
+ await page.getByLabel('Group DN',{exact:true}).fill('');
  await page.getByRole('button',{name:'Check configuration',exact:true}).click();
- expect(requests).toBe(0);await expect(page.getByText('Enter a group DN or remove this row.')).toBeVisible();
- await page.getByRole('button',{name:'Remove mapping'}).last().click();
+ expect(requests).toBe(0);await expect(page.getByText('Enter the permitted Group DN.')).toBeVisible();
+ await page.getByLabel('Group DN',{exact:true}).fill(config.group_dn);
  await page.getByLabel('Trusted CA certificates (PEM)',{exact:true}).fill('not a certificate');
  await page.getByRole('button',{name:'Check configuration',exact:true}).click();expect(requests).toBe(0);
  await page.getByLabel('Trusted CA certificates (PEM)',{exact:true}).fill('');
