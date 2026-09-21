@@ -9,11 +9,14 @@ import { buildSync } from 'esbuild';
 const filename = fileURLToPath(import.meta.url);
 const compiled = buildSync({
   entryPoints: [fileURLToPath(new URL('../src/pages/AddSourcePage.tsx', import.meta.url))],
-  bundle: true, platform: 'node', format: 'cjs', write: false, external: ['react', 'react/jsx-runtime'],
+  bundle: true, platform: 'node', format: 'cjs', write: false, external: ['react', 'react/jsx-runtime','react-router-dom'],
 }).outputFiles[0].text;
 const componentModule = new Module(filename);
 componentModule.filename = filename;
 componentModule.paths = Module._nodeModulePaths(fileURLToPath(new URL('..', import.meta.url)));
+let search = new URLSearchParams();
+const requireOriginal=componentModule.require.bind(componentModule);
+componentModule.require=id=>id==='react-router-dom'?{Link:'a',useNavigate:()=>()=>{},useSearchParams:()=>[search,value=>{search=new URLSearchParams(value)}],useBlocker:()=>({state:'unblocked'})}:requireOriginal(id);
 componentModule._compile(compiled, filename);
 const { AddSourcePage } = componentModule.exports;
 
@@ -24,8 +27,11 @@ function elements(node) {
 }
 
 function setup(context) {
+  search=new URLSearchParams();
+  context.mock.method(React, "useCallback", callback => callback);
+  context.mock.method(React,'useContext',()=>({principal:{permissions:['source.configure','policy.write']}}));
   context.mock.method(React, 'useSyncExternalStore', (_subscribe,snapshot) => snapshot());
-  context.mock.method(React, "useRef", () => ({current: null}));
+  context.mock.method(React, "useRef", value => ({current:value}));
   context.mock.method(React, "useEffect", () => {});
   const state = [];
   let cursor = 0;
@@ -58,7 +64,7 @@ test('source type changes clear credential form and ESXi has no token field', (c
   assert.ok(!app.render().some((element) => element.props?.name === 'token_id'));
 });
 
-test('test-review-confirm-register clears credentials and keeps sync disabled', async (context) => {
+test('test-review-add clears credentials after success and keeps sync disabled', async (context) => {
   const app = setup(context);
   let calls = 0;
   const source = {
@@ -68,6 +74,7 @@ test('test-review-confirm-register clears credentials and keeps sync disabled', 
     device_type_slug: 'server', cluster_type_slug: 'pve', legacy_identity_owner: false, status: 'sync_disabled',
   };
   context.mock.method(globalThis, 'fetch', async (_path, options) => {
+    if(_path.endsWith('review-placement'))return Response.json({valid:true});
     calls++;
     const input = JSON.parse(options.body);
     if (calls === 1) {
@@ -85,23 +92,25 @@ test('test-review-confirm-register clears credentials and keeps sync disabled', 
   assert.ok(!JSON.stringify(app.state).includes('FAKE_SECRET'));
   assert.ok(!app.render().some((element) => element.props?.name === 'secret'));
   const placement=app.render().find(element=>element.props?.setDraft);
-  const row={id:1,name:'Test',slug:'test',fingerprint:'a'.repeat(64)};
+  const row={id:1,name:'New',slug:'test',fingerprint:'a'.repeat(64),scope_type:'dcim.site',scope_id:1,type:{id:1}};
   placement.props.setDraft({...placement.props.draft,source_instance:'new-source',name:'New',references:Object.fromEntries(['site','cluster','platform','device_role','cluster_type'].map(kind=>[kind,row])),host_types:{'host-a':row}});
   const registration = { ...source, interval: '600' };
   await app.render().find((element) => element.type === 'form').props.onSubmit(event(registration));
   assert.equal(calls, 1, 'No registration before confirmation');
-  await app.render().find((element) => element.type === 'form').props.onSubmit(event({ ...registration, confirm: 'on' }));
+  app.render().find(element=>element.type==='button'&&element.props.type==='button'&&element.props.className==='primary').props.onClick({currentTarget:{form:{reportValidity:()=>true}}});
+  await new Promise(resolve=>setImmediate(resolve));
+  await app.render().find((element) => element.type === 'form').props.onSubmit(event(registration));
   assert.equal(calls, 2);
-  assert.ok(app.render().some((element) => element.props?.title === 'Source registered'));
+  assert.ok(app.state.some(value=>value?.source_instance==='new-source'&&value?.enabled===true));
   assert.ok(!JSON.stringify(app.state).includes('opaque-token'));
 });
 
-test('failed connection test clears credentials and cannot reach registration', async (context) => {
+test('failed connection test retains fields and cannot reach registration', async (context) => {
   const app = setup(context);
   context.mock.method(globalThis, 'fetch', async () => new Response('RAW_SECRET_ERROR', { status: 422 }));
   const input = event({ username: 'user@realm', token_id: 'token', secret: 'FAKE_SECRET' });
   await app.render().find((element) => element.type === 'form').props.onSubmit(input);
-  assert.equal(input.currentTarget.data.get('secret'), '');
+  assert.equal(input.currentTarget.data.get('secret'), 'FAKE_SECRET');
   assert.equal(input.currentTarget.data.get('username'), 'user@realm');
   assert.ok(app.render().some((element) => element.props?.role === 'alert'));
   assert.ok(!app.render().some((element) => element.props?.name === 'confirm'));
@@ -126,6 +135,8 @@ test('in-flight connection controls locked and changing tested values requires r
   await pending;
   assert.ok(JSON.stringify(app.state).includes('opaque-token'));
   await app.render().find((element) => element.type === 'button' && element.props.type === 'button').props.onClick();
+  assert.ok(JSON.stringify(app.state).includes('opaque-token'), 'Back alone retains the checked connection');
+  app.render().find(element=>element.type==='form').props.onChangeCapture();
   assert.ok(!JSON.stringify(app.state).includes('opaque-token'));
   assert.ok(app.render().some((element) => element.props?.name === 'secret'));
   assert.ok(!app.render().some((element) => element.props?.name === 'confirm'));

@@ -1818,3 +1818,15 @@ body, .setup-workspace { font-family: Inter, system-ui, sans-serif; }
 @media(max-width:760px){.source-list-table table {min-width:650px}}
 
 .catalog-options [aria-disabled="true"]{opacity:.65;cursor:not-allowed}
+
+/* Source wizard reuses the existing form and theme tokens. */
+.wizard-steps {display:flex;gap:.75rem;margin:1.5rem 0;flex-wrap:wrap;}
+.wizard-steps button {display:flex;gap:.5rem;align-items:center;flex:1;min-width:12rem;text-align:left;}
+.wizard-steps [aria-current=step] {border:2px solid var(--accent);font-weight:700;}
+.wizard-form fieldset,.wizard-section {border:0;padding:0;margin:1rem 0;min-width:0;}
+.wizard-section .host-preview {border:0;padding:0;}
+.wizard-form .page-actions {display:flex;justify-content:flex-end;gap:1rem;margin-top:1.5rem;}
+.source-added-notice {display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem;border:2px solid var(--accent);border-radius:.6rem;background:var(--surface);color:var(--text);margin:1rem 0;}
+@media(max-width:600px){.wizard-steps{flex-direction:column;}.wizard-steps button{width:100%;}.wizard-form .page-actions{flex-wrap:wrap;}.wizard-form .page-actions button{flex:1;}}
+
+.wizard-form > fieldset {padding:1rem;}

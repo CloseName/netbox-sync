@@ -1,0 +1,152 @@
+import {test,expect} from '@playwright/test';
+import {randomUUID} from 'node:crypto';
+import {source,diagnostics} from '../tests/fixtures.mjs';
+import {setLanguage} from './menu-helper';
+import {selectPlacement,catalogRow,previewResult} from './source-placement-fixture';
+
+async function fixture(page:any,role='admin',provider='esxi',failure=''){
+  const permissions=['source.read','run.read','diagnostics.read',...(role==='viewer'?[]:['source.register','source.probe','source.plan','source.apply']),...(role==='admin'?['source.configure','catalog.create','policy.read','policy.write','bootstrap.manage','identity.manage']:[])];
+  const writes:string[]=[];let registered:any=null,fail=failure;
+  await page.route('**/api/v1/**',async(route:any)=>{
+    const req=route.request(),path=new URL(req.url()).pathname;
+    if(path==='/api/v1/auth/me')return route.fulfill({json:{principal_id:'fixture-user',username:role,role,provider:'local',permissions}});
+    if(path==='/api/v1/bootstrap')return route.fulfill({json:{revision:1,status:'READY',url:'https://netbox.example.test',completed:true,read_token_present:true,apply_token_present:true,safe_code:null,checks:[],validated_at:1}});
+    if(path==='/api/v1/teams')return route.fulfill({json:{version:1,revision:1,teams:{team1:{id:'team1',name:'Infrastructure'}},assignments:{}}});
+    if(path.endsWith('test-connection')){if(fail){const code=fail;fail='';return route.fulfill({status:400,json:{error:{code}}});}return route.fulfill({json:{...previewResult,preview:{...previewResult.preview,provider,name:'Fixture host'}}});}
+    if(path.endsWith('cancel-onboarding'))return route.fulfill({json:{status:'cancelled'}});
+    if(path.endsWith('review-placement'))return route.fulfill({json:{valid:true}});
+    if(path.includes('/catalog/')){const kind=path.split('/').pop()!,row=catalogRow(kind);if(kind==='cluster')row.name='Fixture host';if(provider==='proxmox'&&['platform','cluster_type'].includes(kind))row.name='Proxmox VE';return route.fulfill({json:{items:[row],count:1,offset:0,more:false,url:'https://netbox.example.test/'}});}
+    if(path==='/api/v1/sources'&&req.method()==='POST'){writes.push(path);const data=req.postDataJSON();expect(data.sync_interval_seconds).toBe(600);expect(data.confirm_sync_disabled).toBe(true);registered={...source(),source_instance:data.source_instance,name:data.name,address:data.address,type:data.source_type,enabled:true,sync_enabled:false,status:'sync_disabled',legacy_identity_owner:false};return route.fulfill({json:registered});}
+    if(path==='/api/v1/sources')return route.fulfill({json:{sources:registered?[registered]:[]}});
+    if(path==='/api/v1/diagnostics')return route.fulfill({json:diagnostics(registered?[registered]:[])});
+    if(req.method()!=='GET')writes.push(path);
+    return route.fulfill({json:{}});
+  });
+  await page.goto('/sources/add');
+  return {writes};
+}
+async function connect(page:any,provider='esxi'){
+  await page.getByLabel('Source type').selectOption(provider);
+  await page.getByLabel('Hostname or IPv4 address').fill('fixture.example.test');
+  await expect(page.getByLabel('Hostname or IPv4 address')).toHaveValue('fixture.example.test');
+  await page.locator('[name=username]').fill(provider==='esxi'?'netbox-sync':'netbox-sync@pve');
+  if(provider==='proxmox')await page.locator('[name=token_id]').fill('netbox-sync');
+  await page.locator('[name=secret]').fill(randomUUID());
+  await page.getByRole('button',{name:'Continue',exact:true}).click();
+}
+async function placement(page:any){
+  for(const label of ['Site','Cluster','Platform','Device role','Cluster type']){
+    const box=page.getByRole('combobox',{name:label,exact:true});await box.click();await page.getByRole('listbox').getByRole('option').first().click();
+  }
+  const box=page.getByRole('combobox',{name:/Device type for/});await box.click();await page.getByRole('listbox').getByRole('option').first().click();
+}
+for(const role of ['admin','operator'])for(const provider of ['esxi','proxmox'])test(`three steps ${role} ${provider}`,async({page})=>{
+  const server=await fixture(page,role,provider);
+  await expect(page.getByRole('navigation',{name:'Source setup steps'}).getByRole('button')).toHaveCount(3);
+  await connect(page,provider);await expect(page).toHaveURL(/step=2/);
+  await expect(page.getByLabel('Display name',{exact:true})).toHaveValue('Fixture host');
+  if(role==='operator'){await expect(page.getByText('An administrator will assign a team')).toBeVisible();await expect(page.getByRole('combobox',{name:'Assigned team',exact:true})).toHaveCount(0);}
+  else await expect(page.getByRole('combobox',{name:'Assigned team',exact:true})).toBeVisible();
+  await placement(page);expect(server.writes).toEqual([]);
+  await page.screenshot({path:test.info().outputPath(`wizard-${role}-${provider}-settings.png`),fullPage:true});
+  await page.getByRole('button',{name:'Continue',exact:true}).click();await expect(page).toHaveURL(/step=3/);
+  await expect(page.getByRole('checkbox',{name:'Confirm source registration'})).toHaveCount(0);
+  await page.screenshot({path:test.info().outputPath(`wizard-${role}-${provider}-review.png`),fullPage:true});
+  await page.goBack();await expect(page).toHaveURL(/step=2/);await expect(page.getByLabel('Display name',{exact:true})).toHaveValue('Fixture host');
+  await page.getByRole('button',{name:'Continue',exact:true}).click();await page.getByRole('button',{name:'Add source',exact:true}).click();
+  await expect(page).toHaveURL(/\/sources$/);await expect(page.getByRole('status').filter({hasText:'Source Fixture host added'})).toBeVisible();expect(server.writes).toEqual(['/api/v1/sources']);
+  await page.getByRole('button',{name:'Dismiss notification'}).click();await expect(page.getByText('Source Fixture host added')).toHaveCount(0);
+});
+
+test('connection refusal retains fields, secret stays out of storage, exit is guarded',async({page})=>{
+  await fixture(page,'admin','esxi','SOURCE_AUTH_FAILED');await connect(page);
+  await expect(page.getByRole('alert').first()).toContainText('Authentication was rejected');
+  await expect(page.locator('[name=secret]')).not.toBeEmpty();
+  const protectedValue=await page.locator('[name=secret]').inputValue();
+  expect(await page.evaluate(()=>JSON.stringify([localStorage,sessionStorage,location.href]))).not.toContain(protectedValue);
+  await page.getByRole('button',{name:'Show password',exact:true}).click();await expect(page.locator('[name=secret]')).toHaveAttribute('type','text');
+  await page.getByRole('button',{name:'Hide password',exact:true}).click();
+  await page.screenshot({path:test.info().outputPath('wizard-connection-refused.png'),fullPage:true});
+  await page.getByRole('link',{name:'Sources',exact:true}).first().click();await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByRole('button',{name:'Stay',exact:true}).click();await expect(page.locator('[name=secret]')).not.toBeEmpty();
+  await page.getByRole('link',{name:'Sources',exact:true}).first().click();await page.getByRole('button',{name:'Leave',exact:true}).click();await expect(page).toHaveURL(/\/sources$/);
+});
+
+test('viewer cannot open source registration',async({page})=>{
+ await fixture(page,'viewer');await expect(page.getByText('You do not have permission to open this section.')).toBeVisible();await expect(page.locator('[name=secret]')).toHaveCount(0);
+});
+
+
+test('provider change clears provider-specific secrets and keeps address',async({page})=>{
+ await fixture(page);await page.getByLabel('Hostname or IPv4 address').fill('fixture.example.test');
+ await page.locator('[name=username]').fill('netbox-sync@pve');await page.locator('[name=secret]').fill(randomUUID());
+ await page.getByLabel('Source type').selectOption('esxi');
+ await expect(page.locator('[name=secret]')).toBeEmpty();await expect(page.locator('[name=token_id]')).toHaveCount(0);
+ await expect(page.getByLabel('Hostname or IPv4 address')).toHaveValue('fixture.example.test');
+ await expect(page.getByLabel('Verify TLS certificate')).toBeChecked();
+ await page.screenshot({path:test.info().outputPath('wizard-connection.png'),fullPage:true});
+});
+
+test('changing tested address requires a new check and preserves placement',async({page})=>{
+ await fixture(page);await connect(page);await placement(page);
+ await page.getByRole('button',{name:'Back',exact:true}).click();
+ await page.getByLabel('Hostname or IPv4 address').fill('another.example.test');
+ await expect(page.getByRole('button',{name:'2 Source settings'})).toBeDisabled();
+ await expect(page.locator('[name=secret]')).toBeEmpty();
+ await page.locator('[name=secret]').fill(randomUUID());await page.getByRole('button',{name:'Continue',exact:true}).click();
+ await expect(page.getByLabel('Display name',{exact:true})).toHaveValue('Fixture host');
+ await expect(page.getByRole('combobox',{name:'Site',exact:true})).toContainText('Test site');
+});
+
+for(const role of ['admin','operator'])test(`Russian dark narrow wizard ${role}`,async({page})=>{
+ await page.setViewportSize({width:390,height:844});await page.emulateMedia({colorScheme:'dark'});
+ await fixture(page,role);await setLanguage(page,'ru');
+ await page.screenshot({path:test.info().outputPath('connection-ru-dark.png'),fullPage:true});
+ await setLanguage(page,'en');await connect(page);await setLanguage(page,'ru');
+ await page.screenshot({path:test.info().outputPath('settings-ru-dark.png'),fullPage:true});
+ await selectPlacement(page,'ru');await expect(page).toHaveURL(/step=3/);
+ await expect(page.getByRole('button',{name:'Добавить источник',exact:true})).toBeEnabled();
+ await page.screenshot({path:test.info().outputPath('review-ru-dark.png'),fullPage:true});
+ await page.evaluate(()=>document.documentElement.style.zoom='1.5');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+});
+
+test('team assignment refusal does not repeat a successful registration',async({page})=>{
+ const server=await fixture(page);let assignments=0;
+ await page.route('**/api/v1/teams',route=>{if(route.request().method()!=='POST')return route.fallback();assignments++;return route.fulfill({status:409,json:{error:{code:'REVISION_CONFLICT'}}});});
+ await connect(page);await placement(page);await page.getByRole('combobox',{name:'Assigned team',exact:true}).selectOption('team1');
+ await page.getByRole('button',{name:'Continue',exact:true}).click();
+ await page.getByRole('button',{name:'Add source',exact:true}).evaluate((button:HTMLButtonElement)=>{button.click();button.click();});
+ await expect(page).toHaveURL(/\/sources$/);
+ await expect(page.getByRole('alert')).toContainText('team');
+ expect(server.writes).toEqual(['/api/v1/sources']);expect(assignments).toBe(1);
+ await page.screenshot({path:test.info().outputPath('team-assignment-unconfirmed.png'),fullPage:true});
+});
+
+test('secret-only draft guards exit and a late probe cannot advance a new wizard',async({page})=>{
+ await fixture(page);await page.locator('[name=secret]').fill(randomUUID());
+ await page.getByRole('link',{name:'Sources',exact:true}).first().click();
+ await expect(page.getByRole('dialog')).toBeVisible();await page.getByRole('button',{name:'Stay',exact:true}).click();await expect(page.getByRole('dialog')).not.toBeVisible();
+ let release:()=>void=()=>{};const gate=new Promise<void>(resolve=>release=resolve);let started=false;
+ await page.route('**/api/v1/sources/test-connection',async route=>{started=true;await gate;await route.fulfill({json:previewResult});});
+ await connect(page);await expect.poll(()=>started).toBe(true);
+ await page.getByRole('link',{name:'Sources',exact:true}).first().click();await page.getByRole('button',{name:'Leave',exact:true}).click();
+ await expect(page).toHaveURL(/\/sources$/);
+ await page.getByRole('link',{name:'Add Source',exact:true}).first().click();
+ const cancelled=page.waitForRequest(request=>request.url().endsWith('/cancel-onboarding'));
+ release();await cancelled;await expect(page.locator('[name=secret]')).toBeEmpty();
+ await expect(page.getByRole('button',{name:'2 Source settings'})).toBeDisabled();
+});
+
+for(const code of ['ONBOARDING_TOKEN_INVALID','PROBE_RECEIPT_INVALID'])test(`receipt expires during placement review ${code}`,async({page})=>{
+ const server=await fixture(page);await connect(page);await placement(page);
+ await page.route('**/api/v1/sources/review-placement',route=>route.fulfill({status:409,json:{error:{code}}}));
+ await page.getByRole('button',{name:'Continue',exact:true}).click();
+ await expect(page.locator('[name=secret]')).toBeVisible();
+ await expect(page.getByRole('alert').first()).toContainText('expired');
+ await expect(page.getByLabel('Hostname or IPv4 address')).toHaveValue('fixture.example.test');
+ await page.locator('[name=secret]').fill(randomUUID());await page.getByRole('button',{name:'Continue',exact:true}).click();
+ await expect(page.getByLabel('Display name',{exact:true})).toHaveValue('Fixture host');
+ await expect(page.getByRole('combobox',{name:'Site',exact:true})).toContainText('Test site');
+ expect(server.writes).toEqual([]);
+});

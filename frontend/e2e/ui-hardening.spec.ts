@@ -458,24 +458,19 @@ test("existing Add Source journey clears credentials, focuses review and links r
   await page.getByLabel("Token name (without user prefix)").fill("test-token");
   await page.getByLabel("Token secret").fill("FAKE-SECRET");
   await page
-    .getByRole("button", { name: "Test Connection", exact: true })
+    .getByRole("button", { name: "Continue", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Review source details", exact: true }),
+    page.getByRole("heading", { name: "Detected hosts", exact: true }),
   ).toBeFocused();
   await expect(page.locator('input[name="secret"]')).toHaveCount(0);
   await selectPlacement(page);
+
   await page
-    .getByRole("checkbox", {
-      name: "Confirm source registration",
-    })
-    .check();
-  await page
-    .getByRole("button", { name: "Register Source", exact: true })
+    .getByRole("button", { name: "Add source", exact: true })
     .click();
-  await expect(
-    page.getByRole("heading", { name: "Source registered", exact: true }),
-  ).toBeFocused();
+  await expect(page).toHaveURL(/\/sources$/);
+  await expect(page.getByRole("status").filter({hasText:"added"})).toBeVisible();
   const writes = f.requests.filter((r) => r.method === "POST");
   expect(writes.map((r) => r.path)).toEqual([
     "/api/v1/sources/test-connection",
@@ -483,8 +478,7 @@ test("existing Add Source journey clears credentials, focuses review and links r
   ]);
   expect(writes[1].body.confirm_sync_disabled).toBe(true);
   expect(writes[1].body.secret).toBeUndefined();
-  await page.getByRole("link", { name: "Open source", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp("sources/"+previewResult.suggested_source_instance+"$"));
+
 });
 test("long names, reasons and narrow height preserve dialog controls and reflow", async ({
   page,

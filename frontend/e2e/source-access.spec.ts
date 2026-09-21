@@ -45,10 +45,10 @@ for (const [code, text] of [['SOURCE_DNS_FAILED','hostname could not be resolved
   await page.getByLabel(/Hostname or IPv4 address|Имя узла или адрес IPv4/).fill('esxi.example.test');
   await page.locator('[name=username]').fill('netbox-sync');
   await page.locator('[name=secret]').fill(randomUUID());
-  await page.getByRole('button',{name:/Test Connection|Проверить подключение/}).click();
+  await page.getByRole('button',{name:/Continue|Продолжить/}).click();
   await expect(page.getByRole('alert')).toContainText(text);
   await expect(page.getByRole('alert')).not.toContainText('REMOTE_DETAIL');
-  await expect(page.locator('[name=secret]')).toBeEmpty();
+  await expect(page.locator('[name=secret]')).not.toBeEmpty();
  });
 }
 
@@ -59,7 +59,7 @@ test('Russian connection failure uses safe local explanation',async({page})=>{
  await page.getByLabel(/Hostname or IPv4 address|Имя узла или адрес IPv4/).fill('esxi.example.test');
  await page.locator('[name=username]').fill('netbox-sync');
  await page.locator('[name=secret]').fill(randomUUID());
- await page.getByRole('button',{name:/Test Connection|Проверить подключение/}).click();
+ await page.getByRole('button',{name:/Continue|Продолжить/}).click();
  await expect(page.getByRole('alert')).toContainText('Ошибка проверки TLS');
  await expect(page.getByRole('alert')).not.toContainText('REMOTE_DETAIL');
 });
@@ -72,7 +72,7 @@ test('slow probe sends once, remains readable and does not invent progress',asyn
  await page.goto('/sources/add');
  await page.getByLabel('Source type').selectOption('esxi');await page.getByLabel('Hostname or IPv4 address').fill('esxi.example.test');
  await page.locator('[name=username]').fill('netbox-sync');await page.locator('[name=secret]').fill(randomUUID());
- await page.getByRole('button',{name:'Test Connection',exact:true}).evaluate((button:HTMLButtonElement)=>{button.click();button.click();});
+ await page.getByRole('button',{name:'Continue',exact:true}).evaluate((button:HTMLButtonElement)=>{button.click();button.click();});
  await expect(page.getByRole('status')).toContainText('Waiting for server acknowledgement');
  await expect(page.getByRole('progressbar')).toHaveCount(0);expect(calls).toBe(1);
  await page.getByText('How to prepare access',{exact:true}).click();await expect(page.locator('.source-access-help').first()).toHaveAttribute('open','');
@@ -85,7 +85,7 @@ test('slow probe sends once, remains readable and does not invent progress',asyn
  // Never include form secrets in screenshots.
  await page.screenshot({path:'test-results/ux-probe-loading.png',fullPage:true,mask:[page.locator('[name=secret]')]});
  release();await expect(page.getByRole('alert')).toBeVisible();expect(calls).toBe(1);
- await expect(page.locator('[name=secret]')).toBeEmpty();
+ await expect(page.locator('[name=secret]')).not.toBeEmpty();
  await page.screenshot({path:'test-results/ux-probe-response-lost.png',fullPage:true});
  await page.reload();expect(calls).toBe(1);await expect(page.locator('[name=secret]')).toBeEmpty();
 });

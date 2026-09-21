@@ -7,7 +7,7 @@ export function suggestion(kind:string,rows:CatalogItem[],name:string,host?:Host
  const candidates=rows.filter(row=>kind==='device_type'? !genericModel(host?.model??null)&&equal(row.name,host?.model)&&equal(row.manufacturer?.name,host?.manufacturer):equal(row.name,name)||equal(row.slug,name));
  return candidates.length===1?candidates[0]:null;
 }
-export function Lookup({kind,label,value,change,language,hint='',host,onCreate,assessment}:{kind:string;label:string;value?:CatalogItem;change:(r:CatalogItem)=>void;language:string;hint?:string;host?:HostPreview;onCreate?:()=>void;assessment?:(row:CatalogItem)=>string}){
+export function Lookup({kind,label,value,change,language,hint='',host,onCreate,assessment,autoSelectSingle=false}:{kind:string;label:string;value?:CatalogItem;change:(r:CatalogItem)=>void;language:string;hint?:string;host?:HostPreview;onCreate?:()=>void;assessment?:(row:CatalogItem)=>string;autoSelectSingle?:boolean}){
  const t=(en:string,ru:string)=>language==='ru'?ru:en;
  const currentValue=useRef(value);currentValue.current=value;
  const id=useId();const root=useRef<HTMLElement>(null);const control=useRef<HTMLButtonElement>(null);const searchInput=useRef<HTMLInputElement>(null);
@@ -15,6 +15,7 @@ export function Lookup({kind,label,value,change,language,hint='',host,onCreate,a
  const [page,setPage]=useState<CatalogPage|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true);
  useEffect(()=>{const controller=new AbortController();setLoading(true);setError('');
  const timer=setTimeout(()=>catalog(kind,search,offset,controller.signal).then(result=>{setPage(result);setLoading(false);setActive(0);
+ if(autoSelectSingle&&!currentValue.current&&!search&&offset===0&&result.count===1&&!result.more&&result.items.length===1)change({...result.items[0],suggested:true});
  if(!currentValue.current&&!result.more&&offset===0&&hint&&search===hint){const proposed=suggestion(kind,result.items,hint,host);if(proposed&&!assessment?.(proposed))change({...proposed,suggested:true});}
  }).catch(failure=>{if(!controller.signal.aborted){setLoading(false);setError(failure instanceof CatalogFailure?failure.code:'CATALOG_UNAVAILABLE');}}),200);
  return()=>{clearTimeout(timer);controller.abort();};},[kind,search,offset,refresh]);

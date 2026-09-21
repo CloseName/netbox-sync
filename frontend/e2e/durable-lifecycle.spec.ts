@@ -99,10 +99,10 @@ for(const width of [1440,1024,768])test(`Reserved Source ID is explained during 
   await page.getByLabel('Token user (user@realm)').fill('user@realm');
   await page.getByLabel('Token name (without user prefix)').fill('test-token');
   await page.getByLabel('Token secret').fill('FAKE-SECRET');
-  await page.getByRole('button',{name:'Test Connection',exact:true}).click();
+  await page.getByRole('button',{name:'Continue',exact:true}).click();
   await selectPlacement(page);
-  await page.getByRole('checkbox',{name:'Confirm source registration'}).check();
-  await page.getByRole('button',{name:'Register Source',exact:true}).click();
+
+  await page.getByRole('button',{name:'Add source',exact:true}).click();
   await expect(page.getByText('This Source ID was previously used and is reserved by a removed source.')).toBeVisible();
   await expect(page.getByRole('heading',{name:'Source registered',exact:true})).toHaveCount(0);
   await page.screenshot({path:info.outputPath('reserved-source-id.png'),fullPage:true});

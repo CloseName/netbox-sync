@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
+import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import {AuthGate,installAuthBoundary} from "./AuthGate";
 import { App } from "./App";
 import { BootstrapGate } from "./BootstrapGate";
@@ -10,10 +10,9 @@ import "./styles.css";
 import "./ui/foundation.css";
 applyTheme(readTheme());
 installAuthBoundary();
+const router = createBrowserRouter([{path:"*",element:<AuthGate><BootstrapGate><App /></BootstrapGate></AuthGate>}]);
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <BrowserRouter>
-      <AuthGate><BootstrapGate><App /></BootstrapGate></AuthGate>
-    </BrowserRouter>
+    <RouterProvider router={router} />
   </StrictMode>,
 );

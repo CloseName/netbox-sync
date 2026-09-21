@@ -9,19 +9,20 @@ async function fixture(page:any,scenario='exact'){
  if(scenario==='missing')preview.preview.hosts[0]={...host,manufacturer:null,model:null} as any;
  if(scenario==='heterogeneous')preview.preview={provider:'proxmox',name:'Production cluster',cluster:'Production cluster',hosts:[{...host,id:'a',name:'pve-a',manufacturer:null,model:null},{...host,id:'b',name:'pve-b',manufacturer:null,model:null}]} as any;
  await page.route('**/api/v1/**',route=>{const url=new URL(route.request().url());const path=url.pathname;
+ if(path==='/api/v1/teams')return route.fulfill({json:{version:1,revision:1,teams:{},assignments:{}}});
  if(path.endsWith('review-placement'))return route.fulfill({json:{valid:true}});
  if(path.endsWith('test-connection'))return route.fulfill({json:preview});
  if(path.includes('/catalog/')){const kind=path.split('/').pop()!;const query=url.searchParams.get('search');
  if(query==='denied')return route.fulfill({status:503,json:{error:{code:'CATALOG_PERMISSION_DENIED'}}});
  if(query==='offline')return route.abort('connectionfailed');
- const empty=query==='absent';const rows=empty?[]:[catalogRow(kind)];
+ const empty=query==='absent';const rows=empty?[]:[{...catalogRow(kind),...(kind==='cluster'?{name:query||preview.preview.name}:{})}];
  if(query==='ambiguous')rows.push({...catalogRow(kind,2),manufacturer:{id:10,name:'Other manufacturer'}});
  return route.fulfill({json:{items:rows,count:query==='large'?2000:rows.length,offset:Number(url.searchParams.get('offset')),more:query==='large',url:'https://netbox.example.test/dcim/sites/'}});}
  if(path==='/api/v1/sources'&&route.request().method()==='POST'){posts++;if(rejected){rejected=false;return route.fulfill({status:409,json:{error:{code:'CATALOG_CHANGED'}}});}
  const data=route.request().postDataJSON();return route.fulfill({json:{...data,type:data.source_type,status:'sync_disabled',enabled:true,sync_enabled:false,legacy_identity_owner:false}});}
  return route.fulfill({json:{sources:[]}});
  });
- await page.goto('/sources/add');await page.getByLabel('Source type').selectOption(scenario==='heterogeneous'?'proxmox':'esxi');await page.getByLabel('Hostname or IPv4 address').fill('esxi.example.test');await page.locator('[name=username]').fill(scenario==='heterogeneous'?'netbox-sync@pve':'netbox-sync');if(scenario==='heterogeneous')await page.locator('[name=token_id]').fill('netbox-sync');await page.locator('[name=secret]').fill(randomUUID());await page.getByRole('button',{name:'Test Connection',exact:true}).click();
+ await page.goto('/sources/add');await page.getByLabel('Source type').selectOption(scenario==='heterogeneous'?'proxmox':'esxi');await page.getByLabel('Hostname or IPv4 address').fill('esxi.example.test');await page.locator('[name=username]').fill(scenario==='heterogeneous'?'netbox-sync@pve':'netbox-sync');if(scenario==='heterogeneous')await page.locator('[name=token_id]').fill('netbox-sync');await page.locator('[name=secret]').fill(randomUUID());await page.getByRole('button',{name:'Continue',exact:true}).click();
  await expect(page.getByRole('heading',{name:'Detected hosts',exact:true})).toBeVisible();await expect(page.locator('[name=secret]')).toHaveCount(0);
  return {posts:()=>posts};
 }
@@ -33,8 +34,8 @@ for(const lang of ['en','ru'])for(const theme of ['light','dark'] as const)for(c
  await expect(page.getByRole('combobox',{name:lang==='ru'?/^Тип устройства.*для/:/^Device type for/})).toContainText('PowerEdge R650');
  expect(f.posts()).toBe(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
  await page.screenshot({path:`test-results/placement-${lang}-${theme}-${width}.png`,fullPage:true});
- await selectPlacement(page,lang);await page.getByRole('checkbox',{name:lang==='ru'?'Подтверждаю регистрацию источника':'Confirm source registration'}).check();
- await page.getByRole('button',{name:lang==='ru'?'Зарегистрировать источник':'Register Source',exact:true}).click();
+ await selectPlacement(page,lang);
+ await page.getByRole('button',{name:lang==='ru'?'Добавить источник':'Add source',exact:true}).click();
  await expect(page.getByRole('alert').first()).toContainText(lang==='ru'?'не прошёл проверку':'could not be verified');expect(f.posts()).toBe(1);
  await expect(page.getByLabel(label,{exact:true})).toHaveValue('My host');
  await page.screenshot({path:`test-results/placement-changed-${lang}-${theme}-${width}.png`,fullPage:true});
@@ -59,7 +60,7 @@ test('session expiry keeps only the non-secret draft and never retries registrat
  await page.route('**/api/v1/auth/login',route=>route.fulfill({json:{authenticated:true}}));
  await page.getByLabel('Username',{exact:true}).fill('admin');await page.getByLabel('Password',{exact:true}).fill(randomUUID());await page.getByRole('button',{name:'Sign in',exact:true}).click();
  await expect(page.getByLabel('Hostname or IPv4 address')).toHaveValue('esxi.example.test');await expect(page.locator('[name=secret]')).toBeEmpty();
- await page.unroute('**/api/v1/catalog/site?*');await page.locator('[name=username]').fill('netbox-sync');await page.locator('[name=secret]').fill(randomUUID());await page.getByRole('button',{name:'Test Connection',exact:true}).click();
+ await page.unroute('**/api/v1/catalog/site?*');await page.locator('[name=username]').fill('netbox-sync');await page.locator('[name=secret]').fill(randomUUID());await page.getByRole('button',{name:'Continue',exact:true}).click();
  await expect(page.getByLabel('Display name',{exact:true})).toHaveValue('Retained draft');expect(f.posts()).toBe(0);
 });
 
@@ -67,23 +68,23 @@ test('session expiry keeps only the non-secret draft and never retries registrat
 test('explicit retry after catalog review registers with sync off',async({page})=>{
  const f=await fixture(page);
  for(let attempt=0;attempt<2;attempt++){
-  await selectPlacement(page);await page.getByRole('checkbox',{name:'Confirm source registration'}).check();
-  await page.getByRole('button',{name:'Register Source',exact:true}).click();
+  await selectPlacement(page);
+  await page.getByRole('button',{name:'Add source',exact:true}).click();
   if(attempt===0)await expect(page.getByRole('alert').first()).toContainText('could not be verified');
  }
- await expect(page.getByRole('heading',{name:'Source registered',exact:true})).toBeVisible();expect(f.posts()).toBe(2);
+ await expect(page).toHaveURL(/\/sources$/);expect(f.posts()).toBe(2);
  await page.screenshot({path:'test-results/placement-success.png',fullPage:true});
 });
 
 for(const code of ['ONBOARDING_TOKEN_INVALID','PROBE_RECEIPT_INVALID'])test(`expired ${code} preserves placement`,async({page})=>{
  await fixture(page);await page.getByLabel('Display name',{exact:true}).fill('Retained name');
  await page.route('**/api/v1/sources',route=>route.fulfill({status:409,json:{error:{code}}}));
- await selectPlacement(page);await page.getByRole('checkbox',{name:'Confirm source registration'}).check();
- await page.getByRole('button',{name:'Register Source',exact:true}).click();
+ await selectPlacement(page);
+ await page.getByRole('button',{name:'Add source',exact:true}).click();
  await expect(page.getByRole('alert')).toContainText('no longer valid');
  await expect(page.getByLabel('Hostname or IPv4 address')).toHaveValue('esxi.example.test');
  await page.locator('[name=username]').fill('netbox-sync');await page.locator('[name=secret]').fill(randomUUID());
- await page.getByRole('button',{name:'Test Connection',exact:true}).click();
+ await page.getByRole('button',{name:'Continue',exact:true}).click();
  await expect(page.getByLabel('Display name',{exact:true})).toHaveValue('Retained name');
  await expect(page.getByRole('combobox',{name:'Site',exact:true})).toContainText('Test site');
 });
@@ -91,9 +92,9 @@ test('unknown registration checks server without another POST',async({page})=>{
  await fixture(page);let writes=0,reads=0;
  await page.route('**/api/v1/sources',route=>{writes++;return route.abort('connectionfailed');});
  await page.route('**/api/v1/sources/esxi-aabbccddeeff',route=>{reads++;return route.fulfill({status:404,json:{error:{code:'SOURCE_NOT_FOUND'}}});});
- await selectPlacement(page);await page.getByRole('checkbox',{name:'Confirm source registration'}).check();
- await page.getByRole('button',{name:'Register Source',exact:true}).click();
- await expect(page.getByRole('button',{name:'Register Source',exact:true})).toBeDisabled();
+ await selectPlacement(page);
+ await page.getByRole('button',{name:'Add source',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Add source',exact:true})).toBeDisabled();
  await page.getByRole('button',{name:'Check server state',exact:true}).click();
  await expect(page.getByRole('alert')).toContainText('still unconfirmed');expect(writes).toBe(1);expect(reads).toBe(1);
 });
@@ -158,12 +159,12 @@ test('placement refusal before confirmation retains edited name and points to cl
  const f=await fixture(page);await page.getByLabel('Display name',{exact:true}).fill('ESXi-CM.QA');
  await page.route('**/api/v1/sources/review-placement',route=>route.fulfill({status:409,json:{error:{code:'CATALOG_CLUSTER_SCOPE_MISMATCH'}}}));
  await selectPlacement(page);await expect(page.getByRole('alert')).toContainText('Cluster: its site or type changed.');
- await expect(page.getByLabel('Display name',{exact:true})).toHaveValue('ESXi-CM.QA');await expect(page.getByText('ESXI-CM.QA',{exact:true})).toBeVisible();
+ await expect(page.getByLabel('Display name',{exact:true})).toHaveValue('ESXi-CM.QA');
  await expect(page.getByRole('checkbox',{name:'Confirm source registration'})).toHaveCount(0);expect(f.posts()).toBe(0);
 });
 test('incompatible cluster type is explained and cannot be selected',async({page})=>{
  await fixture(page);await page.getByRole('combobox',{name:'Cluster type',exact:true}).click();await page.getByRole('listbox').getByRole('option').first().click();
- await page.route('**/api/v1/catalog/cluster?*',route=>route.fulfill({json:{items:[{...catalogRow('cluster'),type:{id:999,name:'Proxmox VE'}}],count:1,offset:0,more:false,url:'https://netbox.example.test/virtualization/clusters/'}}));
+ await page.route('**/api/v1/catalog/cluster?*',route=>route.fulfill({json:{items:[{...catalogRow('cluster'),name:previewResult.preview.name,type:{id:999,name:'Proxmox VE'}}],count:1,offset:0,more:false,url:'https://netbox.example.test/virtualization/clusters/'}}));
  await page.getByRole('combobox',{name:'Cluster',exact:true}).click();await page.getByRole('button',{name:'Refresh list',exact:true}).click();
- await expect(page.getByRole('option')).toHaveAttribute('aria-disabled','true');await expect(page.getByRole('option')).toContainText('Different cluster type: Proxmox VE');
+ await expect(page.getByRole('listbox').getByRole('option')).toHaveAttribute('aria-disabled','true');await expect(page.getByRole('listbox').getByRole('option')).toContainText('Different cluster type: Proxmox VE');
 });

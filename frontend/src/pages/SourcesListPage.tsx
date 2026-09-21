@@ -1,9 +1,10 @@
+import {useEffect,useState} from 'react';
 import {TeamEditor,useTeams} from '../components/SourceTeams';
 import {useLanguage} from '../ui/language';
 import {usePermission} from '../AuthGate';
 import {tr} from "../ui/i18n";
 import { SourceFilters } from "../ui/SourceFilters";
-import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams, useNavigate } from "react-router-dom";
 import { fetchSources } from "../api/sources";
 import { fetchDiagnostics } from "../api/diagnostics";
 import { useResource } from "../ui/useResource";
@@ -27,7 +28,11 @@ export function SourcesListPage() {
   const sources = useResource(fetchSources),
     diagnostics = useResource(fetchDiagnostics);
   const [params, setParams] = useSearchParams();
-  const location = useLocation();
+  const location = useLocation(), navigate = useNavigate();
+  const [teamWarning,setTeamWarning]=useState(!!location.state?.addedSource?.teamUnconfirmed);
+  const [added,setAdded]=useState<{name:string;id:string;teamUnconfirmed?:boolean}|null>(location.state?.addedSource??null);
+  useEffect(()=>{if(!added)return;const timer=setTimeout(()=>setAdded(null),10000);return()=>clearTimeout(timer);},[added]);
+  useEffect(()=>{if(location.state?.addedSource)navigate(location.pathname+location.search,{replace:true,state:null});},[location,navigate]);
   const result = querySources(
     composeSources((sources.data ?? []).filter(row=>!params.get('team')||(!!teams.data&&(params.get('team')==='none'?!teams.data?.assignments[row.source_instance]:teams.data?.assignments[row.source_instance]===params.get('team')))), diagnostics.data),
     params,
@@ -94,6 +99,8 @@ export function SourcesListPage() {
           </>
         }
       />
+      {teamWarning&&<p role="alert" className="source-error">{t('Source added, but team assignment is unconfirmed. Check the source team before retrying assignment.','Источник добавлен, но назначение команды не подтверждено. Проверьте команду источника перед повторным назначением.')} <button type="button" onClick={()=>setTeamWarning(false)}>{t('Dismiss','Закрыть')}</button></p>}
+      {added&&<div className="source-added-notice" role="status" aria-live="polite"><span>{t('Source ','Источник ')}<strong>{added.name}</strong>{t(' added',' добавлен')}</span><button type="button" aria-label={t('Dismiss notification','Закрыть уведомление')} onClick={()=>setAdded(null)}>×</button></div>}
       <ResourceNotice
         resource={sources}
         name="Sources"
