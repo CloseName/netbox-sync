@@ -1,3 +1,5 @@
+import {useFormValidation} from '../ui/formValidation';
+import {CredentialField} from '../components/CredentialField';
 import {authRequest,usePermission} from '../AuthGate';
 import {useTeams} from '../components/SourceTeams';
 import {RegistrationFailure} from '../api/onboarding';
@@ -32,6 +34,7 @@ import { sourcePath } from "../ui/routes";
 let remembered: {type:'proxmox'|'esxi';connection:{address:string;verify_ssl:boolean;port:number};draft:Placement;preview:SourcePreview|null;uncertain:boolean}|null=null;
 export function AddSourcePage() {
   const [language] = useLanguage();
+  const validation=useFormValidation(language);
   const t = (en: string, ru: string) => language === "ru" ? ru : en;
   const [type, setType] = useState<"proxmox" | "esxi">(remembered?.type??"proxmox");
   const [connection, setConnection] = useState(remembered?.connection??{
@@ -95,6 +98,7 @@ export function AddSourcePage() {
     event.preventDefault();
     if (inFlight.current) return;
     if(token){go(2);return;}
+    if(!validation.validate(event.currentTarget))return;
     inFlight.current=true; setStarted(Date.now());
     const form = event.currentTarget;
     const data = new FormData(form);
@@ -127,6 +131,7 @@ export function AddSourcePage() {
   }
 
   async function reviewRegistration(){
+    if(!draft.resolution_ready||draft.resolution_name!==draft.name||draft.resolution_site!==draft.references.site?.id){setError(t("Wait for the NetBox parameter check and resolve the listed issues.","Дождитесь проверки параметров NetBox и устраните указанные замечания."));return;}
     if(inFlight.current)return;
     const cluster=draft.references.cluster,site=draft.references.site,kind=draft.references.cluster_type;
     if(!draft.create_cluster&&cluster?.name!==draft.name.trim()){setError(t('Choose a compatible cluster with the same name as this source.','Выберите совместимый кластер с тем же именем, что у источника.'));return;}
@@ -154,7 +159,7 @@ export function AddSourcePage() {
         device_type_slug:firstType.slug,cluster_type_slug:refs.cluster_type.slug,references:refs,host_types:draft.host_types};
       const result = await registerSource({
         ...metadata,
-        create_cluster:!!draft.create_cluster,registration_id:draft.registration_id,
+        automatic_placement:true,create_cluster:!!draft.create_cluster,registration_id:draft.registration_id,
         source_type: type,
         ...connection,
         onboarding_token: token,
@@ -193,6 +198,7 @@ export function AddSourcePage() {
         <h2>{t('Your entered data will be lost','Введённые данные будут потеряны')}</h2>
         <div className="page-actions"><button autoFocus type="button" onClick={()=>{if(blocker.state==='blocked')blocker.reset();}}>{t('Stay','Остаться')}</button><button type="button" onClick={()=>{remembered=null;if(token)void cancelOnboarding(token).catch(()=>{});if(blocker.state==='blocked')blocker.proceed();}}>{t('Leave','Выйти')}</button></div>
       </dialog>
+      {validation.summary}
       {uncertain&&<section className="source-panel"><p>{t('No registration request will be retried automatically.','Запрос регистрации не будет повторён автоматически.')}</p><button type="button" disabled={busy} onClick={async()=>{
         setBusy(true);try{const response=await fetch('/api/v1/sources/'+encodeURIComponent(draft.source_instance),{cache:'no-store',signal:AbortSignal.timeout(10000)});
           if(response.status===404&&draft.create_cluster&&draft.registration_id){
@@ -214,7 +220,7 @@ export function AddSourcePage() {
       {canPolicy&&connectionCode==='SOURCE_DESTINATION_DENIED'&&<DestinationPermission host={connection.address} done={()=>{setConnectionCode(null);setError('');setNotice(t('Destination allowed. Test the connection.','Назначение разрешено. Проверьте подключение.'));}}/>}
       {busy && <OperationFeedback operation={token?t('Registering source','Регистрация источника'):t('Checking connection and reading host information','Проверяем подключение и получаем сведения о хостах')} phase="sending" started={started}/>}
       {step===1 ? (
-        <form onSubmit={test} onChangeCapture={invalidate} className="source-form wizard-form" autoComplete="off">
+        <form noValidate onSubmit={test} onChangeCapture={invalidate} className="source-form wizard-form" autoComplete="off">
           <fieldset disabled={busy} aria-busy={busy}>
             <legend>{tr("Connection")}{" "}</legend>
             <p>{t('Prepare the server address and a dedicated service account.','Подготовьте адрес сервера и отдельную сервисную учётную запись.')}</p>
@@ -271,33 +277,30 @@ export function AddSourcePage() {
             <p className="muted">{t('Use the certificate hostname and a complete chain from a CA trusted by the standard worker image. Ask the source operator to correct the certificate or hostname. A separate provider CA upload is not supported yet; the optional NetBox CA does not establish provider trust.','Используйте имя из сертификата и полную цепочку CA, которому доверяет штатный образ обработчиков. Исправить сертификат или имя должен оператор источника. Отдельная загрузка CA источника пока не поддерживается; настройка CA для NetBox не распространяется на источники.')}</p>
             </details><h2>{t('Source credentials', 'Доступ к источнику')}</h2>
             <p className="muted">
-              {t('Credentials apply only to this source. The secret is cleared after a successful check; the username is retained.', 'Данные доступа относятся только к этому источнику. После успешной проверки секрет удаляется, имя пользователя сохраняется.')}
+              {t('Credentials apply only to this source. ', 'Данные доступа относятся только к этому источнику. ')}
             </p>
             <div className="form-grid">
-              <label>
-                {type === "proxmox" ? tr("Token user (user@realm)") : tr("Username")}
-                <input autoComplete="section-source-access username" name="username" required aria-describedby="source-user-hint" value={identity.user} onChange={e=>setIdentity(old=>type==='proxmox'?updateTokenUser(old,e.target.value):{...old,user:e.target.value})} />
+              <div>
+                <CredentialField label={type === "proxmox" ? tr("Token user (user@realm)") : tr("Username")} autoComplete="section-source-access username" name="username" required aria-describedby="source-user-hint" value={identity.user} onChange={e=>setIdentity(old=>type==='proxmox'?updateTokenUser(old,e.target.value):{...old,user:e.target.value})} />
                 <small id="source-user-hint">{type === 'proxmox' ? t('Include your actual realm, e.g. netbox-sync@pve. You can paste user@realm!token here; the two fields are separated explicitly.', 'Укажите свой realm, например netbox-sync@pve. Здесь можно вставить user@realm!token — идентификатор будет разделён на два поля.') : t('Local ESXi user, e.g. netbox-sync.', 'Локальный пользователь ESXi, например netbox-sync.')}</small>
-              </label>
+              </div>
               {type === "proxmox" && (
                 <label>
                   {tr("Token name (without user prefix)")}{" "}<input name="token_id" required aria-describedby="source-token-hint" value={identity.token} onChange={e=>setIdentity(old=>({...old,token:e.target.value,edited:true,parsed:false}))} />
                   <small id="source-token-hint">{identity.parsed?t('Full identifier split into user and token name. Review both fields.', 'Полный идентификатор разделён на пользователя и имя токена. Проверьте оба поля.'):t('Suggested from the user name. Editable: enter your actual token name if different.', 'Предлагается по имени пользователя. Можно изменить: укажите фактическое имя токена, если оно отличается.')}</small>
                 </label>
               )}
-              <label>
-                {type === "proxmox" ? tr("Token secret") : tr("Password")}
-                <input
+              <div>
+                <CredentialField label={type === "proxmox" ? tr("Token secret") : tr("Password")} secret visible={showSecret} onVisibilityChange={setShowSecret}
                   name="secret"
                   onChange={event=>setHasSecret(!!event.target.value)}
-                  type={showSecret?"text":"password"}
                   required={!token}
                   aria-describedby="source-secret-hint"
                   autoComplete="section-source-access new-password"
                 />
-                <button type="button" aria-pressed={showSecret} onClick={()=>setShowSecret(value=>!value)}>{type==='proxmox'?(showSecret?t('Hide token secret','Скрыть секрет токена'):t('Show token secret','Показать секрет токена')):(showSecret?t('Hide password','Скрыть пароль'):t('Show password','Показать пароль'))}</button>
+
                 <small id="source-secret-hint">{type === 'proxmox' ? t('The value saved at token issuance; not the user password.', 'Значение, сохранённое при выдаче токена; не пароль пользователя.') : t('Separate password for this host’s account.', 'Отдельный пароль пользователя на этом хосте.')}</small>
-              </label>
+              </div>
             </div>
             <details className="source-access-help"><summary>{t('If access is blocked by policy','Если доступ запрещён политикой')}</summary><p>{t('The server checks every resolved address before authentication. A policy denial is not a password error. Existing deployment restrictions remain in force; Test Connection does not change them.', 'Сервер проверяет все полученные адреса до входа. Запрет политики не означает ошибку пароля. Действующие ограничения установки сохраняются; проверка подключения их не изменяет.')}</p><p>{t('For a denied public destination, use the separate permission action below the error. The server checks administrator permissions; host-managed limits may require a one-time transition by the host operator.', 'Для запрещённого публичного назначения используйте отдельное разрешение под сообщением об ошибке. Сервер проверяет права администратора; ограничения сервера могут требовать однократного перехода, выполняемого его оператором.')}</p></details>
             <button className="primary" disabled={busy}>
@@ -306,21 +309,21 @@ export function AddSourcePage() {
           </fieldset>
         </form>
       ) : (
-        <form onSubmit={register} className="source-form wizard-form">
-          {preview&&step===2&&<fieldset disabled={busy}><SourcePlacement wizard preview={preview} draft={draft} setDraft={value=>{setDraft(value);setReview(false);}} language={language}/>
-          <section className="wizard-section"><h2>{t('Team','Команда')}</h2>{canAssignTeam?<>
+        <form noValidate onSubmit={register} className="source-form wizard-form">
+          {preview&&step===2&&<fieldset disabled={busy}><SourcePlacement wizard receipt={token} preview={preview} draft={draft} setDraft={value=>{setDraft(value);setReview(false);}} language={language}/>
+          {canAssignTeam&&<section className="wizard-section"><h2>{t('Team','Команда')}</h2>
             {teams.error&&<p role="alert">{t('Teams could not be loaded. You can add the source without a team.','Не удалось загрузить команды. Можно добавить источник без команды.')}</p>}
             <label>{t('Search teams','Поиск команд')}<input type="search" value={teamSearch} onChange={e=>setTeamSearch(e.target.value)}/></label>
             <label>{t('Assigned team','Назначенная команда')}<select value={team} onChange={e=>setTeam(e.target.value)}><option value="">{t('No team','Без команды')}</option>{Object.values(teams.data?.teams??{}).filter(row=>row.id===team||row.name.toLowerCase().includes(teamSearch.toLowerCase())).map(row=><option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
-          </>:<p>{t('An administrator will assign a team','Команду назначит администратор')}</p>}</section>
-          {Object.keys(draft.references).length!==(draft.create_cluster?4:5)||preview.hosts.some(h=>!draft.host_types[h.id])?<p role="status">{t('Choose the required placement objects and a device type for each host to continue.','Для продолжения выберите объекты размещения и тип устройства для каждого хоста.')}</p>:null}
-          <div className="page-actions"><button type="button" disabled={busy} onClick={()=>go(1)}>{t("Back","Назад")}</button><button type="button" className="primary" disabled={Object.keys(draft.references).length!==(draft.create_cluster?4:5)||preview.hosts.some(h=>!draft.host_types[h.id])||!draft.name.trim()} onClick={event=>{if(event.currentTarget.form?.reportValidity())void reviewRegistration();}}>{t('Continue','Продолжить')}</button></div></fieldset>}
+          </section>}
+          {Object.keys(draft.references).length!==(draft.create_cluster?4:5)||preview.hosts.some(h=>!draft.host_types[h.id])?<p role="status">{t('Resolve the NetBox parameter issues before continuing.','Для продолжения устраните замечания к параметрам NetBox.')}</p>:null}
+          <div className="page-actions"><button type="button" disabled={busy} onClick={()=>go(1)}>{t("Back","Назад")}</button><button type="button" className="primary" disabled={busy} onClick={event=>{if(event.currentTarget.form&&validation.validate(event.currentTarget.form))void reviewRegistration();}}>{t('Continue','Продолжить')}</button></div></fieldset>}
           {step===3&&<fieldset disabled={busy}><legend>{t('Review and add','Проверка и добавление')}</legend>
           <h2>{draft.name}</h2><p>{connection.address} · {type==='esxi'?'VMware ESXi':'Proxmox VE'}</p><dl className="source-facts">{Object.entries(draft.references).map(([kind,row])=><div key={kind}><dt>{({site:t('Site','Площадка'),cluster:t('Cluster','Кластер'),platform:t('Platform','Платформа'),device_role:t('Device role','Роль устройства'),cluster_type:t('Cluster type','Тип кластера')} as Record<string,string>)[kind]}</dt><dd>{row.name}</dd></div>)}</dl>
           {preview?.hosts.map(h=><p key={h.id}>{h.name||h.id} → {draft.host_types[h.id]?.manufacturer?.name} / {draft.host_types[h.id]?.name}</p>)}
-          <p>{t('Team','Команда')}: {team?teams.data?.teams[team]?.name:t('No team','Без команды')}</p>
+          {canAssignTeam&&<p>{t('Team','Команда')}: {team?teams.data?.teams[team]?.name:t('No team','Без команды')}</p>}
           {draft.create_cluster&&<p><strong>{t('Will create cluster: ','Будет создан кластер: ')}{draft.name}</strong></p>}
-          <p>{t('The source and protected credentials will be saved. NetBox infrastructure objects and automatic synchronization remain unchanged.','Сохранятся источник и защищённые данные доступа. Инфраструктурные объекты NetBox и автоматическая синхронизация не изменяются.')}</p>
+          <p>{t('The source will be added. VM synchronization will not start.','Источник будет добавлен. Синхронизация виртуальных машин не начнётся.')}</p>
 
             <p>{t('HTTPS port','Порт HTTPS')}: {connection.port}. {t('Change connection and re-test to edit.','Для изменения вернитесь к подключению и повторите проверку.')}</p>
             <p><strong>{t('Automatic synchronization','Автоматическая синхронизация')}: {t('Off','Выключена')}</strong></p>

@@ -30,7 +30,7 @@ export interface ConnectionInput {
 }
 
 export interface RegistrationInput {
-  create_cluster?:boolean; registration_id?:string;
+  automatic_placement?:boolean;create_cluster?:boolean; registration_id?:string;
   onboarding_token: string; source_type: 'proxmox' | 'esxi'; address: string; verify_ssl: boolean; port?: number;
   source_instance: string; name: string; sync_interval_seconds: number;
   site_slug: string; cluster_name: string; platform_slug: string; device_role_slug: string;

@@ -47,7 +47,7 @@ function setup(context) {
 function event(values) {
   const data = new Map(Object.entries(values));
   const secret={get value(){return data.get('secret')},set value(value){data.set('secret',value)}};
-  return { preventDefault() {}, currentTarget: { data, elements:{namedItem(name){return name==='secret'?secret:null}}, cleared: false, reset() {
+  return { preventDefault() {}, currentTarget: { data, querySelectorAll:()=>[], elements:{namedItem(name){return name==='secret'?secret:null}}, cleared: false, reset() {
     this.cleared = true;
     for (const key of ['username', 'secret', 'token_id']) this.data.delete(key);
   } } };
@@ -93,11 +93,11 @@ test('test-review-add clears credentials after success and keeps sync disabled',
   assert.ok(!app.render().some((element) => element.props?.name === 'secret'));
   const placement=app.render().find(element=>element.props?.setDraft);
   const row={id:1,name:'New',slug:'test',fingerprint:'a'.repeat(64),scope_type:'dcim.site',scope_id:1,type:{id:1}};
-  placement.props.setDraft({...placement.props.draft,source_instance:'new-source',name:'New',references:Object.fromEntries(['site','cluster','platform','device_role','cluster_type'].map(kind=>[kind,row])),host_types:{'host-a':row}});
+  placement.props.setDraft({...placement.props.draft,source_instance:'new-source',name:'New',resolution_ready:true,resolution_name:'New',resolution_site:1,references:Object.fromEntries(['site','cluster','platform','device_role','cluster_type'].map(kind=>[kind,row])),host_types:{'host-a':row}});
   const registration = { ...source, interval: '600' };
   await app.render().find((element) => element.type === 'form').props.onSubmit(event(registration));
   assert.equal(calls, 1, 'No registration before confirmation');
-  app.render().find(element=>element.type==='button'&&element.props.type==='button'&&element.props.className==='primary').props.onClick({currentTarget:{form:{reportValidity:()=>true}}});
+  app.render().find(element=>element.type==='button'&&element.props.type==='button'&&element.props.className==='primary').props.onClick({currentTarget:{form:{querySelectorAll:()=>[],elements:[]}}});
   await new Promise(resolve=>setImmediate(resolve));
   await app.render().find((element) => element.type === 'form').props.onSubmit(event(registration));
   assert.equal(calls, 2);

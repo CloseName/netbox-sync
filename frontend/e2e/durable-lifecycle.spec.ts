@@ -68,7 +68,7 @@ for(const width of [1440,1024,768])test(`Remove Source confirmation, active bloc
   await page.goto(url+'/sources/source-1/configuration');
   await page.getByRole('button',{name:'Remove Source',exact:true}).click();const dialog=page.getByRole('dialog');
   await expect(dialog.getByRole('textbox')).toHaveCount(0);await expect(dialog.getByRole('checkbox')).toHaveCount(0);await expect(dialog.getByRole('button',{name:'Remove Source',exact:true})).toBeEnabled();
-  await page.screenshot({path:info.outputPath('remove-confirmation.png'),fullPage:true});
+  await dialog.screenshot({path:info.outputPath('remove-confirmation.png')});
   await dialog.getByRole('button',{name:'Remove Source',exact:true}).click();await expect(dialog.getByText('Wait for active Plan or Discovery to finish.')).toBeVisible();
   server.complete('source-1','PLAN');await dialog.getByRole('button',{name:'Remove Source',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Source removed from NetBox Sync'})).toBeVisible();await expect(page.getByText(/Local stored credentials removed/)).toBeVisible();
@@ -156,10 +156,25 @@ for (const locale of ['en','ru']) test(`inventory conflict survives reload and b
   if(locale==='ru') await setLanguage(page,'ru');
   const title=locale==='ru'?'План заблокирован: обнаружены конфликты':'Plan blocked: conflicts detected';
   await expect(page.getByRole('heading',{name:title})).toBeVisible();
-  await page.locator('summary').filter({hasText:'shared-uuid'}).click();
-  await expect(page.getByText('vm-1000',{exact:true})).toBeVisible();
-  await expect(page.getByText('vm-2000',{exact:true})).toBeVisible();
+  await page.locator('.conflict-summary summary').click();
+  await expect(page.locator('.conflict-summary li').filter({hasText:'vm-1000'})).toBeVisible();
+  await expect(page.locator('.conflict-summary li').filter({hasText:'vm-2000'})).toBeVisible();
   await expect(page.getByRole('button',{name:/Review and confirm sync|Проверить и подтвердить/})).toBeDisabled();
   await page.reload();await expect(page.getByRole('heading',{name:title})).toBeVisible();
   await page.goto(url+'/sources/source-1');await expect(page.getByText(title).first()).toBeVisible();
+});
+
+for(const locale of ['en','ru'])for(const sameInterface of [true,false])test(`compact IP conflict ${locale} same interface ${sameInterface}`,async({page,context},info)=>{
+ const server=backend();await server.attach(context);await page.setViewportSize({width:390,height:844});
+ await page.addInitScript(({locale})=>{localStorage.setItem('netbox-sync.language',locale);localStorage.setItem('netbox-sync.theme','dark');},{locale});
+ const now=new Date().toISOString();const participant={name:'IY-RED_LL',external_id:'vm-identity',provider_object_id:'417',host_id:'host-proof',interface:'Network adapter 1',interface_id:'4000',address:'172.16.5.78/16'};
+ const other=sameInterface?{...participant,address:'172.16.5.78/24'}:{...participant,name:'Other VM',external_id:'other-id',provider_object_id:'418'};
+ server.slots.set('source-1PLAN',{operation_id:randomUUID(),source_instance:'source-1',operation_kind:'PLAN',status:'READY',started_at:now,updated_at:now,finished_at:now,safe_error_code:null,result:{...canonical('source-1'),apply_allowed:false,items:[{object_kind:'source',external_id:'IP',name:'Source 1',action:'BLOCKED',reason_code:'IP_ASSIGNMENT',reason:'Inventory conflict',matched_object_id:null,before:[],after:[]}],conflicts:[{kind:'IP_ASSIGNMENT',value:'172.16.5.78',participants:[participant,other]}]}});
+ await page.goto(url+'/sources/source-1/sync');
+ await expect(page.locator('.conflict-summary')).toHaveCount(1);
+ await expect(page.locator('.conflict-summary h4')).toContainText(sameInterface?(locale==='ru'?'Разные маски одного IP':'Different masks for one IP'):(locale==='ru'?'Неоднозначное сопоставление IP':'Ambiguous IP mapping'));
+ await expect(page.getByText(locale==='ru'?'План готов к проверке.':'Plan ready for review.',{exact:true})).toHaveCount(0);
+ await expect(page.locator('.sync-filters')).toHaveCount(0);
+ await expect(page.getByRole('button',{name:/Review and confirm sync|Проверить и подтвердить/})).toBeDisabled();
+ await page.locator('.conflict-summary').screenshot({path:info.outputPath('ip-conflict.png')});
 });

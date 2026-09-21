@@ -14,6 +14,7 @@ async function fixture(page:any,role='admin',provider='esxi',failure=''){
     if(path==='/api/v1/teams')return route.fulfill({json:{version:1,revision:1,teams:{team1:{id:'team1',name:'Infrastructure'}},assignments:{}}});
     if(path.endsWith('test-connection')){if(fail){const code=fail;fail='';return route.fulfill({status:400,json:{error:{code}}});}return route.fulfill({json:{...previewResult,preview:{...previewResult.preview,provider,name:'Fixture host'}}});}
     if(path.endsWith('cancel-onboarding'))return route.fulfill({json:{status:'cancelled'}});
+    if(path.endsWith('resolve-placement'))return route.fulfill({json:{references:Object.fromEntries(['site','platform','device_role','cluster_type'].map(kind=>[kind,{...catalogRow(kind),...(['platform','cluster_type'].includes(kind)&&provider==='proxmox'?{name:'Proxmox VE'}:{})}])),host_types:{'host-a':catalogRow('device_type')},sites:[catalogRow('site')],create_cluster:true,issues:[]}});
     if(path.endsWith('review-placement'))return route.fulfill({json:{valid:true}});
     if(path.includes('/catalog/')){const kind=path.split('/').pop()!,row=catalogRow(kind);if(kind==='cluster')row.name='Fixture host';if(provider==='proxmox'&&['platform','cluster_type'].includes(kind))row.name='Proxmox VE';return route.fulfill({json:{items:[row],count:1,offset:0,more:false,url:'https://netbox.example.test/'}});}
     if(path==='/api/v1/sources'&&req.method()==='POST'){writes.push(path);const data=req.postDataJSON();expect(data.sync_interval_seconds).toBe(600);expect(data.confirm_sync_disabled).toBe(true);registered={...source(),source_instance:data.source_instance,name:data.name,address:data.address,type:data.source_type,enabled:true,sync_enabled:false,status:'sync_disabled',legacy_identity_owner:false};return route.fulfill({json:registered});}
@@ -35,24 +36,21 @@ async function connect(page:any,provider='esxi'){
   await page.getByRole('button',{name:'Continue',exact:true}).click();
 }
 async function placement(page:any){
-  for(const label of ['Site','Cluster','Platform','Device role','Cluster type']){
-    const box=page.getByRole('combobox',{name:label,exact:true});await box.click();await page.getByRole('listbox').getByRole('option').first().click();
-  }
-  const box=page.getByRole('combobox',{name:/Device type for/});await box.click();await page.getByRole('listbox').getByRole('option').first().click();
+ await expect(page.getByRole('button',{name:'Check parameters again',exact:true})).toBeEnabled();
 }
 for(const role of ['admin','operator'])for(const provider of ['esxi','proxmox'])test(`three steps ${role} ${provider}`,async({page})=>{
   const server=await fixture(page,role,provider);
   await expect(page.getByRole('navigation',{name:'Source setup steps'}).getByRole('button')).toHaveCount(3);
   await connect(page,provider);await expect(page).toHaveURL(/step=2/);
   await expect(page.getByLabel('Display name',{exact:true})).toHaveValue('Fixture host');
-  if(role==='operator'){await expect(page.getByText('An administrator will assign a team')).toBeVisible();await expect(page.getByRole('combobox',{name:'Assigned team',exact:true})).toHaveCount(0);}
+  if(role==='operator'){await expect(page.getByText('An administrator will assign a team')).toHaveCount(0);await expect(page.getByRole('combobox',{name:'Assigned team',exact:true})).toHaveCount(0);}
   else await expect(page.getByRole('combobox',{name:'Assigned team',exact:true})).toBeVisible();
   await placement(page);expect(server.writes).toEqual([]);
   await page.screenshot({path:test.info().outputPath(`wizard-${role}-${provider}-settings.png`),fullPage:true});
   await page.getByRole('button',{name:'Continue',exact:true}).click();await expect(page).toHaveURL(/step=3/);
   await expect(page.getByRole('checkbox',{name:'Confirm source registration'})).toHaveCount(0);
   await page.screenshot({path:test.info().outputPath(`wizard-${role}-${provider}-review.png`),fullPage:true});
-  await page.goBack();await expect(page).toHaveURL(/step=2/);await expect(page.getByLabel('Display name',{exact:true})).toHaveValue('Fixture host');
+  await page.goBack();await expect(page).toHaveURL(/step=2/);await expect(page.getByLabel('Display name',{exact:true})).toHaveValue('Fixture host');await placement(page);
   await page.getByRole('button',{name:'Continue',exact:true}).click();await page.getByRole('button',{name:'Add source',exact:true}).click();
   await expect(page).toHaveURL(/\/sources$/);await expect(page.getByRole('status').filter({hasText:'Source Fixture host added'})).toBeVisible();expect(server.writes).toEqual(['/api/v1/sources']);
   await page.getByRole('button',{name:'Dismiss notification'}).click();await expect(page.getByText('Source Fixture host added')).toHaveCount(0);
@@ -95,7 +93,7 @@ test('changing tested address requires a new check and preserves placement',asyn
  await expect(page.locator('[name=secret]')).toBeEmpty();
  await page.locator('[name=secret]').fill(randomUUID());await page.getByRole('button',{name:'Continue',exact:true}).click();
  await expect(page.getByLabel('Display name',{exact:true})).toHaveValue('Fixture host');
- await expect(page.getByRole('combobox',{name:'Site',exact:true})).toContainText('Test site');
+ await expect(page.getByText('Test site',{exact:true}).first()).toBeVisible();
 });
 
 for(const role of ['admin','operator'])test(`Russian dark narrow wizard ${role}`,async({page})=>{
@@ -147,13 +145,13 @@ for(const code of ['ONBOARDING_TOKEN_INVALID','PROBE_RECEIPT_INVALID'])test(`rec
  await expect(page.getByLabel('Hostname or IPv4 address')).toHaveValue('fixture.example.test');
  await page.locator('[name=secret]').fill(randomUUID());await page.getByRole('button',{name:'Continue',exact:true}).click();
  await expect(page.getByLabel('Display name',{exact:true})).toHaveValue('Fixture host');
- await expect(page.getByRole('combobox',{name:'Site',exact:true})).toContainText('Test site');
+ await expect(page.getByText('Test site',{exact:true}).first()).toBeVisible();
  expect(server.writes).toEqual([]);
 });
 
 for(const role of ['operator','admin'])test(`pending cluster only final registration ${role}`,async({page})=>{
  const server=await fixture(page,role);await connect(page);await placement(page);
- await page.getByRole('checkbox',{name:'Create the cluster when adding this source',exact:true}).check();
+ await expect(page.getByRole('checkbox',{name:'Create the cluster when adding this source',exact:true})).toHaveCount(0);
  await expect(page.getByRole('combobox',{name:'Cluster',exact:true})).toHaveCount(0);
  await page.screenshot({path:test.info().outputPath(`pending-cluster-${role}-settings.png`),fullPage:true});
  expect(server.writes).toEqual([]);
@@ -169,7 +167,7 @@ for(const role of ['operator','admin'])test(`pending cluster only final registra
 
 test('lost final response checks the actor-bound journal without another registration',async({page})=>{
  await fixture(page,'operator');await connect(page);await placement(page);
- await page.getByRole('checkbox',{name:'Create the cluster when adding this source',exact:true}).check();
+ await expect(page.getByRole('checkbox',{name:'Create the cluster when adding this source',exact:true})).toHaveCount(0);
  await page.getByRole('button',{name:'Continue',exact:true}).click();
  let posts=0,checks=0;
  await page.route('**/api/v1/sources',route=>{posts++;return route.fulfill({status:503,json:{error:{code:'REGISTRATION_UNCERTAIN'}}});});

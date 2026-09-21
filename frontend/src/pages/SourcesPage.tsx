@@ -5,7 +5,7 @@ import {SourceNameEditor} from '../components/SourceNameEditor';
 import {useLanguage} from "../ui/language";
 import {tr} from "../ui/i18n";
 import { useCallback, useEffect, useState } from "react";
-import { Link, NavLink, useLocation, useParams } from "react-router-dom";
+import { Navigate, Link, NavLink, useLocation, useParams } from "react-router-dom";
 import { fetchSource, SourceNotFoundError } from "../api/sources";
 import type { Source } from "../api/sources";
 import { fetchSchedule } from "../api/schedule";
@@ -33,10 +33,7 @@ import { staleEvidence,planActions } from "../ui/runEvidence";
 export const sourceTabs = [
   "Overview",
   "Sync",
-  "Runs",
   "Schedule",
-  "Diagnostics",
-  "Configuration",
 ];
 function RunEvidence({
   run,
@@ -60,7 +57,8 @@ export function SourcesPage() {
   const canConfigure = usePermission('source.configure'), canRemove = usePermission('source.remove');
   const [language]=useLanguage();
   const { sourceInstance = "", "*": suffix = "" } = useParams();
-  const tab = suffix
+  const legacy = ["runs","diagnostics","configuration"].includes(suffix);
+  const tab = legacy ? "Overview" : suffix
     ? sourceTabs.find((item) => item.toLowerCase() === suffix)
     : "Overview";
   const location = useLocation();
@@ -96,6 +94,7 @@ export function SourcesPage() {
   useEffect(() => {
     document.title = `${detail?.name ?? sourceInstance}${tab && tab !== "Overview" ? " / " + tr(tab) : ""} | NetBox Sync`;
   }, [detail?.name, sourceInstance, tab, language]);
+  if(legacy)return <Navigate replace to={sourcePath(sourceInstance)+"#"+suffix} state={location.state}/>;
   if (removed?.source_instance === sourceInstance) return <RemovedSource value={removed} />;
   if (source.failure instanceof SourceNotFoundError) return <RemovedSourceLookup source={sourceInstance} />;
   if (!tab)
@@ -166,7 +165,7 @@ export function SourcesPage() {
               }
             />
             <p className="muted source-identity">
-              <code>{detail.source_instance}</code> {tr("· Site")}{" "}{detail.site_slug} /{" "}
+              {tr("Site")}{" "}{detail.site_slug} /{" "}
               {detail.cluster_name}
             </p>
             <dl className="source-header-signals">
@@ -215,7 +214,7 @@ export function SourcesPage() {
                   )}
                 </dd>
               </div>
-              <div>
+              {evidence?.latest_run?.status!=='SUCCEEDED'&&(<div>
                 <dt>{tr("Last successful sync")}{" "}</dt>
                 <dd>
                   {evidence ? (
@@ -224,7 +223,8 @@ export function SourcesPage() {
                     tr(diagnostics.loading?"Loading…":"Unavailable")
                   )}
                 </dd>
-              </div>
+              </div>)}
+
               <div>
                 <dt>{tr("Attention")}{" "}</dt>
                 <dd>
@@ -281,51 +281,7 @@ export function SourcesPage() {
             <>
               <h2>{tr("Source overview")}{" "}</h2>
               <div className="source-panels">
-                <section className="source-panel">
-                  <h3>{tr("Recent activity")}{" "}</h3>
-                  <dl className="source-facts">
-                    <div>
-                      <dt>{tr("Last run")}{" "}</dt>
-                      <dd>
-                        {evidence ? (
-                          <RunEvidence
-                            run={evidence.latest_run}
-                            stale={
-                              !!(
-                                evidence.latest_run &&
-                                staleEvidence(
-                                  evidence.latest_run,
-                                  sourceInstance,
-                                  diagnostics.data,
-                                )
-                              )
-                            }
-                          />
-                        ) : (
-                          tr("Unavailable")
-                        )}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>{tr("Last success")}{" "}</dt>
-                      <dd>
-                        {evidence ? (
-                          <Timestamp value={evidence.latest_success_at} />
-                        ) : (
-                          tr("Unavailable")
-                        )}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>{tr("Diagnostics")}{" "}</dt>
-                      <dd>
-                        <Badge value={healthStatus(evidence?.status)} />
-                      </dd>
-                    </div>
-                  </dl>
-                  <Link to={base + "/runs"} state={{ from }}>
-                    {tr("View source runs")}{" "}</Link>
-                </section>
+                <section className="source-panel"><h3>{language==='ru'?'Сервер':'Server'}</h3><p>{detail.address}</p><details><summary>{tr("Technical details")}</summary><code>{detail.source_instance}</code></details></section>
                 <section className="source-panel">
                   <h3>{tr("Schedule summary")}{" "}</h3>
                   {schedule.data ? (
@@ -385,14 +341,14 @@ export function SourcesPage() {
               afterSave={diagnostics.refresh}
             />
           </div>
-          {tab === "Runs" && (
+          {tab === "Overview" && (
             <SourceRuns
               instance={sourceInstance}
               diagnostics={diagnostics.data}
             />
           )}
-          {tab === "Diagnostics" && (
-            <section className="source-panel">
+          {tab === "Overview" && (
+            <details id="diagnostics" className="source-panel" open={location.hash==="#diagnostics"}><summary>{tr("Source diagnostics")}</summary>
               <div className="page-heading">
                 <h2>{tr("Source diagnostics")}{" "}</h2>
                 <button
@@ -481,9 +437,9 @@ export function SourcesPage() {
                   {evidence?.warnings.join(", ") || tr("None available")}
                 </p>
               </details>
-            </section>
+            </details>
           )}
-          {tab === "Configuration" && (<>
+          {tab === "Overview" && canConfigure && (<details id="configuration" open={location.hash==="#configuration"}><summary>{language==='ru'?'Настройки источника':'Source settings'}</summary>
             <TeamEditor source={detail.source_instance}/>
             <SourceConfiguration
               source={detail}
@@ -491,7 +447,7 @@ export function SourcesPage() {
             />
             {canConfigure && <SourceMappingEditor key={detail.source_instance} source={detail.source_instance} onSaved={source.refresh}/>}
           {canRemove && <SourceLifecyclePanel source={detail} onRemoved={setRemoved} />}
-          </>)}
+          </details>)}
         </>
       )}
     </main>
@@ -508,7 +464,7 @@ function SourceRuns({
     useCallback((signal) => fetchSourceRuns(instance, signal), [instance]),
   );
   return (
-    <section className="source-panel">
+    <section id="runs" className="source-panel">
       <div className="page-heading">
         <h2>{tr("Source runs")}{" "}</h2>
         <button disabled={resource.loading} onClick={resource.refresh}>

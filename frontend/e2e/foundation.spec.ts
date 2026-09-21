@@ -73,8 +73,9 @@ test("direct routes, active navigation, Back/Forward and refresh", async ({
     fullPage: true,
   });
   await page.reload();
+  await page.locator(".source-panels details summary").first().click();
   await expect(
-    page.getByText("source-51", { exact: true }).last(),
+    page.locator(".source-panels details code").first(),
   ).toBeVisible();
   await page.getByRole("link", { name: "Back to sources" }).click();
   await expect(page).toHaveURL(/provider=proxmox/);
@@ -260,9 +261,8 @@ test("source route remount isolates late discovery results", async ({
   await page.getByRole("link", { name: "Source 002", exact: true }).click();
   await finish();
   await expect(page.getByRole("heading", { name: "Source 002" })).toBeVisible();
-  await expect(
-    page.getByText("source-2", { exact: true }).last(),
-  ).toBeVisible();
+  await page.locator(".source-panels details summary").first().click();
+  await expect(page.locator(".source-panels details code").first()).toHaveText("source-2");
   await expect(page.getByLabel("Classification", { exact: true })).toHaveCount(
     0,
   );
@@ -328,4 +328,14 @@ test("skip link and collapsed navigation are keyboard accessible", async ({
   await expect(
     page.getByRole("button", { name: "Navigation", exact: true }),
   ).toHaveAttribute("aria-expanded", "true");
+});
+
+
+test('source list preserves query and scroll after visiting a source',async({page})=>{
+ await fixture(page,55);await page.setViewportSize({width:1280,height:720});
+ await page.goto('/sources?size=25');const target=page.getByRole('link',{name:'Source 025',exact:true});
+ await target.scrollIntoViewIfNeeded();const offset=await page.evaluate(()=>scrollY);expect(offset).toBeGreaterThan(0);
+ await target.click();await expect(page).toHaveURL(/source-25$/);
+ await page.getByRole('link',{name:'Back to sources',exact:true}).click();await expect(page).toHaveURL(/sources\?size=25$/);
+ await expect.poll(()=>page.evaluate(()=>scrollY)).toBeGreaterThanOrEqual(offset-2);
 });

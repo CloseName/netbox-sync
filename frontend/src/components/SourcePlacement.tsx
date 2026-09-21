@@ -1,3 +1,5 @@
+import {AutomaticPlacement} from './AutomaticPlacement';
+import type {ComponentProps} from 'react';
 import {usePermission} from '../AuthGate';
 import type {Dispatch,SetStateAction} from 'react';
 import {useState} from 'react';
@@ -5,8 +7,8 @@ import {Lookup,genericModel} from './CatalogLookup';
 export {Lookup,genericModel,suggestion} from './CatalogLookup';
 import {CatalogCreate} from './CatalogCreate';
 import type {CatalogItem,SourcePreview} from '../api/onboarding';
-export interface Placement {create_cluster?:boolean;registration_id?:string;source_instance:string;name:string;interval:number;references:Record<string,CatalogItem>;host_types:Record<string,CatalogItem>;}
-export function SourcePlacement({preview,draft,setDraft,language,editing=false,wizard=false}:{preview:SourcePreview;draft:Placement;setDraft:Dispatch<SetStateAction<Placement>>;language:string;editing?:boolean;wizard?:boolean}){
+export interface Placement {resolution_name?:string;resolution_site?:number;resolution_ready?:boolean;create_cluster?:boolean;registration_id?:string;source_instance:string;name:string;interval:number;references:Record<string,CatalogItem>;host_types:Record<string,CatalogItem>;}
+function ManualPlacement({preview,draft,setDraft,language,editing=false,wizard=false}:{preview:SourcePreview;draft:Placement;setDraft:Dispatch<SetStateAction<Placement>>;language:string;editing?:boolean;wizard?:boolean}){
  const canCreate=usePermission('catalog.create');
  const t=(en:string,ru:string)=>language==='ru'?ru:en;
  const [creating,setCreating]=useState<{kind:string;initial:string;manufacturer?:string;complete:(row:CatalogItem)=>void}|null>(null);
@@ -34,4 +36,8 @@ export function SourcePlacement({preview,draft,setDraft,language,editing=false,w
  {!editing&&!wizard&&<details className={wizard?"wizard-section":"source-panel"}><summary>{t('Advanced settings','Дополнительные настройки')}</summary><label>Source ID<input required pattern="[a-z0-9][a-z0-9._-]{1,62}" value={draft.source_instance} onChange={e=>setDraft({...draft,source_instance:e.target.value})}/></label><p>{t('Generated once before registration. This stable identity is independent of display name and address.','Создаётся автоматически до регистрации. Постоянная идентичность не зависит от названия и адреса.')}</p><label>{t('Schedule interval, seconds (sync remains off)','Интервал расписания, секунд (синхронизация выключена)')}<input name="interval" type="number" min={1} max={2147483647} value={draft.interval} onChange={e=>setDraft({...draft,interval:Number(e.target.value)})} required/></label></details>}
  {!canCreate&&<p>{t("If a required catalog entry is missing, ask an administrator to create it.","Если нужной записи нет в справочнике, попросите администратора создать её.")}</p>}
  </>;
+}
+
+export function SourcePlacement(props:ComponentProps<typeof ManualPlacement>&{receipt?:string}){
+ return props.wizard?<AutomaticPlacement preview={props.preview} draft={props.draft} setDraft={props.setDraft} language={props.language} receipt={props.receipt||''}/>:<ManualPlacement {...props}/>;
 }

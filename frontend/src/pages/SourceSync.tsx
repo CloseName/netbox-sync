@@ -335,7 +335,7 @@ export function SourceSync({
             {tr("Build a plan to review the proposed changes. Discovery is an optional, separate inspection.")}{" "}</p>
         </div>
       )}
-      {usable && !consumed && historyLoaded && phase === "idle" && (
+      {usable && plan?.value.apply_allowed && !consumed && historyLoaded && phase === "idle" && (
         <p role="status">{tr("Plan ready for review.")}{" "}</p>
       )}
       {plan && (

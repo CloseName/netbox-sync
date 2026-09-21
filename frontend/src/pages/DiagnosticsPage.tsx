@@ -24,7 +24,7 @@ function DiagnosticsContent() {
   const resource = useResource(fetchDiagnostics),
     data = resource.data;
   return (
-    <main className="operations-workspace">
+    <section className="operations-workspace">
       <PageHeader
         title={tr("Diagnostics")}
         description={tr("Source outcomes and worker responses. Application connections are checked in System health.")}
@@ -232,6 +232,6 @@ function DiagnosticsContent() {
           </section>
         </>
       )}
-    </main>
+    </section>
   );
 }

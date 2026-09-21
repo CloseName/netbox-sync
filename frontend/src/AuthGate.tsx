@@ -1,3 +1,5 @@
+import {useFormValidation} from './ui/formValidation';
+import {CredentialField} from './components/CredentialField';
 import {useEffect,useState,useRef,createContext,useContext,type ReactNode,type FormEvent} from 'react';
 import {useLanguage} from './ui/language';
 import {LanguageControl} from './ui/LanguageControl';
@@ -44,11 +46,12 @@ export async function authRequest(path:string,body?:unknown){
 }
 export function AuthGate({children}:{children:ReactNode}){
  const [lang]=useLanguage(),t=(en:string,ru:string)=>lang==='ru'?ru:en;
+ const validation=useFormValidation(lang);
  const [principal,setPrincipal]=useState<Principal|null>(null),[state,setState]=useState('loading'),[enroll,setEnroll]=useState(new URLSearchParams(window.location.search).get('recovery')==='1'),[available,setAvailable]=useState(false),[visible,setVisible]=useState(false),[unavailable,setUnavailable]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
  async function check(){setState('loading');try{const data=await authRequest('auth/me');if(typeof data.principal_id!=='string'||!Array.isArray(data.permissions))throw new Error('AUTH_UNAVAILABLE');setPrincipal(data);setState('ready');}catch(e){const code=e instanceof Error?e.message:'AUTH_UNAVAILABLE';if(code==='AUTH_REQUIRED')setPrincipal(null);setState(code);}}
  useEffect(()=>{void check();void authRequest('auth/status').then(data=>setAvailable(data.enrollment_available===true)).catch(()=>setAvailable(false));const expire=(event:Event)=>{const code=(event as CustomEvent).detail;if(code==='AUTH_REQUIRED'){setPrincipal(null);setState(code);}else setUnavailable(true);};window.addEventListener('netbox-sync.auth',expire);return()=>window.removeEventListener('netbox-sync.auth',expire);},[]);
  async function submit(event:FormEvent<HTMLFormElement>){
-  event.preventDefault();if(busy)return;setBusy(true);setError('');
+  event.preventDefault();if(busy||!validation.validate(event.currentTarget))return;setBusy(true);setError('');
   const form=event.currentTarget,data=new FormData(form),body={username:String(data.get('username')),password:String(data.get('password')),...(enroll?{invitation:String(data.get('invitation'))}:{})};
   try{await authRequest(enroll?'auth/enroll':'auth/login',body);setAvailable(false);setEnroll(false);setUnavailable(false);await check();}catch(e){setError(e instanceof Error?e.message:'AUTH_UNAVAILABLE');}
   finally{const input=form.elements.namedItem('password') as HTMLInputElement|null;if(input)input.value='';setBusy(false);}
@@ -60,10 +63,10 @@ export function AuthGate({children}:{children:ReactNode}){
  {state==='loading'?<p role="status">{t('Checking session…','Проверка сессии…')}</p>:<>
  {state==='AUTH_REQUIRED'&&<p>{t('Sign in to continue.','Войдите для продолжения.')}</p>}
  {(messages[state]||error)&&<p className="auth-error" role="alert">{messages[error]??messages[state]??messages.AUTH_UNAVAILABLE}</p>}
- {state==='AUTH_UNAVAILABLE'&&<button onClick={()=>void check()}>{t('Retry session check','Повторить проверку сессии')}</button>}<form onSubmit={submit}><fieldset disabled={busy}>
+ {state==='AUTH_UNAVAILABLE'&&<button onClick={()=>void check()}>{t('Retry session check','Повторить проверку сессии')}</button>}{validation.summary}<form noValidate onSubmit={submit}><fieldset disabled={busy}>
 
- <label>{t('Username','Имя пользователя')}<input name="username" required minLength={3} maxLength={64} autoComplete="username"/></label>
- <label>{t('Password','Пароль')}<input name="password" type={visible?"text":"password"} required minLength={enroll?15:1} maxLength={256} autoComplete={enroll?'new-password':'current-password'}/></label><button type="button" aria-pressed={visible} onClick={()=>setVisible(!visible)}><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>{visible?t('Hide password','Скрыть пароль'):t('Show password','Показать пароль')}</button>
+ <CredentialField label={t('Username','Имя пользователя')} name="username" required minLength={3} maxLength={64} autoComplete="username"/>
+ <CredentialField label={t('Password','Пароль')} name="password" secret visible={visible} onVisibilityChange={setVisible} required minLength={enroll?15:1} maxLength={256} autoComplete={enroll?'new-password':'current-password'}/>
  {enroll&&<><label>{t('One-time invitation','Одноразовое приглашение')}<input name="invitation" type="password" required autoComplete="off"/></label><p>{t('Obtain a 15-minute invitation from the host administrator. Use a password of at least 15 characters.','Получите у администратора сервера приглашение на 15 минут. Пароль — не менее 15 символов.')}</p></>}
  <button type="submit" className="primary">{busy?t('Waiting for server…','Ожидаем ответа сервера…'):enroll?t('Create administrator','Создать администратора'):t('Sign in','Войти')}</button>
  </fieldset></form>

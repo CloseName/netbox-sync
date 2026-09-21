@@ -24,8 +24,9 @@ for(const language of ['en','ru'])test(`source team create assign filter conflic
   return route.fulfill({status:404,json:{}});
  });
  await page.goto('/sources');if(language==='ru')await setLanguage(page,'ru');
- await page.getByText(language==='ru'?'Команды':'Teams',{exact:true}).click();
- await page.getByText(language==='ru'?'Управление командами':'Manage teams',{exact:true}).click();
+ await expect(page.getByRole('combobox',{name:language==='ru'?'Команда':'Team',exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:language==='ru'?'Управление командами':'Manage teams',exact:true}).click();
+ await page.getByRole('dialog').getByText(language==='ru'?'Управление командами':'Manage teams',{exact:true}).click();
  await page.getByLabel(language==='ru'?'Название команды':'Team name',{exact:true}).fill('Compute QA');
  await page.getByRole('button',{name:language==='ru'?'Создать команду':'Create team',exact:true}).click();
  await expect(page.getByLabel(language==='ru'?'Команда для переименования':'Team to rename')).toContainText('Compute QA');

@@ -1,3 +1,4 @@
+import {useLanguage} from '../ui/language';
 import {readablePlanItem,planReason,planParent,changedObjectCount} from '../ui/plan';
 import {hasChanges,emptyPlanLabel} from '../ui/plan';
 import {tr} from "../ui/i18n";
@@ -17,6 +18,8 @@ import {
 import type { PlanView } from "../ui/plan";
 import { Badge, Timestamp } from "../ui/primitives";
 export function PlanSummary({ plan }: { plan: SyncPlan }) {
+  const [language]=useLanguage();
+  if(plan.conflicts?.length)return <p role="status">{language==='ru'?'Подсчёт изменений не завершён: план заблокирован.':'Change calculation is incomplete: the plan is blocked.'}</p>;
   const counts = planCounts(plan.items);
   return (
     <dl className="sync-summary"><div><dt>{tr("Unique changed objects")}</dt><dd>{changedObjectCount(plan.items)}</dd></div>
@@ -46,6 +49,7 @@ export function PlanReview({
   previous: boolean;
   toolbar?: ReactNode;
 }) {
+  const [language]=useLanguage(),t=(en:string,ru:string)=>language==='ru'?ru:en;
   const [view, setView] = useState<PlanView>(
     plan.items.some((item) => item.action === "BLOCKED")
       ? "Attention"
@@ -55,7 +59,7 @@ export function PlanReview({
     [kind, setKind] = useState(""),
     [search, setSearch] = useState("");
   const [limit, setLimit] = useState(50);
-  const rows = filterPlan(plan.items, view, action, kind, search);
+  const rows = filterPlan(plan.conflicts?.length?plan.items.filter(item=>item.action!=='BLOCKED'):plan.items, view, action, kind, search);
   const groups=rows.slice(0,limit).reduce((map,item)=>{const name=planParent(item,plan.items)||readablePlanItem(item,plan.items).name;map.set(name,[...(map.get(name)??[]),item]);return map;},new Map<string,SyncPlanItem[]>());
   return (
     <section
@@ -81,9 +85,9 @@ export function PlanReview({
         {tr("Plan received")}{" "}<Timestamp value={received} />{tr(". The plan is checked again before sync.")}{" "}</p>
       <PlanSummary plan={plan} />
       {!!planCounts(plan.items).UNSUPPORTED&&<button onClick={()=>{setView('Attention');setAction('UNSUPPORTED');setKind('');setSearch('');setLimit(50);}}>{tr('Show unsupported categories')}</button>}
-      <p className="muted">
-        {tr("Create and Update count operations, not unique objects. Other counts describe plan rows. Filters change this view only; sync submits the entire reviewed plan.")}{" "}</p>
-      {plan.items.filter(policyRow).map((item, i) => (
+      {!plan.conflicts?.length&&<p className="muted">
+        {tr("Create and Update count operations, not unique objects. Other counts describe plan rows. Filters change this view only; sync submits the entire reviewed plan.")}{" "}</p>}
+      {plan.items.filter(item=>policyRow(item)&&!plan.conflicts?.length).map((item, i) => (
         <p className="sync-safety" key={i}>
           {tr("Retention policy:")}{" "}{planReason(item)}
         </p>
@@ -99,20 +103,15 @@ export function PlanReview({
       {!!plan.conflicts?.length && <section aria-label={tr('Inventory conflicts')}>
         <h4>{tr('Plan blocked: conflicts detected')}</h4>
         <p>{tr('Compare the listed objects in the source. Correct ambiguous identities or network assignments, then build a new plan. No objects are excluded automatically.')}</p>
-        <p>{tr('Source')}: {plan.source_instance}</p>
-        {plan.conflicts.map((conflict,index)=><details key={index}>
-          <summary>{tr(conflict.kind === 'VM_IDENTITY' ? 'Shared VM identifier' : 'Conflicting IP assignment')}: {conflict.value} ({conflict.participants.length})</summary>
-          <ul>{conflict.participants.map((p,i)=><li key={i}>
-            <strong>{p.name}</strong><dl>
-              <dt>{tr('Host identifier')}</dt><dd>{p.host_id}</dd>
-              <dt>{tr('VM identifier')}</dt><dd>{p.external_id}</dd>
-              {p.provider_object_id && <><dt>{tr('Provider object identifier')}</dt><dd>{p.provider_object_id}</dd></>}
-              {p.interface && <><dt>{tr('Interface')}</dt><dd>{p.interface} ({p.interface_id})</dd></>}
-              {p.address && <><dt>{tr('IP address')}</dt><dd>{p.address}</dd></>}
-            </dl>
-          </li>)}</ul>
-        </details>)}
+        {plan.conflicts.map((conflict,index)=>{
+          const identities=new Set(conflict.participants.map(p=>[p.host_id,p.provider_object_id||p.external_id,p.interface_id||p.interface].join(':')));
+          const masks=conflict.kind==='IP_ASSIGNMENT'&&identities.size===1&&new Set(conflict.participants.map(p=>p.address)).size>1;
+          return <article key={index} className="conflict-summary"><h4>{conflict.value}: {masks?t('Different masks for one IP','Разные маски одного IP'):conflict.kind==='VM_IDENTITY'?tr('Shared VM identifier'):t('Ambiguous IP mapping','Неоднозначное сопоставление IP')}</h4>
+          <ul>{Array.from(new Set(conflict.participants.map(p=>[p.name,p.interface,p.address].filter(Boolean).join(' · ')))).map(value=><li key={value}>{value}</li>)}</ul>
+          <details><summary>{tr('Technical details')}</summary><p>{tr('Source')}: {plan.source_instance}</p><ul>{conflict.participants.map((p,i)=><li key={i}>{p.host_id} · {p.external_id} · {p.provider_object_id} · {p.interface_id}</li>)}</ul></details></article>;
+        })}
       </section>}
+      {(!plan.conflicts?.length||plan.items.some(item=>item.action!=='BLOCKED'&&!policyRow(item)))&&<>
       <div className="sync-filters">
         <div className="view-options" role="group" aria-label={tr("Plan view")}>
           {(["Changes", "Attention", "All"] as PlanView[]).map((value) => (
@@ -191,6 +190,7 @@ export function PlanReview({
       {rows.length > limit && (
         <button onClick={() => setLimit(limit + 50)}>{tr("Show 50 more rows")}{" "}</button>
       )}
+      </>}
       <details className="sync-technical">
         <summary>{tr("Plan technical details")}{" "}</summary>
         <dl className="source-facts">

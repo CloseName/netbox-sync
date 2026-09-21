@@ -96,7 +96,7 @@ for (const [suffix, title] of [
       await expect(
         section(
           page,
-          suffix ? suffix[0].toUpperCase() + suffix.slice(1) : "Overview",
+          ["configuration","diagnostics","runs"].includes(suffix)?"Overview":suffix ? suffix[0].toUpperCase() + suffix.slice(1) : "Overview",
         ),
       ).toHaveAttribute("aria-current", "page");
       await expect(
@@ -106,6 +106,7 @@ for (const [suffix, title] of [
       await expect(
         page.getByRole("heading", { name: title, exact: true }),
       ).toBeVisible();
+      await expect(page.locator(".source-header-signals")).not.toContainText("Last successful sync");
       await page.screenshot({
         path: "test-results/ui2-" + (suffix || "overview") + ".png",
         fullPage: true,
@@ -129,11 +130,11 @@ test("tabs use links and preserve shared data, edits and Back/Forward", async ({
     .click();
   await page.getByLabel("Frequency", { exact: true }).selectOption("custom");
   await page.getByLabel("Custom interval").fill("73");
-  await section(page, "Configuration").click();
+  await section(page, "Overview").click();
   await page.goBack();
   await expect(page.getByLabel("Custom interval")).toHaveValue("73");
   await page.goForward();
-  await expect(page).toHaveURL(/configuration$/);
+  await expect(page).toHaveURL(/source-1$/);
   expect(
     calls.filter((c) => c.path === "/api/v1/sources/source-1").length,
   ).toBe(count);
@@ -413,7 +414,7 @@ test("not found differs from temporary unavailability and retries", async ({
   await expect(
     page.getByRole("heading", { name: "Source 001", exact: true }),
   ).toBeVisible();
-  await expect(page).toHaveURL(/configuration$/);
+  await expect(page).toHaveURL(/#configuration$/);
 });
 test("configuration, automatic sync and last outcome remain independent", async ({
   page,
@@ -425,7 +426,8 @@ test("configuration, automatic sync and last outcome remain independent", async 
   await expect(page.locator(".source-header-signals")).toContainText(
     "Failed before changes",
   );
-  await expect(page.locator(".source-panels")).toContainText("Healthy");
+  await expect(page.locator("#diagnostics")).toContainText("Healthy");
+  await expect(page.locator(".source-header-signals")).toContainText("Last successful sync");
   await page.screenshot({
     path: "test-results/ui2-schedule-off.png",
     fullPage: true,

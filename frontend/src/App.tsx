@@ -1,4 +1,4 @@
-import {SessionControls,Permission,usePermission} from './AuthGate';
+import {SessionControls,Permission} from './AuthGate';
 import {AuthenticationSettings} from './pages/AuthenticationSettings';
 import {DestinationPolicyPage} from "./pages/DestinationPolicyPage";
 import {tr} from "./ui/i18n";
@@ -7,6 +7,7 @@ import {Brand} from "./ui/Brand";
 import {SystemHealthPage} from "./pages/SystemHealthPage";
 import { useEffect, useRef, useState } from "react";
 import {
+  Navigate,
   Link,
   NavLink,
   Route,
@@ -30,8 +31,14 @@ function RunRoute() {
   const { runId } = useParams();
   return <RunsPage key={runId ?? "list"} />;
 }
+function OverviewWorkspace(){
+ const {hash}=useLocation();
+ const [diagnosticsOpen,setDiagnosticsOpen]=useState(hash==='#diagnostics'),[healthOpen,setHealthOpen]=useState(hash==='#health');
+ useEffect(()=>{if(hash==='#diagnostics')setDiagnosticsOpen(true);if(hash==='#health')setHealthOpen(true);},[hash]);
+ return <><OverviewPage/><section id="diagnostics"><details open={diagnosticsOpen} onToggle={event=>setDiagnosticsOpen(event.currentTarget.open)}><summary>{tr("Diagnostics")}</summary>{diagnosticsOpen&&<DiagnosticsPage/>}</details></section><section id="health"><details open={healthOpen} onToggle={event=>setHealthOpen(event.currentTarget.open)}><summary>{tr("System health")}</summary>{healthOpen&&<SystemHealthPage/>}</details></section></>;
+}
+
 export function App() {
-  const admin=usePermission('identity.manage');
   const [language] = useLanguage();
   const location = useLocation();
   const [open, setOpen] = useState(false);
@@ -81,12 +88,9 @@ export function App() {
           {navigation.filter(item=>item.to!=='/diagnostics').map((item) => (
             <NavLink key={item.to} to={item.to} end={item.to === "/"}>
               <NavIcon path={item.to} />
-              {tr(item.label)}
+              {item.to==='/runs'?(language==='ru'?'История запусков':'Run history'):tr(item.label)}
             </NavLink>
           ))}
-          <p className="nav-section">{tr("System")}</p><NavLink to="/diagnostics">{tr("Diagnostics")}</NavLink>
-          {admin&&<><NavLink to="/policy">{tr("Source destinations")}</NavLink>
-          </>}<NavLink to="/system">{tr("System health")}{" "}</NavLink>
 
         </nav>
         <div className="app-content" id="content" ref={content} tabIndex={-1}>
@@ -106,7 +110,7 @@ export function App() {
             </nav>
           )}
           <Routes>
-            <Route path="/" element={<OverviewPage />} />
+            <Route path="/" element={<OverviewWorkspace/>} />
             <Route path="/sources" element={<SourcesListPage />} />
             <Route path="/sources/add" element={<Permission permission="source.register"><AddSourcePage /></Permission>} />
             <Route
@@ -115,10 +119,10 @@ export function App() {
             />
             <Route path="/runs" element={<RunRoute />} />
             <Route path="/runs/:runId" element={<RunRoute />} />
-            <Route path="/settings" element={<Permission permission="identity.manage"><AuthenticationSettings/></Permission>} />
-            <Route path="/policy" element={<Permission permission="policy.write"><DestinationPolicyPage /></Permission>} />
-            <Route path="/system" element={<SystemHealthPage />} />
-            <Route path="/diagnostics" element={<DiagnosticsPage />} />
+            <Route path="/settings" element={<Permission permission="identity.manage">{location.search.includes('section=destinations')?<DestinationPolicyPage/>:<AuthenticationSettings/>}</Permission>} />
+            <Route path="/policy" element={<Navigate replace to="/settings?section=destinations"/>} />
+            <Route path="/system" element={<Navigate replace to="/#health"/>} />
+            <Route path="/diagnostics" element={<Navigate replace to="/#diagnostics"/>} />
             <Route
               path="*"
               element={

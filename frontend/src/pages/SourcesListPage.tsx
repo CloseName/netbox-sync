@@ -1,4 +1,4 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useState,useRef} from 'react';
 import {TeamEditor,useTeams} from '../components/SourceTeams';
 import {useLanguage} from '../ui/language';
 import {usePermission} from '../AuthGate';
@@ -24,7 +24,8 @@ import { sourcePath, runPath } from "../ui/routes";
 import { staleEvidence } from "../ui/runEvidence";
 export function SourcesListPage() {
   const teams=useTeams();const [language]=useLanguage(),t=(en:string,ru:string)=>language==='ru'?ru:en;
-  const canRegister = usePermission('source.register');
+  const canRegister = usePermission('source.register'),canManage=usePermission('source.configure');
+  const teamDialog=useRef<HTMLDialogElement>(null);
   const sources = useResource(fetchSources),
     diagnostics = useResource(fetchDiagnostics);
   const [params, setParams] = useSearchParams();
@@ -37,6 +38,7 @@ export function SourcesListPage() {
     composeSources((sources.data ?? []).filter(row=>!params.get('team')||(!!teams.data&&(params.get('team')==='none'?!teams.data?.assignments[row.source_instance]:teams.data?.assignments[row.source_instance]===params.get('team')))), diagnostics.data),
     params,
   );
+  useEffect(()=>{if(!sources.data)return;try{const offset=Number(sessionStorage.getItem("sources-scroll:"+location.search)||0);if(offset>0)requestAnimationFrame(()=>window.scrollTo(0,offset));}catch{/* Optional browser storage. */}},[!!sources.data]);
   // Browser history changes before React commits a navigation transition.
   // Read that URL so rapid filter edits cannot resurrect a just-cleared query.
   const change = (key: string, value: string) => {
@@ -87,18 +89,8 @@ export function SourcesListPage() {
       <PageHeader
         title={tr("Sources")}
         description={tr("Source configuration and synchronization evidence.")}
-        actions={
-          <>
-            <button
-              disabled={sources.loading || diagnostics.loading}
-              onClick={refresh}
-            >
-              {tr("Refresh")}{" "}</button>
-            {canRegister && <Link className="button primary" to="/sources/add">
-              {tr("Add Source")}{" "}</Link>}
-          </>
-        }
       />
+      <div className="sources-actions">{canRegister&&<Link className="button primary" to="/sources/add">{tr("Add Source")}</Link>}<button disabled={sources.loading||diagnostics.loading} onClick={refresh}>{tr("Refresh")}</button></div>
       {teamWarning&&<p role="alert" className="source-error">{t('Source added, but team assignment is unconfirmed. Check the source team before retrying assignment.','Источник добавлен, но назначение команды не подтверждено. Проверьте команду источника перед повторным назначением.')} <button type="button" onClick={()=>setTeamWarning(false)}>{t('Dismiss','Закрыть')}</button></p>}
       {added&&<div className="source-added-notice" role="status" aria-live="polite"><span>{t('Source ','Источник ')}<strong>{added.name}</strong>{t(' added',' добавлен')}</span><button type="button" aria-label={t('Dismiss notification','Закрыть уведомление')} onClick={()=>setAdded(null)}>×</button></div>}
       <ResourceNotice
@@ -111,9 +103,9 @@ export function SourcesListPage() {
         name="Diagnostics"
         retry={diagnostics.refresh}
       />
-      <label>{t('Team','Команда')}<select value={params.get('team')??''} disabled={!teams.data} onChange={e=>change('team',e.target.value)}><option value="">{t('All teams','Все команды')}</option><option value="none">{t('No team','Без команды')}</option>{Object.values(teams.data?.teams??{}).map(team=><option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+      {(Object.keys(teams.data?.teams??{}).length>0||params.has('team'))&&<label>{t('Team','Команда')}<select value={params.get('team')??''} disabled={!teams.data} onChange={e=>change('team',e.target.value)}><option value="">{t('All teams','Все команды')}</option><option value="none">{t('No team','Без команды')}</option>{Object.values(teams.data?.teams??{}).map(team=><option key={team.id} value={team.id}>{team.name}</option>)}</select></label>}
       {teams.error&&<p role="status">{t('Team filter unavailable','Фильтр команд недоступен')}</p>}
-      <details onToggle={e=>{if(!e.currentTarget.open)teams.refresh();}}><summary>{t('Teams','Команды')}</summary><TeamEditor/></details>
+      {canManage&&<><button type="button" onClick={()=>teamDialog.current?.showModal()}>{t('Manage teams','Управление командами')}</button><dialog ref={teamDialog} onClose={teams.refresh}><h2>{t('Teams','Команды')}</h2><TeamEditor/><button onClick={()=>teamDialog.current?.close()}>{t('Close','Закрыть')}</button></dialog></>}
       <SourceFilters
         query={result.query}
         sites={(sources.data ?? []).map((source) => source.site_slug)}
@@ -152,7 +144,6 @@ export function SourcesListPage() {
                     <th scope="col">{tr("Schedule")}{" "}</th>
                     {heading("Last run", "last")}
                     {heading("Attention", "attention")}
-                    <th scope="col">{tr("Actions")}{" "}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -162,6 +153,7 @@ export function SourcesListPage() {
                         <th scope="row">
                           <Link
                             to={sourcePath(s.source_instance)}
+                            onClick={()=>{try{sessionStorage.setItem("sources-scroll:"+location.search,String(window.scrollY));}catch{/* Optional browser storage. */}}}
                             state={{
                               from: location.pathname + location.search,
                             }}
@@ -243,16 +235,7 @@ export function SourcesListPage() {
                             tr(diagnostics.loading?"Loading diagnostics…":"Unavailable")
                           )}
                         </td>
-                        <td>
-                          <Link
-                            aria-label={`Open ${s.name}`}
-                            to={sourcePath(s.source_instance)}
-                            state={{
-                              from: location.pathname + location.search,
-                            }}
-                          >
-                            {tr("Open")}{" "}</Link>
-                        </td>
+
                       </tr>
                     ),
                   )}

@@ -1830,3 +1830,22 @@ body, .setup-workspace { font-family: Inter, system-ui, sans-serif; }
 @media(max-width:600px){.wizard-steps{flex-direction:column;}.wizard-steps button{width:100%;}.wizard-form .page-actions{flex-wrap:wrap;}.wizard-form .page-actions button{flex:1;}}
 
 .wizard-form > fieldset {padding:1rem;}
+
+/* Floating credential labels retain native label/input semantics and autofill. */
+.credential-field { position:relative; margin-block:1rem; min-width:0; }
+.credential-field input { box-sizing:border-box; width:100%; min-height:3.8rem; padding:1.65rem .85rem .4rem; }
+.credential-field.has-secret input { padding-right:3.6rem; }
+.credential-field > label { position:absolute; left:.85rem; right:3rem; top:1.15rem; margin:0; pointer-events:none; font-size:1rem; line-height:1.2; transition:top .12s,font-size .12s; }
+.credential-field input:focus + label,.credential-field input:not(:placeholder-shown) + label,.credential-field input:autofill + label { top:.4rem; font-size:.75rem; }
+.credential-field .credential-eye { position:absolute; right:.3rem; top:.5rem; width:2.8rem; height:2.8rem; padding:.5rem; display:grid; place-items:center; border:0; background:transparent; color:inherit; }
+.credential-eye [role=tooltip] { display:none; position:absolute; right:0; top:100%; z-index:10; width:max-content; max-width:14rem; padding:.4rem .6rem; background:var(--surface,#fff); color:var(--text,#172b3a); border:1px solid currentColor; border-radius:.3rem; font-size:.8rem; }
+.credential-eye:hover [role=tooltip],.credential-eye:focus-visible [role=tooltip] { display:block; }
+/* Route focus is a programmatic announcement target, not a page-sized control. */
+.app-content:focus { outline:none; }
+@media(prefers-reduced-motion:reduce){.credential-field > label{transition:none;}}
+
+input[aria-invalid=true],select[aria-invalid=true]{border:2px solid #b42318;}
+.field-error{color:var(--danger,#b42318);font-weight:600;margin-block:.3rem 1rem;}
+
+.sources-actions { display:flex; align-items:center; gap:1rem; margin:1rem 0; }
+.sources-actions > button:last-child { margin-left:auto; }

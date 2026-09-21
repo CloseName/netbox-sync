@@ -32,9 +32,9 @@ export function SystemHealthPage() {
     return () => { active = false; controller.abort(); window.clearTimeout(timeout); };
   }, [revision]);
 
-  return <main>
+  return <section>
     <div className="page-heading">
-      <div><p className="eyebrow">{tr("SYSTEM OVERVIEW")}{" "}</p><h1>{tr("System health")}{" "}</h1>
+      <div><p className="eyebrow">{tr("SYSTEM OVERVIEW")}{" "}</p><h2>{tr("System health")}{" "}</h2>
         <p className="intro">{tr("A read-only view of the NetBox Sync application and its dependencies.")}{" "}</p></div>
       <button onClick={() => setRevision((value) => value + 1)} disabled={loading}>
         {loading ? tr("Checking…") : tr("Refresh health")}
@@ -63,5 +63,5 @@ export function SystemHealthPage() {
       <span>{checkedAt && !error ? `${tr("Last successful response:")} ${exactTime(checkedAt.toISOString())}` : tr("No successful response yet")}</span>
       <span>{tr("Source authentication and discovery are not performed.")}{" "}</span>
     </footer>
-  </main>;
+  </section>;
 }
