@@ -1,6 +1,7 @@
 """Strict onboarding transport inputs; secrets are excluded from repr and serialization."""
 
 from typing import Annotated, Literal
+from uuid import UUID
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 
@@ -94,6 +95,8 @@ class RegistrationRequest(PublicModel):
     cluster_type_slug: str
     references: dict[str, dict] = Field(default_factory=dict, max_length=5)
     host_types: dict[str, dict] = Field(default_factory=dict, max_length=16)
+    create_cluster: bool = Field(default=False, strict=True)
+    registration_id: UUID | None = None
     confirm_sync_disabled: Literal[True]
 
     @field_validator('confirm_sync_disabled', mode='before')
@@ -105,6 +108,8 @@ class RegistrationRequest(PublicModel):
 
     @model_validator(mode='after')
     def public_fields(self):
+        if self.create_cluster and (not self.registration_id or self.cluster_name != self.name or len(self.name)>100 or 'cluster' in self.references):
+            raise ValueError('Cluster creation must match the source name and confirmed registration')
         try:
             source_view(dict(
                 source_instance=self.source_instance, source_type=self.source_type, name=self.name, address=self.address,
@@ -134,6 +139,7 @@ class PlacementReviewRequest(PublicModel):
     onboarding_token: str = Field(min_length=20, max_length=128, repr=False, exclude=True)
     references: dict[str, dict] = Field(max_length=5)
     host_types: dict[str, dict] = Field(max_length=16)
+    create_cluster: bool = Field(default=False, strict=True)
 
 
 class DestinationRequest(PublicModel):
@@ -145,3 +151,8 @@ class DestinationRequest(PublicModel):
     @classmethod
     def endpoint(cls,value):
         return validate_host(value)
+
+
+class RegistrationStatusRequest(PublicModel):
+    source_instance: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{1,62}$")
+    registration_id: UUID

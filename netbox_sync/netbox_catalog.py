@@ -46,7 +46,7 @@ def query(value,session_factory=requests.Session):
                 more=result.get('next') is not None,url=value['url']+'/'+ENDPOINTS[kind]+'/')
         if action=='validate':
             selections=payload.get('selections')
-            if not isinstance(selections,list) or not 6<=len(selections)<=21: raise ProbeError('RESPONSE_INVALID')
+            if not isinstance(selections,list) or not 5<=len(selections)<=21: raise ProbeError('RESPONSE_INVALID')
             result=[]
             for choice in selections:
                 kind=choice.get('kind');identifier=choice.get('id')

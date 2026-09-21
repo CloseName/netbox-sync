@@ -240,5 +240,16 @@
       "en": "Give the event ID to the deployment operator.",
       "ru": "Передайте идентификатор события оператору установки."
     }
+  },
+  "REGISTRATION_CLUSTER_RETAINED": {
+    "stage": "registration",
+    "message": {
+      "en": "Cluster created; source addition is not confirmed.",
+      "ru": "Кластер создан; добавление источника не подтверждено."
+    },
+    "action": {
+      "en": "Review the saved source and retained cluster before retrying.",
+      "ru": "Перед повтором проверьте сохранённый источник и оставленный кластер."
+    }
   }
 }

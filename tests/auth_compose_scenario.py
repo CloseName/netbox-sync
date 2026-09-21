@@ -13,7 +13,7 @@ from deploy import install
 
 root, project, pgmode = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
 assert project.startswith('netbox-sync-probe-test-')
-image = 'netbox-sync-auth:review'
+image = os.environ.get('NETBOX_SYNC_REVIEW_IMAGE','netbox-sync-auth:review')
 
 def run(args, **kwargs):
     result = subprocess.run(args, capture_output=True, text=True, **kwargs)
@@ -46,6 +46,8 @@ fixture.mkdir()
 catalog_token=secrets.token_urlsafe(32)
 (fixture/'catalog-token').write_text(catalog_token)
 (fixture/'catalog-token').chmod(0o600)
+(fixture/'registration-token').write_text(value['apply_token'])
+(fixture/'registration-token').chmod(0o600)
 run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
      '-keyout', str(fixture / 'server.key'), '-out', str(fixture / 'server.crt'),
      '-subj', '/CN=esxi.probe.test', '-addext', 'subjectAltName=DNS:esxi.probe.test,DNS:slow.probe.test,DNS:netbox.example.test'])
@@ -281,7 +283,15 @@ registration=dict(references=references,host_types=host_types,onboarding_token=r
 assert request(registration,'/api/v1/sources')['status']==409
 success=request(body);assert success['status']==200
 registration['onboarding_token']=success['body']['onboarding_token']
-assert request(registration,'/api/v1/sources')['status']==201
+registration.update(create_cluster=True,registration_id=str(uuid4()),cluster_name=registration['name'])
+registration['references']={key:item for key,item in references.items() if key!='cluster'}
+assert request({key:registration[key] for key in ('onboarding_token','references','host_types','create_cluster')},'/api/v1/sources/review-placement')['status']==200
+added=request(registration,'/api/v1/sources')
+assert added['status']==201,added
+assert request(registration,'/api/v1/sources')['status']!=201
+checked=request({key:registration[key] for key in ('source_instance','registration_id')},'/api/v1/sources/registration-status')
+assert checked['status']==200 and checked['body']=={'status':'CREATED'},checked
+print('Final registration cluster: production API, bootstrap subprocess, HTTPS and durable registration passed')
 assert request(None,'/api/v1/sources','GET')['body']['sources'][0]['source_instance']=='auth-test'
 team_saved=request(dict(operation='assign',revision=teams['body']['revision'],source_instance='auth-test',team_id=team_id),'/api/v1/teams');assert team_saved['status']==200
 team_saved=team_saved['body']

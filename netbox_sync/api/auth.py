@@ -25,7 +25,7 @@ ROUTES = (
     ('GET', r'/api/v1/runs(?:/[^/]+)?', 'run.read'),
     ('GET', r'/api/v1/sources(?:/[^/]+(?:/(schedule|operations|lifecycle))?)?', 'source.read'),
     ('POST', r'/api/v1/sources/(test-connection|check-destination)', 'source.probe'),
-    ('POST', r'/api/v1/sources(?:/(cancel-onboarding|review-placement))?', 'source.register'),
+    ('POST', r'/api/v1/sources(?:/(cancel-onboarding|review-placement|registration-status))?', 'source.register'),
     ('GET', r'/api/v1/sources/[^/]+/placement', 'source.configure'),
     ('PATCH', r'/api/v1/sources/[^/]+/placement', 'source.configure'),
     ('PATCH', r'/api/v1/sources/[^/]+/name', 'source.configure'),

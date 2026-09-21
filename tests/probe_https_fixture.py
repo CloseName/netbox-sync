@@ -11,6 +11,7 @@ from xml.etree import ElementTree as ET
 catalog_rows={}
 catalog_lock=threading.Lock()
 catalog_posts=0
+cluster_rows={}
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_): pass
@@ -39,6 +40,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(json.dumps(dict(results=found,count=len(found),next=None,previous=None)).encode())
             if kind not in rows:return self.respond(b'{}',404)
             row=rows[kind]
+            if kind=='clusters':
+                with catalog_lock:
+                    candidates=[row,*cluster_rows.values()]
+                    if len(path)>3:
+                        found=next((item for item in candidates if str(item['id'])==path[3]),None)
+                        return self.respond(json.dumps(found or {}).encode(),200 if found else 404)
+                    query=parse_qs(urlsplit(self.path).query)
+                    found=[item for item in candidates if not query.get('name') or item['name'] in query['name']]
+                    return self.respond(json.dumps(dict(results=found,count=len(found),next=None,previous=None)).encode())
             if len(path)>3:
                 return self.respond(json.dumps(row).encode(),200 if path[3]==str(row['id']) else 404)
             return self.respond(json.dumps(dict(results=[row],count=1,next=None,previous=None)).encode())
@@ -47,6 +57,16 @@ class Handler(BaseHTTPRequestHandler):
         self.respond(b'<namespaces version="1.0"><namespace><version>6.7</version></namespace></namespaces>')
     def do_POST(self):
         global catalog_posts
+        if self.path=='/api/virtualization/clusters/':
+            expected=Path('/fixture/registration-token').read_text()
+            if self.headers.get('Authorization')!='Token '+expected:return self.respond(b'{}',403)
+            data=json.loads(self.rfile.read(min(int(self.headers.get('Content-Length','0')),8192)))
+            assert set(data)=={'name','type','scope_type','scope_id'}
+            with catalog_lock:
+                if data['name'] in cluster_rows:return self.respond(b'{}',409)
+                row=dict(id=200+len(cluster_rows),**data);row['type']={'id':data['type'],'name':'VMware ESXi'}
+                cluster_rows[data['name']]=row
+            return self.respond(json.dumps(row).encode(),201)
         if self.path=='/api/dcim/manufacturers/':
             expected=Path('/fixture/catalog-token').read_text()
             if self.headers.get('Authorization')!='Token '+expected:return self.respond(b'{}',403)

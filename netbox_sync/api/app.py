@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
 
+from ..application.observability import ErrorCode
 from ..application.health import SystemHealthService
 from ..application.diagnostics import DiagnosticsService
 from ..application.sources import SourceReadError, SourceVisibilityService
@@ -33,7 +34,7 @@ from .dto import (ApplyRequestDTO, ApplyResultDTO, ConfirmationDTO, Confirmation
 from .dto import SyncPlanRequestDTO, SyncRunDTO, SyncRunListDTO
 from .discovery_client import DiscoveryRequestError, DiscoveryWorkerClient
 from .apply_client import ApplyRequestError, ApplyWorkerClient
-from .onboarding_dto import ConnectionRequest, ConnectionResult, RegistrationRequest
+from .onboarding_dto import ConnectionRequest, ConnectionResult, RegistrationRequest, RegistrationStatusRequest
 from .onboarding_dto import CancellationRequest, CancellationResult
 from .onboarding_adapters import BrokerSecretStore, RegistrationRegistry, test_esxi, test_proxmox
 from .run_reader import PostgresRunReader
@@ -113,6 +114,7 @@ def _install_boundaries(app, settings, auth_client):
             'REGISTRATION_UNAVAILABLE': (503, 'Registration is unavailable'),
             'REGISTRATION_FAILED': (503, 'Source registration failed'),
             'REGISTRATION_UNCERTAIN': (503, 'Registration outcome requires operator reconciliation'),
+            'REGISTRATION_CLUSTER_RETAINED': (503, 'Cluster created; source registration requires reconciliation'),
         }
         status, message = errors[exc.code.value]
         if getattr(exc, 'reserved_source_id', False):
@@ -497,9 +499,9 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
 
     @app.exception_handler(CatalogError)
     async def catalog_error(request,exc):
-        known={'BUSY','CONFLICT','CATALOG_CHANGED','SELECTION_REQUIRED','HOST_MAPPING_REQUIRED','CLUSTER_SCOPE_MISMATCH','CLUSTER_AMBIGUOUS','PERMISSION_DENIED','AUTH_FAILED','TLS_FAILED','NETWORK_UNREACHABLE','RESPONSE_INVALID','UNAVAILABLE'}
+        known={'BUSY','CONFLICT','CATALOG_CHANGED','SELECTION_REQUIRED','HOST_MAPPING_REQUIRED','CLUSTER_SCOPE_MISMATCH','CLUSTER_AMBIGUOUS','CLUSTER_REVIEW_REQUIRED','PERMISSION_DENIED','AUTH_FAILED','TLS_FAILED','NETWORK_UNREACHABLE','RESPONSE_INVALID','UNAVAILABLE'}
         code=exc.code if exc.code in known else 'UNAVAILABLE'
-        status=409 if code in {'BUSY','CONFLICT','CATALOG_CHANGED','SELECTION_REQUIRED','HOST_MAPPING_REQUIRED','CLUSTER_SCOPE_MISMATCH','CLUSTER_AMBIGUOUS'} else 503
+        status=409 if code in {'BUSY','CONFLICT','CATALOG_CHANGED','SELECTION_REQUIRED','HOST_MAPPING_REQUIRED','CLUSTER_SCOPE_MISMATCH','CLUSTER_AMBIGUOUS','CLUSTER_REVIEW_REQUIRED'} else 503
         return _error(request,status,'CATALOG_'+code.removeprefix('CATALOG_'),'NetBox selection could not be verified')
 
     from .catalog_dto import CatalogCreateDTO
@@ -527,7 +529,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         from ..application.onboarding import PendingCredentials
         from ..probe_worker import remote_test_authorized
         session=http.cookies.get(COOKIE)
-        policy=auth_client.call('policy',session=session)
+        policy=auth_client.call('probe.policy',session=session)
         if not settings.probe_socket: raise AuthError('AUTH_UNAVAILABLE')
         remote_test_authorized(settings.probe_socket,
             PendingCredentials(payload.source_type,payload.address,True,'','','',port=payload.port),
@@ -537,7 +539,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
     @router.post('/sources/test-connection', response_model=ConnectionResult)
     def connection_test(request: ConnectionRequest, http: Request):
         session = http.cookies.get(COOKIE)
-        policy = auth_client.call('policy', session=session)
+        policy = auth_client.call('probe.policy', session=session)
         from ..probe_worker import remote_test_authorized
         preview=None
         if settings.probe_socket:
@@ -563,27 +565,72 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
     def review_placement(payload: PlacementReviewRequest, http: Request):
         auth_client.call('receipt.check', session=http.cookies.get(COOKIE), receipt=payload.onboarding_token)
         catalog_validate(settings.bootstrap_socket, payload.references, payload.host_types,
-                         onboarding_service.preview(payload.onboarding_token))
+                         onboarding_service.preview(payload.onboarding_token), pending_cluster=payload.create_cluster)
         return {'valid': True}
 
     @router.post('/sources', response_model=SourceDTO, status_code=201)
     def register_source(request: RegistrationRequest, http: Request):
         from dataclasses import replace
         mapping={}
-        if request.references or request.host_types or onboarding_service.preview(request.onboarding_token):
-            mapping=catalog_validate(settings.bootstrap_socket,request.references,request.host_types,onboarding_service.preview(request.onboarding_token))
-            refs=mapping['references'];types=mapping['host_types']
-            request=request.model_copy(update={'site_slug':refs['site']['slug'],'cluster_name':refs['cluster']['name'],
-                'platform_slug':refs['platform']['slug'],'device_role_slug':refs['device_role']['slug'],
-                'cluster_type_slug':refs['cluster_type']['slug'],'device_type_slug':next(iter(types.values()))['slug']})
-        elif not onboarding_injected:
-            raise CatalogError('SELECTION_REQUIRED')
-        auth_client.call('receipt.consume', session=http.cookies.get(COOKIE),
-                         receipt=request.onboarding_token, destination=request.address, provider=request.source_type)
-        onboarding_service.register(replace(request.command(),mapping=mapping))
-        return SourceDTO.from_view(source_view({
-            **request.model_dump(), 'enabled': True, 'sync_enabled': False, 'legacy_identity_owner': False,
-        }))
+        if request.create_cluster:
+            # Authorize the exact receipt before starting any optional remote write.
+            from uuid import UUID, uuid5
+            from .catalog import create_call
+            auth_client.call('receipt.check', session=http.cookies.get(COOKIE), receipt=request.onboarding_token)
+            onboarding_service.check_registration(request.command())
+            pending=catalog_validate(settings.bootstrap_socket, request.references, request.host_types,
+                onboarding_service.preview(request.onboarding_token), pending_cluster=True)
+            operation_id=str(uuid5(UUID('b6c311eb-0d55-45af-80a5-b949a20bfe47'),
+                http.state.principal['principal_id']+':'+request.source_instance+':'+str(request.registration_id)))
+            try:
+                outcome=create_call(settings.bootstrap_socket, dict(action='registration-cluster',
+                    operation_id=operation_id, name=request.name,
+                    site_id=pending['references']['site']['id'],
+                    cluster_type_id=pending['references']['cluster_type']['id']))
+            except CatalogError as exc:
+                if exc.code=='UNAVAILABLE':
+                    raise OnboardingError(ErrorCode.REGISTRATION_UNCERTAIN) from None
+                raise
+            if outcome.get('status')=='UNCERTAIN':
+                raise OnboardingError(ErrorCode.REGISTRATION_UNCERTAIN)
+            if outcome.get('status')=='REFUSED':
+                raise CatalogError(outcome.get('error','SELECTION_REQUIRED'))
+            if outcome.get('status')!='CREATED' or not outcome.get('item'):
+                raise CatalogError('CLUSTER_REVIEW_REQUIRED')
+            request=request.model_copy(update={'references':{**pending['references'],'cluster':outcome['item']}})
+        try:
+            if request.references or request.host_types or onboarding_service.preview(request.onboarding_token):
+                mapping=catalog_validate(settings.bootstrap_socket,request.references,request.host_types,onboarding_service.preview(request.onboarding_token))
+                refs=mapping['references'];types=mapping['host_types']
+                request=request.model_copy(update={'site_slug':refs['site']['slug'],'cluster_name':refs['cluster']['name'],
+                    'platform_slug':refs['platform']['slug'],'device_role_slug':refs['device_role']['slug'],
+                    'cluster_type_slug':refs['cluster_type']['slug'],'device_type_slug':next(iter(types.values()))['slug']})
+            elif not onboarding_injected:
+                raise CatalogError('SELECTION_REQUIRED')
+            auth_client.call('receipt.consume', session=http.cookies.get(COOKIE),
+                             receipt=request.onboarding_token, destination=request.address, provider=request.source_type)
+            onboarding_service.register(replace(request.command(),mapping=mapping))
+            return SourceDTO.from_view(source_view({
+                **request.model_dump(), 'enabled': True, 'sync_enabled': False, 'legacy_identity_owner': False,
+            }))
+        except Exception:
+            if request.create_cluster:
+                # The durable catalog journal records the created cluster. Never
+                # delete it on registry/secret/receipt failure or claim no writes.
+                raise OnboardingError(ErrorCode.REGISTRATION_CLUSTER_RETAINED) from None
+            raise
+
+    @router.post('/sources/registration-status')
+    def registration_status(request: RegistrationStatusRequest, http: Request):
+        # The browser never chooses a raw privileged catalog journal ID. Its
+        # registration nonce is bound to the authenticated actor and source.
+        from uuid import uuid5
+        from .catalog import create_call
+        operation_id=str(uuid5(UUID('b6c311eb-0d55-45af-80a5-b949a20bfe47'),
+            http.state.principal['principal_id']+':'+request.source_instance+':'+str(request.registration_id)))
+        result=create_call(settings.bootstrap_socket,dict(action='catalog-reconcile',operation_id=operation_id))
+        return {'status':result.get('status') if result.get('status') in
+                {'CREATED','REFUSED','UNCERTAIN','EXISTS_REVIEW_REQUIRED'} else 'UNCERTAIN'}
 
     @router.post('/sources/cancel-onboarding', response_model=CancellationResult)
     def cancel_onboarding(request: CancellationRequest, http: Request):

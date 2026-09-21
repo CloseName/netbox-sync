@@ -126,10 +126,14 @@ class CatalogCreation:
     def __init__(self, store, child=run_child):
         self.store, self.child = store, child
 
-    def execute(self, request):
+    def execute(self, request, *, registration=False):
         action = request.get('action')
         allowed = {'action', 'operation_id'} if action == 'catalog-reconcile' else {
             'action', 'operation_id', 'kind', 'object', 'write_token', 'confirm'}
+        if registration:
+            allowed = allowed - {'write_token'}
+            if action != 'catalog-create' or request.get('kind') != 'cluster':
+                raise ProbeError('SELECTION_REQUIRED')
         if set(request) != allowed or action not in ('catalog-create', 'catalog-reconcile'):
             raise ProbeError('SELECTION_REQUIRED')
         try:
@@ -155,7 +159,9 @@ class CatalogCreation:
                 journal.write(recorded)
                 return self.public(recorded)
             obj = definition(request['kind'], request['object'])
-            token = request['write_token']
+            # Registration never supplies a token. Read it under the same protected
+            # configuration lock as the URL, so an endpoint change cannot redirect it.
+            token = runtime_netbox(self.store.path, 'apply')[1] if registration else request['write_token']
             if request['confirm'] is not True or not isinstance(token, str) or not 8 <= len(token) <= 4096 or any(c.isspace() for c in token):
                 raise ProbeError('SELECTION_REQUIRED')
             digest = fingerprint(dict(url=url, kind=request['kind'], object=obj))

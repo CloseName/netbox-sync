@@ -86,6 +86,18 @@ class EphemeralOnboardingStore:
                 raise OnboardingError(ErrorCode.ONBOARDING_TOKEN_INVALID)
             return item[2]
 
+    def check_binding(self, request):
+        """Check receipt-bound destination before any optional catalog side effect."""
+        with self._lock:
+            item = self._items.get(request.onboarding_token)
+            if item is None or item[0] <= self._clock():
+                raise OnboardingError(ErrorCode.ONBOARDING_TOKEN_INVALID)
+            credentials = item[1]
+            if (credentials.source_type != request.source_type or credentials.address != request.address
+                    or credentials.verify_ssl != request.verify_ssl
+                    or credentials.api_port != source_port(request.source_type, request.port)):
+                raise OnboardingError(ErrorCode.ONBOARDING_TOKEN_INVALID)
+
     def consume(self, token):
         """Consume exactly once and reject expired/unknown tokens."""
         with self._lock:
@@ -167,6 +179,12 @@ class SourceOnboardingService:
     @staticmethod
     def _key(source_instance, label):
         return f'src-{source_instance.replace(".", "-")}-{label}-{secrets.token_hex(8)}'
+
+    def check_registration(self, request):
+        """No writes; credentials must match and the source identity must be unused."""
+        self._pending.check_binding(request)
+        if self._registry.find(request.source_instance) is not None:
+            raise OnboardingError(ErrorCode.SOURCE_ALREADY_EXISTS)
 
     def register(self, request):
         """Create secrets then exactly one registry row; reconcile uncertain commits."""

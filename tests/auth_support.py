@@ -11,9 +11,11 @@ class AuthenticatedTransport:
     def call(self, action, **payload):
         if action == 'authorize':
             return {'principal_id':'unit-admin', 'username':'admin', 'permissions':[]}
+        if action == 'probe.policy':
+            return {'revision':0}
         if action == 'policy':
             return {'revision':0, 'effective':asdict(EgressPolicy())}
-        if action in ('receipt.issue','receipt.consume','receipt.cancel'):
+        if action in ('receipt.issue','receipt.consume','receipt.cancel','receipt.check'):
             return {'consumed':True}
         raise AssertionError('Unexpected test auth action')
 

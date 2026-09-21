@@ -150,3 +150,34 @@ for(const code of ['ONBOARDING_TOKEN_INVALID','PROBE_RECEIPT_INVALID'])test(`rec
  await expect(page.getByRole('combobox',{name:'Site',exact:true})).toContainText('Test site');
  expect(server.writes).toEqual([]);
 });
+
+for(const role of ['operator','admin'])test(`pending cluster only final registration ${role}`,async({page})=>{
+ const server=await fixture(page,role);await connect(page);await placement(page);
+ await page.getByRole('checkbox',{name:'Create the cluster when adding this source',exact:true}).check();
+ await expect(page.getByRole('combobox',{name:'Cluster',exact:true})).toHaveCount(0);
+ await page.screenshot({path:test.info().outputPath(`pending-cluster-${role}-settings.png`),fullPage:true});
+ expect(server.writes).toEqual([]);
+ await page.getByRole('button',{name:'Continue',exact:true}).click();await expect(page).toHaveURL(/step=3/);
+ expect(server.writes).toEqual([]);
+ await page.screenshot({path:test.info().outputPath(`pending-cluster-${role}-review.png`),fullPage:true});
+ const sent=page.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname==='/api/v1/sources');
+ await page.getByRole('button',{name:'Add source',exact:true}).click();
+ const body=(await sent).postDataJSON();expect(body.create_cluster).toBe(true);expect(body.cluster_name).toBe(body.name);
+ expect(body.registration_id).toMatch(/^[0-9a-f-]{36}$/);expect(body.references.cluster).toBeUndefined();
+ await expect(page).toHaveURL(/\/sources$/);expect(server.writes).toEqual(['/api/v1/sources']);
+});
+
+test('lost final response checks the actor-bound journal without another registration',async({page})=>{
+ await fixture(page,'operator');await connect(page);await placement(page);
+ await page.getByRole('checkbox',{name:'Create the cluster when adding this source',exact:true}).check();
+ await page.getByRole('button',{name:'Continue',exact:true}).click();
+ let posts=0,checks=0;
+ await page.route('**/api/v1/sources',route=>{posts++;return route.fulfill({status:503,json:{error:{code:'REGISTRATION_UNCERTAIN'}}});});
+ await page.route('**/api/v1/sources/esxi-aabbccddeeff',route=>route.fulfill({status:404,json:{error:{code:'SOURCE_NOT_FOUND'}}}));
+ await page.route('**/api/v1/sources/registration-status',route=>{checks++;expect(Object.keys(route.request().postDataJSON()).sort()).toEqual(['registration_id','source_instance']);return route.fulfill({json:{status:'CREATED'}});});
+ await page.getByRole('button',{name:'Add source',exact:true}).click();
+ await page.getByRole('button',{name:'Check server state',exact:true}).click();
+ await expect(page.getByRole('alert')).toContainText('The cluster is saved; the source is not registered.');
+ expect(posts).toBe(1);expect(checks).toBe(1);
+ await expect(page.getByRole('button',{name:'Add source',exact:true})).toBeDisabled();
+});

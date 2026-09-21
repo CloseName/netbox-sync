@@ -129,12 +129,12 @@ export function AddSourcePage() {
   async function reviewRegistration(){
     if(inFlight.current)return;
     const cluster=draft.references.cluster,site=draft.references.site,kind=draft.references.cluster_type;
-    if(cluster?.name!==draft.name.trim()){setError(t('Choose a compatible cluster with the same name as this source.','Выберите совместимый кластер с тем же именем, что у источника.'));return;}
-    if(cluster?.scope_type!=='dcim.site'||cluster.scope_id!==site?.id||cluster.type?.id!==kind?.id){
+    if(!draft.create_cluster&&cluster?.name!==draft.name.trim()){setError(t('Choose a compatible cluster with the same name as this source.','Выберите совместимый кластер с тем же именем, что у источника.'));return;}
+    if(!draft.create_cluster&&(cluster?.scope_type!=='dcim.site'||cluster.scope_id!==site?.id||cluster.type?.id!==kind?.id)){
       setError(t('Cluster: choose the selected site scope and cluster type.','Кластер: выберите привязку к выбранной площадке и соответствующий тип кластера.'));return;
     }
     inFlight.current=true;setBusy(true);setError('');
-    try{await reviewPlacement(token,draft.references,draft.host_types);setReview(true);go(3);}
+    try{await reviewPlacement(token,draft.references,draft.host_types,!!draft.create_cluster);setReview(true);go(3);}
     catch(failure){if(failure instanceof RegistrationFailure&&['ONBOARDING_TOKEN_INVALID','PROBE_RECEIPT_INVALID'].includes(failure.code)){invalidate();go(1);setError(t('The connection check expired or is no longer valid. Re-enter the secret and continue; your placement is retained.','Проверка подключения истекла или больше не действует. Введите секрет и продолжите; размещение сохранено.'));return;}setError(failure instanceof CatalogFailure&&failure.code==='CATALOG_CLUSTER_SCOPE_MISMATCH'?t('Cluster: its site or type changed. Select a compatible cluster.','Кластер: площадка или тип изменились. Выберите совместимый кластер.'):t('Placement could not be verified. Your selections are retained.','Размещение не удалось проверить. Ваш выбор сохранён.'));}
     finally{inFlight.current=false;setBusy(false);}
   }
@@ -150,10 +150,11 @@ export function AddSourcePage() {
     try {
       const refs=draft.references;const firstType=Object.values(draft.host_types)[0];
       const metadata={source_instance:draft.source_instance,name:draft.name,site_slug:refs.site.slug,
-        cluster_name:refs.cluster.name,platform_slug:refs.platform.slug,device_role_slug:refs.device_role.slug,
+        cluster_name:draft.create_cluster?draft.name:refs.cluster.name,platform_slug:refs.platform.slug,device_role_slug:refs.device_role.slug,
         device_type_slug:firstType.slug,cluster_type_slug:refs.cluster_type.slug,references:refs,host_types:draft.host_types};
       const result = await registerSource({
         ...metadata,
+        create_cluster:!!draft.create_cluster,registration_id:draft.registration_id,
         source_type: type,
         ...connection,
         onboarding_token: token,
@@ -167,7 +168,8 @@ export function AddSourcePage() {
       if(failure instanceof RegistrationFailure&&failure.uncertain){selectionRejected=true;setUncertain(true);setReconciled(false);}
 
       setError(
-        failure instanceof RegistrationFailure?failure.uncertain?t('The registration outcome is unknown. Check server state before any further action. Your choices are retained.','Результат регистрации неизвестен. Сначала сверьте состояние сервера. Ваш выбор сохранён.'):t('The connection check or session is no longer valid. Sign in if needed, re-enter credentials and repeat the check; your placement choices are retained.','Проверка подключения или сеанс больше не действуют. При необходимости войдите, повторно введите данные доступа и выполните проверку; выбранное размещение сохранено.'):
+        failure instanceof RegistrationFailure?failure.code==='REGISTRATION_CLUSTER_RETAINED'?t('The cluster was created, but adding the source is not confirmed. Check the saved source before retrying; the cluster is retained.','Кластер создан, но добавление источника не подтверждено. Перед повтором проверьте сохранённый источник; кластер оставлен.'):failure.uncertain?t('The registration outcome is unknown. Check server state before any further action. Your choices are retained.','Результат регистрации неизвестен. Сначала сверьте состояние сервера. Ваш выбор сохранён.'):t('The connection check or session is no longer valid. Sign in if needed, re-enter credentials and repeat the check; your placement choices are retained.','Проверка подключения или сеанс больше не действуют. При необходимости войдите, повторно введите данные доступа и выполните проверку; выбранное размещение сохранено.'):
+        failure instanceof CatalogFailure&&failure.code==='CATALOG_PERMISSION_DENIED'?t('NetBox refused the required permission. Ask an administrator to check the configured NetBox access; no source was registered.','NetBox отказал в необходимом праве. Попросите администратора проверить настроенный доступ к NetBox; источник не зарегистрирован.'):
         failure instanceof CatalogFailure?t('NetBox selection changed or could not be verified. Refresh the lists and review the site, cluster and host device types; nothing was registered.','Выбор NetBox изменился или не прошёл проверку. Обновите списки, проверьте площадку, кластер и типы устройств хостов; источник не зарегистрирован.'):
         failure instanceof SourceIdReservedError ? failure.message :
         "Registration failed or outcome is uncertain. Ask the operator before retrying.",
@@ -193,6 +195,12 @@ export function AddSourcePage() {
       </dialog>
       {uncertain&&<section className="source-panel"><p>{t('No registration request will be retried automatically.','Запрос регистрации не будет повторён автоматически.')}</p><button type="button" disabled={busy} onClick={async()=>{
         setBusy(true);try{const response=await fetch('/api/v1/sources/'+encodeURIComponent(draft.source_instance),{cache:'no-store',signal:AbortSignal.timeout(10000)});
+          if(response.status===404&&draft.create_cluster&&draft.registration_id){
+            const checked=await fetch('/api/v1/sources/registration-status',{method:'POST',headers:{'Content-Type':'application/json','X-NetBox-Sync-CSRF':'same-origin'},body:JSON.stringify({source_instance:draft.source_instance,registration_id:draft.registration_id}),signal:AbortSignal.timeout(40000)});
+            if(!checked.ok)throw new Error();const result=await checked.json();
+            setError(result.status==='CREATED'?t('The cluster is saved; the source is not registered. Review the existing cluster before starting a new connection check.','Кластер сохранён; источник не зарегистрирован. Проверьте существующий кластер перед новой проверкой подключения.'):result.status==='EXISTS_REVIEW_REQUIRED'?t('A matching cluster exists, but ownership of this write is unconfirmed. Ask an administrator to review it before continuing.','Совпадающий кластер существует, но результат этой записи не подтверждён. Обратитесь к администратору для проверки перед продолжением.'):t('The result remains unconfirmed. No creation request was repeated.','Результат остаётся неподтверждённым. Запрос создания не повторялся.'));
+            setReconciled(false);return;
+          }
           setReconciled(response.ok);setError(response.ok?t('A source with this ID exists. Open it and verify the saved configuration.','Источник с этим ID существует. Откройте его и проверьте сохранённую конфигурацию.'):t('The outcome is still unconfirmed. Ask the operator to inspect the operation before retrying.','Результат пока не подтверждён. Перед повтором оператор должен проверить состояние операции.'));
         }catch{setError(t('Could not check server state. No registration was repeated.','Не удалось сверить состояние сервера. Регистрация не повторялась.'));}finally{setBusy(false);}
       }}>{t('Check server state','Сверить состояние сервера')}</button>{reconciled&&<Link to={sourcePath(draft.source_instance)}>{t('Open source for review','Открыть источник для проверки')}</Link>}</section>}
@@ -305,13 +313,14 @@ export function AddSourcePage() {
             <label>{t('Search teams','Поиск команд')}<input type="search" value={teamSearch} onChange={e=>setTeamSearch(e.target.value)}/></label>
             <label>{t('Assigned team','Назначенная команда')}<select value={team} onChange={e=>setTeam(e.target.value)}><option value="">{t('No team','Без команды')}</option>{Object.values(teams.data?.teams??{}).filter(row=>row.id===team||row.name.toLowerCase().includes(teamSearch.toLowerCase())).map(row=><option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
           </>:<p>{t('An administrator will assign a team','Команду назначит администратор')}</p>}</section>
-          {Object.keys(draft.references).length!==5||preview.hosts.some(h=>!draft.host_types[h.id])?<p role="status">{t('Choose all five placement objects and a device type for each host to continue.','Для продолжения выберите все пять объектов размещения и тип устройства для каждого хоста.')}</p>:null}
-          <div className="page-actions"><button type="button" disabled={busy} onClick={()=>go(1)}>{t("Back","Назад")}</button><button type="button" className="primary" disabled={Object.keys(draft.references).length!==5||preview.hosts.some(h=>!draft.host_types[h.id])||!draft.name.trim()} onClick={event=>{if(event.currentTarget.form?.reportValidity())void reviewRegistration();}}>{t('Continue','Продолжить')}</button></div></fieldset>}
+          {Object.keys(draft.references).length!==(draft.create_cluster?4:5)||preview.hosts.some(h=>!draft.host_types[h.id])?<p role="status">{t('Choose the required placement objects and a device type for each host to continue.','Для продолжения выберите объекты размещения и тип устройства для каждого хоста.')}</p>:null}
+          <div className="page-actions"><button type="button" disabled={busy} onClick={()=>go(1)}>{t("Back","Назад")}</button><button type="button" className="primary" disabled={Object.keys(draft.references).length!==(draft.create_cluster?4:5)||preview.hosts.some(h=>!draft.host_types[h.id])||!draft.name.trim()} onClick={event=>{if(event.currentTarget.form?.reportValidity())void reviewRegistration();}}>{t('Continue','Продолжить')}</button></div></fieldset>}
           {step===3&&<fieldset disabled={busy}><legend>{t('Review and add','Проверка и добавление')}</legend>
           <h2>{draft.name}</h2><p>{connection.address} · {type==='esxi'?'VMware ESXi':'Proxmox VE'}</p><dl className="source-facts">{Object.entries(draft.references).map(([kind,row])=><div key={kind}><dt>{({site:t('Site','Площадка'),cluster:t('Cluster','Кластер'),platform:t('Platform','Платформа'),device_role:t('Device role','Роль устройства'),cluster_type:t('Cluster type','Тип кластера')} as Record<string,string>)[kind]}</dt><dd>{row.name}</dd></div>)}</dl>
           {preview?.hosts.map(h=><p key={h.id}>{h.name||h.id} → {draft.host_types[h.id]?.manufacturer?.name} / {draft.host_types[h.id]?.name}</p>)}
           <p>{t('Team','Команда')}: {team?teams.data?.teams[team]?.name:t('No team','Без команды')}</p>
-          <p>{t('Only the source and protected credentials will be saved. NetBox infrastructure objects and automatic synchronization remain unchanged.','Сохранятся только источник и защищённые данные доступа. Инфраструктурные объекты NetBox и автоматическая синхронизация не изменяются.')}</p>
+          {draft.create_cluster&&<p><strong>{t('Will create cluster: ','Будет создан кластер: ')}{draft.name}</strong></p>}
+          <p>{t('The source and protected credentials will be saved. NetBox infrastructure objects and automatic synchronization remain unchanged.','Сохранятся источник и защищённые данные доступа. Инфраструктурные объекты NetBox и автоматическая синхронизация не изменяются.')}</p>
 
             <p>{t('HTTPS port','Порт HTTPS')}: {connection.port}. {t('Change connection and re-test to edit.','Для изменения вернитесь к подключению и повторите проверку.')}</p>
             <p><strong>{t('Automatic synchronization','Автоматическая синхронизация')}: {t('Off','Выключена')}</strong></p>

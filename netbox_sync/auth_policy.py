@@ -216,6 +216,9 @@ class AuthPolicy(DirectoryAuth):
         if action in ('teams','teams.create','teams.rename','teams.assign'):
             from .source_teams import teams_action
             return teams_action(self,action,payload,actor)
+        if action == 'probe.policy':
+            self.session(token, 'source.probe')
+            return {'revision': self.state['revision']}
         if action == 'policy':
             self.session(token, 'policy.read')
             return self.policy()

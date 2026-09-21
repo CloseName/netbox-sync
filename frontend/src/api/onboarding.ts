@@ -30,6 +30,7 @@ export interface ConnectionInput {
 }
 
 export interface RegistrationInput {
+  create_cluster?:boolean; registration_id?:string;
   onboarding_token: string; source_type: 'proxmox' | 'esxi'; address: string; verify_ssl: boolean; port?: number;
   source_instance: string; name: string; sync_interval_seconds: number;
   site_slug: string; cluster_name: string; platform_slug: string; device_role_slug: string;
@@ -54,6 +55,7 @@ async function post(path: string, payload: ConnectionInput | RegistrationInput |
     }
     if(path==='/api/v1/sources'||path==='/api/v1/sources/review-placement'){
       let code='';try{code=(await response.clone().json()).error.code;}catch{}
+      if(code==='REGISTRATION_CLUSTER_RETAINED')throw new RegistrationFailure(code,true);
       if(code.startsWith('CATALOG_'))throw new CatalogFailure(code);
       if(['ONBOARDING_TOKEN_INVALID','PROBE_RECEIPT_INVALID','AUTH_REQUIRED','AUTH_DENIED'].includes(code))throw new RegistrationFailure(code);
       if(response.status>=500)throw new RegistrationFailure('REGISTRATION_UNCERTAIN',true);
@@ -100,7 +102,7 @@ export interface CatalogItem { suggested?:boolean; id:number; name:string; slug:
 export interface HostPreview {id:string;name:string|null;manufacturer:string|null;model:string|null;version:string|null;cpu:string|null;memory_bytes:number;}
 export interface SourcePreview {provider:'esxi'|'proxmox';name:string|null;cluster:string|null;hosts:HostPreview[];}
 export interface CatalogPage {items:CatalogItem[];count:number;offset:number;more:boolean;url:string;}
-const catalogCodes=['CATALOG_CHANGED','CATALOG_SELECTION_REQUIRED','CATALOG_HOST_MAPPING_REQUIRED','CATALOG_CLUSTER_SCOPE_MISMATCH','CATALOG_CLUSTER_AMBIGUOUS','CATALOG_PERMISSION_DENIED','CATALOG_AUTH_FAILED','CATALOG_TLS_FAILED','CATALOG_NETWORK_UNREACHABLE','CATALOG_RESPONSE_INVALID','CATALOG_UNAVAILABLE'];
+const catalogCodes=['CATALOG_CLUSTER_REVIEW_REQUIRED','CATALOG_CHANGED','CATALOG_SELECTION_REQUIRED','CATALOG_HOST_MAPPING_REQUIRED','CATALOG_CLUSTER_SCOPE_MISMATCH','CATALOG_CLUSTER_AMBIGUOUS','CATALOG_PERMISSION_DENIED','CATALOG_AUTH_FAILED','CATALOG_TLS_FAILED','CATALOG_NETWORK_UNREACHABLE','CATALOG_RESPONSE_INVALID','CATALOG_UNAVAILABLE'];
 export class CatalogFailure extends Error {readonly code:string;constructor(code:string){const safe=catalogCodes.includes(code)?code:'CATALOG_UNAVAILABLE';super(safe);this.code=safe;}}
 let activeCatalog=0;const catalogQueue:Array<()=>void>=[];
 export async function catalog(kind:string,search:string,offset:number,signal:AbortSignal):Promise<CatalogPage>{
@@ -120,8 +122,8 @@ export async function inspectConnection(input:ConnectionInput):Promise<{onboardi
  return value;
 }
 
-export async function reviewPlacement(onboarding_token:string,references:Record<string,CatalogItem>,host_types:Record<string,CatalogItem>){
- const result=await post('/api/v1/sources/review-placement',{onboarding_token,references,host_types});
+export async function reviewPlacement(onboarding_token:string,references:Record<string,CatalogItem>,host_types:Record<string,CatalogItem>,create_cluster=false){
+ const result=await post('/api/v1/sources/review-placement',{onboarding_token,references,host_types,create_cluster});
  if(typeof result!=='object'||result===null||!('valid' in result)||result.valid!==true)throw new CatalogFailure('CATALOG_RESPONSE_INVALID');
 }
 

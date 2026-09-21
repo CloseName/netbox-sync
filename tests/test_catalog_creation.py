@@ -212,3 +212,25 @@ def test_gateway_distinguishes_confirmed_lock_refusal_from_transport_failure(mon
     monkeypatch.setattr(catalog,'request',refusal)
     with pytest.raises(catalog.CatalogError) as caught:catalog.create_call('/fixture',{})
     assert caught.value.code==expected
+
+
+def test_registration_cluster_uses_protected_token_and_survives_restart(store):
+    value=store.read();value['apply_token']=secrets.token_urlsafe(24);store.write(value)
+    request=dict(action='catalog-create',operation_id=str(uuid4()),kind='cluster',
+        object={'name':'Source cluster','type':1,'scope_type':'dcim.site','scope_id':2},confirm=True)
+    calls=[]
+    def child(payload):
+        assert payload['write_token']==value['apply_token']
+        calls.append(payload['action'])
+        return {'status':'CREATED','item':{'id':123,'name':'Source cluster'}}
+    result=creation.CatalogCreation(store,child).execute(request,registration=True)
+    assert result['status']=='CREATED'
+    reopened=creation.CatalogCreation(store,lambda _:pytest.fail('No replay'))
+    assert reopened.execute(request,registration=True)==result
+    for path in store.root.glob('catalog-*.json'):
+        assert value['apply_token'] not in path.read_text()
+    with pytest.raises(ProbeError):
+        reopened.execute({**request,'write_token':'browser-supplied-token'},registration=True)
+    with pytest.raises(ProbeError):
+        reopened.execute({**request,'kind':'platform'},registration=True)
+    assert calls==['create']
