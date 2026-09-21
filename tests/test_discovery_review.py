@@ -100,3 +100,23 @@ def test_esxi_review_required_is_preserved_and_never_becomes_adoption():
     assert item.classification.value == 'REVIEW_REQUIRED'
     assert item.reason_code == 'LEGACY_REVIEW_REQUIRED'
     assert item.future_action == 'review'
+
+
+def test_inventory_properties_survive_worker_projection_without_collapsing_duplicate_ids():
+    from dataclasses import asdict
+    from netbox_sync.application.discovery_review import DiscoveryReview, ReviewItem, ReviewClassification, enrich_review
+    from netbox_sync.api.dto import DiscoveryResultDTO
+    objects=[]
+    for index in range(2):
+        objects.append(SimpleNamespace(source='esxi',source_instance='esxi-test',vmid='shared',external_id='shared',original_name='same-name',
+            vcpus=2+index,memory_bytes=1024**3,status='running',disks=[SimpleNamespace(name='disk0',size_bytes=20*1024**3)],
+            interfaces=[SimpleNamespace(name='eth0',ip_addresses=[f'192.0.2.{index+1}/24'],mac_address=None,bridge=None,vlan_id=None)],
+            description='DO_NOT_PROJECT_DESCRIPTION'))
+    host=SimpleNamespace(source='esxi',source_instance='esxi-test',source_id='host',original_name='host',virtual_machines=objects,containers=[])
+    items=tuple(ReviewItem('vm','same-name','shared',ReviewClassification.CONFLICT,'VM_IDENTITY','conflict','review') for _ in objects)
+    review=enrich_review(DiscoveryReview('esxi-test','esxi','site','cluster',items),[host])
+    dto=DiscoveryResultDTO.from_worker(asdict(review))
+    assert [row.properties.vcpus for row in dto.items]==[2,3]
+    assert dto.items[1].properties.addresses==['192.0.2.2/24']
+    assert dto.items[0].properties.disks[0].size_bytes==20*1024**3
+    assert 'DO_NOT_PROJECT_DESCRIPTION' not in dto.model_dump_json()

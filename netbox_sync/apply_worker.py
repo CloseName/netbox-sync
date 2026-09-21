@@ -242,6 +242,8 @@ class ApplySupervisor:
         return response['result']
 
     def _unused(self, instance, digest, operation_id):
+        if self._runs and self._runs.reconciliation_required(instance):
+            raise ApplyWorkerError("PLAN_BLOCKED", "PLAN_FORBIDDEN")
         if self.operations and self._runs and self._runs.plan_used(
                 instance, digest, self.operations.plan_time(instance, operation_id)):
             raise ApplyWorkerError('PLAN_STALE', 'OPERATION_STATUS')

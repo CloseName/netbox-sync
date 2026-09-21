@@ -122,6 +122,9 @@ class RunRecorder:
         self.started = []
         self.finished = []
 
+    def reconciliation_required(self, source_instance):
+        return False
+
     def start_run(self, source_instance, source_type, trigger, created_by):
         run = type('Run', (), {'run_id': source_instance})()
         self.started.append((source_instance, source_type, trigger.value, created_by))
@@ -252,3 +255,14 @@ def test_second_history_failure_does_not_change_first_terminal_run():
     assert result.results[0].history_status is HistoryStatus.RECORDED
     assert result.results[1].history_status is HistoryStatus.FINALIZE_FAILED
     assert result.history_failures == 1
+
+
+def test_uncertain_history_blocks_scheduled_execution_without_provider_calls():
+    from netbox_sync.run_history import RunStatus
+    recorder=RunRecorder()
+    recorder.reconciliation_required=lambda _:True
+    calls=[]
+    result=run_sources((source('pve-a'),),lambda config:calls.append(config),run_repository=recorder)
+    assert result.failed==1 and not calls
+    assert recorder.finished[0][1] is RunStatus.BLOCKED
+    assert recorder.finished[0][2]['error_code']=='PLAN_BLOCKED'

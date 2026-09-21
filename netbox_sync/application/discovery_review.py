@@ -3,7 +3,7 @@ from ..host_mapping import cluster_filter
 # pylint: disable=too-many-instance-attributes
 
 import ipaddress
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from enum import Enum
 
 from ..source_identity import (host_source_identity, lxc_source_identity,
@@ -34,6 +34,7 @@ class ReviewItem:
     future_action: str
     matched_object_id: object = None
     matched_object_name: str | None = None
+    properties: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -195,3 +196,52 @@ def build_esxi_review(plan, config):
                 'none'))
     return DiscoveryReview(config.source_instance, config.source_type,
                            config.target.site_slug, config.target.cluster_name, tuple(items))
+
+
+def enrich_review(review, hosts):
+    """Attach only allowlisted inventory facts, matching occurrences rather than collapsing IDs.
+
+    Different VMs sharing a stable ID must not inherit each other's network/hardware.
+    No descriptions, credentials or arbitrary provider payloads cross this projection.
+    """
+    from collections import defaultdict, deque
+    objects = defaultdict(deque)
+    for host in hosts:
+        objects[('host', host_source_identity(host).external_id, host.original_name)].append(host)
+        for vm in host.virtual_machines:
+            identity = virtual_machine_source_identity(vm)
+            objects[(identity.kind, identity.external_id, vm.original_name)].append(vm)
+        for vm in host.containers:
+            identity = lxc_source_identity(vm)
+            objects[(identity.kind, identity.external_id, vm.original_name)].append(vm)
+    items = []
+    for item in review.items:
+        candidates = objects[(item.object_kind, item.external_id, item.name)]
+        if not candidates:
+            items.append(item)
+            continue
+        obj = candidates.popleft()
+        properties = {}
+        for key in ('vcpus', 'memory_bytes'):
+            value = getattr(obj, key, None)
+            if isinstance(value, int) and value > 0: properties[key] = value
+        for key in ('status', 'architecture', 'os_type', 'manufacturer', 'model', 'hypervisor_version'):
+            value = getattr(obj, key, None)
+            if value: properties[key] = str(value)[:200]
+        cpu = getattr(obj, 'cpu', None)
+        if cpu and cpu.model: properties['cpu'] = str(cpu.model)[:200]
+        interfaces = []
+        for nic in obj.interfaces:
+            value = {'name': nic.name, 'addresses': list(getattr(nic, 'ip_addresses', getattr(nic, 'addresses', [])))}
+            for key in ('mac_address', 'bridge', 'vlan_id'):
+                if getattr(nic, key, None) is not None: value[key] = getattr(nic, key)
+            interfaces.append(value)
+        if interfaces: properties['interfaces'] = interfaces
+        addresses = sorted({address for nic in interfaces for address in nic['addresses']})
+        if getattr(obj, 'management_ip', None): addresses = sorted(set(addresses + [obj.management_ip]))
+        if addresses: properties['addresses'] = addresses
+        disks = [{'name': getattr(disk, 'name', getattr(disk, 'path', '')), 'size_bytes': disk.size_bytes}
+                 for disk in obj.disks if disk.size_bytes > 0]
+        if disks: properties['disks'] = disks
+        items.append(replace(item, properties=properties))
+    return replace(review, items=tuple(items))

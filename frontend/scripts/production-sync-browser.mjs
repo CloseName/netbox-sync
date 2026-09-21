@@ -32,6 +32,15 @@ try{
   await route.fulfill({status:response.status,headers:response.headers,body:Buffer.from(response.body,'base64')});
  });
  await page.goto('https://sync.example.test/sources/'+config.source+'/sync');
+ if(config.uncertain){
+  await expect(page.getByRole('button',{name:'Rebuild plan',exact:true})).toBeDisabled({timeout:30000});
+  await expect(page.getByRole('alert').first()).toContainText('previous synchronization');
+  await expect(page.getByText('Plan ready for review.',{exact:true})).toHaveCount(0);
+  await expect(page.getByText('Plan permits sync',{exact:true})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Review and confirm sync'})).toBeDisabled();
+  if(writes.length)throw Error('Uncertain source attempted a write');
+  await page.screenshot({path:'frontend/test-results/production-sync-uncertain.png',fullPage:true});
+ }else{
  await expect(page.getByRole('button',{name:'Rebuild plan',exact:true})).toBeEnabled({timeout:30000});
  await page.getByRole('button',{name:'Rebuild plan',exact:true}).click();
  await expect(page.getByText('Plan ready for review.',{exact:true})).toBeVisible({timeout:90000});
@@ -42,4 +51,5 @@ try{
  if(!prepare?.body.operation_id||prepare.body.operation_id!==apply?.body.operation_id)throw Error('Generation mismatch');
  await page.screenshot({path:'frontend/test-results/production-'+config.source+'-success.png',fullPage:true});
  console.log('PASS production browser '+config.source);
+}
 }catch(error){if(page)await page.screenshot({path:'frontend/test-results/production-'+config.source+'-failure.png',fullPage:true});throw error;}finally{await browser.close();}

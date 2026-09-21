@@ -1,4 +1,5 @@
 export interface SourceLifecycle {
+  removal_blocker?: "SOURCE_APPLY_UNCONFIRMED" | "SOURCE_OPERATION_ACTIVE" | null;
   source_instance: string; display_name: string; removed_at: string | null;
   revision: string | null; credential_state: 'RETAINED_BY_REQUEST' | 'REMOVED' | 'RETAINED_SHARED_OR_LEGACY' | 'CLEANUP_FAILED' | null;
 }

@@ -6,6 +6,8 @@ export interface Attention {
 }
 export function attention(source?: SourceDiagnostic): Attention | null {
   if (!source) return null;
+  if(source.outcome_unconfirmed)return {priority:1,label:"Outcome unknown"};
+  if(source.plan_blocked)return {priority:2,label:"Plan blocked: conflicts detected"};
   const outcome = source.latest_run?.status;
   if (outcome === "OUTCOME_UNCERTAIN" || outcome === "PARTIALLY_APPLIED")
     return {

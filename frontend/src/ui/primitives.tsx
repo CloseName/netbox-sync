@@ -11,11 +11,12 @@ export function Badge({ value, code }: { value: Status; code?: string }) {
 }
 let clockNow=Date.now();const clockListeners=new Set<()=>void>();let clockTimer:ReturnType<typeof setInterval>|undefined;
 function subscribeClock(listener:()=>void){clockListeners.add(listener);if(!clockTimer){clockNow=Date.now();clockTimer=setInterval(()=>{clockNow=Date.now();clockListeners.forEach(fn=>fn());},10000);}return()=>{clockListeners.delete(listener);if(!clockListeners.size){clearInterval(clockTimer);clockTimer=undefined;}};}
-export function Timestamp({ value }: { value: string | null | undefined }) {
+export function Timestamp({ value, occurred = false }: { value: string | null | undefined; occurred?: boolean }) {
   const now=useSyncExternalStore(subscribeClock,()=>clockNow);
+  const current=Math.max(now,Date.now());
   return value ? (
     <time dateTime={value} title={exactTime(value)}>
-      {relativeTime(value,now)}
+      {occurred&&Date.parse(value)>current?exactTime(value):relativeTime(value,current)}
       <span className="sr-only"> ({exactTime(value)})</span>
     </time>
   ) : (

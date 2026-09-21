@@ -135,6 +135,9 @@ class RunRecorder:
         self.started = []
         self.finished = []
 
+    def reconciliation_required(self, source_instance):
+        return False
+
     def start_run(self, source_instance, source_type, trigger, created_by):
         run = SimpleNamespace(run_id=UUID('11111111-1111-4111-8111-111111111111'))
         self.started.append((source_instance, source_type, trigger.value, created_by))
@@ -338,7 +341,7 @@ def test_used_plan_is_refused_before_prepare_child(monkeypatch):
     supervisor = ApplySupervisor('', '', '', '', '', '', '')
     supervisor.operations = SimpleNamespace(review_guard=lambda *args: nullcontext({}),
                                            plan_time=lambda *args: '2026-09-17')
-    supervisor._runs = SimpleNamespace(plan_used=lambda *args: True)
+    supervisor._runs = SimpleNamespace(plan_used=lambda *args: True, reconciliation_required=lambda _:False)
     monkeypatch.setattr(supervisor, '_child', lambda *args: pytest.fail('must not re-execute'))
     with pytest.raises(ApplyWorkerError, match='PLAN_STALE') as caught:
         supervisor.prepare('pve-test', 'a'*64, 'operation')
@@ -412,3 +415,28 @@ def test_disconnected_recipient_does_not_kill_real_apply_server(tmp_path, fail):
     finally:
         process.terminate()
         process.join(5)
+
+
+def test_previous_uncertain_outcome_blocks_prepare_before_child(monkeypatch):
+    supervisor=ApplySupervisor('', '', '', '', '', '', '/unused')
+    supervisor._runs=SimpleNamespace(reconciliation_required=lambda _:True)
+    supervisor._child=lambda _:pytest.fail('No child or NetBox write allowed')
+    with pytest.raises(ApplyWorkerError,match='PLAN_BLOCKED'):
+        supervisor.prepare('pve-test','a'*64)
+
+
+def test_uncertain_outcome_arriving_after_prepare_blocks_apply_under_lock(monkeypatch):
+    supervisor, token, recorder = _manual_supervisor(
+        monkeypatch, lambda _: pytest.fail('No child or NetBox write allowed'))
+    acquired=[]
+    sys.modules['fcntl'].flock=lambda *args: acquired.append(args)
+    def blocked(_):
+        assert acquired, 'History must be checked under the shared apply lock'
+        return True
+    recorder.reconciliation_required=blocked
+    with pytest.raises(ApplyWorkerError, match='PLAN_BLOCKED'):
+        supervisor.apply('pve-infra-test', token)
+    assert recorder.finished[0]['status'] is RunStatus.BLOCKED
+    assert recorder.finished[0]['error_code']=='PLAN_BLOCKED'
+    with pytest.raises(ApplyWorkerError, match='CONFIRMATION_INVALID'):
+        supervisor.apply('pve-infra-test', token)

@@ -43,11 +43,13 @@ export function PlanReview({
   received,
   previous,
   toolbar,
+  executionBlocked = false,
 }: {
   plan: SyncPlan;
   received: string;
   previous: boolean;
   toolbar?: ReactNode;
+  executionBlocked?: boolean;
 }) {
   const [language]=useLanguage(),t=(en:string,ru:string)=>language==='ru'?ru:en;
   const [view, setView] = useState<PlanView>(
@@ -70,13 +72,13 @@ export function PlanReview({
         <h3 id="plan-review-title">{tr("Review plan")}{" "}</h3>
         <Badge
           value={{
-            label: previous
+            label: executionBlocked ? "Blocked by safety checks" : previous
               ? "Previous plan — build a new plan"
               : plan.apply_allowed
                 ? hasChanges(plan.items) ? "Plan permits sync" : emptyPlanLabel(plan.items)
                 : "Blocked by safety checks",
-            tone: previous ? "neutral" : plan.apply_allowed ? "info" : "danger",
-            icon: previous ? "◷" : plan.apply_allowed ? "✓" : "!",
+            tone: executionBlocked ? "danger" : previous ? "neutral" : plan.apply_allowed ? "info" : "danger",
+            icon: executionBlocked ? "!" : previous ? "◷" : plan.apply_allowed ? "✓" : "!",
           }}
         />
         {toolbar}
@@ -96,7 +98,7 @@ export function PlanReview({
         <p className="sync-attention">
           {tr("Review rows remain isolated and are not automatically adopted as normal updates. Other operations may proceed only when the plan permits sync.")}{" "}</p>
       )}
-      {!plan.apply_allowed && (
+      {!plan.apply_allowed && !plan.conflicts?.length && (
         <p className="source-error" role="alert">
           {tr("This plan cannot be applied. Resolve the reported conditions and rebuild the plan.")}{" "}</p>
       )}
@@ -106,9 +108,9 @@ export function PlanReview({
         {plan.conflicts.map((conflict,index)=>{
           const identities=new Set(conflict.participants.map(p=>[p.host_id,p.provider_object_id||p.external_id,p.interface_id||p.interface].join(':')));
           const masks=conflict.kind==='IP_ASSIGNMENT'&&identities.size===1&&new Set(conflict.participants.map(p=>p.address)).size>1;
-          return <article key={index} className="conflict-summary"><h4>{conflict.value}: {masks?t('Different masks for one IP','Разные маски одного IP'):conflict.kind==='VM_IDENTITY'?tr('Shared VM identifier'):t('Ambiguous IP mapping','Неоднозначное сопоставление IP')}</h4>
+          return <article key={index} className="conflict-summary"><h4>{conflict.kind==='VM_IDENTITY'?`${conflict.participants.length} VM`:conflict.value}: {masks?t('Different masks for one IP','Разные маски одного IP'):conflict.kind==='VM_IDENTITY'?tr('Shared VM identifier'):t('Ambiguous IP mapping','Неоднозначное сопоставление IP')}</h4>
           <ul>{Array.from(new Set(conflict.participants.map(p=>[p.name,p.interface,p.address].filter(Boolean).join(' · ')))).map(value=><li key={value}>{value}</li>)}</ul>
-          <details><summary>{tr('Technical details')}</summary><p>{tr('Source')}: {plan.source_instance}</p><ul>{conflict.participants.map((p,i)=><li key={i}>{p.host_id} · {p.external_id} · {p.provider_object_id} · {p.interface_id}</li>)}</ul></details></article>;
+          <details><summary>{tr('Technical details')}</summary><p>{tr('Source')}: {plan.source_instance}</p><p>{conflict.value}</p><ul>{conflict.participants.map((p,i)=><li key={i}>{p.host_id} · {p.external_id} · {p.provider_object_id} · {p.interface_id}</li>)}</ul></details></article>;
         })}
       </section>}
       {(!plan.conflicts?.length||plan.items.some(item=>item.action!=='BLOCKED'&&!policyRow(item)))&&<>

@@ -210,3 +210,24 @@ def test_stale_threshold_environment_is_bounded_and_has_safe_default():
         assert ApiSettings.from_environment({
             'NETBOX_SYNC_DIAGNOSTICS_STALE_SECONDS': value,
         }).diagnostics_stale_seconds == 7200
+
+
+def test_blocked_plan_without_runs_and_old_unknown_outcome_are_not_hidden():
+    class Evidence:
+        def operation_evidence(self):
+            return {'pve-test':{'status':'READY','apply_allowed':False,'finished_at':NOW}}, {'esxi-test'}
+    result=DiagnosticsService(Sources([source(),source('esxi-test','esxi')]),History(),Worker(),Worker(),clock=lambda:NOW,evidence_reader=Evidence()).check()
+    by_id={row.source_instance:row for row in result.sources}
+    assert by_id['pve-test'].plan_blocked and by_id['pve-test'].latest_run is None
+    assert by_id['pve-test'].latest_success_at is None
+    assert by_id['esxi-test'].outcome_unconfirmed
+    assert all(row.status is DiagnosticStatus.DEGRADED for row in result.sources)
+    from netbox_sync.api.dto import DiagnosticsDTO
+    dto=DiagnosticsDTO.from_result(result)
+    assert dto.sources[0].operation_evidence_available
+
+
+def test_missing_operation_evidence_is_explicit_not_no_problems():
+    result=DiagnosticsService(Sources([source()]),History(),Worker(),Worker(),clock=lambda:NOW).check()
+    assert not result.sources[0].operation_evidence_available
+    assert result.sources[0].latest_success_at is None

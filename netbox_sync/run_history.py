@@ -137,6 +137,11 @@ class RunRepository:
         connection.row_factory = dict_row
         return connection
 
+    def reconciliation_required(self, source_instance):
+        """Do not infer safety from the newest run or from zero action counters."""
+        with self._connect() as connection:
+            return bool(connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status IN ('OUTCOME_UNCERTAIN','PARTIALLY_APPLIED') LIMIT 1").format(self._table()), (source_instance,)).fetchone())
+
     def _table(self):
         return sql.Identifier(self.schema, 'sync_runs')
 

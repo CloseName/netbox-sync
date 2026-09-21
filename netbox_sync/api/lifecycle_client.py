@@ -14,6 +14,27 @@ class LifecycleClient:
     def __init__(self, path):
         self.path = path
 
+    def operation_evidence(self):
+        from ..local_control import request
+        from datetime import datetime
+        import time
+        deadline=time.monotonic()+5
+        plans, uncertain, after = {}, set(), ''
+        for _ in range(200):
+            remaining=deadline-time.monotonic()
+            if remaining<=0: raise LifecycleRequestError('LIFECYCLE_UNAVAILABLE')
+            value=request(self.path, {'action':'source_evidence','after':after},timeout=remaining)['result']
+            for row in value['sources']:
+                source=row['source_instance']
+                if source<=after or source in plans: raise ValueError('Invalid evidence page')
+                plans[source]={'status':row['plan_status'], 'apply_allowed':False if row['plan_blocked'] else None,
+                    'finished_at':datetime.fromisoformat(row['plan_checked_at']) if row['plan_checked_at'] else None}
+                if row['outcome_unconfirmed']: uncertain.add(source)
+            if value['next'] is None: return plans, uncertain
+            if value['next']<=after: raise ValueError('Invalid evidence cursor')
+            after=value['next']
+        raise LifecycleRequestError('LIFECYCLE_UNAVAILABLE')
+
     def placement(self, source):
         from ..local_control import request, ControlError
         from .dto import DiscoveryHostDTO

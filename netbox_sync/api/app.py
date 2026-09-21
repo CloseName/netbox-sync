@@ -322,7 +322,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         source_service, PostgresRunReader(settings),
         WorkerHealthClient(settings.discovery_socket),
         WorkerHealthClient(settings.apply_socket),
-        settings.diagnostics_stale_seconds,
+        settings.diagnostics_stale_seconds, evidence_reader=LifecycleClient(settings.lifecycle_socket),
     )
     schedule_service = schedule_service or ScheduleService(
         source_service, PostgresRunReader(settings),

@@ -1,3 +1,4 @@
+import {sourceLifecycle} from '../api/lifecycle';
 import {runStatus} from '../ui/status';
 import {fetchSourceRuns,fetchRun,type SyncRun} from '../api/runs';
 import {usePermission} from '../AuthGate';
@@ -66,6 +67,8 @@ export function SourceSync({
     cancelButton = useRef<HTMLButtonElement>(null);
   const feedback = useRef<HTMLDivElement>(null);
   const selected = detail.source_instance;
+  const [uncertain,setUncertain]=useState(false),[safetyLoaded,setSafetyLoaded]=useState(false);
+  useEffect(()=>{const controller=new AbortController();const read=async()=>{try{const value=await sourceLifecycle(detail.source_instance,controller.signal);if(!controller.signal.aborted){setUncertain(value.removal_blocker==='SOURCE_APPLY_UNCONFIRMED');setSafetyLoaded(true);}}catch{if(!controller.signal.aborted)setSafetyLoaded(false);}};void read();const timer=setInterval(read,5000);return()=>{controller.abort();clearInterval(timer);};},[detail.source_instance]);
   const [operations, setOperations] = useState<SourceOperation[]>([]);
   const [operationError, setOperationError] = useState('');
   const [loaded, setLoaded] = useState(false);
@@ -166,7 +169,7 @@ export function SourceSync({
     if (active) confirmButton.current?.focus();
   };
   const launch = async (kind: 'PLAN' | 'DISCOVERY') => {
-    if (!canPlan || !detail.enabled || !loaded || operations.some(row => row.operation_kind === kind && row.status === 'RUNNING')) return;
+    if (uncertain || !safetyLoaded || !canPlan || !detail.enabled || !loaded || operations.some(row => row.operation_kind === kind && row.status === 'RUNNING')) return;
     if (kind === 'PLAN') { if (busy.current) return; busy.current = true; setPhase('planning'); setStarted(Date.now()); setUsable(false); setPlanningError(null); setResult(previous=>previous && ['OUTCOME_UNCERTAIN','PARTIALLY_APPLIED'].includes(previous.state)?previous:null); setConfirmOpen(false); }
     else { if (discoveryBusy.current) return; discoveryBusy.current = true; setDiscovering(true); setDiscoveryOpen(true); setDiscoveryStarted(Date.now()); setDiscoveryError(''); }
     try {
@@ -182,7 +185,7 @@ export function SourceSync({
   const discover = () => launch('DISCOVERY');
   const submit = async () => {
     if (
-      !canApply || !active ||
+      uncertain || !safetyLoaded || !canApply || !active ||
       busy.current ||
       !confirmOpen ||
       !plan ||
@@ -243,23 +246,54 @@ export function SourceSync({
       </p>
       {operationError && <p role="alert">{tr(operationError)} <button onClick={() => setRefreshOperations(value=>value+1)}>{tr("Reload operations")}{" "}</button></p>}
       {!loaded && !operationError && <p role="status">{tr("Loading operation state...")}{" "}</p>}
-      {planOperation && <p className="muted">{tr("Started")}{" "}<Timestamp value={planOperation.started_at} />{planOperation.status === 'READY' && <> {tr("Built")}{" "}<Timestamp value={planOperation.finished_at} /></>}</p>}
+      {planOperation && <p className="muted">{tr("Started")}{" "}<Timestamp occurred value={planOperation.started_at} />{planOperation.status === 'READY' && <> {tr("Built")}{" "}<Timestamp value={planOperation.finished_at} /></>}</p>}
+      {uncertain&&<div role="alert" className="source-error"><h3>{tr('Outcome unknown')}</h3><p>{tr('A previous synchronization needs reconciliation. An administrator must check its effects in NetBox before continuing. Do not repeat apply or remove this source.')}</p><Link to={sourcePath(selected)+'#runs'}>{tr('Review run history')}</Link></div>}
+      {!safetyLoaded&&<p role="status">{tr('Checking source lifecycle...')}</p>}
       <div className="page-actions">
         <button
           className="primary"
-          disabled={!canPlan || !loaded || phase !== "idle" || confirmOpen || !detail.enabled}
+          disabled={uncertain || !safetyLoaded || !canPlan || !loaded || phase !== "idle" || confirmOpen || !detail.enabled}
           onClick={buildPlan}
         >
           {plan ? tr("Rebuild plan") : tr("Build plan")}
         </button>
         <button
           disabled={
-            !canPlan || !loaded || applying || discovering || confirmOpen || !detail.enabled
+            uncertain || !safetyLoaded || !canPlan || !loaded || applying || discovering || confirmOpen || !detail.enabled
           }
           onClick={discover}
         >
           {tr("Run discovery")}{" "}</button>
       </div>
+      <details
+        className="source-panel discovery-tool"
+        open={discoveryOpen}
+        onToggle={(e) => setDiscoveryOpen(e.currentTarget.open)}
+      >
+        <summary>{tr("Discovery · optional read-only inspection")}{" "}</summary>
+        <p>
+          {tr("Inspect discovered objects and how they match NetBox. No NetBox changes are made.")}{" "}</p>
+        {discovering && <OperationFeedback operation={tr('Run discovery')} phase={operationError?'uncertain':operations.some(row=>row.operation_kind==='DISCOVERY'&&row.status==='RUNNING')?'running':'sending'} started={discoveryStarted}/>}
+        {expiredDiscovery&&<p className="sync-attention" role="status">{tr('The discovery result has expired. Run history is unchanged.')} {expiredDiscovery.finished_at&&<Timestamp value={expiredDiscovery.finished_at}/>}<br/>{canPlan?tr('Run discovery to refresh this result.'):tr('An Operator or Admin can refresh this result.')}</p>}
+        {discoveryError && (
+          <p role={historicalDiscovery?"status":"alert"} className={historicalDiscovery?"sync-attention":"source-error"}>
+            {historicalDiscovery&&<>{tr("Earlier discovery attempt; a newer run is shown in history.")}<br/></>}{inspectionOperation?.finished_at&&<Timestamp value={inspectionOperation.finished_at}/>}<br/>
+            {tr(discoveryError)}<br/><code>{operations.find(row=>row.operation_kind==='DISCOVERY')?.safe_error_code}</code><br/>
+            {operations.find(row=>row.operation_kind==='DISCOVERY')?.operation_id}
+          </p>
+        )}
+        {discovery && (
+          <DiscoveryReview
+            result={discovery.value}
+            received={discovery.received}
+            previous={discovering}
+          />
+        )}
+        {!discovery && !discovering && (
+          <p>
+            {tr("Run discovery to inspect matching and classification evidence independently of planning.")}{" "}</p>
+        )}
+      </details>
       {!detail.enabled && (
         <p className="sync-attention">
           {tr("Source disabled. Planning, discovery and manual sync are unavailable for this source.")}{" "}</p>
@@ -267,10 +301,10 @@ export function SourceSync({
       {phase !== 'idle' && !applying && <OperationFeedback operation={phase==='planning'?tr('Build plan'):phase==='validating'?tr('Preparing / validating reviewed plan'):tr('Sync to NetBox')} phase={operationError?'uncertain':phase==='planning'&&planOperation?.status==='RUNNING'?'running':'sending'} started={started}/>}
       {(runId||acceptedRun)&&!result?.runId&&<p role="status">{acceptedRun&&<Badge value={runStatus(acceptedRun.status)}/>} {tr(acceptedRun?.status==='RUNNING'?'Run accepted; execution is in progress.':acceptedRun?'Stored run result is available.':'Waiting for durable acceptance; do not resubmit.')} <Link to={runPath(acceptedRun?.run_id??runId)}>{tr('Open run')}</Link></p>}
       {!historyLoaded&&<p role={historyError?'alert':'status'}>{tr(historyError?'Run history unavailable. Confirmation is disabled until it can be checked.':'Loading run history…')}</p>}
-      {consumed&&<p className="sync-attention">{tr('This plan has been used. Inspect the run and build a fresh plan from current NetBox state before confirming further changes.')}</p>}
+      {consumed&&!uncertain&&<p className="sync-attention">{tr('This plan has been used. Inspect the run and build a fresh plan from current NetBox state before confirming further changes.')}</p>}
       <div ref={feedback} tabIndex={-1}>
-        {expiredPlan&&<p className="sync-attention" role="status">{tr('The saved plan has expired. This is not a synchronization failure.')} {planOperation?.finished_at&&<Timestamp value={planOperation.finished_at}/>}<br/>{canPlan?tr('Build a new plan when you want to sync manually.'):tr('An Operator or Admin can build a new plan.')}</p>}
-        {planningError && (
+        {expiredPlan&&!uncertain&&<p className="sync-attention" role="status">{tr('The saved plan has expired. This is not a synchronization failure.')} {planOperation?.finished_at&&<Timestamp value={planOperation.finished_at}/>}<br/>{canPlan?tr('Build a new plan when you want to sync manually.'):tr('An Operator or Admin can build a new plan.')}</p>}
+        {planningError && !uncertain && (
           <div className={historicalPlan?"sync-attention":"source-error"} role={historicalPlan?"status":"alert"}>
             {historicalPlan&&<p>{tr("Earlier planning attempt; a newer run is shown in history.")}</p>}
             {planOperation?.finished_at&&<Timestamp value={planOperation.finished_at}/>}
@@ -328,27 +362,28 @@ export function SourceSync({
           </section>
         )}
       </div>
-      {!plan && phase !== "planning" && !planningError && (
+      {!plan && !uncertain && phase !== "planning" && !planningError && (
         <div className="source-panel">
           <h3>{tr("No plan yet")}{" "}</h3>
           <p>
             {tr("Build a plan to review the proposed changes. Discovery is an optional, separate inspection.")}{" "}</p>
         </div>
       )}
-      {usable && plan?.value.apply_allowed && !consumed && historyLoaded && phase === "idle" && (
+      {!uncertain && safetyLoaded && usable && plan?.value.apply_allowed && !consumed && historyLoaded && phase === "idle" && (
         <p role="status">{tr("Plan ready for review.")}{" "}</p>
       )}
       {plan && (
         <PlanReview
           key={plan.received}
           plan={plan.value}
+          executionBlocked={uncertain}
           received={plan.received}
           previous={!usable || consumed}
           toolbar={<button
             ref={confirmButton}
             className="primary"
             disabled={
-              !canApply || phase !== "idle" ||
+              uncertain || !safetyLoaded || !canApply || phase !== "idle" ||
               !usable || consumed || !historyLoaded ||
               !plan.value.apply_allowed || !hasChanges(plan.value.items) ||
               !detail.enabled
@@ -364,35 +399,6 @@ export function SourceSync({
             {tr("Missing objects are retained in NetBox. No deletes. Only the reviewed plan is submitted.")}{" "}</p>
         </div>
       )}
-      <details
-        className="source-panel discovery-tool"
-        open={discoveryOpen}
-        onToggle={(e) => setDiscoveryOpen(e.currentTarget.open)}
-      >
-        <summary>{tr("Discovery · optional read-only inspection")}{" "}</summary>
-        <p>
-          {tr("Inspect discovered objects and how they match NetBox. No NetBox changes are made.")}{" "}</p>
-        {discovering && <OperationFeedback operation={tr('Run discovery')} phase={operationError?'uncertain':operations.some(row=>row.operation_kind==='DISCOVERY'&&row.status==='RUNNING')?'running':'sending'} started={discoveryStarted}/>}
-        {expiredDiscovery&&<p className="sync-attention" role="status">{tr('The discovery result has expired. Run history is unchanged.')} {expiredDiscovery.finished_at&&<Timestamp value={expiredDiscovery.finished_at}/>}<br/>{canPlan?tr('Run discovery to refresh this result.'):tr('An Operator or Admin can refresh this result.')}</p>}
-        {discoveryError && (
-          <p role={historicalDiscovery?"status":"alert"} className={historicalDiscovery?"sync-attention":"source-error"}>
-            {historicalDiscovery&&<>{tr("Earlier discovery attempt; a newer run is shown in history.")}<br/></>}{inspectionOperation?.finished_at&&<Timestamp value={inspectionOperation.finished_at}/>}<br/>
-            {tr(discoveryError)}<br/><code>{operations.find(row=>row.operation_kind==='DISCOVERY')?.safe_error_code}</code><br/>
-            {operations.find(row=>row.operation_kind==='DISCOVERY')?.operation_id}
-          </p>
-        )}
-        {discovery && (
-          <DiscoveryReview
-            result={discovery.value}
-            received={discovery.received}
-            previous={discovering}
-          />
-        )}
-        {!discovery && !discovering && (
-          <p>
-            {tr("Run discovery to inspect matching and classification evidence independently of planning.")}{" "}</p>
-        )}
-      </details>
       <dialog
         ref={dialog}
         className="sync-dialog"
@@ -469,7 +475,7 @@ export function SourceSync({
         <div className="page-actions">
           <button ref={cancelButton} disabled={applying} onClick={closeDialog}>
             {tr("Cancel")}{" "}</button>
-          <button className="primary" disabled={!canApply || applying} onClick={submit}>
+          <button className="primary" disabled={uncertain || !safetyLoaded || !canApply || applying} onClick={submit}>
             {tr("Sync to NetBox")}{" "}</button>
         </div>
       </dialog>

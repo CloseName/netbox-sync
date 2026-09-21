@@ -72,8 +72,26 @@ class LifecycleStore:
                 .format(self.table('sources')), (source,)).fetchone()
             if not row:
                 raise LifecycleError('SOURCE_NOT_FOUND')
+            blocked = connection.execute(sql.SQL("SELECT status FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED') ORDER BY CASE WHEN status='RUNNING' THEN 1 ELSE 0 END LIMIT 1").format(self.table('sync_runs')), (source,)).fetchone()
+            active = connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status='RUNNING' LIMIT 1").format(self.table('source_operations')), (source,)).fetchone()
             return {'source_instance': source, 'display_name': row['name'],
+                    'removal_blocker': 'SOURCE_APPLY_UNCONFIRMED' if blocked and blocked['status']!='RUNNING' else 'SOURCE_OPERATION_ACTIVE' if active or blocked else None,
                     'removed_at': None, 'credential_state': None, 'revision': self.revision(row)}
+
+    def evidence(self, after):
+        """Bounded read-only metadata; no result inventories, secrets or new DB grants."""
+        with self.connect() as connection:
+            rows = connection.execute(sql.SQL("""SELECT s.source_instance,
+                p.status AS plan_status, p.finished_at AS plan_checked_at,
+                (p.status='READY' AND p.result->>'apply_allowed'='false') AS plan_blocked,
+                EXISTS(SELECT 1 FROM {} r WHERE r.source_instance=s.source_instance
+                    AND r.status IN ('OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')) AS outcome_unconfirmed
+                FROM {} s LEFT JOIN {} p ON p.source_instance=s.source_instance AND p.operation_kind='PLAN'
+                WHERE s.source_instance>%s ORDER BY s.source_instance LIMIT 50""").format(
+                    self.table('sync_runs'), self.table('sources'), self.table('source_operations')), (after,)).fetchall()
+        return {'sources': [{**row,'plan_blocked':bool(row['plan_blocked']),
+            'plan_checked_at':row['plan_checked_at'].isoformat() if row['plan_checked_at'] else None} for row in rows],
+            'next': rows[-1]['source_instance'] if len(rows)==50 else None}
 
     def rename(self, source, expected_revision, name):
         """Change only the display label under the shared apply and source locks."""

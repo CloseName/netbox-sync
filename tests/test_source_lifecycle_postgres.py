@@ -205,3 +205,16 @@ def test_rename_only_label_and_fences_removal(lifecycle):
         with pytest.raises(LifecycleError, match='SOURCE_CONFIRMATION_INVALID'):
             store.remove(source.source_instance, renamed['revision'], wrong, False, lambda _: None)
     assert store.remove(source.source_instance, renamed['revision'], 'MiXeD Display', False, lambda _: None)['removed_at']
+
+
+def test_read_exposes_old_uncertain_blocker_and_batch_evidence(lifecycle):
+    store,registry,source=lifecycle
+    runs=postgres_run_repository(_safe_test_dsn(),registry.schema)
+    row=runs.start_run(source.source_instance,source.source_type,RunTrigger.MANUAL,'fixture')
+    runs.finish_run(row.run_id,RunStatus.OUTCOME_UNCERTAIN)
+    assert store.read(source.source_instance)['removal_blocker']=='SOURCE_APPLY_UNCONFIRMED'
+    result=store.evidence('')
+    assert result['sources'][0]['outcome_unconfirmed'] is True
+    assert result['sources'][0]['plan_blocked'] is False
+    assert result['next'] is None
+    with pytest.raises(LifecycleError,match='SOURCE_APPLY_UNCONFIRMED'): remove(store,source.source_instance)

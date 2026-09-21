@@ -109,6 +109,10 @@ class DiagnosticWarningDTO(PublicModel):
 
 
 class SourceDiagnosticDTO(PublicModel):
+    plan_blocked: bool = False
+    plan_checked_at: datetime | None = None
+    outcome_unconfirmed: bool = False
+    operation_evidence_available: bool = False
     """Allowlisted per-source diagnostic state."""
 
     source_instance: str
@@ -161,6 +165,8 @@ class DiagnosticsDTO(PublicModel):
             last_scheduled_run_at=value.last_scheduled_run_at,
             next_expected_at=value.next_expected_at,
             warning_count=value.warning_count, warnings=list(value.warnings),
+            plan_blocked=value.plan_blocked, plan_checked_at=value.plan_checked_at,
+            outcome_unconfirmed=value.outcome_unconfirmed, operation_evidence_available=value.operation_evidence_available,
         ) for value in result.sources]
         warning = lambda value: DiagnosticWarningDTO(**vars(value))
         return cls(overall_status=result.overall_status.value,
@@ -260,7 +266,34 @@ class ScheduleDTO(PublicModel):
         return cls(**vars(view))
 
 
+class DiscoveryInterfaceDTO(PublicModel):
+    name: str
+    addresses: list[str] = Field(default_factory=list)
+    mac_address: str | None = None
+    bridge: str | None = None
+    vlan_id: int | None = None
+
+class DiscoveryDiskDTO(PublicModel):
+    name: str
+    size_bytes: int = Field(gt=0)
+
+class DiscoveryPropertiesDTO(PublicModel):
+    vcpus: int | None = Field(default=None,gt=0)
+    memory_bytes: int | None = Field(default=None,gt=0)
+    cpu: str | None = None
+    status: str | None = None
+    architecture: str | None = None
+    os_type: str | None = None
+    manufacturer: str | None = None
+    model: str | None = None
+    hypervisor_version: str | None = None
+    addresses: list[str] = Field(default_factory=list)
+    interfaces: list[DiscoveryInterfaceDTO] = Field(default_factory=list)
+    disks: list[DiscoveryDiskDTO] = Field(default_factory=list)
+
+
 class DiscoveryItemDTO(PublicModel):
+    properties: DiscoveryPropertiesDTO = Field(default_factory=DiscoveryPropertiesDTO)
     object_kind: Literal['host', 'host_network', 'qemu', 'lxc', 'vm']
     name: str
     external_id: str

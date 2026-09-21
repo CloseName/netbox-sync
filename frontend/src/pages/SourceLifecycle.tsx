@@ -39,7 +39,7 @@ export function SourceLifecyclePanel({ source, onRemoved }: { source: Source; on
   useEffect(()=>{ if(open){dialog.current?.showModal();cancel.current?.focus();} else dialog.current?.close(); },[open]);
   const close=()=>{setOpen(false);trigger.current?.focus();};
   const remove=async()=>{
-    if(busy || !state.data?.revision) return;
+    if(busy || state.data?.removal_blocker || !state.data?.revision) return;
     setBusy(true);setError('');
     try { const result=await sourceLifecycle(source.source_instance,AbortSignal.timeout(20000),{revision:state.data.revision,confirmed_source:state.data.display_name,remove_credentials:true}); if(!result.removed_at) throw new Error(); onRemoved(result); }
     catch(e) { setError(e instanceof Error ? e.message : 'Removal could not be confirmed. Reload state.'); state.refresh(); }
@@ -48,13 +48,14 @@ export function SourceLifecyclePanel({ source, onRemoved }: { source: Source; on
   useEffect(()=>{if(state.data?.removed_at) onRemoved(state.data);},[state.data,onRemoved]);
   return <section className="source-panel"><h3>{tr("Lifecycle")}{" "}</h3>
     <p>{tr("Removing a source from NetBox Sync does not delete devices, VMs, interfaces, IP addresses or other infrastructure objects from NetBox.")}{" "}</p>
+    {state.data?.removal_blocker&&<p role="alert">{state.data.removal_blocker==='SOURCE_APPLY_UNCONFIRMED'?t('Removal is blocked: a previous synchronization is unconfirmed. An administrator must reconcile its effects in NetBox; do not repeat apply.','Удаление заблокировано: результат прежней синхронизации не подтверждён. Администратору нужно сверить её последствия в NetBox; не повторяйте применение.'):t('Wait for the active operation to finish.','Дождитесь завершения выполняющейся операции.')}</p>}
     {state.error && <Alert retry={state.refresh}>{tr("Source lifecycle is unavailable.")}{" "}</Alert>}
-    <button className="danger" ref={trigger} disabled={!state.data?.revision || state.loading || !!state.error} onClick={()=>setOpen(true)}>{tr("Remove Source")}{" "}</button>
+    <button className="danger" ref={trigger} disabled={!!state.data?.removal_blocker || !state.data?.revision || state.loading || !!state.error} onClick={()=>setOpen(true)}>{tr("Remove Source")}{" "}</button>
     <dialog ref={dialog} className="sync-dialog" onCancel={event=>{event.preventDefault();if(!busy)close();}} aria-labelledby="remove-title">
       <h2 id="remove-title">{t('Remove source ','Удалить источник ')}{source.name}?</h2>
       <p>{t('Automatic synchronization will stop. NetBox objects and run history are retained.','Автоматическая синхронизация будет остановлена. Объекты в NetBox и история запусков сохранятся.')}</p>
       {error && <p role="alert">{tr(error)} <Link to={sourcePath(source.source_instance)+'/runs'}>{tr("Review run history")}{" "}</Link></p>}
-      <div className="page-actions"><button ref={cancel} disabled={busy} onClick={close}>{tr("Cancel")}{" "}</button><button className="danger" disabled={busy || !state.data?.revision || !!state.error} onClick={remove}>{busy?tr("Removing source..."):tr("Remove Source")}</button></div>
+      <div className="page-actions"><button ref={cancel} disabled={busy} onClick={close}>{tr("Cancel")}{" "}</button><button className="danger" disabled={busy || !!state.data?.removal_blocker || !state.data?.revision || !!state.error} onClick={remove}>{busy?tr("Removing source..."):tr("Remove Source")}</button></div>
     </dialog>
   </section>;
 }

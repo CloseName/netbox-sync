@@ -46,7 +46,10 @@ def test_protected_discovery_returns_only_allowlisted_dto(caplog):
     with client(discovery) as api:
         response = api.post('/api/v1/sources/pve-test/discovery', headers=HEADERS, json={})
     assert response.status_code == 200
-    assert response.json() == result(hosts=[])
+    body=response.json()
+    properties=body['items'][0].pop('properties')
+    assert all(value is None or value==[] for value in properties.values())
+    assert body == result(hosts=[])
     assert discovery.calls == ['pve-test']
     assert SECRET not in response.text + caplog.text
 
@@ -91,3 +94,22 @@ def test_request_payload_cannot_select_path_host_or_provider():
                             content=json.dumps(payload))
     assert response.status_code == 200
     assert discovery.calls == ['pve-test']
+
+
+def test_discovery_hardware_projection_reaches_http_without_raw_provider_data():
+    value=result()
+    value['items'][0]['properties']={'vcpus':4,'memory_bytes':8589934592,
+        'addresses':['192.0.2.7/24'], 'interfaces':[{'name':'eth0','addresses':['192.0.2.7/24']}],
+        'disks':[{'name':'disk0','size_bytes':21474836480}]}
+    with client(FakeDiscovery(value)) as api:
+        response=api.post('/api/v1/sources/pve-test/discovery', headers=HEADERS, json={})
+    assert response.status_code==200
+    hardware=response.json()['items'][0]['properties']
+    assert hardware['vcpus']==4 and hardware['disks'][0]['size_bytes']==21474836480
+    assert hardware['interfaces'][0]['addresses']==['192.0.2.7/24']
+    assert SECRET not in response.text
+
+    value['items'][0]['properties']['description']=SECRET
+    with client(FakeDiscovery(value)) as api:
+        invalid=api.post('/api/v1/sources/pve-test/discovery',headers=HEADERS,json={})
+    assert invalid.status_code==500 and SECRET not in invalid.text

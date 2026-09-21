@@ -74,6 +74,11 @@ class SourceDiagnostic:
     next_expected_at: datetime | None
     warnings: tuple[str, ...]
 
+    plan_blocked: bool = False
+    plan_checked_at: datetime | None = None
+    outcome_unconfirmed: bool = False
+    operation_evidence_available: bool = False
+
     @property
     def warning_count(self):
         return len(self.warnings)
@@ -119,9 +124,10 @@ class DiagnosticsService:
     """Aggregate failure-isolated checks without discovery, apply, or writes."""
 
     def __init__(self, source_service, history_reader, discovery_health, apply_health,
-                 stale_seconds=7200, clock=None):
+                 stale_seconds=7200, clock=None, evidence_reader=None):
         if not isinstance(stale_seconds, int) or not 300 <= stale_seconds <= 604800:
             raise ValueError('diagnostics stale threshold must be between 300 and 604800 seconds')
+        self._evidence = evidence_reader or history_reader
         self._sources = source_service
         self._history = history_reader
         self._discovery = discovery_health
@@ -175,6 +181,13 @@ class DiagnosticsService:
             self._apply, now, 'APPLY_WORKER_UNAVAILABLE',
             'Apply worker is unavailable.')
 
+        plans, uncertain, operation_evidence_available = {}, set(), False
+        try:
+            plans, uncertain = self._evidence.operation_evidence()
+            operation_evidence_available = True
+        except Exception:
+            # History remains useful, but lack of plan evidence is never "no problems".
+            pass
         latest, successes = _indexed(snapshot.latest), _indexed(snapshot.successes)
         scheduled, manual = _indexed(snapshot.scheduled), _indexed(snapshot.manual)
         scheduled_running = _indexed(snapshot.scheduled_running)
@@ -204,6 +217,11 @@ class DiagnosticsService:
                 status = DiagnosticStatus.DEGRADED
             else:
                 status = DiagnosticStatus.UNHEALTHY
+            plan = plans.get(source.source_instance, {})
+            plan_blocked = plan.get('apply_allowed') is False and plan.get('status') == 'READY'
+            outcome_unconfirmed = source.source_instance in uncertain
+            if plan_blocked or outcome_unconfirmed:
+                status = DiagnosticStatus.DEGRADED
             source_results.append(SourceDiagnostic(
                 source.source_instance, source.type, source.enabled, source.sync_enabled,
                 source.sync_interval_seconds, status, _summary(current),
@@ -213,7 +231,7 @@ class DiagnosticsService:
                 _summary(scheduled_run), _summary(manual.get(source.source_instance)),
                 decision.state.value, decision.last_scheduled_run_at,
                 decision.next_expected_at,
-                tuple(source_warnings),
+                tuple(source_warnings), plan_blocked, plan.get("finished_at"), outcome_unconfirmed, operation_evidence_available,
             ))
             if delayed:
                 warnings.append(DiagnosticWarning(

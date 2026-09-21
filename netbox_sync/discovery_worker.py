@@ -221,7 +221,8 @@ def execute_child(payload):
             manufacturer=text(host.manufacturer), model=text(host.model),
             version=text(host.hypervisor_version), cpu=text(host.cpu.model),
             memory_bytes=max(0,host.memory_bytes)) for host in hosts]
-    return {**asdict(review), 'hosts': evidence}
+    from .application.discovery_review import enrich_review
+    return {**asdict(enrich_review(review, hosts)), 'hosts': evidence}
 
 
 def child_main():

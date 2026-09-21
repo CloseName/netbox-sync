@@ -5,7 +5,7 @@ export type DiagnosticCode = 'REGISTRY_UNAVAILABLE' | 'RUN_HISTORY_UNAVAILABLE'
 export interface DiagnosticComponent { status: DiagnosticStatus; checked_at: string; safe_code: DiagnosticCode | null; safe_message: string | null; last_seen_at: string | null; last_success_at: string | null; next_expected_at: string | null; }
 export interface DiagnosticRun { run_id: string; trigger: 'manual' | 'scheduled'; status: string; started_at: string; finished_at: string | null; }
 export interface DiagnosticWarning { warning_code: 'STALE_RUNNING' | 'SCHEDULED_ACTIVITY_DELAYED'; safe_message: string; source_instance: string | null; source_type: 'proxmox' | 'esxi' | null; trigger: 'manual' | 'scheduled' | null; run_id: string | null; started_at: string | null; age_seconds: number | null; }
-export interface SourceDiagnostic { source_instance: string; source_type: 'proxmox' | 'esxi'; enabled: boolean; sync_enabled: boolean; sync_interval_seconds: number; status: DiagnosticStatus; latest_run: DiagnosticRun | null; latest_success_at: string | null; latest_scheduled_run: DiagnosticRun | null; latest_manual_run: DiagnosticRun | null; scheduler_state: 'DISABLED' | 'WAITING' | 'DUE' | 'RUNNING' | 'DELAYED'; last_scheduled_run_at: string | null; next_expected_at: string | null; warning_count: number; warnings: ('STALE_RUNNING' | 'SCHEDULED_ACTIVITY_DELAYED')[]; }
+export interface SourceDiagnostic { plan_blocked?: boolean; plan_checked_at?: string|null; outcome_unconfirmed?: boolean; operation_evidence_available?: boolean; source_instance: string; source_type: 'proxmox' | 'esxi'; enabled: boolean; sync_enabled: boolean; sync_interval_seconds: number; status: DiagnosticStatus; latest_run: DiagnosticRun | null; latest_success_at: string | null; latest_scheduled_run: DiagnosticRun | null; latest_manual_run: DiagnosticRun | null; scheduler_state: 'DISABLED' | 'WAITING' | 'DUE' | 'RUNNING' | 'DELAYED'; last_scheduled_run_at: string | null; next_expected_at: string | null; warning_count: number; warnings: ('STALE_RUNNING' | 'SCHEDULED_ACTIVITY_DELAYED')[]; }
 export interface Diagnostics { overall_status: 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY'; generated_at: string; components: Record<'api' | 'registry' | 'run_history' | 'discovery_worker' | 'apply_worker' | 'scheduler', DiagnosticComponent>; sources: SourceDiagnostic[]; stale_runs: DiagnosticWarning[]; warnings: DiagnosticWarning[]; }
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -38,6 +38,8 @@ const isWarning = (value: unknown): value is DiagnosticWarning => record(value)
   && nullableTime(value.started_at)
   && (value.age_seconds === null || (Number.isSafeInteger(value.age_seconds) && Number(value.age_seconds) >= 0));
 const isSource = (value: unknown): value is SourceDiagnostic => record(value)
+  && ['plan_blocked','outcome_unconfirmed','operation_evidence_available'].every(k=>value[k]===undefined||typeof value[k]==='boolean')
+  && (value.plan_checked_at===undefined||nullableTime(value.plan_checked_at))
   && typeof value.source_instance === 'string' && (value.source_type === 'proxmox' || value.source_type === 'esxi')
   && typeof value.enabled === 'boolean' && typeof value.sync_enabled === 'boolean'
   && Number.isSafeInteger(value.sync_interval_seconds) && Number(value.sync_interval_seconds) > 0

@@ -38,7 +38,7 @@ export function SourcesListPage() {
     composeSources((sources.data ?? []).filter(row=>!params.get('team')||(!!teams.data&&(params.get('team')==='none'?!teams.data?.assignments[row.source_instance]:teams.data?.assignments[row.source_instance]===params.get('team')))), diagnostics.data),
     params,
   );
-  useEffect(()=>{if(!sources.data)return;try{const offset=Number(sessionStorage.getItem("sources-scroll:"+location.search)||0);if(offset>0)requestAnimationFrame(()=>window.scrollTo(0,offset));}catch{/* Optional browser storage. */}},[!!sources.data]);
+  useEffect(()=>{if(!sources.data||diagnostics.loading)return;try{const offset=Number(sessionStorage.getItem("sources-scroll:"+location.search)||0);if(offset>0)requestAnimationFrame(()=>window.scrollTo(0,offset));}catch{/* Optional browser storage. */}},[!!sources.data,diagnostics.loading]);
   // Browser history changes before React commits a navigation transition.
   // Read that URL so rapid filter edits cannot resurrect a just-cleared query.
   const change = (key: string, value: string) => {
@@ -177,6 +177,8 @@ export function SourcesListPage() {
                           ) : (
                             <span className="muted">{tr(diagnostics.loading?"Loading diagnostics…":"Status unavailable")}{" "}</span>
                           )}
+                          {d?.plan_checked_at&&<small>{t('Last plan: ','Последний план: ')}<Timestamp value={d.plan_checked_at}/></small>}
+                          {d?.latest_success_at&&<small>{t('Last successful sync: ','Последняя успешная синхронизация: ')}<Timestamp value={d.latest_success_at}/></small>}
                           {!d && diagnostics.loading && (
                             <small>{tr("Loading diagnostics…")}{" "}</small>
                           )}
@@ -226,11 +228,11 @@ export function SourcesListPage() {
                         </td>
                         <td>
                           {a ? (
-                            <Link to={sourcePath(s.source_instance)}>
+                            <Link to={sourcePath(s.source_instance)+(d?.plan_blocked?"/sync":"")}>
                               {tr(a.label)}
                             </Link>
                           ) : d ? (
-                            tr("None reported")
+                            tr(d?.operation_evidence_available===false?"Status unavailable":"None reported")
                           ) : (
                             tr(diagnostics.loading?"Loading diagnostics…":"Unavailable")
                           )}

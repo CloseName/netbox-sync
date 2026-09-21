@@ -30,6 +30,9 @@ class Handler(ProbeHandler):
             return self.respond(json.dumps({**{key:len(value) for key,value in rows.items()}, 'write_requests':len(writes), 'legacy_disk_reads':sum('/virtual-disks/' in path for _,path in requests), 'invalid_virtual_requests':sum('/-' in path or '=-' in path for _,path in requests)}).encode())
         return super().do_GET()
     def do_POST(self):
+        if self.path=='/fixture/fail-next-write':
+            behavior['fail_write_number']=len(writes)+1
+            return self.respond(b'{}')
         if self.path=='/fixture/partial-apply':
             behavior['fail_write_number']=len(writes)+3
             return self.respond(b'{}')
@@ -61,6 +64,7 @@ from tests.fakes.esxi_properties import properties
 context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 context.load_cert_chain('/fixture/server.crt','/fixture/server.key')
 seed=FakeNetBox();add_target(seed)
+seed.virtualization.clusters.add(FakeRecord(id=9,name='Proxmox Fixture Cluster',type=seed.virtualization.cluster_types.get(id=2),scope_type='dcim.site',scope_id=1))
 seed.dcim.device_roles.add(FakeRecord(id=4,name='Server',slug='server'))
 seed.dcim.platforms.add(FakeRecord(id=5,name='Proxmox',slug='proxmox'))
 seed.dcim.device_types.add(FakeRecord(id=6,model='PowerEdge R650',slug='r650',manufacturer=FakeRecord(id=7,name='Dell Inc.')))

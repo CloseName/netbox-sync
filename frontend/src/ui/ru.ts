@@ -1,4 +1,23 @@
 export const ru: Record<string,string> = {
+  "Disks": "Диски",
+  "Interfaces": "Интерфейсы",
+
+  "A previous synchronization needs reconciliation. An administrator must check its effects in NetBox before continuing. Do not repeat apply or remove this source.": "Результат прежней синхронизации требует сверки. Администратору нужно проверить её последствия в NetBox. Не повторяйте применение и не удаляйте источник.",
+
+  "No existing match": "Нет прежнего сопоставления",
+  "Search by name or IP": "Поиск по имени или IP",
+  "No existing object has this stable source identity.": "Объект с этой устойчивой идентичностью не найден. Создание будет определено планом.",
+  "Stable source identity matches an existing NetBox object.": "Устойчивая идентичность соответствует объекту NetBox.",
+  "The stable identity is duplicated or outside the configured target.": "Идентичность повторяется или относится к другому размещению.",
+  "A name match exists but names are not identity evidence.": "Имя совпадает, но это не доказывает идентичность.",
+  "Management IP evidence is ambiguous or outside the configured target.": "Адрес управления неоднозначен или относится к другому размещению.",
+  "Management IP matches, but network evidence alone does not establish ownership.": "Адрес управления совпадает, но не доказывает принадлежность.",
+  "Stable evidence exists, but Web discovery never adopts objects.": "Есть признаки идентичности; обнаружение не присваивает объекты автоматически.",
+  "Legacy evidence requires operator review and is not adopted.": "Прежнее сопоставление требует проверки; автоматического присвоения нет.",
+  "Legacy evidence is ambiguous; processing is blocked.": "Прежнее сопоставление неоднозначно; обработка заблокирована.",
+  "Architecture": "Архитектура",
+  "Operating system": "Операционная система",
+
   "Interface": "Интерфейс",
   "A matching object retains another source identity. Re-registration does not restore ownership.": "За совпадающим объектом закреплён другой источник. Повторное добавление не восстанавливает принадлежность. Не меняйте идентификаторы вручную; требуется проверенное восстановление связи.",
   "Inventory conflicts": "Конфликты инвентаря",
@@ -735,5 +754,10 @@ export const ru: Record<string,string> = {
   "Operation state is unavailable. Reload to check current state.": "Состояние операции недоступно. Обновите данные для проверки.",
   "Running records": "Записей «Выполняется»",
   'Rejected before write. Build and review a new plan.': 'Отказ до записи. Постройте и проверьте новый план.',
+  'Memory': 'Память',
+  'Manufacturer': 'Производитель',
+  'Model': 'Модель',
+  'Hypervisor version': 'Версия гипервизора',
+  'Show more': 'Показать ещё',
   'Planned object': 'Планируемый объект',
 };

@@ -7,7 +7,7 @@ import { kindLabel } from "../ui/plan";
 const labels: Record<string, string> = {
   MANAGED: "Managed",
   NO_CHANGE: "Unchanged",
-  WOULD_CREATE: "Would create",
+  WOULD_CREATE: "No existing match",
   REVIEW_REQUIRED: "Needs review",
   CONFLICT: "Conflict",
   IGNORED: "Ignored",
@@ -23,11 +23,11 @@ export function DiscoveryReview({
   previous: boolean;
 }) {
   const [classification, setClassification] = useState(""),
-    [kind, setKind] = useState("");
+    [kind, setKind] = useState(""), [search,setSearch]=useState(""), [limit,setLimit]=useState(50);
   const rows = result.items.filter(
     (item) =>
       (!classification || item.classification === classification) &&
-      (!kind || item.object_kind === kind),
+      (!kind || item.object_kind === kind) && (!search.trim() || [item.name,...(item.properties?.addresses??[])].some(value=>value.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))),
   );
   return (
     <div>
@@ -50,7 +50,7 @@ export function DiscoveryReview({
           ),
         )}
       </dl>
-      <div className="sync-filters">
+      <div className="sync-filters"><label>{tr("Search by name or IP")}<input type="search" value={search} onChange={e=>{setSearch(e.target.value);setLimit(50);}}/></label>
         <label>
           {tr("Classification")}{" "}<select
             value={classification}
@@ -79,11 +79,11 @@ export function DiscoveryReview({
       </div>
       {!rows.length && <p>{tr("No discovered rows in this view.")}{" "}</p>}
       <div className="plan-rows">
-        {rows.map((item, i) => (
+        {rows.slice(0,limit).map((item, i) => (
           <details className="plan-row" key={i}>
             <summary>
               <span className="plan-object">
-                <strong>{item.name}</strong>
+                <strong>{item.name}</strong><span>{item.properties?.addresses?.join(" · ")}</span>
                 <span>{tr(kindLabel(item.object_kind))}</span>
               </span>
               <Badge
@@ -105,6 +105,9 @@ export function DiscoveryReview({
               <span className="plan-reason">{planReason(item)}</span>
             </summary>
             <div className="plan-row-body">
+              <dl className="source-facts">{Object.entries(item.properties??{}).filter(([key,value])=>!['addresses','interfaces','disks'].includes(key)&&value!==null&&value!==undefined&&value!=='').map(([key,value])=><div key={key}><dt>{tr(({vcpus:'vCPU',memory_bytes:'Memory',cpu:'CPU',status:'Status',architecture:'Architecture',os_type:'Operating system',manufacturer:'Manufacturer',model:'Model',hypervisor_version:'Hypervisor version'} as Record<string,string>)[key]??key)}</dt><dd>{key==='memory_bytes'?`${(Number(value)/1024**3).toFixed(2)} GiB`:String(value)}</dd></div>)}</dl>
+              {!!item.properties?.disks?.length&&<section><h4>{tr('Disks')}</h4><ul>{item.properties.disks.map((disk,i)=><li key={i}>{disk.name} · {(disk.size_bytes/1024**3).toFixed(2)} GiB</li>)}</ul></section>}
+              {!!item.properties?.interfaces?.length&&<section><h4>{tr('Interfaces')}</h4><ul>{item.properties.interfaces.map((nic,i)=><li key={i}>{[nic.name,nic.mac_address,nic.bridge,nic.vlan_id!=null?`VLAN ${nic.vlan_id}`:null,...nic.addresses].filter(Boolean).join(' · ')}</li>)}</ul></section>}
               <p>{tr("NetBox match:")}{" "}{item.matched_object_name ?? tr("Not provided")}</p>
               {["CONFLICT", "REVIEW_REQUIRED"].includes(
                 item.classification,
@@ -141,6 +144,7 @@ export function DiscoveryReview({
           </details>
         ))}
       </div>
+      {rows.length>limit&&<button onClick={()=>setLimit(n=>n+50)}>{tr("Show more")}</button>}
       <p className="muted">
         {tr("Build plan performs a fresh read. It does not reuse this discovery snapshot.")}{" "}</p>
     </div>

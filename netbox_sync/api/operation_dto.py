@@ -49,6 +49,7 @@ class OperationDTO(BaseModel):
 
 
 class LifecycleDTO(BaseModel):
+    removal_blocker: Literal["SOURCE_APPLY_UNCONFIRMED","SOURCE_OPERATION_ACTIVE"] | None = None
     model_config = ConfigDict(extra='forbid')
     source_instance: str
     display_name: str

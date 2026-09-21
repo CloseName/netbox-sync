@@ -5,6 +5,12 @@ from .source_lifecycle import LifecycleError
 
 
 def handle_lifecycle(lifecycle, secrets, request):
+    if request.get('action')=='source_evidence' and set(request)=={'action','after'}:
+        after=request['after']
+        if not isinstance(after,str) or len(after)>200 or after and not SOURCE_INSTANCE_PATTERN.fullmatch(after):
+            raise LifecycleError('REQUEST_INVALID')
+        if lifecycle is None: raise LifecycleError('LIFECYCLE_UNAVAILABLE')
+        return lifecycle.evidence(after)
     source = request.get('source_instance')
     if not isinstance(source, str) or not SOURCE_INSTANCE_PATTERN.fullmatch(source):
         raise LifecycleError('REQUEST_INVALID')

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { runDiscovery } from '../src/api/discovery.ts';
+import { runDiscovery, validDiscovery } from '../src/api/discovery.ts';
 
 const result = { source_instance: 'pve-test', source_type: 'proxmox', site_slug: 'test',
   cluster_name: 'Test', items: [{ object_kind: 'qemu', name: 'vm', external_id: '100',
@@ -30,4 +30,12 @@ test('discovery failures distinguish provider and registry without exposing raw 
     mock.mock.mockImplementationOnce(async()=>Response.json({error:{code,message:'RAW SECRET'}},{status:503}));
     await assert.rejects(runDiscovery('pve-test',new AbortController().signal),error=>error.message===message);
   }
+});
+
+
+test('hardware transport rejects malformed lists before rendering',()=>{
+  const withProperties=p=>({...result,items:[{...result.items[0],properties:p}]});
+  assert.equal(validDiscovery(withProperties({vcpus:4,addresses:['192.0.2.7'],interfaces:[{name:'eth0',addresses:[]}],disks:[]}), 'pve-test'),true);
+  for(const properties of [null,{addresses:3},{interfaces:[{name:'eth0',addresses:null}]},{disks:[{name:'disk0',size_bytes:'8'}]},{memory_bytes:-1}])
+    assert.equal(validDiscovery(withProperties(properties),'pve-test'),false);
 });

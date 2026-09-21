@@ -36,6 +36,7 @@ for provider in (('esxi','proxmox') if pgmode=='bundled' else ('proxmox','esxi')
         **({'token_id':'independent-name'} if provider=='proxmox' else {})))
     assert checked['status']==200, ('preview',provider,checked['status'],checked['body'].get('error'))
     refs={kind:request(None,'/api/v1/catalog/'+kind,'GET')['body']['items'][0] for kind in ('site','cluster','platform','device_role','cluster_type')}
+    refs['cluster']=next(item for item in request(None,'/api/v1/catalog/cluster','GET')['body']['items'] if item['id']==(9 if provider=='proxmox' else 3))
     dtype=next(item for item in request(None,'/api/v1/catalog/device_type','GET')['body']['items'] if item['id']==6)
     reviewed=request(dict(onboarding_token=checked['body']['onboarding_token'],references=refs,host_types={h['id']:dtype for h in checked['body']['preview']['hosts']}),'/api/v1/sources/review-placement')
     assert reviewed['status']==200, reviewed
@@ -43,7 +44,7 @@ for provider in (('esxi','proxmox') if pgmode=='bundled' else ('proxmox','esxi')
     rejected=request(dict(onboarding_token=checked['body']['onboarding_token'],references=wrong,host_types={h['id']:dtype for h in checked['body']['preview']['hosts']}),'/api/v1/sources/review-placement')
     assert rejected['status']==409 and rejected['body']['error']['code']=='CATALOG_CHANGED', rejected
     sid='full-'+provider
-    payload=dict(source_type=provider,source_instance=sid,name=sid,address='esxi.probe.test',port=8443,
+    payload=dict(source_type=provider,source_instance=sid,name=refs['cluster']['name'],address='esxi.probe.test',port=8443,
         verify_ssl=True,sync_interval_seconds=600,confirm_sync_disabled=True,
         onboarding_token=checked['body']['onboarding_token'],references=refs,
         host_types={h['id']:dtype for h in checked['body']['preview']['hosts']},
@@ -52,6 +53,9 @@ for provider in (('esxi','proxmox') if pgmode=='bundled' else ('proxmox','esxi')
     result=request(payload,'/api/v1/sources');assert result['status']==201,('register',provider,result['status'],result['body'].get('error'))
     base='/api/v1/sources/'+sid
     discovery=request({},base+'/discovery');assert discovery['status']==200,('discovery',provider,discovery)
+    hardware=[i['properties'] for i in discovery['body']['items'] if i['object_kind'] in ('vm','qemu','lxc')]
+    assert hardware and all(p['vcpus'] and p['memory_bytes'] for p in hardware), ('missing discovery hardware',provider)
+    assert any(p['interfaces'] for p in hardware), ('missing discovery networks',provider)
     if provider=='esxi':
         run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/deny-required',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
         failed=request({},base+'/sync-plan');assert failed['status']>=400
@@ -98,27 +102,6 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
         other=json.loads(compose('exec','-T','netbox-sync-apply-worker','python','-c',diagnostic,sid))
         print('PLAN_DIFFERENCES',[(k,plan.get(k),other.get(k)) for k in plan if plan.get(k)!=other.get(k)],flush=True)
     assert prepared['status']==200,('prepare',provider,prepared['body'].get('error'))
-    accepted_id=str(uuid.uuid4())
-    if provider=='esxi':
-        run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/partial-apply',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
-        uncertain=request(dict(confirmation_token=prepared['body']['confirmation_token'],operation_id=operation_id,run_id=accepted_id),base+'/sync')
-        assert uncertain['status']==503 and uncertain['body']['error']['code']=='OUTCOME_UNCERTAIN', uncertain
-        history=request(None,'/api/v1/runs/'+accepted_id,'GET')
-        assert history['status']==200 and history['body']['status']=='OUTCOME_UNCERTAIN'
-        assert history['body']['plan_digest']==plan['digest']
-        before_retry=run(['docker','exec',peer,'python','-c',"import requests; print(requests.get('https://esxi.probe.test:8443/fixture/state',verify='/fixture/server.crt',timeout=5).text)"])
-        assert request(dict(confirmation_token=prepared['body']['confirmation_token'],operation_id=operation_id),base+'/sync')['status']==409
-        refused=request(dict(plan_digest=plan['digest'],operation_id=operation_id,confirmed=True),base+'/sync-confirmations')
-        assert refused['status']==409 and refused['body']['error']['reason']=='OPERATION_STATUS', refused
-        after_retry=run(['docker','exec',peer,'python','-c',"import requests; print(requests.get('https://esxi.probe.test:8443/fixture/state',verify='/fixture/server.crt',timeout=5).text)"])
-        assert json.loads(before_retry)['write_requests']==json.loads(after_retry)['write_requests']
-        logs=compose('logs','--no-color','netbox-sync-apply-worker')
-        assert accepted_id in logs and 'RequestError' in logs and 'PRIVATE_REMOTE_RESPONSE_MUST_NOT_APPEAR' not in logs
-        plan=request({},base+'/sync-plan')['body']
-        operation_id=next(o['operation_id'] for o in request(None,base+'/operations','GET')['body']['operations'] if o['operation_kind']=='PLAN')
-        prepared=request(dict(plan_digest=plan['digest'],operation_id=operation_id,confirmed=True),base+'/sync-confirmations')
-        assert prepared['status']==200, prepared
-        print('PASS controlled partial ESXi apply; durable result, consumed-plan/replay refusal, fresh residual plan',flush=True)
     applied=request(dict(confirmation_token=prepared['body']['confirmation_token'],operation_id=operation_id,run_id=str(uuid.uuid4())),base+'/sync')
     assert applied['status']==200 and applied['body']['status']=='SUCCEEDED',('apply',provider,applied)
     repeated=request({},base+'/sync-plan');assert repeated['status']==200,('replan',provider,repeated)
@@ -147,10 +130,37 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
     old_plan=next(o for o in request(None,base+'/operations','GET')['body']['operations'] if o['operation_kind']=='PLAN')
     assert old_plan['status']=='READY'
     if provider=='esxi':
+        # Complete successful manual/scheduled cycles first. An uncertain run is
+        # terminal for future write admission; never reset its history to continue.
+        run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/change-esxi-memory',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
+        plan=request({},base+'/sync-plan')['body']
+        operation_id=next(o['operation_id'] for o in request(None,base+'/operations','GET')['body']['operations'] if o['operation_kind']=='PLAN')
+        prepared=request(dict(plan_digest=plan['digest'],operation_id=operation_id,confirmed=True),base+'/sync-confirmations')
+        assert prepared['status']==200
+        run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/fail-next-write',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
+        accepted_id=str(uuid.uuid4())
+        uncertain=request(dict(confirmation_token=prepared['body']['confirmation_token'],operation_id=operation_id,run_id=accepted_id),base+'/sync')
+        assert uncertain['status']==503 and uncertain['body']['error']['code']=='OUTCOME_UNCERTAIN'
+        assert request(None,'/api/v1/runs/'+accepted_id,'GET')['body']['status']=='OUTCOME_UNCERTAIN'
+        before_retry=fixture_state()['write_requests']
+        assert request(dict(confirmation_token=prepared['body']['confirmation_token'],operation_id=operation_id),base+'/sync')['status']==409
+        residual=request({},base+'/sync-plan')['body']
+        operation_id=next(o['operation_id'] for o in request(None,base+'/operations','GET')['body']['operations'] if o['operation_kind']=='PLAN')
+        refused=request(dict(plan_digest=residual['digest'],operation_id=operation_id,confirmed=True),base+'/sync-confirmations')
+        assert refused['status']==409 and refused['body']['error']['code']=='PLAN_BLOCKED'
+        assert fixture_state()['write_requests']==before_retry
+        assert request(None,base+'/lifecycle','GET')['body']['removal_blocker']=='SOURCE_APPLY_UNCONFIRMED'
+        toggle_schedule(True);make_due();blocked_tick=tick();toggle_schedule(False)
+        assert blocked_tick.returncode!=0 and scheduled_runs()[0]['status']=='BLOCKED'
+        assert fixture_state()['write_requests']==before_retry
+        diag=request(None,'/api/v1/diagnostics','GET')
+        assert diag['status']==200
+        assert next(s for s in diag['body']['sources'] if s['source_instance']==sid)['outcome_unconfirmed']
+        print('PASS production historical uncertainty: consumed token and fresh plan blocked, no further writes, persisted lifecycle and diagnostics',flush=True)
         blocked=request(change,base+'/placement','PATCH')
         assert blocked['status']==409 and blocked['body']['error']['code']=='SOURCE_APPLY_UNCONFIRMED'
         assert request(None,base,'GET')['body']==original
-        print('PASS historical uncertainty still blocks placement; successful reconciliation does not erase history',flush=True)
+        print('PASS historical uncertainty still blocks placement; no status reset or reconciliation claim',flush=True)
         run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/change-esxi-memory',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
     else:
         saved=request(change,base+'/placement','PATCH');assert saved['status']==200,('placement-save',saved)
@@ -173,15 +183,19 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
         browser_request=root.parent/'browser-request.json';browser_done=root.parent/'browser-done.json'
         if browser_done.exists(): browser_done.unlink()
         fd=os.open(browser_request,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
-        with os.fdopen(fd,'w') as stream: json.dump(dict(api=compose('ps','-q','netbox-sync-api'),cookie=session_cookie,source=sid,project=project),stream)
+        with os.fdopen(fd,'w') as stream: json.dump(dict(api=compose('ps','-q','netbox-sync-api'),cookie=session_cookie,source=sid,project=project,uncertain=provider=='esxi'),stream)
         for _ in range(240):
             if browser_done.exists(): break
             time.sleep(.5)
         else: raise AssertionError('Browser runtime gate timed out')
         browser_result=json.loads(browser_done.read_text());browser_done.unlink()
         assert browser_result['ok'], 'Production browser gate failed'
-        assert not [i for i in request({},base+'/sync-plan')['body']['items'] if i['action'] in ('CREATE','UPDATE')]
-        print('PASS real browser plan/prepare/apply/result/replan '+provider,flush=True)
+        if provider=='esxi':
+            assert request(None,base+'/lifecycle','GET')['body']['removal_blocker']=='SOURCE_APPLY_UNCONFIRMED'
+            print('PASS real browser refuses uncertain ESXi source',flush=True)
+        else:
+            assert not [i for i in request({},base+'/sync-plan')['body']['items'] if i['action'] in ('CREATE','UPDATE')]
+            print('PASS real browser plan/prepare/apply/result/replan '+provider,flush=True)
 
 
 if pgmode=='bundled':

@@ -1,11 +1,25 @@
+export interface DiscoveryProperties {vcpus?:number|null;memory_bytes?:number|null;cpu?:string|null;status?:string|null;architecture?:string|null;os_type?:string|null;manufacturer?:string|null;model?:string|null;hypervisor_version?:string|null;addresses?:string[];interfaces?:{name:string;addresses:string[];mac_address?:string|null;bridge?:string|null;vlan_id?:number|null}[];disks?:{name:string;size_bytes:number}[];}
 export type Classification = 'MANAGED' | 'REVIEW_REQUIRED' | 'WOULD_CREATE' | 'IGNORED' | 'UNSUPPORTED' | 'CONFLICT' | 'NO_CHANGE';
-export interface DiscoveryItem { object_kind: 'host' | 'host_network' | 'qemu' | 'lxc' | 'vm'; name: string; external_id: string; classification: Classification; reason_code: string; reason: string; future_action: 'none' | 'create' | 'update' | 'review' | 'ignored' | 'unsupported'; matched_object_id: string | number | null; matched_object_name: string | null; }
+export interface DiscoveryItem { properties?:DiscoveryProperties; object_kind: 'host' | 'host_network' | 'qemu' | 'lxc' | 'vm'; name: string; external_id: string; classification: Classification; reason_code: string; reason: string; future_action: 'none' | 'create' | 'update' | 'review' | 'ignored' | 'unsupported'; matched_object_id: string | number | null; matched_object_name: string | null; }
 export interface DiscoveryResult { source_instance: string; source_type: 'proxmox' | 'esxi'; site_slug: string; cluster_name: string; items: DiscoveryItem[]; }
 const classifications = ['MANAGED', 'REVIEW_REQUIRED', 'WOULD_CREATE', 'IGNORED', 'UNSUPPORTED', 'CONFLICT', 'NO_CHANGE'];
 const actions = ['none', 'create', 'update', 'review', 'ignored', 'unsupported'];
 const kinds = ['host', 'host_network', 'qemu', 'lxc', 'vm'];
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+const strings = (value: unknown) => Array.isArray(value) && value.every(v=>typeof v==='string');
+const optionalString = (value: unknown) => value==null || typeof value==='string';
+const optionalNumber = (value: unknown) => value==null || typeof value==='number' && Number.isFinite(value) && value>=0;
+const properties = (value: unknown): boolean => value===undefined || record(value)
+  && ['vcpus','memory_bytes'].every(k=>optionalNumber(value[k]))
+  && ['cpu','status','architecture','os_type','manufacturer','model','hypervisor_version'].every(k=>optionalString(value[k]))
+  && (value.addresses===undefined || strings(value.addresses))
+  && (value.interfaces===undefined || Array.isArray(value.interfaces) && value.interfaces.every(n=>record(n)
+    && typeof n.name==='string' && strings(n.addresses) && optionalString(n.mac_address)
+    && optionalString(n.bridge) && optionalNumber(n.vlan_id)))
+  && (value.disks===undefined || Array.isArray(value.disks) && value.disks.every(d=>record(d)
+    && typeof d.name==='string' && typeof d.size_bytes==='number' && Number.isFinite(d.size_bytes) && d.size_bytes>=0));
 const item = (value: unknown): value is DiscoveryItem => record(value)
+  && properties(value.properties)
   && typeof value.object_kind === 'string' && kinds.includes(value.object_kind)
   && ['name', 'external_id', 'reason_code', 'reason'].every((key) => typeof value[key] === 'string')
   && typeof value.classification === 'string' && classifications.includes(value.classification)
