@@ -24,7 +24,7 @@ function backend(){
     if(path.endsWith('/lifecycle'))return route.fulfill({json:lifecycle(id)});
     if(path.endsWith('/remove')){
       if([...slots.values()].some(row=>row.source_instance===id&&row.status==='RUNNING'))return route.fulfill({status:409,json:{error:{code:'SOURCE_OPERATION_ACTIVE'}}});
-      const body=request.postDataJSON();expect(body.confirmed_source).toBe(lifecycle(id).display_name);expect(body.revision).toBe('a'.repeat(64));
+      const body=request.postDataJSON();expect(body.confirmed_source).toBe(lifecycle(id).display_name);expect(body.revision).toBe('a'.repeat(64));expect(body.remove_credentials).toBe(true);
       removed.set(id,{...lifecycle(id),revision:null,removed_at:new Date().toISOString(),credential_state:body.remove_credentials?'REMOVED':'RETAINED_BY_REQUEST'});
       return route.fulfill({json:lifecycle(id)});
     }
@@ -65,12 +65,12 @@ test('failed and stale generations remain visible after reopening',async({page,c
 for(const width of [1440,1024,768])test(`Remove Source confirmation, active blocker and tombstone at ${width}`,async({page,context},info)=>{
   const server=backend();await server.attach(context);await page.setViewportSize({width,height:900});
   await page.goto(url+'/sources/source-1/sync');await page.getByRole('button',{name:'Build plan',exact:true}).click();
-  await page.getByRole('navigation',{name:'Source sections'}).getByRole('link',{name:'Configuration',exact:true}).click();
+  await page.goto(url+'/sources/source-1/configuration');
   await page.getByRole('button',{name:'Remove Source',exact:true}).click();const dialog=page.getByRole('dialog');
-  await expect(dialog.getByRole('button',{name:'Remove Source',exact:true})).toBeDisabled();await dialog.getByLabel('Type the exact display name').fill(source().name.toLowerCase());await expect(dialog.getByRole('button',{name:'Remove Source',exact:true})).toBeDisabled();await dialog.getByLabel('Type the exact display name').fill(source().name);
+  await expect(dialog.getByRole('textbox')).toHaveCount(0);await expect(dialog.getByRole('checkbox')).toHaveCount(0);await expect(dialog.getByRole('button',{name:'Remove Source',exact:true})).toBeEnabled();
   await page.screenshot({path:info.outputPath('remove-confirmation.png'),fullPage:true});
   await dialog.getByRole('button',{name:'Remove Source',exact:true}).click();await expect(dialog.getByText('Wait for active Plan or Discovery to finish.')).toBeVisible();
-  server.complete('source-1','PLAN');await dialog.getByRole('checkbox').check();await dialog.getByRole('button',{name:'Remove Source',exact:true}).click();
+  server.complete('source-1','PLAN');await dialog.getByRole('button',{name:'Remove Source',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Source removed from NetBox Sync'})).toBeVisible();await expect(page.getByText(/Local stored credentials removed/)).toBeVisible();
   await page.reload();await expect(page.getByRole('heading',{name:'Source removed from NetBox Sync'})).toBeVisible();await expect(page.getByRole('button',{name:'Build plan'})).toHaveCount(0);
   await page.screenshot({path:info.outputPath('removed-source.png'),fullPage:true});await page.getByRole('link',{name:'Back to Sources',exact:true}).click();expect(server.removed.has('source-1')).toBe(true);

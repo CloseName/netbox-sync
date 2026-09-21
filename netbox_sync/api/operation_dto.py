@@ -61,7 +61,7 @@ class RemovalDTO(BaseModel):
     model_config = ConfigDict(extra='forbid')
     revision: str = Field(pattern=r'^[a-f0-9]{64}$')
     confirmed_source: str = Field(min_length=1, max_length=200)
-    remove_credentials: StrictBool = False
+    remove_credentials: StrictBool = True
 
 
 class PlacementUpdateDTO(BaseModel):

@@ -104,3 +104,22 @@ def test_used_plan_projection_survives_history_pagination():
     assert response.status_code==200
     assert response.json()['operations'][0]['used_run_id']==run_id
     assert calls[0][:2]==('pve-test',row['result']['digest'])
+
+
+def test_remove_defaults_to_exclusive_cleanup_without_relaxing_fencing(monkeypatch):
+    from netbox_sync.api.lifecycle_client import LifecycleClient
+    from netbox_sync.api.auth import permission
+    calls=[]
+    def request(self,source,payload=None,action=None):
+        calls.append((source,payload,action))
+        return dict(source_instance=source,display_name='Source',revision='b'*64,
+                    removed_at=datetime.now(timezone.utc).isoformat(),credential_state='REMOVED')
+    monkeypatch.setattr(LifecycleClient,'request',request)
+    body=dict(revision='a'*64,confirmed_source='Source')
+    with app(Operations(operation())) as api:
+        assert api.post('/api/v1/sources/pve-test/remove',json=body).status_code==403
+        assert api.post('/api/v1/sources/pve-test/remove',json={'confirmed_source':'Source'},headers=HEADERS).status_code==422
+        response=api.post('/api/v1/sources/pve-test/remove',json=body,headers=HEADERS)
+    assert response.status_code==200
+    assert len(calls)==1 and calls[0][1]=={**body,'remove_credentials':True}
+    assert permission('POST','/api/v1/sources/pve-test/remove')=='source.remove'
