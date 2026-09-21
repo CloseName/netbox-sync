@@ -11,7 +11,7 @@ def call(path,payload):
     if 'error' in result: raise CatalogError(result['error'])
     return result
 
-def validate(path,references,host_types,preview, *, pending_cluster=False):
+def validate(path,references,host_types,preview, *, pending_cluster=False, require_empty_cluster=False):
     required={'site','platform','device_role','cluster_type'} | (set() if pending_cluster else {'cluster'})
     if set(references)!=required or not preview:
         raise CatalogError('SELECTION_REQUIRED')
@@ -19,7 +19,9 @@ def validate(path,references,host_types,preview, *, pending_cluster=False):
     if set(host_types)!=hosts: raise CatalogError('HOST_MAPPING_REQUIRED')
     choices=[dict(kind=kind,**{k:row.get(k) for k in ('id','fingerprint')}) for kind,row in references.items()]
     choices += [dict(kind='device_type',**{k:row.get(k) for k in ('id','fingerprint')}) for row in host_types.values()]
-    checked=call(path,{'action':'validate','selections':choices})['selections']
+    query={'action':'validate','selections':choices}
+    if require_empty_cluster and not pending_cluster:query['empty_cluster_id']=references['cluster']['id']
+    checked=call(path,query)['selections']
     refs={row['kind']:{k:v for k,v in row.items() if k!='kind'} for row in checked[:len(references)]}
     types={key:{k:v for k,v in row.items() if k!='kind'} for key,row in zip(host_types,checked[len(references):])}
     if pending_cluster:

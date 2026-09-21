@@ -74,7 +74,7 @@ def test_api_revalidates_before_secret_or_registry_write_and_allows_explicit_ret
     token=instance.accept_checked_credentials(credentials(),preview)
     refs={kind:row(kind) for kind in ('site','cluster','platform','device_role','cluster_type')}
     payload={k:v for k,v in command(token).__dict__.items() if k!='mapping'}
-    payload.update(references=refs,host_types={'a':row('device_type')})
+    payload.update(name='Example',cluster_name='Example',references=refs,host_types={'a':row('device_type')})
     changed=True
     def revalidate(_path,query):
         if changed:raise CatalogError('CATALOG_CHANGED')
@@ -85,9 +85,39 @@ def test_api_revalidates_before_secret_or_registry_write_and_allows_explicit_ret
         assert rejected.status_code==409 and rejected.json()['error']['code']=='CATALOG_CHANGED'
         assert not registry.records and not secrets.values and instance.preview(token)==preview
         changed=False
+        mismatch=client.post('/api/v1/sources',json={**payload,'name':'Different'},headers=HEADERS)
+        assert mismatch.status_code==409 and mismatch.json()['error']['code']=='CATALOG_CLUSTER_REVIEW_REQUIRED'
+        assert not registry.records and not secrets.values
         response=client.post('/api/v1/sources',json=payload,headers=HEADERS)
         assert response.status_code==201
         saved=registry.records['new-source']
         assert not saved.sync_enabled and saved.settings['onboarding_mapping']['host_types']['a']['id']==1
         assert saved.target.onboarding_mapping==saved.settings['onboarding_mapping']
         assert saved.target.site_slug=='example'
+
+
+@pytest.mark.parametrize('count',[0,1,None])
+def test_existing_cluster_inventory_never_silently_adopted(monkeypatch,count):
+    from tests.test_placement_resolution import fixture
+    rows,payload,_=fixture()
+    rows['cluster']=[dict(id=9,name='Host A',type={'id':3},scope_type='dcim.site',scope_id=1)]
+    seen=[]
+    monkeypatch.setattr(catalog,'EgressPolicy',lambda **kw:N(resolve=lambda h,p:(h,'192.0.2.1')))
+    monkeypatch.setattr(catalog,'pinned_dns',lambda *a:nullcontext())
+    monkeypatch.setattr(catalog,'configure_session',lambda s:None)
+    def fetch(session,url,token):
+        seen.append(url)
+        if '/dcim/devices/' in url or '/virtualization/virtual-machines/' in url:
+            assert 'cluster_id=9' in url and 'limit=1' in url
+            return dict(count=count,results=[])
+        kind=next(k for k,v in catalog.ENDPOINTS.items() if '/api/'+v+'/' in url)
+        return dict(results=rows[kind],count=len(rows[kind]),next=None)
+    monkeypatch.setattr(catalog,'fetch',fetch)
+    query=dict(action='resolve-placement',**payload)
+    if count is None:
+        with pytest.raises(catalog.ProbeError):catalog.query(dict(url='https://netbox.test',read_token='',query=query),lambda:nullcontext(N()))
+    else:
+        result=catalog.query(dict(url='https://netbox.test',read_token='',query=query),lambda:nullcontext(N()))
+        assert bool(result['issues'])==bool(count)
+        if count:assert result['issues']==[{'kind':'cluster','code':'OWNERSHIP_REVIEW_REQUIRED'}]
+        else:assert any('/virtualization/virtual-machines/' in url for url in seen)

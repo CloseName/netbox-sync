@@ -33,6 +33,10 @@ class Handler(BaseHTTPRequestHandler):
                 'platforms':dict(id=4,name='VMware ESXi',slug='vmware-esxi'),
                 'device-roles':dict(id=5,name='Hypervisor',slug='server'),
                 'device-types':dict(id=6,model='PowerEdge R650',slug='r650',manufacturer={'id':7,'name':'Dell Inc.'})}
+            if kind in ('devices','virtual-machines'):
+                query=parse_qs(urlsplit(self.path).query)
+                if not query.get('cluster_id') or query.get('limit')!=['1']:return self.respond(b'{}',400)
+                return self.respond(json.dumps(dict(results=[],count=0,next=None,previous=None)).encode())
             if kind=='manufacturers':
                 with catalog_lock:
                     query=parse_qs(urlsplit(self.path).query)

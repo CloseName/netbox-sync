@@ -34,7 +34,7 @@ from .dto import (ApplyRequestDTO, ApplyResultDTO, ConfirmationDTO, Confirmation
 from .dto import SyncPlanRequestDTO, SyncRunDTO, SyncRunListDTO
 from .discovery_client import DiscoveryRequestError, DiscoveryWorkerClient
 from .apply_client import ApplyRequestError, ApplyWorkerClient
-from .onboarding_dto import ConnectionRequest, ConnectionResult, RegistrationRequest, RegistrationStatusRequest
+from .onboarding_dto import ConnectionRequest, ConnectionResult, RegistrationRequest, RegistrationStatusRequest, PlacementResolutionRequest
 from .onboarding_dto import CancellationRequest, CancellationResult
 from .onboarding_adapters import BrokerSecretStore, RegistrationRegistry, test_esxi, test_proxmox
 from .run_reader import PostgresRunReader
@@ -568,10 +568,31 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
                          onboarding_service.preview(payload.onboarding_token), pending_cluster=payload.create_cluster)
         return {'valid': True}
 
+    @router.post('/sources/resolve-placement')
+    def resolve_placement(payload: PlacementResolutionRequest, http: Request):
+        from .catalog import call
+        auth_client.call('receipt.check',session=http.cookies.get(COOKIE),receipt=payload.onboarding_token)
+        preview=onboarding_service.preview(payload.onboarding_token)
+        if not preview:raise CatalogError('SELECTION_REQUIRED')
+        return call(settings.bootstrap_socket,dict(action='resolve-placement',provider=preview['provider'],
+            hosts=preview['hosts'],name=payload.name,site_id=payload.site_id,default_site_slug=settings.default_site_slug))
+
     @router.post('/sources', response_model=SourceDTO, status_code=201)
     def register_source(request: RegistrationRequest, http: Request):
         from dataclasses import replace
         mapping={}
+        if request.automatic_placement:
+            from .catalog import call
+            auth_client.call('receipt.check',session=http.cookies.get(COOKIE),receipt=request.onboarding_token)
+            onboarding_service.check_registration(request.command())
+            preview=onboarding_service.preview(request.onboarding_token)
+            if not preview or not request.registration_id:raise CatalogError('SELECTION_REQUIRED')
+            resolved=call(settings.bootstrap_socket,dict(action='resolve-placement',provider=request.source_type,
+                hosts=preview['hosts'],name=request.name,site_id=(request.references.get('site') or {}).get('id'),
+                default_site_slug=settings.default_site_slug))
+            if resolved['issues']:raise CatalogError('CLUSTER_REVIEW_REQUIRED' if any(i['kind']=='cluster' for i in resolved['issues']) else 'SELECTION_REQUIRED')
+            request=request.model_copy(update={'references':resolved['references'],'host_types':resolved['host_types'],
+                'create_cluster':resolved['create_cluster'],'cluster_name':request.name})
         if request.create_cluster:
             # Authorize the exact receipt before starting any optional remote write.
             from uuid import UUID, uuid5
@@ -600,8 +621,9 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
             request=request.model_copy(update={'references':{**pending['references'],'cluster':outcome['item']}})
         try:
             if request.references or request.host_types or onboarding_service.preview(request.onboarding_token):
-                mapping=catalog_validate(settings.bootstrap_socket,request.references,request.host_types,onboarding_service.preview(request.onboarding_token))
+                mapping=catalog_validate(settings.bootstrap_socket,request.references,request.host_types,onboarding_service.preview(request.onboarding_token),require_empty_cluster=True)
                 refs=mapping['references'];types=mapping['host_types']
+                if refs['cluster']['name']!=request.name:raise CatalogError('CLUSTER_REVIEW_REQUIRED')
                 request=request.model_copy(update={'site_slug':refs['site']['slug'],'cluster_name':refs['cluster']['name'],
                     'platform_slug':refs['platform']['slug'],'device_role_slug':refs['device_role']['slug'],
                     'cluster_type_slug':refs['cluster_type']['slug'],'device_type_slug':next(iter(types.values()))['slug']})

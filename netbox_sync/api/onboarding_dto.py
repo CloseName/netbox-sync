@@ -96,6 +96,7 @@ class RegistrationRequest(PublicModel):
     references: dict[str, dict] = Field(default_factory=dict, max_length=5)
     host_types: dict[str, dict] = Field(default_factory=dict, max_length=16)
     create_cluster: bool = Field(default=False, strict=True)
+    automatic_placement: bool = Field(default=False, strict=True)
     registration_id: UUID | None = None
     confirm_sync_disabled: Literal[True]
 
@@ -156,3 +157,9 @@ class DestinationRequest(PublicModel):
 class RegistrationStatusRequest(PublicModel):
     source_instance: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{1,62}$")
     registration_id: UUID
+
+
+class PlacementResolutionRequest(PublicModel):
+    onboarding_token: str = Field(min_length=20,max_length=128,repr=False,exclude=True)
+    name: str = Field(max_length=100)
+    site_id: int | None = Field(default=None,strict=True,gt=0)

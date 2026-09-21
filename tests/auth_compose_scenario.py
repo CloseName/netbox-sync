@@ -283,7 +283,9 @@ registration=dict(references=references,host_types=host_types,onboarding_token=r
 assert request(registration,'/api/v1/sources')['status']==409
 success=request(body);assert success['status']==200
 registration['onboarding_token']=success['body']['onboarding_token']
-registration.update(create_cluster=True,registration_id=str(uuid4()),cluster_name=registration['name'])
+resolved=request(dict(onboarding_token=registration['onboarding_token'],name=registration['name']),'/api/v1/sources/resolve-placement')
+assert resolved['status']==200 and not resolved['body']['issues'] and resolved['body']['create_cluster'],resolved
+registration.update(automatic_placement=True,create_cluster=True,registration_id=str(uuid4()),cluster_name=registration['name'])
 registration['references']={key:item for key,item in references.items() if key!='cluster'}
 assert request({key:registration[key] for key in ('onboarding_token','references','host_types','create_cluster')},'/api/v1/sources/review-placement')['status']==200
 added=request(registration,'/api/v1/sources')

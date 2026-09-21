@@ -44,6 +44,22 @@ def query(value,session_factory=requests.Session):
             if not isinstance(rows,list) or len(rows)>20 or type(count) is not int: raise ProbeError('RESPONSE_INVALID')
             return dict(items=[project(kind,r) for r in rows],count=count,offset=offset,
                 more=result.get('next') is not None,url=value['url']+'/'+ENDPOINTS[kind]+'/')
+        if action=='resolve-placement':
+            from .placement_resolution import resolve
+            def listing(kind,search):
+                return get(kind,'?'+urlencode(dict(q=search,limit=20,ordering='id')))
+            resolved=resolve(payload,listing,project)
+            cluster=resolved['references'].get('cluster')
+            if cluster:
+                # Existing inventory is not proof of ownership by this new source.
+                # Revival remains a separate Admin workflow; never adopt by name.
+                for endpoint in ('dcim/devices','virtualization/virtual-machines'):
+                    existing=fetch(session,value['url']+'/api/'+endpoint+'/?'+urlencode(dict(cluster_id=cluster['id'],limit=1)),value['read_token'])
+                    if type(existing.get('count')) is not int:raise ProbeError('RESPONSE_INVALID')
+                    if existing['count']:
+                        resolved['issues'].append({'kind':'cluster','code':'OWNERSHIP_REVIEW_REQUIRED'})
+                        break
+            return resolved
         if action=='validate':
             selections=payload.get('selections')
             if not isinstance(selections,list) or not 5<=len(selections)<=21: raise ProbeError('RESPONSE_INVALID')
@@ -54,6 +70,13 @@ def query(value,session_factory=requests.Session):
                 fresh=project(kind,get(kind,str(identifier)+'/'))
                 if fresh['fingerprint']!=choice.get('fingerprint'): raise ProbeError('CATALOG_CHANGED')
                 result.append(dict(kind=kind,**fresh))
+            if payload.get('empty_cluster_id') is not None:
+                cluster_id=payload['empty_cluster_id']
+                if type(cluster_id) is not int or cluster_id<=0:raise ProbeError('RESPONSE_INVALID')
+                for endpoint in ('dcim/devices','virtualization/virtual-machines'):
+                    existing=fetch(session,value['url']+'/api/'+endpoint+'/?'+urlencode(dict(cluster_id=cluster_id,limit=1)),value['read_token'])
+                    if type(existing.get('count')) is not int:raise ProbeError('RESPONSE_INVALID')
+                    if existing['count']:raise ProbeError('CLUSTER_REVIEW_REQUIRED')
             return {'selections':result}
         raise ProbeError('RESPONSE_INVALID')
 

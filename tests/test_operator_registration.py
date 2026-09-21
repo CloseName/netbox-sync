@@ -138,3 +138,31 @@ def test_registration_reconciliation_is_actor_bound_and_read_only(monkeypatch,ro
         assert calls==[{'action':'catalog-reconcile','operation_id':expected}]
         assert http.post('/api/v1/sources/registration-status',headers=HEADERS,json={**body,'operation_id':str(uuid4())}).status_code==422
         assert len(calls)==1
+
+@pytest.mark.parametrize('role',['operator','admin','viewer'])
+def test_resolution_uses_server_preview_and_permission(monkeypatch,role):
+    from tests.test_onboarding import credentials
+    import netbox_sync.api.catalog as catalog
+    policy,_,session=configured(role)
+    class Client:
+        def call(self,action,**payload):return policy.call(dict(action=action,**payload))
+    onboarding,_,_=service()
+    preview={'provider':'esxi','hosts':[{'id':'server-proof','manufacturer':'Vendor','model':'Generic'}]}
+    token=onboarding.accept_checked_credentials(credentials('esxi'),preview)
+    policy.call(dict(action='receipt.issue',session=session,receipt=token,provider='esxi',destination='source.test',revision=0)) if role!='viewer' else None
+    seen=[]
+    def read(path,payload):
+        seen.append(payload)
+        return {'references':{},'host_types':{},'issues':[{'kind':'site','code':'MISSING'}],'sites':[],'create_cluster':False}
+    monkeypatch.setattr(catalog,'call',read)
+    with TestClient(create_app(settings=ApiSettings(bootstrap_socket='',default_site_slug='configured'),auth_client=Client(),onboarding_service=onboarding),base_url='https://localhost:8000') as http:
+        http.cookies.set(COOKIE,session)
+        body={'onboarding_token':token,'name':'Reviewed name'}
+        result=http.post('/api/v1/sources/resolve-placement',headers=HEADERS,json=body)
+        if role=='viewer':
+            assert result.status_code==403 and not seen
+        else:
+            assert result.status_code==200
+            assert seen[0]['hosts']==preview['hosts'] and seen[0]['default_site_slug']=='configured'
+            assert http.post('/api/v1/sources/resolve-placement',headers=HEADERS,json={**body,'hosts':[{'id':'forged'}]}).status_code==422
+            assert len(seen)==1
