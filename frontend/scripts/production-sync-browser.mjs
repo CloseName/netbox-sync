@@ -38,6 +38,14 @@ try{
   await expect(page.getByText('Plan ready for review.',{exact:true})).toHaveCount(0);
   await expect(page.getByText('Plan permits sync',{exact:true})).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Review and confirm sync'})).toBeDisabled();
+  const readOnly=page.getByRole('button',{name:'Run discovery',exact:true});
+  await expect(readOnly).toBeEnabled();
+  const started=page.waitForResponse(r=>r.url().endsWith('/operations/discovery')&&r.request().method()==='POST');
+  await readOnly.click();
+  const discoveryResponse=await started;if(discoveryResponse.status()!==202)throw Error('Read-only start failed');
+  await expect(readOnly).toBeEnabled({timeout:90000});
+  await expect(page.getByRole('alert').first()).toContainText('previous synchronization');
+  await expect(page.getByRole('button',{name:'Review and confirm sync'})).toBeDisabled();
   if(writes.length)throw Error('Uncertain source attempted a write');
   await page.screenshot({path:'frontend/test-results/production-sync-uncertain.png',fullPage:true});
  }else{

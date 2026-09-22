@@ -143,6 +143,10 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
         assert uncertain['status']==503 and uncertain['body']['error']['code']=='OUTCOME_UNCERTAIN'
         assert request(None,'/api/v1/runs/'+accepted_id,'GET')['body']['status']=='OUTCOME_UNCERTAIN'
         before_retry=fixture_state()['write_requests']
+        fresh_discovery=request({},base+'/discovery')
+        assert fresh_discovery['status']==200 and fresh_discovery['body']['items']
+        assert request(None,'/api/v1/runs/'+accepted_id,'GET')['body']['status']=='OUTCOME_UNCERTAIN'
+        assert fixture_state()['write_requests']==before_retry
         assert request(dict(confirmation_token=prepared['body']['confirmation_token'],operation_id=operation_id),base+'/sync')['status']==409
         residual=request({},base+'/sync-plan')['body']
         operation_id=next(o['operation_id'] for o in request(None,base+'/operations','GET')['body']['operations'] if o['operation_kind']=='PLAN')
@@ -157,7 +161,8 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
         assert diag['status']==200
         assert next(s for s in diag['body']['sources'] if s['source_instance']==sid)['outcome_unconfirmed']
         print('PASS production historical uncertainty: consumed token and fresh plan blocked, no further writes, persisted lifecycle and diagnostics',flush=True)
-        blocked=request(change,base+'/placement','PATCH')
+        latest_placement=request(None,base+'/placement','GET')['body']
+        blocked=request({**change,'discovery_id':latest_placement['discovery_id'],'revision':latest_placement['revision']},base+'/placement','PATCH')
         assert blocked['status']==409 and blocked['body']['error']['code']=='SOURCE_APPLY_UNCONFIRMED'
         assert request(None,base,'GET')['body']==original
         print('PASS historical uncertainty still blocks placement; no status reset or reconciliation claim',flush=True)

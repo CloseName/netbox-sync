@@ -169,7 +169,7 @@ export function SourceSync({
     if (active) confirmButton.current?.focus();
   };
   const launch = async (kind: 'PLAN' | 'DISCOVERY') => {
-    if (uncertain || !safetyLoaded || !canPlan || !detail.enabled || !loaded || operations.some(row => row.operation_kind === kind && row.status === 'RUNNING')) return;
+    if ((uncertain && kind === 'PLAN') || !safetyLoaded || !canPlan || !detail.enabled || !loaded || operations.some(row => row.operation_kind === kind && row.status === 'RUNNING')) return;
     if (kind === 'PLAN') { if (busy.current) return; busy.current = true; setPhase('planning'); setStarted(Date.now()); setUsable(false); setPlanningError(null); setResult(previous=>previous && ['OUTCOME_UNCERTAIN','PARTIALLY_APPLIED'].includes(previous.state)?previous:null); setConfirmOpen(false); }
     else { if (discoveryBusy.current) return; discoveryBusy.current = true; setDiscovering(true); setDiscoveryOpen(true); setDiscoveryStarted(Date.now()); setDiscoveryError(''); }
     try {
@@ -247,7 +247,7 @@ export function SourceSync({
       {operationError && <p role="alert">{tr(operationError)} <button onClick={() => setRefreshOperations(value=>value+1)}>{tr("Reload operations")}{" "}</button></p>}
       {!loaded && !operationError && <p role="status">{tr("Loading operation state...")}{" "}</p>}
       {planOperation && <p className="muted">{tr("Started")}{" "}<Timestamp occurred value={planOperation.started_at} />{planOperation.status === 'READY' && <> {tr("Built")}{" "}<Timestamp value={planOperation.finished_at} /></>}</p>}
-      {uncertain&&<div role="alert" className="source-error"><h3>{tr('Outcome unknown')}</h3><p>{tr('A previous synchronization needs reconciliation. An administrator must check its effects in NetBox before continuing. Do not repeat apply or remove this source.')}</p><Link to={sourcePath(selected)+'#runs'}>{tr('Review run history')}</Link></div>}
+      {uncertain&&<div role="alert" className="source-error"><h3>{tr('Outcome unknown')}</h3><p>{tr('A previous synchronization needs reconciliation. An administrator must check its effects in NetBox before continuing. Do not repeat apply or remove this source.')}</p><p>{tr('Read-only discovery remains available for investigation. It does not resolve the unknown outcome or authorize synchronization.')}</p><Link to={sourcePath(selected)+'#runs'}>{tr('Review run history')}</Link></div>}
       {!safetyLoaded&&<p role="status">{tr('Checking source lifecycle...')}</p>}
       <div className="page-actions">
         <button
@@ -259,7 +259,7 @@ export function SourceSync({
         </button>
         <button
           disabled={
-            uncertain || !safetyLoaded || !canPlan || !loaded || applying || discovering || confirmOpen || !detail.enabled
+            !safetyLoaded || !canPlan || !loaded || applying || discovering || confirmOpen || !detail.enabled
           }
           onClick={discover}
         >

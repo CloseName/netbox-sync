@@ -218,3 +218,20 @@ def test_read_exposes_old_uncertain_blocker_and_batch_evidence(lifecycle):
     assert result['sources'][0]['plan_blocked'] is False
     assert result['next'] is None
     with pytest.raises(LifecycleError,match='SOURCE_APPLY_UNCONFIRMED'): remove(store,source.source_instance)
+
+
+@pytest.mark.parametrize('status', [RunStatus.OUTCOME_UNCERTAIN, RunStatus.PARTIALLY_APPLIED])
+def test_read_only_discovery_does_not_reconcile_unknown_history(lifecycle, status):
+    store, registry, source = lifecycle
+    repository = postgres_run_repository(_safe_test_dsn(), store.schema)
+    run = repository.start_run(source.source_instance, source.source_type, RunTrigger.MANUAL, 'test')
+    repository.finish_run(run.run_id, status)
+    operations = OperationStore(_safe_test_dsn(), store.schema)
+    operation, created = operations.start(source.source_instance, 'DISCOVERY')
+    assert created
+    operations.execute(operation, lambda: {'source_instance':source.source_instance, 'source_type':source.source_type, 'site_slug':source.target.site_slug, 'cluster_name':source.target.cluster_name, 'items':[]})
+    assert next(row for row in operations.latest(source.source_instance) if row['operation_kind']=='DISCOVERY')['status']=='SUCCEEDED'
+    assert repository.reconciliation_required(source.source_instance)
+    assert store.read(source.source_instance)['removal_blocker']=='SOURCE_APPLY_UNCONFIRMED'
+    with pytest.raises(LifecycleError, match='SOURCE_APPLY_UNCONFIRMED'):
+        remove(store, source.source_instance)

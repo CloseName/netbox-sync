@@ -1,4 +1,5 @@
 export const ru: Record<string,string> = {
+  'Read-only discovery remains available for investigation. It does not resolve the unknown outcome or authorize synchronization.': 'Для проверки доступно чтение инвентаря. Оно не подтверждает результат прежней операции и не разрешает синхронизацию.',
   "Disks": "Диски",
   "Interfaces": "Интерфейсы",
 
