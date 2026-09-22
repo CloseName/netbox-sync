@@ -391,10 +391,28 @@ def login():
     assert request(None,'/api/v1/sources','GET')['status']==200
 
 def expire_sessions(field):
-    assert field in ('expires','last_seen')
+    assert field in ('expires','last_seen','issued')
     target=compose('ps','-q','postgres') if pgmode=='bundled' else project+'-external-db'
     sql="UPDATE netbox_sync.auth_state SET value=jsonb_set(value,'{sessions}',(SELECT jsonb_object_agg(key,jsonb_set(s.value, '{"+field+"}', '0'::jsonb)) FROM jsonb_each(value->'sessions') s));"
     run(['docker','exec','-i',target,'psql','-U','netbox_sync_bootstrap','-d','netbox_sync','--set','ON_ERROR_STOP=1'],input=sql)
+
+login()
+expire_sessions('issued')
+current_policy=request(None,'/api/v1/policy','GET')['body']
+confirmation_change=dict(host='reauth.probe.test',expected_revision=current_policy['revision'],request_id='fixture-reauth-policy')
+needs_confirmation=request(confirmation_change,'/api/v1/policy')
+assert needs_confirmation['status']==403 and needs_confirmation['body']['error']['code']=='AUTH_REAUTH_REQUIRED'
+assert request(None,'/api/v1/auth/me','GET')['status']==200
+assert request(dict(password='fixture-incorrect'),'/api/v1/auth/reauthenticate')['status']==401
+assert request(None,'/api/v1/auth/me','GET')['status']==200
+assert request(dict(password=password),'/api/v1/auth/reauthenticate')['status']==200
+assert request(None,'/api/v1/policy','GET')['body']==current_policy
+assert request(confirmation_change,'/api/v1/policy')['status']==200
+# Undo only this fixture's policy exception so the existing upgrade assertions remain exact.
+current_policy=request(None,'/api/v1/policy','GET')['body']
+assert request(dict(host='reauth.probe.test',operation='revoke',expected_revision=current_policy['revision'],request_id='fixture-reauth-revoke'),'/api/v1/policy')['status']==200
+policy_before_restart=request(None,'/api/v1/policy','GET')['body']
+print('PASS real API/auth-worker Unix RPC: recent proof expiry keeps session, password confirmation does not mutate policy, explicit retry succeeds',flush=True)
 
 for deadline in ('last_seen','expires'):
     login()

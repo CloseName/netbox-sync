@@ -21,7 +21,7 @@ from .roles import ADMIN as PERMISSIONS, permissions
 from .directory_auth import DirectoryAuth
 from .ldap_directory import CODES as LDAP_CODES
 
-CODES = frozenset({'AUTH_REQUIRED', 'AUTH_DENIED', 'AUTH_INVALID', 'AUTH_RATE_LIMITED',
+CODES = frozenset({'AUTH_REQUIRED', 'AUTH_REAUTH_REQUIRED', 'AUTH_DENIED', 'AUTH_INVALID', 'AUTH_RATE_LIMITED',
     'AUTH_UNAVAILABLE', 'ENROLLMENT_INVALID', 'POLICY_CONFLICT', 'POLICY_INVALID',
     'POLICY_HOST_MANAGED', 'PROBE_RECEIPT_INVALID', 'TEAM_INVALID', 'TEAM_CONFLICT'}) | LDAP_CODES
 
@@ -128,6 +128,45 @@ class AuthPolicy(DirectoryAuth):
                                                  'expires': self.now + 28800}
         return {'session': token, 'max_age': 28800}
 
+    def reauthenticate(self, token, principal, password):
+        """Confirm the current identity only; do not extend the session lifetime."""
+        password = bounded(password, 256)
+        key = digest(token)
+        if principal['provider'] == 'ldap':
+            from .ldap_directory import DirectoryError
+            attempts = [at for at in self.state.get('ldap_attempts', []) if at > self.now - 300]
+            if len(attempts) >= 20:
+                raise AuthError('AUTH_RATE_LIMITED')
+            attempts.append(self.now)
+            self.state['ldap_attempts'] = attempts
+            saved = self.state['ldap']
+            try:
+                user = self.directory.call(saved['config'], self.auth_secrets.read(saved['secret_key']),
+                    'login', username=principal['username'], password=password)
+                if user.get('identity') != principal['identity'] or not user.get('active'):
+                    raise DirectoryError('LDAP_ACCESS_DENIED')
+            except DirectoryError as exc:
+                self.event('reauth.denied', principal['id'])
+                raise AuthError('AUTH_INVALID' if exc.code == 'LDAP_ACCESS_DENIED' else exc.code) from None
+            except Exception:
+                raise AuthError('AUTH_UNAVAILABLE') from None
+            attempts.pop()
+            value = self.state['ldap_sessions'][key]
+        else:
+            self.throttle()
+            try:
+                valid = PASSWORDS.verify(self.state['principal']['password_hash'], password)
+            except (VerificationError, InvalidHashError):
+                valid = False
+            if not valid:
+                self.event('reauth.denied', principal['id'])
+                raise AuthError('AUTH_INVALID')
+            self.state['attempts'] = []
+            value = self.state['sessions'][key]
+        value['confirmed_at'] = self.now
+        self.event('reauth.confirmed', principal['id'])
+        return {'confirmed': True}
+
     def effective(self):
         state = self.state
         if state['mode'] == 'legacy':
@@ -204,6 +243,8 @@ class AuthPolicy(DirectoryAuth):
         token = payload.get('session')
         principal = self.session(token, payload.get('permission') if action == 'authorize' else None)
         actor = principal['id']
+        if action == 'reauthenticate':
+            return self.reauthenticate(token, principal, payload.get('password'))
         if action == 'authorize':
             if payload.get('audit') is True:
                 self.event('permission.checked',actor,permission=payload.get('permission'),role=principal['role'])

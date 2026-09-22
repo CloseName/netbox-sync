@@ -69,7 +69,7 @@ def _install_boundaries(app, settings, auth_client):
 
     @app.exception_handler(AuthError)
     async def auth_error(request, exc):
-        status = {'AUTH_REQUIRED':401, 'AUTH_DENIED':403, 'AUTH_INVALID':401,
+        status = {'AUTH_REQUIRED':401, 'AUTH_REAUTH_REQUIRED':403, 'AUTH_DENIED':403, 'AUTH_INVALID':401,
                   'AUTH_RATE_LIMITED':429, 'ENROLLMENT_INVALID':409,
                   'POLICY_CONFLICT':409, 'POLICY_INVALID':422, 'TEAM_CONFLICT':409, 'TEAM_INVALID':422,
                   'POLICY_HOST_MANAGED':403, 'PROBE_RECEIPT_INVALID':409,

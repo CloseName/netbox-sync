@@ -294,3 +294,29 @@ def test_http_schedule_permission_reaches_handler_only_for_operator_and_admin(ro
     assert response.status_code==(403 if role=='viewer' else 200)
     assert len(updates)==(0 if role=='viewer' else 1)
     if role!='viewer': assert service.directory.calls[-1]=='refresh'
+
+
+@pytest.mark.parametrize('role', ['viewer', 'operator', 'admin'])
+def test_directory_reauthentication_preserves_identity_role_and_expiry(role):
+    service, local, token = configured(role)
+    original=copy.deepcopy(service.state['ldap_sessions'][digest(token)])
+    service.now+=901
+    assert service.call(dict(action='reauthenticate',session=token,password='fixture-user-password')) == {'confirmed':True}
+    saved=service.state['ldap_sessions'][digest(token)]
+    assert saved['expires']==original['expires'] and saved['issued']==original['issued']
+    assert auth(service,token)['role']==role
+    service.root('managed',{'ceiling':'public-ipv4'})
+    change=dict(action='policy.update',session=token,host='source.example.test',expected_revision=1,request_id='directory-proof')
+    if role=='admin': assert service.call(change)['revision']==2
+    else:
+        with pytest.raises(AuthError,match='AUTH_DENIED'): service.call(change)
+    assert 'fixture-user-password' not in str(service.state)+str(service.audit)
+
+
+def test_directory_reauthentication_cannot_confirm_replaced_identity():
+    service,local,token=configured('admin')
+    service.directory.identity='replacement-id'
+    with pytest.raises(AuthError,match='AUTH_INVALID'):
+        service.call(dict(action='reauthenticate',session=token,password='fixture-user-password'))
+    assert 'confirmed_at' not in service.state['ldap_sessions'][digest(token)]
+    assert auth(service,local)['provider']=='local'

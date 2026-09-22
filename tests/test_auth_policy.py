@@ -103,7 +103,7 @@ def test_absolute_expiry_recent_policy_login_and_root_revocation():
     service,session,_=enrolled()
     service.root('managed',{'ceiling':'public-ipv4'})
     service.now += 901
-    with pytest.raises(AuthError,match='AUTH_REQUIRED'):
+    with pytest.raises(AuthError,match='AUTH_REAUTH_REQUIRED'):
         call(service,session,'policy.update',host='source.example.test',expected_revision=1,request_id='recent')
     call(service,session,'authorize')  # Other reads retain their normal session TTL.
     for _ in range(28):
@@ -161,3 +161,106 @@ def test_readonly_placement_receipt_check_does_not_consume_or_bypass_owner():
     with pytest.raises(AuthError): call(service,'foreign','receipt.check',receipt='checked-placement')
     call(service,session,'receipt.consume',receipt='checked-placement',destination='source.example.test',provider='esxi')
     with pytest.raises(AuthError,match='PROBE_RECEIPT_INVALID'):call(service,session,'receipt.check',receipt='checked-placement')
+
+
+def test_recent_confirmation_is_not_session_loss():
+    service, token, _ = enrolled()
+    service.root('managed', {'ceiling':'public-ipv4'})
+    service.now += 901
+    with pytest.raises(AuthError, match='^AUTH_REAUTH_REQUIRED$'):
+        call(service, token, 'policy.update', host='source.example.test', expected_revision=1, request_id='fresh-proof')
+    assert call(service, token, 'authorize')['username'] == 'admin'
+    assert service.state['revision'] == 1
+
+
+def test_reauthentication_confirms_only_existing_session_without_writes_or_extension():
+    from netbox_sync.auth_policy import digest
+    service, token, _ = enrolled()
+    service.root('managed', {'ceiling':'public-ipv4'})
+    original = copy.deepcopy(service.state['sessions'][digest(token)])
+    service.now += 901
+    for _ in range(5):
+        with pytest.raises(AuthError, match='^AUTH_INVALID$'):
+            call(service, token, 'reauthenticate', password='invalid-test-password')
+    with pytest.raises(AuthError, match='AUTH_RATE_LIMITED'):
+        call(service, token, 'reauthenticate', password=PASSWORD)
+    assert 'confirmed_at' not in service.state['sessions'][digest(token)]
+    service.now += 301
+    assert call(service, token, 'reauthenticate', password=PASSWORD) == {'confirmed':True}
+    assert service.state['revision'] == 1 and not service.state['allowed_hosts']
+    saved = service.state['sessions'][digest(token)]
+    assert saved['expires'] == original['expires'] and saved['issued'] == original['issued']
+    assert len(service.state['sessions']) == 1
+    assert call(service, token, 'policy.update', host='source.example.test', expected_revision=1, request_id='fresh-proof')['revision'] == 2
+    assert PASSWORD not in str(service.audit) + str(service.state)
+    service.now = original['expires']
+    with pytest.raises(AuthError, match='^AUTH_REQUIRED$'):
+        call(service, token, 'reauthenticate', password=PASSWORD)
+
+
+def test_http_reauthentication_preserves_csrf_identity_and_policy_fences():
+    from fastapi.testclient import TestClient
+    from netbox_sync.api.app import create_app
+    from netbox_sync.api.auth import COOKIE
+    from netbox_sync.api.settings import ApiSettings
+    service, token, _ = enrolled()
+    service.root('managed', {'ceiling':'public-ipv4'})
+    service.now += 901
+    class Transport:
+        def call(self, action, **payload): return service.call(dict(action=action, **payload))
+    headers={'Origin':'https://localhost:8000', 'X-NetBox-Sync-CSRF':'same-origin'}
+    change=dict(host='source.example.test', expected_revision=1, request_id='reauth-test-request')
+    with TestClient(create_app(settings=ApiSettings(), auth_client=Transport()), base_url='https://localhost:8000') as http:
+        assert http.post('/api/v1/auth/reauthenticate', headers=headers, json={'password':PASSWORD}).status_code == 401
+        http.cookies.set(COOKIE,token)
+        r=http.post('/api/v1/policy', headers=headers, json=change)
+        assert r.status_code==403 and r.json()['error']['code']=='AUTH_REAUTH_REQUIRED'
+        assert http.get('/api/v1/auth/me').status_code==200
+        assert http.post('/api/v1/auth/reauthenticate', json={'password':PASSWORD}).status_code==403
+        assert http.post('/api/v1/auth/reauthenticate', headers=headers, json={'password':PASSWORD,'username':'someone-else'}).status_code==422
+        r=http.post('/api/v1/auth/reauthenticate', headers=headers, json={'password':PASSWORD})
+        assert r.status_code==200 and 'set-cookie' not in r.headers
+        assert service.state['revision']==1
+        assert http.post('/api/v1/policy', headers=headers, json=change).status_code==200
+        assert http.post('/api/v1/policy', headers=headers, json={**change,'request_id':'another-test-request'}).status_code==409
+
+
+def test_reauthentication_error_crosses_closed_auth_transport(monkeypatch):
+    from netbox_sync.api.auth import AuthClient
+    from netbox_sync.local_control import ControlError, SAFE_CODES
+    assert 'AUTH_REAUTH_REQUIRED' in SAFE_CODES
+    def refused(*args, **kwargs): raise ControlError('AUTH_REAUTH_REQUIRED')
+    monkeypatch.setattr('netbox_sync.api.auth.request', refused)
+    with pytest.raises(AuthError, match='^AUTH_REAUTH_REQUIRED$'):
+        AuthClient('/unused').call('policy.update')
+
+
+def test_real_unix_auth_confirmation_transport(tmp_path):
+    import os
+    import socket
+    import multiprocessing
+    from netbox_sync.local_control import serve
+    from netbox_sync.api.auth import AuthClient
+    if not hasattr(socket, 'SO_PEERCRED') or not hasattr(os,'geteuid') or os.geteuid()!=0:
+        pytest.skip('Linux root Unix peer-credential transport gate')
+    service, token, _ = enrolled()
+    service.root('managed', {'ceiling':'public-ipv4'})
+    service.now += 901
+    path=str(tmp_path/'auth.sock')
+    process=multiprocessing.get_context('fork').Process(target=serve,args=(path,service.call),kwargs={'allowed_uid':0},daemon=True)
+    process.start()
+    try:
+        client=AuthClient(path)
+        deadline=time.monotonic()+5
+        while not (tmp_path/'auth.sock').exists():
+            if time.monotonic()>deadline: pytest.fail('local Unix listener did not start')
+            time.sleep(.01)
+        change=dict(session=token,host='source.example.test',expected_revision=1,request_id='unix-confirmation')
+        with pytest.raises(AuthError,match='^AUTH_REAUTH_REQUIRED$'): client.call('policy.update',**change)
+        assert client.call('authorize',session=token)['username']=='admin'
+        assert client.call('reauthenticate',session=token,password=PASSWORD)=={'confirmed':True}
+        assert client.call('policy.update',**change)['revision']==2
+    finally:
+        process.terminate();process.join(5)
+        if process.is_alive(): process.kill();process.join(5)
+        assert not process.is_alive()

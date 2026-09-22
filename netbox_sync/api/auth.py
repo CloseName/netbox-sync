@@ -19,6 +19,7 @@ ROUTES = (
     ('GET', r'/api/v1/catalog/[^/]+', 'source.register'),
     ('GET', r'/api/v1/auth/me', 'source.read'),
     ('POST', r'/api/v1/auth/logout', 'source.read'),
+    ('POST', r'/api/v1/auth/reauthenticate', 'source.read'),
     ('GET', r'/api/v1/teams', 'source.read'),
     ('POST', r'/api/v1/teams', 'source.configure'),
     ('GET', r'/api/v1/policy', 'policy.read'),
@@ -67,6 +68,11 @@ class Login(BaseModel):
     provider: Literal['local','ldap'] | None = None
 
 
+class Reauthentication(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    password: str = Field(min_length=1, max_length=256, repr=False)
+
+
 class Enrollment(Login):
     invitation: str = Field(min_length=32, max_length=128, repr=False)
 
@@ -110,6 +116,10 @@ def routes(client, source_reader=None):
     @router.get('/auth/me')
     def me(request: Request):
         return request.state.principal
+
+    @router.post('/auth/reauthenticate')
+    def reauthenticate(request: Request, payload: Reauthentication):
+        return client.call('reauthenticate', session=request.cookies.get(COOKIE), password=payload.password)
 
     @router.post('/auth/logout')
     def logout(request: Request):

@@ -85,7 +85,9 @@ class DirectoryAuth(DirectoryUsers):
     def recent(self, token):
         from .auth_policy import AuthError, digest
         value=self.state['sessions'].get(digest(token)) or self.state.get('ldap_sessions',{}).get(digest(token))
-        if not value or value['issued']+900<=self.now: raise AuthError('AUTH_REQUIRED')
+        if not value: raise AuthError('AUTH_REQUIRED')
+        if value.get('confirmed_at', value['issued'])+900<=self.now:
+            raise AuthError('AUTH_REAUTH_REQUIRED')
 
     def directory_action(self, action, payload, principal):
         from .auth_policy import AuthError, digest
