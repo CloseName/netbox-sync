@@ -95,3 +95,46 @@ fixture expectation without relaxing the product guard.
 3. PAM then AM: PLAN only, inspect exact identities and address observations. Do not
    claim duplicates or mask choices resolved by this checkpoint.
 4. Retirement: review-only until the guarded-delete decision and gates are complete.
+
+
+## Follow-up: durable outcome and incomplete inventory visibility
+
+A lost apply HTTP response is reconciled only against the exact client-assigned Run
+ID and reviewed digest. A recorded RUNNING result remains in progress; a terminal
+result replaces the transport uncertainty without another POST. Explicit server
+OUTCOME_UNCERTAIN/PARTIALLY_APPLIED and mismatched runs/digests are not overwritten.
+A successful observation-only result retains its incomplete-IPAM explanation.
+
+Diagnostics now project the existing unsupported action count. A successful run with
+such actions gives source/run inventory limitations rather than “None reported”.
+This count also covers other report-only actions: it is deliberately not presented
+as an IPAM-specific count or proof of applied objects. No history schema migration.
+
+The add-source wizard now distinguishes connection, destination, placement review,
+final registration and result reconciliation; each starts a fresh elapsed timer.
+Placement review does not imply that registration or cluster creation has started.
+
+Checks in this follow-up: 50 Linux tests (observations, inventory conflicts, conflict
+safety, diagnostics); 73 frontend unit tests; complete sync browser suite 33 passed;
+complete wizard browser suite 18 passed; TypeScript/Vite and diff check passed.
+Browser routes are controlled fixtures; these new checks do not claim a reproduction
+of the live outer-ingress timeout or cluster creation failure. Existing >500 kB Vite
+bundle warning remains. Docker desktop-linux Engine 29.7.2, no network for Linux tests.
+The earlier production worker observation gate is recorded above, not rerun or
+relabelled as verification of these later UI changes.
+
+### Remaining live audit findings
+
+| Finding | Evidence / remaining work |
+| --- | --- |
+| New cluster final registration refused | Live root cause unconfirmed; need safe error code/event and controlled production reproduction. Wizard progress correction does not fix this refusal. |
+| HTTP lost while run proceeds | Local browser regression now follows same durable run; cause of the reported ~120 s disconnection remains unconfirmed. |
+| Manual PLAN 120 s, scheduler recovery succeeds | No root cause demonstrated; keep bounded limit and collect safe phase timings. |
+| Successful run hides inventory limitations | Corrected using durable unsupported action totals; no false claim that IPAM is complete. |
+| Scheduled BLOCKED shown unavailable | Backend projection regression passes; original UI evidence/refresh issue not reproduced or declared fixed. |
+| Placement says registering | Corrected and covered by delayed browser response test. |
+| Retirement / cluster remains Active | Executable guarded deletion remains incomplete; review-only proposal above. |
+| Restore original source into filled cluster | Identity-based restore remains incomplete; matching address/name is insufficient. |
+| Shared VM identifiers | Still blocked; no arbitrary merge or identity-schema substitution. Compatibility analysis and identity evidence required. |
+
+No publication, deployment, live queries or writes were performed.

@@ -47,6 +47,7 @@ export function AddSourcePage() {
   const [review,setReview]=useState(false);
   const [draft,setDraft]=useState<Placement>(remembered?.draft??{source_instance:'',name:'',interval:600,references:{},host_types:{}});
   const [busy, setBusy] = useState(false);
+  const [busyAction,setBusyAction]=useState<'connection'|'address'|'placement'|'registration'|'reconcile'>('connection');
   const inFlight = useRef(false); const [started,setStarted]=useState(0);
   const [error, setError] = useState("");
   const [notice,setNotice]=useState('');
@@ -88,7 +89,7 @@ export function AddSourcePage() {
     }
   }, [error, token, created, step]);
   async function checkAddress(){
-    if(inFlight.current)return;inFlight.current=true;setBusy(true);setError('');setNotice('');setConnectionCode(null);
+    if(inFlight.current)return;inFlight.current=true;setStarted(Date.now());setBusyAction('address');setBusy(true);setError('');setNotice('');setConnectionCode(null);
     try{await checkDestination({source_type:type,address:connection.address,port:connection.port});setNotice(t('Address allowed by current DNS and destination policy. Authentication is not checked; the connection test rechecks the address.','Адрес разрешён текущими DNS и политикой назначений. Вход не проверен; проверка подключения повторно проверит адрес.'));}
     catch(failure){if(failure instanceof SourceConnectionError)setConnectionCode(failure.code);setError(failure instanceof SourceConnectionError?connectionMessages[failure.code][language==='ru'?1:0]:t('Address could not be checked. No credentials were sent.','Адрес не удалось проверить. Учётные данные не отправлялись.'));}
     finally{inFlight.current=false;setBusy(false);}
@@ -99,7 +100,7 @@ export function AddSourcePage() {
     if (inFlight.current) return;
     if(token){go(2);return;}
     if(!validation.validate(event.currentTarget))return;
-    inFlight.current=true; setStarted(Date.now());
+    inFlight.current=true; setStarted(Date.now());setBusyAction('connection');
     const form = event.currentTarget;
     const data = new FormData(form);
     setBusy(true);
@@ -138,7 +139,7 @@ export function AddSourcePage() {
     if(!draft.create_cluster&&(cluster?.scope_type!=='dcim.site'||cluster.scope_id!==site?.id||cluster.type?.id!==kind?.id)){
       setError(t('Cluster: choose the selected site scope and cluster type.','Кластер: выберите привязку к выбранной площадке и соответствующий тип кластера.'));return;
     }
-    inFlight.current=true;setBusy(true);setError('');
+    inFlight.current=true;setStarted(Date.now());setBusyAction('placement');setBusy(true);setError('');
     try{await reviewPlacement(token,draft.references,draft.host_types,!!draft.create_cluster);setReview(true);go(3);}
     catch(failure){if(failure instanceof RegistrationFailure&&['ONBOARDING_TOKEN_INVALID','PROBE_RECEIPT_INVALID'].includes(failure.code)){invalidate();go(1);setError(t('The connection check expired or is no longer valid. Re-enter the secret and continue; your placement is retained.','Проверка подключения истекла или больше не действует. Введите секрет и продолжите; размещение сохранено.'));return;}setError(failure instanceof CatalogFailure&&failure.code==='CATALOG_CLUSTER_SCOPE_MISMATCH'?t('Cluster: its site or type changed. Select a compatible cluster.','Кластер: площадка или тип изменились. Выберите совместимый кластер.'):t('Placement could not be verified. Your selections are retained.','Размещение не удалось проверить. Ваш выбор сохранён.'));}
     finally{inFlight.current=false;setBusy(false);}
@@ -148,7 +149,7 @@ export function AddSourcePage() {
     event.preventDefault();
     if (inFlight.current) return;
     if (uncertain || !review || step!==3) return;
-    inFlight.current=true; setStarted(Date.now());
+    inFlight.current=true; setStarted(Date.now());setBusyAction('registration');
     let selectionRejected=false;
     setBusy(true);
     setError(""); setConnectionCode(null);
@@ -200,7 +201,7 @@ export function AddSourcePage() {
       </dialog>
       {validation.summary}
       {uncertain&&<section className="source-panel"><p>{t('No registration request will be retried automatically.','Запрос регистрации не будет повторён автоматически.')}</p><button type="button" disabled={busy} onClick={async()=>{
-        setBusy(true);try{const response=await fetch('/api/v1/sources/'+encodeURIComponent(draft.source_instance),{cache:'no-store',signal:AbortSignal.timeout(10000)});
+        setStarted(Date.now());setBusyAction('reconcile');setBusy(true);try{const response=await fetch('/api/v1/sources/'+encodeURIComponent(draft.source_instance),{cache:'no-store',signal:AbortSignal.timeout(10000)});
           if(response.status===404&&draft.create_cluster&&draft.registration_id){
             const checked=await fetch('/api/v1/sources/registration-status',{method:'POST',headers:{'Content-Type':'application/json','X-NetBox-Sync-CSRF':'same-origin'},body:JSON.stringify({source_instance:draft.source_instance,registration_id:draft.registration_id}),signal:AbortSignal.timeout(40000)});
             if(!checked.ok)throw new Error();const result=await checked.json();
@@ -218,7 +219,7 @@ export function AddSourcePage() {
         </p>
       )}
       {canPolicy&&connectionCode==='SOURCE_DESTINATION_DENIED'&&<DestinationPermission host={connection.address} done={()=>{setConnectionCode(null);setError('');setNotice(t('Destination allowed. Test the connection.','Назначение разрешено. Проверьте подключение.'));}}/>}
-      {busy && <OperationFeedback operation={token?t('Registering source','Регистрация источника'):t('Checking connection and reading host information','Проверяем подключение и получаем сведения о хостах')} phase="sending" started={started}/>}
+      {busy && <OperationFeedback operation={{connection:t('Checking connection and reading host information','Проверяем подключение и получаем сведения о хостах'),address:t('Checking destination','Проверяем адрес'),placement:t('Checking placement','Проверяем размещение'),registration:t('Registering source','Регистрация источника'),reconcile:t('Checking registration result','Проверяем результат добавления')}[busyAction]} phase="sending" started={started}/>}
       {step===1 ? (
         <form noValidate onSubmit={test} onChangeCapture={invalidate} className="source-form wizard-form" autoComplete="off">
           <fieldset disabled={busy} aria-busy={busy}>

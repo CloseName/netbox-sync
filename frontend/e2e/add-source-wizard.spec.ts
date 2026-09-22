@@ -179,3 +179,16 @@ test('lost final response checks the actor-bound journal without another registr
  expect(posts).toBe(1);expect(checks).toBe(1);
  await expect(page.getByRole('button',{name:'Add source',exact:true})).toBeDisabled();
 });
+
+
+test('placement review uses its own progress label before final registration',async({page})=>{
+ const server=await fixture(page);await connect(page);await placement(page);
+ let release:()=>void=()=>{};const gate=new Promise<void>(resolve=>release=resolve);
+ await page.route('**/api/v1/sources/review-placement',async route=>{await gate;await route.fulfill({json:{valid:true}});});
+ await page.getByRole('button',{name:'Continue',exact:true}).click();
+ await expect(page.getByText('Checking placement',{exact:true})).toBeVisible();
+ await expect(page.getByText('Registering source',{exact:true})).toHaveCount(0);
+ expect(server.writes).toEqual([]);
+ release();await expect(page).toHaveURL(/step=3/);
+ await expect(page.getByText('Checking placement',{exact:true})).toHaveCount(0);
+});
