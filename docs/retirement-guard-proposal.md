@@ -1,0 +1,94 @@
+# Retirement: review contract and execution decision
+
+2026-09-22. This replaces the earlier comment-only proposal as a product target.
+**Destructive execution is not implemented or enabled.** Local review/journal code is
+`netbox_sync/retirement_review.py`. It is not wired into an API, an installer hook,
+source removal, a worker loop, or a scheduler. Existing removal still retains NetBox.
+
+## Implemented, locally reviewable boundary
+
+`build_review` takes trusted, complete registry and NetBox evidence, not browser object
+IDs. It returns exact resource/ID candidates, retained objects, dependency blockers,
+and fingerprints. `RetirementReviewJournal.record` persists an immutable BLOCKED
+review under a UUID and authenticated-actor reference. Identical retries return the
+same document; reuse with different content/actor fails. The existing shared apply
+lock and root-protected atomic/fsynced file store protect local writes. No credentials
+or raw provider responses belong to the evidence. No new capabilities, mounts, DB
+roles or NetBox token privileges were introduced.
+
+Every review includes `ATOMIC_NETBOX_GUARD_UNAVAILABLE`; `execute` always refuses.
+This is a durable **review**, not an executable deletion capability or a completed
+source-deletion workflow. Deployment adapters for authoritative snapshots and Admin
+confirmation remain to be implemented after the execution contract is selected.
+The caller must establish Admin identity; this library is not an authorization endpoint.
+
+Snapshot objects distinguish cluster, device, VM, interface, VM interface, disk, IP,
+and MAC. Names are labels only. Each needs both exclusive source ownership and
+separate proof that Sync created it. A managed v2 identity alone does not prove creation
+and cannot authorize deletion of an adopted/manual object. Shared IP/MAC, manual
+children, missing dependencies and outside references are retained/blockers.
+Sites, cluster types, manufacturers, prefixes, VLANs and other common catalogs are
+not candidate resource types.
+
+Only a durable removal intention/tombstone can propose retirement. An absent row in
+an incomplete or failed registry read, a disabled source, or missing discovery VM is
+never an intention. A source absent even from a complete registry without tombstone
+is an orphan requiring investigation. Any uncertain sync outcome blocks retirement.
+
+A different current source using the same stable cluster ID blocks an old tombstone's
+review even when it has the same display name, address or provider. This specifically
+protects PAM/AM re-registered with new IDs in clusters 5/4. New registration in an empty
+cluster is not recovery of the original source identity and does not transfer old
+object ownership. Historical cluster-creation claims are not inferred from placement.
+
+## Minimum NetBox-side guarded-delete proposal (not implemented)
+
+Support NetBox Community **4.7.x only initially**, with a tested model/dependency
+schema digest. Unknown versions/plugins/relations fail closed. An optional NetBox-side
+extension exposes a narrow retirement endpoint, not arbitrary URL/model deletion.
+It requires a dedicated NetBox permission/token and accepts a fixed manifest, nonce,
+source identity, reviewed object IDs, before-fingerprints and deletion order. The Sync
+API still requires Admin; the API/broker never receive the token.
+
+Within one NetBox database transaction:
+
+1. Serialize the nonce; an existing receipt must match the exact manifest digest.
+2. Acquire bounded locks in deterministic order on every candidate and relevant
+   dependency table. Parent row locks alone are insufficient for generic relations.
+   Table-level locks must prevent concurrent inserts/updates in the enumerated relation
+   set; arbitrary plugin tables are unsupported, not silently omitted.
+3. Recheck ownership, creation claims, placement, all inbound/outbound relationships,
+   and the exact current dependency closure. Use Django's deletion collector to
+   compare the actual cascade and field updates against the reviewed manifest.
+   Reject unknown fast-delete/queryset paths, foreign field updates, custom hooks or
+   relationships whose effects cannot be bounded. Do not rely on NetBox returning a
+   protection error for every possible relationship.
+4. Perform exactly that validated deletion; persist an independent idempotent receipt
+   and audit in the same transaction. If any check/write fails, roll back all changes.
+5. Return the receipt. A lost response is resolved by reading/reusing the same nonce,
+   never by issuing a new unguarded DELETE. The receipt survives removal of the objects.
+
+This design needs a real NetBox 4.7 database/integration test including external
+concurrent writers, GenericForeignKey dependencies and deletion signals. It is not
+proven by a fake HTTP server. Lock timeouts and all unsupported relations return a
+reviewable blocker. It may temporarily block other writers to relevant tables; that
+operational trade-off must be accepted before installing an extension.
+
+Sync must durably journal Admin intent before remote execution; serialize with
+apply/scheduler and source gates; recheck registry revision/current ownership and
+unknown outcomes; use the same remote nonce on recovery. Do not enable old tombstones
+at upgrade. Every old source needs a fresh explicit review. Existing NetBox delete
+permissions must not be expanded without deploying the narrow guard contract.
+
+## Limited alternative without a NetBox extension
+
+Ship read-only reconciliation, a complete candidate/preserved-object report and a
+BLOCKED review journal only. An operator may use NetBox's own reviewed administration
+outside Sync, but Sync must not claim to coordinate or safely retry those deletions.
+Even deleting a seemingly empty parent after a GET leaves a concurrent-write gap;
+an ordinary REST DELETE cannot supply the above atomic guarantee. No automatic
+cascade or mass cleanup is offered by this alternative.
+
+Decision needed: approve the separate guarded-delete extension and its dependency/
+locking contract, or accept review-only cleanup until that capability exists.
+No extension was installed and no live object was deleted during development.
