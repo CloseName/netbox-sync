@@ -28,20 +28,26 @@ def build_runtime_plan(nb_api, hosts, config):
                 name=config.name, action=SyncAction.BLOCKED, reason_code=c.kind,
                 reason='Inventory conflict. Resolve the ambiguity and build a new plan.')
                 for c in conflicts))
+    # Reuse exact remote reads within one plan; prepare/apply reads afresh.
+    nb_api = PlanningNetBox(nb_api)
     from ..host_mapping import validate
-    validate(nb_api,config.target,hosts)
-    review = (build_proxmox_review(nb_api, hosts, config) if config.source_type == 'proxmox'
-              else build_esxi_review(build_esxi_adoption_plan(nb_api, hosts, config), config))
+    from ..child_process import measured_phase
+    with measured_phase('netbox_mapping'):
+        validate(nb_api,config.target,hosts)
+    with measured_phase('netbox_review'):
+        review = (build_proxmox_review(nb_api, hosts, config) if config.source_type == 'proxmox'
+                  else build_esxi_review(build_esxi_adoption_plan(nb_api, hosts, config), config))
     review_plan = plan_from_review(review, config)
     if not review_plan.apply_allowed:
         return review_plan
-    planning_api = PlanningNetBox(nb_api)
+    planning_api = nb_api
     from .ip_observations import ObservationPrerequisiteError
     try:
-        if config.source_type == 'proxmox':
-            apply_full_sync(planning_api, hosts, config.target, confirmed=True)
-        else:
-            execute_esxi_runtime(planning_api, hosts, config, confirmed=True)
+        with measured_phase('netbox_simulation'):
+            if config.source_type == 'proxmox':
+                apply_full_sync(planning_api, hosts, config.target, confirmed=True)
+            else:
+                execute_esxi_runtime(planning_api, hosts, config, confirmed=True)
     except ObservationPrerequisiteError:
         from dataclasses import replace
         return replace(review_plan, items=(*review_plan.items, SyncPlanItem(

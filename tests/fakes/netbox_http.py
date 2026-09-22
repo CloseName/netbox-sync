@@ -4,7 +4,7 @@ from copy import deepcopy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from threading import Thread
-from urllib.parse import urlsplit, parse_qs
+from urllib.parse import urlsplit, parse_qs, urlencode
 import pynetbox
 
 RELATIONS = {
@@ -74,7 +74,11 @@ def netbox_http(seed, ssl_context=None, authorize=None, behavior=None, bind=('12
                     matches=[r for r in matches if str(r.get(field)) in values]
                 if behavior and behavior.get('reverse_reads'): matches.reverse()
                 offset=int(query.get('offset',['0'])[0]);limit=int(query.get('limit',['1000'])[0]) or 1000
-                return self.reply(200,{'count':len(matches),'next':None,'previous':None,'results':[project(endpoint,r) for r in matches[offset:offset+limit]]})
+                next_url = None
+                if offset + limit < len(matches):
+                    query['offset'] = [str(offset + limit)]
+                    next_url = ('https' if ssl_context else 'http') + '://' + self.headers['Host'] + path.path + '?' + urlencode(query, doseq=True)
+                return self.reply(200,{'count':len(matches),'next':next_url,'previous':None,'results':[project(endpoint,r) for r in matches[offset:offset+limit]]})
             value=json.loads(self.rfile.read(int(self.headers.get('Content-Length','0'))))
             writes.append((self.command,endpoint,deepcopy(value)))
             if behavior and behavior.get('fail_write_number')==len(writes):

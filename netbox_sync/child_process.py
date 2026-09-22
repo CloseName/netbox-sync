@@ -56,7 +56,8 @@ def stop_child(process, lock_fd=None):
 
 
 PHASES = ('provider', 'netbox', 'planning', 'preflight', 'apply', 'esxi_connect', 'esxi_inventory',
-          'esxi_properties', 'esxi_additional', 'esxi_conversion', 'esxi_disconnect')
+          'esxi_properties', 'esxi_additional', 'esxi_conversion', 'esxi_disconnect',
+          'netbox_mapping', 'netbox_review', 'netbox_simulation')
 
 
 def phase_progress(stage, elapsed=None, *, failed=False, requests=None, objects=None):
@@ -128,3 +129,17 @@ def child_process(popen, *args, **kwargs):
         for fd in (read_fd, write_fd):
             if fd is not None:
                 os.close(fd)
+
+
+@contextmanager
+def measured_phase(stage):
+    """Timing-only nested stage; preserve the original exception and classification."""
+    import time
+    started = time.monotonic()
+    phase_progress(stage)
+    failed = True
+    try:
+        yield
+        failed = False
+    finally:
+        phase_progress(stage, time.monotonic() - started, failed=failed)

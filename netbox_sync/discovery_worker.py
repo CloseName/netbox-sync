@@ -195,8 +195,9 @@ def execute_child(payload):
             provider = ProxmoxAPI(config.address, user=credentials['username'], token_name=token_name,
                                   token_value=credentials['token_secret'], verify_ssl=config.verify_ssl, port=config.api_port)
             hosts = discover_proxmox(provider, config)
-        with failure_stage('netbox'):
-            review = build_proxmox_review(nb_api, hosts, config)
+        if payload.get('operation') != 'plan':
+            with failure_stage('netbox'):
+                review = build_proxmox_review(nb_api, hosts, config)
     elif config.source_type == 'esxi':
         class Resolved:
             """Ephemeral already-resolved ESXi password adapter."""
@@ -206,8 +207,9 @@ def execute_child(payload):
         with failure_stage('provider'):
             with EsxiClient(resolver=Resolved()).session(config) as service:
                 hosts = discover_esxi(service, config)
-        with failure_stage('netbox'):
-            review = build_esxi_review(build_esxi_adoption_plan(nb_api, hosts, config), config)
+        if payload.get('operation') != 'plan':
+            with failure_stage('netbox'):
+                review = build_esxi_review(build_esxi_adoption_plan(nb_api, hosts, config), config)
     else:
         raise WorkerError('DISCOVERY_FAILED')
     if payload.get('operation') == 'plan':

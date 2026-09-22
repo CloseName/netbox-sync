@@ -198,3 +198,35 @@ def test_http_fixture_records_and_rejects_virtual_reference():
         with pytest.raises(RequestError):
             list(api.dcim.interfaces.filter(device_id=-1))
         assert requests == [('GET', '/api/dcim/interfaces/?device_id=-1&limit=0')]
+
+
+def test_snapshot_reuses_reads_but_nested_overlay_and_next_plan_stay_fresh():
+    api = FakeNetBox()
+    endpoint = api.virtualization.virtual_machines
+    calls = []
+    original = endpoint.filter
+    endpoint.filter = lambda **kw: (calls.append(kw) or original(**kw))
+    first = PlanningNetBox(api)
+    second = PlanningNetBox(first)
+    assert second.virtualization.virtual_machines.filter(cluster_id=3) == []
+    created = first.virtualization.virtual_machines.create(name='planned', cluster=3)
+    assert second.virtualization.virtual_machines.filter(cluster_id=3)[0].id == created.id
+    assert len(calls) == 1
+    endpoint.add(FakeRecord(id=42, name='concurrent', cluster=3))
+    fresh = PlanningNetBox(api)
+    assert fresh.virtualization.virtual_machines.filter(cluster_id=3)[0].id == 42
+    assert len(calls) == 2
+
+
+def test_snapshot_does_not_cache_partial_iteration_or_hide_errors():
+    import pytest
+    api = FakeNetBox()
+    def incomplete(**kw):
+        yield FakeRecord(id=1, name='partial')
+        raise RuntimeError('fixture page failure')
+    api.dcim.devices.filter = incomplete
+    facade = PlanningNetBox(api)
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match='fixture page failure'):
+            facade.dcim.devices.filter(site_id=1)
+    assert not facade.dcim.devices._reads

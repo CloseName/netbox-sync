@@ -1,6 +1,7 @@
 """Read-through, write-recording NetBox facade for exact dry-run plans."""
 # pylint: disable=too-few-public-methods
 
+import json
 from copy import deepcopy
 from dataclasses import dataclass
 
@@ -78,6 +79,7 @@ class PlanningEndpoint:
         self._created = []
         self._wrapped = {}
         self._next_id = -1
+        self._reads = {}
 
     def _wrap(self, record):
         if record is None:
@@ -89,8 +91,23 @@ class PlanningEndpoint:
             self._wrapped[key] = PlanningRecord(record, self._name, self._recorder)
         return self._wrapped[key]
 
+    def _read(self, method, filters):
+        # Cache only immutable remote evidence during this one dry-run. Nested
+        # planners must observe lower-layer mutations, never a cached overlay.
+        if isinstance(self._endpoint, PlanningEndpoint):
+            return list(getattr(self._endpoint, method)(**filters))
+        try:
+            key = (method, json.dumps(filters, sort_keys=True, allow_nan=False))
+        except (TypeError, ValueError):
+            return list(getattr(self._endpoint, method)(**filters))
+        if key not in self._reads:
+            # Materialize completely before committing: a failed page is never
+            # cached as an empty or partial successful response.
+            self._reads[key] = list(getattr(self._endpoint, method)(**filters))
+        return self._reads[key]
+
     def all(self):
-        return sorted([self._wrap(record) for record in self._endpoint.all()] + list(self._created),
+        return sorted([self._wrap(record) for record in self._read('all', {})] + list(self._created),
                       key=lambda record: record.id)
 
     @staticmethod
@@ -136,7 +153,7 @@ class PlanningEndpoint:
         # final boundary may omit a query that cannot match a persisted row.
         remote_filters = (filters if isinstance(self._endpoint, PlanningEndpoint)
                           else self._remote_filters(filters))
-        remote = [] if remote_filters is None else self._endpoint.filter(**remote_filters)
+        remote = [] if remote_filters is None else self._read('filter', remote_filters)
         matches = {}
         for record in remote:
             wrapped = self._wrap(record)

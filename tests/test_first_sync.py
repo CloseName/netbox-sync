@@ -124,3 +124,45 @@ def test_reordered_provider_inventory_has_identical_exact_plan():
         other[0].memory_bytes += 1024**3
         assert build_runtime_plan(api, other, config).digest != first.digest
         assert not writes
+
+
+def test_large_esxi_plan_uses_each_remote_selection_once_and_rechecks_next_plan():
+    from copy import deepcopy
+    from collections import Counter
+    from uuid import UUID
+    from tests.test_esxi_runtime import _config, _inventory
+    from netbox_sync.esxi_runtime import execute_esxi_runtime
+    seed = FakeNetBox()
+    config = target(seed, _config())
+    hosts = _inventory(1)
+    template = hosts[0].virtual_machines[0]
+    machines = []
+    for index in range(276):
+        vm = deepcopy(template)
+        vm.external_id = str(UUID(int=index+1))
+        vm.vmid = vm.external_id
+        vm.source_id = 'esxi:' + vm.external_id
+        vm.provider_object_id = 'vm-' + str(index+1)
+        vm.original_name = vm.normalized_name = 'fixture-' + str(index)
+        vm.interfaces[0].mac_address = '02:00:00:00:%02x:%02x' % divmod(index, 256)
+        vm.interfaces[0].ip_addresses = ['192.0.%d.%d/24' % (index//250, index%250+1)]
+        machines.append(vm)
+    hosts[0].virtual_machines = machines
+    execute_esxi_runtime(seed, hosts, config, confirmed=True)
+    requests = []
+    with netbox_http(seed, requests=requests) as (api, rows, writes):
+        first = build_runtime_plan(api, hosts, config)
+        assert first.apply_allowed and not writes
+        assert not [i for i in first.items if i.action.value in ('CREATE', 'UPDATE')]
+        counts = Counter(path for method, path in requests if method == 'GET')
+        assert max(counts.values()) == 1, counts
+        assert len(rows['virtualization.virtual_machines']) == 276
+        assert len(rows['virtualization.interfaces']) == 276
+        assert len(rows['ipam.ip_addresses']) == 276
+        identifier = next(iter(rows['virtualization.virtual_machines']))
+        rows['virtualization.virtual_machines'][identifier]['memory'] = 1
+        requests.clear()
+        changed = build_runtime_plan(api, hosts, config)
+        assert changed.digest != first.digest
+        assert any(i.action.value == 'UPDATE' for i in changed.items)
+        assert requests and not writes
