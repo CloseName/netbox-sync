@@ -3,7 +3,7 @@ export type DiagnosticCode = 'REGISTRY_UNAVAILABLE' | 'RUN_HISTORY_UNAVAILABLE'
   | 'DISCOVERY_WORKER_UNAVAILABLE' | 'APPLY_WORKER_UNAVAILABLE'
   | 'SCHEDULED_ACTIVITY_DELAYED' | 'STALE_RUNNING';
 export interface DiagnosticComponent { status: DiagnosticStatus; checked_at: string; safe_code: DiagnosticCode | null; safe_message: string | null; last_seen_at: string | null; last_success_at: string | null; next_expected_at: string | null; }
-export interface DiagnosticRun { run_id: string; trigger: 'manual' | 'scheduled'; status: string; started_at: string; finished_at: string | null; }
+export interface DiagnosticRun { unsupported_count?: number; run_id: string; trigger: 'manual' | 'scheduled'; status: string; started_at: string; finished_at: string | null; }
 export interface DiagnosticWarning { warning_code: 'STALE_RUNNING' | 'SCHEDULED_ACTIVITY_DELAYED'; safe_message: string; source_instance: string | null; source_type: 'proxmox' | 'esxi' | null; trigger: 'manual' | 'scheduled' | null; run_id: string | null; started_at: string | null; age_seconds: number | null; }
 export interface SourceDiagnostic { plan_blocked?: boolean; plan_checked_at?: string|null; outcome_unconfirmed?: boolean; operation_evidence_available?: boolean; source_instance: string; source_type: 'proxmox' | 'esxi'; enabled: boolean; sync_enabled: boolean; sync_interval_seconds: number; status: DiagnosticStatus; latest_run: DiagnosticRun | null; latest_success_at: string | null; latest_scheduled_run: DiagnosticRun | null; latest_manual_run: DiagnosticRun | null; scheduler_state: 'DISABLED' | 'WAITING' | 'DUE' | 'RUNNING' | 'DELAYED'; last_scheduled_run_at: string | null; next_expected_at: string | null; warning_count: number; warnings: ('STALE_RUNNING' | 'SCHEDULED_ACTIVITY_DELAYED')[]; }
 export interface Diagnostics { overall_status: 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY'; generated_at: string; components: Record<'api' | 'registry' | 'run_history' | 'discovery_worker' | 'apply_worker' | 'scheduler', DiagnosticComponent>; sources: SourceDiagnostic[]; stale_runs: DiagnosticWarning[]; warnings: DiagnosticWarning[]; }
@@ -24,6 +24,7 @@ const isComponent = (value: unknown): value is DiagnosticComponent => record(val
   && nullableCode(value.safe_code) && (value.safe_message === null || typeof value.safe_message === 'string')
   && nullableTime(value.last_seen_at) && nullableTime(value.last_success_at) && nullableTime(value.next_expected_at);
 const isRun = (value: unknown): value is DiagnosticRun => record(value)
+  && (value.unsupported_count===undefined || (Number.isSafeInteger(value.unsupported_count) && Number(value.unsupported_count)>=0))
   && typeof value.run_id === 'string' && uuid.test(value.run_id)
   && (value.trigger === 'manual' || value.trigger === 'scheduled')
   && typeof value.status === 'string' && runStatuses.has(value.status)

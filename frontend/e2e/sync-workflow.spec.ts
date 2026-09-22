@@ -643,3 +643,25 @@ for(const language of ['en','ru'])for(const theme of ['light','dark'])test(`IP o
   await expect(page.getByText(language==='ru'?'Инвентарь синхронизирован с наблюдениями адресов. Спорные назначения IPAM не выполнены; проверьте интерфейсы NetBox.':'Inventory synchronized with address observations. Disputed IPAM assignments remain incomplete; review the NetBox interfaces.',{exact:true})).toBeVisible();
   await page.screenshot({path:info.outputPath('ip-observations-result.png'),fullPage:true});
 });
+
+
+test('lost response reconciles exact accepted run without resubmission', async ({page})=>{
+  await fixture(page,plan([row('UPDATE'),row('UNSUPPORTED',{
+    object_kind:'ip_observation', reason_code:'IP_OBSERVATION_ONLY', before:[], after:[]})]));
+  let acceptedId='', status='RUNNING', submissions=0;
+  await page.route('**/api/v1/runs?**',route=>route.fulfill({json:{runs:acceptedId?[{
+    ...run(status),run_id:acceptedId,plan_digest:digest,started_at:new Date().toISOString()
+  }]:[],next_cursor:null}}));
+  await page.route('**/api/v1/sources/source-1/sync',route=>{
+    submissions++;acceptedId=route.request().postDataJSON().run_id;
+    return route.abort('connectionreset');
+  });
+  await build(page);await confirm(page);
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  await expect(page.getByRole('heading',{name:'Operation in progress',exact:true})).toBeVisible({timeout:12000});
+  status='SUCCEEDED';
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  await expect(page.getByRole('heading',{name:'Sync completed',exact:true})).toBeVisible({timeout:12000});
+  await expect(page.getByText('Inventory synchronized with address observations. Disputed IPAM assignments remain incomplete; review the NetBox interfaces.',{exact:true})).toBeVisible();
+  expect(submissions).toBe(1);
+});

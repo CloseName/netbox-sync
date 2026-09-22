@@ -131,3 +131,12 @@ test('missing counters cannot establish zero writes and prewrite refusals stay d
  assert.match(countExplanation({...uncertain,status:'FAILED_BEFORE_WRITE'}),/did not start writes/);
  assert(!unknownCounts({...uncertain,status:'SUCCEEDED'}));
 });
+
+
+test('successful inventory with unsupported actions still needs review',()=>{
+ const value=run('SUCCEEDED');
+ assert.equal(runAttention({...value,actions:{...value.actions,unsupported:2}},false),'Review inventory limitations');
+ assert.equal(runAttention({...value,unsupported_count:2},false),'Review inventory limitations');
+ assert.equal(runAttention({...value,unsupported_count:0},false),'None reported');
+ assert.equal(runAttention({...value,status:'OUTCOME_UNCERTAIN',unsupported_count:2},false),'Verify final state');
+});

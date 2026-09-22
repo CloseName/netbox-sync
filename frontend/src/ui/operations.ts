@@ -31,6 +31,7 @@ export function attention(source?: SourceDiagnostic): Attention | null {
     ["FAILED", "FAILED_BEFORE_WRITE", "BLOCKED", "LOCKED"].includes(outcome)
   )
     return { priority: 5, label: "Last run needs attention" };
+  if((source.latest_run?.unsupported_count??0)>0)return {priority:6,label:'Review inventory limitations'};
   if (source.status === "DEGRADED" || source.warning_count)
     return { priority: 6, label: "Needs attention" };
   return null;

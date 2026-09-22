@@ -231,3 +231,22 @@ def test_missing_operation_evidence_is_explicit_not_no_problems():
     result=DiagnosticsService(Sources([source()]),History(),Worker(),Worker(),clock=lambda:NOW).check()
     assert not result.sources[0].operation_evidence_available
     assert result.sources[0].latest_success_at is None
+
+
+def test_success_with_inventory_limitations_remains_visible_in_api():
+    from dataclasses import replace
+    from netbox_sync.api.dto import DiagnosticsDTO
+    successful = replace(run(), counts=ActionCounts(unsupported=2))
+    result = service((source(),), HistorySnapshot(
+        (successful,), (successful,), (successful,), (), (), (successful,))).check()
+    assert result.sources[0].status is DiagnosticStatus.DEGRADED
+    dto = DiagnosticsDTO.from_result(result)
+    assert dto.sources[0].latest_run.unsupported_count == 2
+    assert dto.sources[0].latest_scheduled_run.unsupported_count == 2
+
+
+def test_blocked_scheduled_run_is_not_an_unavailable_outcome():
+    blocked = run(status=RunStatus.BLOCKED)
+    result = service((source(),), HistorySnapshot(
+        (blocked,), (), (blocked,), (), (), (blocked,))).check()
+    assert result.sources[0].latest_scheduled_run.status == 'BLOCKED'

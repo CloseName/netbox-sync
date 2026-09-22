@@ -12,6 +12,7 @@ export interface SyncOutcome {
   categories?: string[];
 }
 const statuses: Record<string, [string, string, Status["tone"]]> = {
+  RUNNING: ['Operation in progress','The server has recorded this run as running. Waiting for its result; do not resubmit.','warning'],
   SUCCEEDED: [
     "Sync completed",
     "The reviewed plan completed. Plan counts describe operations, not individual applied objects.",
@@ -132,4 +133,12 @@ export function failedOutcome(error: unknown, stage: 'validating' | 'applying'):
     result.eventId = error.eventId; result.reason = error.reason; result.categories = error.categories;
   }
   return result;
+}
+
+export function reconcileTransportOutcome(current:SyncOutcome|null, run:{run_id:string;status:string;plan_digest:string|null}|undefined, expectedRunId:string, expectedDigest:string|undefined, ipamIncomplete=false):SyncOutcome|null {
+  if(!current || !run || !expectedRunId || run.run_id!==expectedRunId || !expectedDigest || run.plan_digest!==expectedDigest)return current;
+  if(!['NETWORK_LOST','UNKNOWN','APPLY_UNAVAILABLE','APPLY_RESPONSE_INVALID','DURABLE_RUN_STATUS'].includes(current.code??''))return current;
+  if(!['RUNNING','SUCCEEDED','FAILED','FAILED_BEFORE_WRITE','BLOCKED','LOCKED','PARTIALLY_APPLIED','OUTCOME_UNCERTAIN'].includes(run.status))return current;
+  if(current.code==='DURABLE_RUN_STATUS' && current.state===run.status)return current;
+  return outcome(run.status,run.status==='SUCCEEDED' && ipamIncomplete?'Inventory synchronized with address observations. Disputed IPAM assignments remain incomplete; review the NetBox interfaces.':undefined,run.status==='RUNNING'?'DURABLE_RUN_STATUS':undefined,run.run_id);
 }

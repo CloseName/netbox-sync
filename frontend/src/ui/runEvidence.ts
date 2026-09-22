@@ -30,7 +30,7 @@ export function staleEvidence(
       )
     : undefined;
 }
-export function runAttention(run: DiagnosticRun, stale: boolean): string {
+export function runAttention(run: DiagnosticRun & {actions?:{unsupported:number}}, stale: boolean): string {
   if (stale) return "Completion unconfirmed";
   if (run.status === "OUTCOME_UNCERTAIN") return "Verify final state";
   if (run.status === "PARTIALLY_APPLIED") return "Review partial result";
@@ -39,6 +39,7 @@ export function runAttention(run: DiagnosticRun, stale: boolean): string {
   )
     return "Review result";
   if (run.status === "RUNNING") return "Completion not recorded";
+  if((run.unsupported_count??run.actions?.unsupported??0)>0)return 'Review inventory limitations';
   return "None reported";
 }
 export function unknownCounts(run:SyncRun){return run.status!=="SUCCEEDED" && !Object.values(run.actions).some(n=>n>0);}

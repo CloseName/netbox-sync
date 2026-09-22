@@ -87,6 +87,7 @@ class DiagnosticComponentsDTO(PublicModel):
 class DiagnosticRunDTO(PublicModel):
     """Small run reference used by source diagnostics."""
 
+    unsupported_count: int = Field(default=0, ge=0)
     run_id: UUID
     trigger: Literal['manual', 'scheduled']
     status: Literal['RUNNING', 'SUCCEEDED', 'FAILED_BEFORE_WRITE', 'PARTIALLY_APPLIED',

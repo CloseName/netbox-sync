@@ -1,4 +1,6 @@
 export const ru: Record<string,string> = {
+  "Review inventory limitations": "Проверьте ограничения синхронизации",
+  "The server has recorded this run as running. Waiting for its result; do not resubmit.": "Сервер зарегистрировал выполняющийся запуск. Ожидаем результат; не отправляйте запрос повторно.",
   "Stored on NetBox interfaces for review; disputed IPAM assignments are not synchronized.": "Сохраняется на интерфейсах NetBox для проверки; спорные назначения IPAM не синхронизируются.",
   "Prepare the network observations field in NetBox settings before synchronization.": "Подготовьте поле сетевых наблюдений в настройках NetBox перед синхронизацией.",
   "Inventory synchronized with address observations. Disputed IPAM assignments remain incomplete; review the NetBox interfaces.": "Инвентарь синхронизирован с наблюдениями адресов. Спорные назначения IPAM не выполнены; проверьте интерфейсы NetBox.",

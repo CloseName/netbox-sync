@@ -39,6 +39,7 @@ class RunSummary:
     status: str
     started_at: datetime
     finished_at: datetime | None
+    unsupported_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -113,7 +114,7 @@ def _summary(run):
     if run is None:
         return None
     return RunSummary(run.run_id, run.trigger.value, run.status.value,
-                      run.started_at, run.finished_at)
+                      run.started_at, run.finished_at, getattr(getattr(run, 'counts', None), 'unsupported', 0))
 
 
 def _indexed(values):
@@ -208,7 +209,7 @@ class DiagnosticsService:
             if not source.enabled or current is None:
                 status = DiagnosticStatus.UNKNOWN
             elif current.status.value == 'SUCCEEDED':
-                status = (DiagnosticStatus.DEGRADED if source_warnings
+                status = (DiagnosticStatus.DEGRADED if source_warnings or getattr(getattr(current, 'counts', None), 'unsupported', 0)
                           else DiagnosticStatus.HEALTHY)
             elif current.status.value == 'RUNNING':
                 status = (DiagnosticStatus.DEGRADED if source_warnings

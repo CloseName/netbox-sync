@@ -7,7 +7,7 @@ import {
   fieldText,
   filterPlan,
 } from "../src/ui/plan.ts";
-import { applyOutcome, failedOutcome } from "../src/ui/syncOutcome.ts";
+import { applyOutcome, failedOutcome, reconcileTransportOutcome } from "../src/ui/syncOutcome.ts";
 import {
   applySync,
   buildSyncPlan,
@@ -168,4 +168,18 @@ test("safe failure classification distinguishes stage and never asserts writes a
     ).state,
     "PREPARATION_FAILED",
   );
+});
+
+
+test('transport loss follows only the exact durable run and digest without retry',()=>{
+ const lost=failedOutcome(new ManualSyncRequestError('safe','NETWORK_LOST'),'applying');
+ const run={run_id:'accepted',status:'RUNNING',plan_digest:digest};
+ assert.equal(reconcileTransportOutcome(lost,run,'another',digest),lost);
+ assert.equal(reconcileTransportOutcome(lost,{...run,plan_digest:'b'.repeat(64)},'accepted',digest),lost);
+ const running=reconcileTransportOutcome(lost,run,'accepted',digest);
+ assert.equal(running.state,'RUNNING');
+ const complete=reconcileTransportOutcome(running,{...run,status:'SUCCEEDED'},'accepted',digest,true);
+ assert.equal(complete.state,'SUCCEEDED');assert.match(complete.message,/IPAM assignments remain incomplete/);
+ const uncertain=failedOutcome(new ManualSyncRequestError('safe','OUTCOME_UNCERTAIN'),'applying');
+ assert.equal(reconcileTransportOutcome(uncertain,run,'accepted',digest),uncertain);
 });
