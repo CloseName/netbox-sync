@@ -72,23 +72,18 @@ execution decision are in [retirement-guard-proposal.md](retirement-guard-propos
 
 ## Repeated addresses: observation versus IPAM assignment
 
-Exact repeated NIC+CIDR facts are already deduplicated; distinct VM identities are
-never merged by address/name. Different masks of one NIC are retained as separate
-observations in Discovery and conflict details. They are not automatically assigned
-as two IPAM objects, nor is one mask guessed. Under the current policy those conflicts
-still block the plan: no partial successful synchronization is claimed.
+The user approved explicit observation-only fallback on 2026-09-22 and subsequently
+required observations directly on NetBox interfaces. That branch is implemented;
+see [network-observations.md](network-observations.md) for the supported path and
+explicitly incomplete VRF/duplicate-IPAM requirements.
 
-Checked official NetBox **v4.7.0** source: IPAddress.get_duplicates compares host IP
-without mask within a VRF; clean enforces ENFORCE_GLOBAL_UNIQUE/VRF uniqueness, with
-special-role exceptions that Sync must not invent. Live uniqueness configuration was
-not inspected. See [v4.7.0 IPAddress implementation](https://github.com/netbox-community/netbox/blob/v4.7.0/netbox/ipam/models/ip.py#L981).
-
-The user explicitly approved option (2) on 2026-09-22; implementation is pending.
-Options reviewed: (1) retain full-plan blocking pending an explicit IPAM mapping;
-(2) explicitly allow syncing other inventory while recording all ambiguous addresses
-as observations, with no disputed IPAM assignments and visible incompleteness;
-(3) a separate explicit network-area/VRF design. No global uniqueness change, invented
-VRF, automatic shared-address role, or new namespace policy was implemented.
+Local follow-up checks: 72 Linux Bootstrap/upgrade/HTTP/apply tests passed; 3 real
+PostgreSQL placement-policy tests passed; 48 Bootstrap/placement and 29 Source Detail
+Playwright tests passed; TypeScript/Vite and Dockerfile.web passed. Production
+worker/browser/scheduler/upgrade gate with both providers and explicit observations:
+1 passed in 178.05 seconds. The full sync browser rerun passed: 32 tests, including EN/RU light/dark
+observation plans and explicit incomplete-IPAM results. A stale blocked-plan test expected a ready message; corrected that
+fixture expectation without relaxing the product guard.
 
 ## Sequential acceptance after separate review/publication
 
