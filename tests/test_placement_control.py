@@ -48,3 +48,24 @@ def test_requires_discovery_and_blocks_active_plan(lifecycle):
     with pytest.raises(LifecycleError,match='SOURCE_OPERATION_ACTIVE'):
         control.save(store,source.source_instance,view['revision'],view['discovery_id'],mapping)
     assert registry.get_by_source_instance(source.source_instance).config.settings=={}
+
+
+def test_observation_policy_revision_preservation_and_plan_fencing(lifecycle):
+    from netbox_sync.application.ip_observations import source_policy
+    store,registry,source=lifecycle
+    view,mapping=seed(store,source.source_instance)
+    assert view['ip_conflict_policy']=='strict'
+    mapping['ip_conflict_policy']='observe'
+    control.save(store,source.source_instance,view['revision'],view['discovery_id'],mapping)
+    assert source_policy(registry.get_by_source_instance(source.source_instance).config)=='observe'
+    with pytest.raises(LifecycleError,match='SOURCE_LIFECYCLE_CONFLICT'):
+        control.save(store,source.source_instance,view['revision'],view['discovery_id'],mapping)
+    fresh=control.read(store,source.source_instance)
+    assert fresh['ip_conflict_policy']=='observe'
+    mapping.pop('ip_conflict_policy')
+    control.save(store,source.source_instance,fresh['revision'],fresh['discovery_id'],mapping)
+    assert source_policy(registry.get_by_source_instance(source.source_instance).config)=='observe'
+    fresh=control.read(store,source.source_instance)
+    mapping['ip_conflict_policy']='guess'
+    with pytest.raises(LifecycleError,match='REQUEST_INVALID'):
+        control.save(store,source.source_instance,fresh['revision'],fresh['discovery_id'],mapping)

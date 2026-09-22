@@ -12,10 +12,10 @@ def build_runtime_plan(nb_api, hosts, config):
     """Run guarded executors on a write-recording facade and return one canonical plan."""
     from .inventory_order import canonical_hosts
     hosts = canonical_hosts(hosts)
-    from .inventory_conflicts import inventory_conflicts
     from .sync_plan import (SyncPlan, SyncPlanItem, SyncAction, safe_source_fingerprint,
                             target_fingerprint, stable_fingerprint)
-    conflicts = inventory_conflicts(hosts)
+    from .ip_observations import assignment_inventory, source_policy
+    _, conflicts, observations = assignment_inventory(hosts, source_policy(config))
     if conflicts:
         from dataclasses import asdict
         return SyncPlan(
@@ -36,8 +36,25 @@ def build_runtime_plan(nb_api, hosts, config):
     if not review_plan.apply_allowed:
         return review_plan
     planning_api = PlanningNetBox(nb_api)
-    if config.source_type == 'proxmox':
-        apply_full_sync(planning_api, hosts, config.target, confirmed=True)
-    else:
-        execute_esxi_runtime(planning_api, hosts, config, confirmed=True)
-    return plan_from_mutations(review, config, planning_api.mutations)
+    from .ip_observations import ObservationPrerequisiteError
+    try:
+        if config.source_type == 'proxmox':
+            apply_full_sync(planning_api, hosts, config.target, confirmed=True)
+        else:
+            execute_esxi_runtime(planning_api, hosts, config, confirmed=True)
+    except ObservationPrerequisiteError:
+        from dataclasses import replace
+        return replace(review_plan, items=(*review_plan.items, SyncPlanItem(
+            object_kind='source', external_id=config.source_instance, name=config.name,
+            action=SyncAction.BLOCKED, reason_code='OBSERVATION_FIELD_REQUIRED',
+            reason='Prepare the network observations field in NetBox settings before synchronization.')))
+    plan = plan_from_mutations(review, config, planning_api.mutations)
+    if observations:
+        from dataclasses import replace, asdict
+        rows = tuple(SyncPlanItem(object_kind='ip_observation',
+            external_id=c.value, name=c.value, action=SyncAction.UNSUPPORTED,
+            reason_code='IP_OBSERVATION_ONLY',
+            reason='Stored on NetBox interfaces for review; disputed IPAM assignments are not synchronized.',
+            after=(('participants', [asdict(p) for p in c.participants]),)) for c in observations)
+        plan = replace(plan, items=(*plan.items, *rows))
+    return plan

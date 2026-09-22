@@ -94,6 +94,8 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False):
     """Reconcile managed and genuinely new objects; legacy candidates stay separate."""
     from .application.inventory_order import canonical_hosts
     hosts = canonical_hosts(hosts)
+    from .application.ip_observations import executable_inventory
+    hosts, _ = executable_inventory(nb_api, hosts, config)
 
     if config.source_type != 'esxi':
         raise EsxiRuntimeError('ESXi runtime requires source_type=esxi')

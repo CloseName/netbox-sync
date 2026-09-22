@@ -81,7 +81,7 @@ export function applyOutcome(
     );
   return outcome(
     result.status,
-    undefined,
+    result.status==='SUCCEEDED' && result.ipam_complete===false ? 'Inventory synchronized with address observations. Disputed IPAM assignments remain incomplete; review the NetBox interfaces.' : undefined,
     undefined,
     result.run_id ?? undefined,
   );

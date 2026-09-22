@@ -3,7 +3,7 @@ import hashlib
 import json
 import re
 
-VERSION = 1
+VERSION = 2
 FIELDS = {
     'sync_identities': ('json', ('dcim.device','dcim.interface','virtualization.virtualmachine','virtualization.vminterface')),
     'sync_original_names': ('json', ('dcim.device','dcim.interface','virtualization.virtualmachine','virtualization.vminterface')),
@@ -18,9 +18,11 @@ FIELDS = {
     'swap_mb': ('integer', ('virtualization.virtualmachine',)),
     'source_bridge': ('text', ('virtualization.vminterface',)),
     'source_vlan_id': ('integer', ('virtualization.vminterface',)),
+    'sync_network_observations': ('json', ('virtualization.vminterface',)),
 }
 
 LABELS = {
+    'sync_network_observations': ('Network observations requiring review', 'Сетевые наблюдения, требующие проверки'),
     'sync_identities': ('Source identities', 'Идентификаторы источников'),
     'sync_original_names': ('Original source names', 'Исходные имена'),
     'hypervisor_version': ('Hypervisor version', 'Версия гипервизора'),
@@ -39,6 +41,7 @@ LABELS = {
     'source_vlan_id': ('Source VLAN ID', 'VLAN ID источника'),
 }
 PURPOSES = {
+    'sync_network_observations': ('Observed addresses and masks; does not imply IPAM assignment.', 'Обнаруженные адреса и маски; не подтверждают назначение в IPAM.'),
     'sync_identities': ('Stable, source-scoped ownership; never name adoption.', 'Стабильная принадлежность источнику; без присвоения по имени.'),
     'sync_original_names': ('Original names retained independently of display names.', 'Исходные имена отдельно от отображаемых.'),
     'hypervisor_version': ('Observed host hypervisor version.', 'Обнаруженная версия гипервизора хоста.'),

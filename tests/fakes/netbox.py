@@ -166,6 +166,7 @@ class FakeNetBox:
         ),
         'extras': (
             'tags',
+            'custom_fields',
         ),
     }
 

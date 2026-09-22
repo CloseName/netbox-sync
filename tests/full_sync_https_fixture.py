@@ -27,9 +27,22 @@ class Handler(ProbeHandler):
                 data=list(reversed(data)) if node_reads%2 else list(data)
             return self.respond(json.dumps({'data':data}).encode(),200 if data is not None else 404)
         if self.path=='/fixture/state':
-            return self.respond(json.dumps({**{key:len(value) for key,value in rows.items()}, 'write_requests':len(writes), 'legacy_disk_reads':sum('/virtual-disks/' in path for _,path in requests), 'invalid_virtual_requests':sum('/-' in path or '=-' in path for _,path in requests)}).encode())
+            return self.respond(json.dumps({**{key:len(value) for key,value in rows.items()}, 'write_requests':len(writes), 'observation_interfaces':sum(bool(r.get('custom_fields',{}).get('sync_network_observations')) for r in rows['virtualization.interfaces'].values()), 'legacy_disk_reads':sum('/virtual-disks/' in path for _,path in requests), 'invalid_virtual_requests':sum('/-' in path or '=-' in path for _,path in requests)}).encode())
         return super().do_GET()
     def do_POST(self):
+        if self.path=='/fixture/observe-esxi':
+            key=('vm-42','guest')
+            marker='<ipAddress><ipAddress>10.20.40.42</ipAddress><prefixLength>24</prefixLength></ipAddress>'
+            properties[key]=properties[key].replace(marker,marker+'<ipAddress><ipAddress>10.20.40.42</ipAddress><prefixLength>32</prefixLength></ipAddress>')
+            return self.respond(b'{}')
+        if self.path=='/fixture/observe-proxmox':
+            for key,value in provider_rows.items():
+                if key[-1:] == ('network-get-interfaces',):
+                    for nic in value['result']:
+                        for address in list(nic.get('ip-addresses',[])):
+                            if address.get('ip-address')=='10.20.30.40':
+                                nic['ip-addresses'].append({**address,'prefix':32})
+            return self.respond(b'{}')
         if self.path=='/fixture/fail-next-write':
             behavior['fail_write_number']=len(writes)+1
             return self.respond(b'{}')
@@ -64,6 +77,8 @@ from tests.fakes.esxi_properties import properties
 context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 context.load_cert_chain('/fixture/server.crt','/fixture/server.key')
 seed=FakeNetBox();add_target(seed)
+from netbox_sync.prerequisites import definition
+seed.extras.custom_fields.add(FakeRecord(id=77,**definition('sync_network_observations')))
 seed.virtualization.clusters.add(FakeRecord(id=9,name='Proxmox Fixture Cluster',type=seed.virtualization.cluster_types.get(id=2),scope_type='dcim.site',scope_id=1))
 seed.dcim.device_roles.add(FakeRecord(id=4,name='Server',slug='server'))
 seed.dcim.platforms.add(FakeRecord(id=5,name='Proxmox',slug='proxmox'))

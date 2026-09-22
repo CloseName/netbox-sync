@@ -86,6 +86,11 @@ export function PlanReview({
       <p className="muted">
         {tr("Plan received")}{" "}<Timestamp value={received} />{tr(". The plan is checked again before sync.")}{" "}</p>
       <PlanSummary plan={plan} />
+      {plan.items.some(item=>item.reason_code==='IP_OBSERVATION_ONLY')&&<section className="sync-attention" aria-label={t('Incomplete IPAM','Неполная синхронизация IPAM')}>
+        <h4>{t('Some addresses require review','Часть адресов требует проверки')}</h4>
+        <p>{t('The plan saves these addresses and masks on NetBox interfaces as observations. It does not create disputed IPAM assignments. Existing assignments are retained.','План сохраняет эти адреса и маски на интерфейсах NetBox как наблюдения. Спорные назначения IPAM не создаются. Существующие назначения сохраняются.')}</p>
+        <details><summary>{t('Show observations','Показать наблюдения')}</summary><ul>{plan.items.filter(item=>item.reason_code==='IP_OBSERVATION_ONLY').map(item=><li key={item.external_id}>{item.name}<ul>{observationLines(item).map((line,index)=><li key={index}>{line}</li>)}</ul></li>)}</ul></details>
+      </section>}
       {!!planCounts(plan.items).UNSUPPORTED&&<button onClick={()=>{setView('Attention');setAction('UNSUPPORTED');setKind('');setSearch('');setLimit(50);}}>{tr('Show unsupported categories')}</button>}
       {!plan.conflicts?.length&&<p className="muted">
         {tr("Create and Update count operations, not unique objects. Other counts describe plan rows. Filters change this view only; sync submits the entire reviewed plan.")}{" "}</p>}
@@ -307,4 +312,13 @@ function PlanRow({ item,raw }: { item: SyncPlanItem;raw:SyncPlanItem }) {
       </div>
     </details>
   );
+}
+
+function observationLines(item:SyncPlanItem):string[] {
+  const value=item.after.find(([key])=>key==='participants')?.[1];
+  if(!Array.isArray(value))return [];
+  return value.filter(p=>p && typeof p==='object').map(p=>{
+    const row=p as Record<string,unknown>;
+    return [row.name,row.interface,row.address].filter(v=>typeof v==='string').join(' · ');
+  });
 }

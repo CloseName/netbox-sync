@@ -70,6 +70,8 @@ def apply_full_sync(
 ):
     from .application.inventory_order import canonical_hosts
     hosts = canonical_hosts(hosts)
+    from .application.ip_observations import executable_inventory
+    hosts, _ = executable_inventory(nb_api, hosts, config)
     from .host_mapping import validate
     validate(nb_api,config,hosts)
     print(

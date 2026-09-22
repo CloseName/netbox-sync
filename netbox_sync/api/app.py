@@ -396,6 +396,8 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         if current['revision'] != payload.revision or current['discovery_id'] != str(payload.discovery_id):
             raise LifecycleRequestError('SOURCE_LIFECYCLE_CONFLICT')
         mapping = catalog_validate(settings.bootstrap_socket, payload.references, payload.host_types, current['preview'])
+        if payload.ip_conflict_policy is not None:
+            mapping['ip_conflict_policy'] = payload.ip_conflict_policy
         return lifecycle_client.request(source_instance, dict(revision=payload.revision,
             discovery_id=str(payload.discovery_id), mapping=mapping), action='save_placement')
 

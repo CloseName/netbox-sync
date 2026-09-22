@@ -413,6 +413,7 @@ class ApplyRequestDTO(PublicModel):
 
 
 class ApplyResultDTO(PublicModel):
+    ipam_complete: bool = True
     """Explicit non-transactional synchronization result."""
 
     status: Literal['SUCCEEDED', 'FAILED_BEFORE_WRITE', 'PARTIALLY_APPLIED', 'OUTCOME_UNCERTAIN']

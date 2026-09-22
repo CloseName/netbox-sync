@@ -66,6 +66,7 @@ class RemovalDTO(BaseModel):
 
 
 class PlacementUpdateDTO(BaseModel):
+    ip_conflict_policy: Literal['strict', 'observe'] | None = None
     model_config = ConfigDict(extra='forbid')
     revision: str = Field(pattern=r'^[a-f0-9]{64}$')
     discovery_id: UUID

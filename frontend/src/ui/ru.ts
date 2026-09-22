@@ -1,4 +1,7 @@
 export const ru: Record<string,string> = {
+  "Stored on NetBox interfaces for review; disputed IPAM assignments are not synchronized.": "Сохраняется на интерфейсах NetBox для проверки; спорные назначения IPAM не синхронизируются.",
+  "Prepare the network observations field in NetBox settings before synchronization.": "Подготовьте поле сетевых наблюдений в настройках NetBox перед синхронизацией.",
+  "Inventory synchronized with address observations. Disputed IPAM assignments remain incomplete; review the NetBox interfaces.": "Инвентарь синхронизирован с наблюдениями адресов. Спорные назначения IPAM не выполнены; проверьте интерфейсы NetBox.",
   'Read-only discovery remains available for investigation. It does not resolve the unknown outcome or authorize synchronization.': 'Для проверки доступно чтение инвентаря. Оно не подтверждает результат прежней операции и не разрешает синхронизацию.',
   "Disks": "Диски",
   "Interfaces": "Интерфейсы",

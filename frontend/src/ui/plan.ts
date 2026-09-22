@@ -152,6 +152,8 @@ export function planReason(item:{reason_code:string;reason:string;action?:SyncAc
   OTHER_SOURCE_OWNERSHIP:'A matching object retains another source identity. Re-registration does not restore ownership.',
   VM_IDENTITY:'Shared VM identifier',
   IP_ASSIGNMENT:'Conflicting IP assignment',
+  IP_OBSERVATION_ONLY:'Stored on NetBox interfaces for review; disputed IPAM assignments are not synchronized.',
+  OBSERVATION_FIELD_REQUIRED:'Prepare the network observations field in NetBox settings before synchronization.',
   ESXI_HOST_NETWORK_UNSUPPORTED:'ESXi host VMkernel/vSwitch networking is report-only; no host networking writes are supported.',
   MANAGED_FIELD_UPDATE:'Update managed fields',
   EXECUTOR_CREATE_UNSUPPORTED:'No supported create operation was produced for this object.'

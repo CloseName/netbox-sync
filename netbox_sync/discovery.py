@@ -92,6 +92,7 @@ class DiscoveredInterface:
     vlan_id: Optional[int]
     ip_addresses: list[str] = field(default_factory=list)
     external_id: Optional[str] = None
+    network_observations: dict | None = None
 
 
 @dataclass

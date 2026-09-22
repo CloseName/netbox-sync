@@ -17,6 +17,7 @@ MANAGED_VM_INTERFACE_CUSTOM_FIELDS = (
     'sync_original_names',
     'source_bridge',
     'source_vlan_id',
+    'sync_network_observations',
 )
 
 
@@ -124,4 +125,13 @@ def build_nic_custom_fields(
             nic.vlan_id,
     })
 
+    observations = getattr(nic, 'network_observations', None)
+    if observations is not None:
+        # Preserve entries belonging to other sources and arbitrary unrelated fields.
+        previous = existing.get('sync_network_observations') or {}
+        if not isinstance(previous, dict):
+            raise ValueError('Incompatible network observation field')
+        result['sync_network_observations'] = {
+            **previous, vm.source_instance: observations,
+        }
     return result

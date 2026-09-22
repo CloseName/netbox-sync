@@ -45,6 +45,7 @@ export type ApplyStatus =
   | "PARTIALLY_APPLIED"
   | "OUTCOME_UNCERTAIN";
 export interface ApplyResult {
+  ipam_complete?: boolean;
   status: ApplyStatus;
   plan_digest: string;
   run_id?: string | null;

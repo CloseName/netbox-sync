@@ -117,6 +117,25 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
     assert counts['virtualization.interfaces'] >= (2 if provider=='proxmox' else 1),counts
     assert counts['dcim.mac_addresses']>=1 and counts['ipam.ip_addresses']>=1,counts
     exec(compile(Path('/review/tests/scheduled_full_sync_scenario.py').read_text(), 'scheduled_full_sync_scenario.py', 'exec'))
+    # Explicit observation opt-in, then actual workers persist evidence in NetBox.
+    run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/observe-"+provider+"',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
+    conflict=request({},base+'/sync-plan')['body']
+    assert not conflict['apply_allowed'] and any(c['kind']=='IP_ASSIGNMENT' for c in conflict['conflicts']),('observation-fixture',provider,conflict)
+    pv=request(None,base+'/placement','GET')['body']
+    chosen=request(dict(revision=pv['revision'],discovery_id=pv['discovery_id'],references=pv['references'],host_types=pv['host_types'],ip_conflict_policy='observe'),base+'/placement','PATCH')
+    assert chosen['status']==200,chosen
+    observed=request({},base+'/sync-plan')['body']
+    assert observed['apply_allowed'] and any(i['reason_code']=='IP_OBSERVATION_ONLY' for i in observed['items']),observed
+    op=next(o['operation_id'] for o in request(None,base+'/operations','GET')['body']['operations'] if o['operation_kind']=='PLAN')
+    proof=request(dict(plan_digest=observed['digest'],operation_id=op,confirmed=True),base+'/sync-confirmations')
+    assert proof['status']==200,proof
+    synced=request(dict(confirmation_token=proof['body']['confirmation_token'],operation_id=op,run_id=str(uuid.uuid4())),base+'/sync')
+    assert synced['status']==200 and synced['body']['status']=='SUCCEEDED' and synced['body']['ipam_complete'] is False,synced
+    repeated_observed=request({},base+'/sync-plan')['body']
+    assert not any(i['action'] in ('CREATE','UPDATE') for i in repeated_observed['items']),repeated_observed
+    obs_counts=json.loads(run(['docker','exec',peer,'python','-c',"import requests; print(requests.get('https://esxi.probe.test:8443/fixture/state',verify='/fixture/server.crt',timeout=5).text)"]))
+    assert obs_counts['observation_interfaces']>0
+    print('PASS production explicit observations: NetBox interface evidence, incomplete IPAM, repeat without duplicates '+provider,flush=True)
     original=request(None,base,'GET')['body']
     view=request(None,base+'/placement','GET');assert view['status']==200,('placement-read',view)
     view=view['body']

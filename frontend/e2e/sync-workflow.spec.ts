@@ -211,7 +211,8 @@ test("blocked defaults to Attention and never opens confirmation", async ({
       retention,
     ]),
   );
-  await build(page);
+  await page.getByRole('button',{name:'Build plan',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Review plan',exact:true})).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Attention", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
@@ -617,4 +618,28 @@ test('fresh generation clears stale result and submits its exact operation', asy
   const prepare=writes.filter(w=>w.path.endsWith('/sync-confirmations')).at(-1);
   const apply=writes.filter(w=>w.path.endsWith('/sync')).at(-1);
   expect(prepare.body.plan_digest).toBe(digest);expect(prepare.body.operation_id).toBe(apply.body.operation_id);
+});
+
+
+for(const language of ['en','ru'])for(const theme of ['light','dark'])test(`IP observations ${language} ${theme}`,async({page},info)=>{
+  const participants=[{name:'Example VM',external_id:'vm-1',provider_object_id:'vm-42',host_id:'host-1',interface:'Network adapter 1',interface_id:'4000',address:'192.0.2.60/24'},
+    {name:'Example VM',external_id:'vm-1',provider_object_id:'vm-42',host_id:'host-1',interface:'Network adapter 1',interface_id:'4000',address:'192.0.2.60/32'}];
+  await page.setViewportSize({width:theme==='dark'?390:1280,height:1000});
+  await fixture(page,plan([row('UPDATE'),row('UNSUPPORTED',{object_kind:'ip_observation',external_id:'192.0.2.60',name:'192.0.2.60',reason_code:'IP_OBSERVATION_ONLY',before:[],after:[['participants',participants]]})]));
+  await page.route('**/api/v1/sources/source-1/sync',route=>route.fulfill({json:{status:'SUCCEEDED',plan_digest:digest,run_id:runId,ipam_complete:false}}));
+  await build(page);
+  const {openUserMenu}=await import('./menu-helper');
+  await openUserMenu(page);await page.getByRole('combobox',{name:'Language / Язык',exact:true}).selectOption(language);await page.keyboard.press('Escape');
+  await openUserMenu(page);await page.getByRole('combobox',{name:language==='ru'?'Тема':'Theme',exact:true}).selectOption(theme);await page.keyboard.press('Escape');
+  const panel=page.getByRole('region',{name:language==='ru'?'Неполная синхронизация IPAM':'Incomplete IPAM'});
+  await expect(panel).toBeVisible();
+  await panel.locator('summary').click();
+  await expect(panel).toContainText('Example VM · Network adapter 1 · 192.0.2.60/24');
+  await expect(panel).toContainText('192.0.2.60/32');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:info.outputPath('ip-observations-plan.png'),fullPage:true});
+  await page.getByRole('button',{name:language==='ru'?'Проверить и подтвердить синхронизацию':'Review and confirm sync',exact:true}).click();
+  await page.getByRole('button',{name:language==='ru'?'Синхронизировать с NetBox':'Sync to NetBox',exact:true}).click();
+  await expect(page.getByText(language==='ru'?'Инвентарь синхронизирован с наблюдениями адресов. Спорные назначения IPAM не выполнены; проверьте интерфейсы NetBox.':'Inventory synchronized with address observations. Disputed IPAM assignments remain incomplete; review the NetBox interfaces.',{exact:true})).toBeVisible();
+  await page.screenshot({path:info.outputPath('ip-observations-result.png'),fullPage:true});
 });

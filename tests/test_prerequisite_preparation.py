@@ -14,7 +14,7 @@ def row(name, index=1, **changes):return {**definition(name), 'id':index, 'statu
 
 
 def test_contract_all_models_and_status_constraints():
-    assert len(FIELDS)==16
+    assert len(FIELDS)==17
     rows=[row(name,i+1) for i,name in enumerate(FIELDS)]
     assert all(f['status']=='ready' for f in reconcile(rows))
     assert all(f['status']=='missing' for f in reconcile([]))
@@ -72,7 +72,7 @@ def test_fresh_create_finish_and_confirmed_revocation(setup):
     assert result['preparation']['status']=='PREPARED'
     assert result['preparation']['revocation']=='CONFIRMED'
     assert result['preparation']['local_secret']=='NOT_STORED'
-    assert len(remote.rows)==16 and len([c for c in remote.calls if c['action']=='create'])==16
+    assert len(remote.rows)==len(FIELDS) and len([c for c in remote.calls if c['action']=='create'])==len(FIELDS)
     assert 'SECRETSETUPONLY' not in json.dumps(result)+store.path.read_text()
     assert 'setup_token' not in payload
     with pytest.raises(ControlError):store.finish(1)
@@ -91,7 +91,7 @@ def test_partial_uncertain_restart_does_not_blindly_retry(setup):
     # A later authoritative observation resolves the ambiguous POST.
     remote.rows.append(row('cpu_vendor',5));remote.fail=None
     control.apply(confirm(store,control))
-    assert len(remote.rows)==16
+    assert len(remote.rows)==len(FIELDS)
     assert len([c for c in remote.calls if c.get('name')=='cpu_vendor'])==1
 
 
@@ -125,7 +125,7 @@ def test_expired_plan_and_unconfirmed_revoke_preserve_fields(setup):
     with pytest.raises(ControlError):control.apply(payload)
     remote.revoke='UNCONFIRMED'
     result=control.apply(confirm(store,control))
-    assert result['preparation']['status']=='PREPARED' and len(remote.rows)==16
+    assert result['preparation']['status']=='PREPARED' and len(remote.rows)==len(FIELDS)
     assert result['preparation']['revocation']=='UNCONFIRMED'
 
 
@@ -273,7 +273,7 @@ def test_field_created_between_plan_check_and_post(setup,executor,monkeypatch,ra
         with pytest.raises(ControlError):control.apply(confirm(store,control))
         remote.rows[3]=row('cpu_model',4)  # Explicit operator correction / NetBox provisioning completion.
         assert control.apply(confirm(store,control))['preparation']['status']=='PREPARED'
-    assert len(remote.rows)==16
+    assert len(remote.rows)==len(FIELDS)
 
 
 @pytest.mark.parametrize('status',['unknown',None])
@@ -301,3 +301,20 @@ def test_conflict_evidence_reports_actual_models_and_type():
     assert details['type']=={'property':'type','expected':'json','actual':'text'}
     assert details['models']['actual']=='ipam.prefix'
     assert 'dcim.device' in details['models']['expected']
+
+
+def test_completed_v1_upgrade_creates_only_network_observation_field(setup):
+    store,remote,control=setup
+    remote.rows=[row(name,index+1) for index,name in enumerate(FIELDS) if name!='sync_network_observations']
+    old_rows=json.loads(json.dumps(remote.rows))
+    value=store.read();value.update(completed=True,status='READY')
+    value['preparation']={'version':1,'status':'PREPARED','fields':reconcile(remote.rows)[:-1]}
+    store.write(value)
+    before=store.read()
+    payload=confirm(store,control)
+    result=control.apply(payload)
+    assert result['completed'] is True and result['preparation']['version']==2
+    assert [c['name'] for c in remote.calls if c['action']=='create']==['sync_network_observations']
+    assert remote.rows[:-1]==old_rows
+    after=store.read()
+    assert all(after[k]==before[k] for k in ('url','read_token','apply_token','completed'))

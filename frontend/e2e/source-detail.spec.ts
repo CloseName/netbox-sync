@@ -677,11 +677,14 @@ test('placement requires review, preserves source fields and never retries uncer
  const editor=page.locator('section').filter({has:page.getByRole('heading',{name:'Source placement',exact:true})}).last();
  await expect(editor.getByLabel('Display name',{exact:true})).toHaveCount(0);
  await expect(editor.getByRole('button',{name:'Confirm placement',exact:true})).toHaveCount(0);
+ await expect(editor.getByLabel('Save ambiguous IPs as NetBox observations')).not.toBeChecked();
+ await editor.getByLabel('Save ambiguous IPs as NetBox observations').check();
  await editor.getByRole('button',{name:'Review changes',exact:true}).click();
  expect(writes).toHaveLength(0);
  await editor.getByRole('button',{name:'Confirm placement',exact:true}).click();
  await expect(editor).toContainText('Result requires review');
  expect(writes).toHaveLength(1);
- expect(Object.keys(writes[0]).sort()).toEqual(['discovery_id','host_types','references','revision']);
+ expect(writes[0].ip_conflict_policy).toBe('observe');
+ expect(Object.keys(writes[0]).sort()).toEqual(['discovery_id','host_types','ip_conflict_policy','references','revision']);
  await expect(editor.getByRole('button',{name:'Confirm placement',exact:true})).toHaveCount(0);
 });

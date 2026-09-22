@@ -68,7 +68,7 @@ test(`full contract gallery ${language} ${theme} ${width}`,async({page,context},
   await page.goto('/setup');
   await openUserMenu(page);await page.getByRole('combobox',{name:'Language / Язык',exact:true}).selectOption(language);await page.keyboard.press('Escape');
   await openUserMenu(page);await page.getByRole('combobox',{name:language==='ru'?'Тема':'Theme',exact:true}).selectOption(theme);await page.keyboard.press('Escape');
-  await expect(page.locator('[data-field]')).toHaveCount(16);
+  await expect(page.locator('[data-field]')).toHaveCount(plans.missing.length);
   const label=language==='ru'?'Временный токен подготовки':'Temporary setup token';
   if(scenario==='missing'||scenario==='partial'){
     await expect(page.getByLabel(label,{exact:true})).toBeVisible();
@@ -83,7 +83,7 @@ test(`full contract gallery ${language} ${theme} ${width}`,async({page,context},
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.screenshot({path:info.outputPath(`setup-${scenario}-${language}-${theme}-${width}.png`),fullPage:true});
   await page.getByRole('button',{name:language==='ru'?'Просмотреть все поля плана':'Review all field details',exact:true}).click();
-  await expect(page.locator('[data-field]:visible')).toHaveCount(16);
+  await expect(page.locator('[data-field]:visible')).toHaveCount(plans.missing.length);
   if(scenario==='missing'){
     await page.locator('[data-field]').first().getByText(language==='ru'?'Технические подробности':'Technical details',{exact:true}).click();
     await expect(page.locator('[data-field]').first().locator('code')).toHaveText(plans.missing[0].name);
