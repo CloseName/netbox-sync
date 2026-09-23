@@ -81,7 +81,7 @@ def _snapshot(collector):
 
 
 @contextmanager
-def locked_dependencies(roots, *, expected=None):
+def _locked_closure(roots, *, expected=None):
     """Yield the exact current closure while concurrent database writers are fenced.
 
     No DELETE is performed or exposed. A future executor must remain inside this
@@ -96,7 +96,7 @@ def locked_dependencies(roots, *, expected=None):
     from django.db import connection, transaction, DatabaseError
     from django.db.models.deletion import Collector, ProtectedError, RestrictedError
 
-    if settings.RELEASE.version != '4.7.0' or settings.PLUGINS:
+    if settings.RELEASE.version != '4.7.0' or settings.PLUGINS not in ([], ['netbox_guard']):
         raise DependencyGuardBlocked('UNSUPPORTED_NETBOX_SCHEMA')
     if connection.vendor != 'postgresql' or connection.in_atomic_block:
         # An outer transaction could retain these disruptive locks unexpectedly.
@@ -142,9 +142,16 @@ def locked_dependencies(roots, *, expected=None):
             snapshot = _snapshot(collector)
             if expected is not None and snapshot != expected:
                 raise DependencyGuardBlocked('DEPENDENCIES_CHANGED')
-            yield snapshot
+            yield snapshot, collector
     except (ProtectedError, RestrictedError):
         raise DependencyGuardBlocked('PROTECTED_DEPENDENCY') from None
     except DatabaseError:
         # Never report a failed read/lock as a successfully empty dependency set.
         raise DependencyGuardBlocked('DEPENDENCY_DATABASE_REFUSAL') from None
+
+
+@contextmanager
+def locked_dependencies(roots, *, expected=None):
+    """Read-only public primitive; deletion is confined to the guarded service."""
+    with _locked_closure(roots, expected=expected) as (snapshot, _collector):
+        yield snapshot

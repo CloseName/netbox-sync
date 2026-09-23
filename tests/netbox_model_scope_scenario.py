@@ -3,22 +3,29 @@ import os
 import secrets
 import sys
 import faulthandler
-faulthandler.dump_traceback_later(300, exit=True)
+# Cold NetBox migration graph rendering exceeded 300s on the isolated host.
+# Only environment preparation gets this budget; scenario/runtime limits do not.
+faulthandler.dump_traceback_later(900, exit=True)
 assert os.environ.get('NETBOX_SYNC_ISOLATED_MODEL_TEST') == '1'
-os.environ.update(DB_HOST='127.0.0.1', DB_USER='postgres', DB_NAME='netbox_sync_model_scope_test',
+model_db = os.environ.get('NETBOX_SYNC_MODEL_DB', 'netbox_sync_model_scope_test')
+assert model_db in ('netbox_sync_model_scope_test', 'netbox_sync_guard_test')
+os.environ.update(DB_HOST='127.0.0.1', DB_USER='postgres', DB_NAME=model_db,
                   SECRET_KEY=secrets.token_urlsafe(64), DJANGO_SETTINGS_MODULE='netbox.settings')
 sys.path.insert(0, '/opt/netbox/netbox')
 import psycopg
 with psycopg.connect('host=127.0.0.1 user=postgres dbname=postgres', autocommit=True) as connection:
-    exists = connection.execute("SELECT 1 FROM pg_database WHERE datname='netbox_sync_model_scope_test'").fetchone()
+    exists = connection.execute('SELECT 1 FROM pg_database WHERE datname=%s', (model_db,)).fetchone()
     if not exists:
-        connection.execute('CREATE DATABASE netbox_sync_model_scope_test')
+        from psycopg import sql
+        connection.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(model_db)))
 import django
 django.setup()
 from django.conf import settings
 settings.CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
 from django.core.management import call_command
 call_command('migrate', verbosity=0, interactive=False)
+faulthandler.cancel_dump_traceback_later()
+faulthandler.dump_traceback_later(300, exit=True)
 from django.db import transaction
 from django.core.exceptions import ValidationError
 from ipam.models import VRF, IPAddress

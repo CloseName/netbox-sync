@@ -150,3 +150,15 @@ trigger. Vanilla NetBox has 45 SQL triggers; the guard pins their full definitio
 function bodies and enabled states, not merely their names. The first strict hook
 check intentionally refused that standard schema; the final version recognizes
 only the exact checked migration fingerprint. No production deployment is implied.
+
+
+## Transaction service checkpoint (after f7c466f)
+
+The optional `deploy/netbox_guard` now has actual NetBox migrations, creation
+claims/receipts and per-root retirement intent/receipt service methods. Real
+NetBox/PostgreSQL deletion, transaction rollback, source-constrained permissions,
+concurrent nonce replay and new-object generation were tested. See its README for
+exact coverage and the independent full-schema ltree restore blocker. This advances
+the server-side protocol; Sync's review remains non-executable because HTTP,
+legacy claim proof and lifecycle/orphan coordination are not wired. No live plugin
+was installed and no product token/service permissions were expanded.

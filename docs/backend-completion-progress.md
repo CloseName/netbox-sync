@@ -65,7 +65,7 @@ physical-host identity from these labels/address alone.
 
 | Requirement | State / remaining gate |
 | --- | --- |
-| 1 NetBox retirement | Existing review-only journal; guarded remote deletion not implemented. |
+| 1 NetBox retirement | NetBox-side claim/manifest/receipt transaction service and actual deletion/rollback/concurrency tested locally. Product HTTP/lifecycle coordinator, legacy claims and rollout remain missing; source removal is still retain-only. |
 | 2 Orphan reconciliation | Durable authoritative reconciliation/periodic executor missing. |
 | 3 Remove/re-add/recover | Bounded Admin ESXi same-namespace recovery, including verified legacy UUID/placement, implemented/tested. Proxmox and cross-namespace transfer remain unfinished. |
 | 4 Cluster creation | Live cause unconfirmed; previous controlled test is not reproduction. |
@@ -443,3 +443,36 @@ Final continuation evidence:
 - Dependency fence committed as da72422d66c847c59aa7ef76e569f8fac7eb6da3.
 - No TypeScript/UI implementation changed in this continuation. The production
   browser gate ran; unrelated visual suites were not repeated.
+
+
+## Continuation after f7c466f — transactional retirement protocol
+
+Implemented optional NetBox-side models/migration and transaction service (not yet
+an HTTP/product workflow). Actual NetBox 4.7/PostgreSQL tests passed:
+- non-superuser ObjectPermission constrained by source; wrong source/viewer refused;
+- atomic creation + claim + idempotent receipt, conflicting nonce refused;
+- exact generation and placement; changed cluster/foreign identity/manual child refuse;
+- receipt failure rolls deletion and claim changes back;
+- lost-response replay returns the committed receipt, two concurrent confirmations
+  delete once, ordinary deletion/ID reuse cannot inherit a claim;
+- leaf phases then empty cluster deletion; source-created VM can retire while manual
+  cluster/common catalog remain; fresh create request establishes a new generation.
+- original concurrent dependency fence repeated successfully without the plugin.
+- `makemigrations --check`: no missing changes.
+
+New journal backup gate passed real pg_dump/pg_restore of the four guard tables
+against a separate preserved-state test DB copy. Restored retry returns the same
+receipt; remaining inventory/claims do not change. FULL NetBox schema pg_restore
+failed independently on its standard ltree trigger operator/search_path resolution;
+no trigger rewriting or security relaxation was performed. See guard README.
+
+The first cold NetBox migration exceeded the harness's 300-second preparation
+budget during Django migration-state rendering, not during provider work. Preparation
+now has a finite 900-second limit, then the scenario resets to 300 seconds. Product
+120-second discovery deadlines and child cleanup remain unchanged.
+
+No product HTTP route/creation interception/lifecycle worker integration yet; no
+new Sync grants, secret mounts, egress or containers in production Compose. Existing
+Sync CREATEs do not automatically acquire these claims. Historical managed identities
+alone remain insufficient for retirement. Orphan processing, old UNKNOWN and identity
+matrix entries are still active work. No push/deployment/live actions occurred.
