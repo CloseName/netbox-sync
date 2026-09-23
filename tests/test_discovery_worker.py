@@ -2,6 +2,7 @@
 
 from io import BytesIO, StringIO
 import json
+import logging
 import subprocess
 from dataclasses import replace
 
@@ -39,7 +40,13 @@ def _run_child(monkeypatch, payload, execute):
     monkeypatch.setattr('netbox_sync.discovery_worker.sys.stdin', ChildInput(payload))
     monkeypatch.setattr('netbox_sync.discovery_worker.sys.stdout', output)
     monkeypatch.setattr('netbox_sync.discovery_worker.sys.stderr', errors)
-    child_main()
+    # Production runs this entrypoint in a disposable child process. This
+    # in-process protocol fixture must not disable diagnostics in later tests.
+    prior_disable = logging.root.manager.disable
+    try:
+        child_main()
+    finally:
+        logging.disable(prior_disable)
     return output.getvalue(), errors.getvalue()
 
 
