@@ -36,7 +36,7 @@ class Handler(ProbeHandler):
                 data=list(reversed(data)) if node_reads%2 else list(data)
             return self.respond(json.dumps({'data':data}).encode(),200 if data is not None else 404)
         if self.path=='/fixture/state':
-            return self.respond(json.dumps({**{key:len(value) for key,value in rows.items()}, 'scoped_fixture_ips':sorted([r.get('vrf') or 0 for r in rows['ipam.ip_addresses'].values() if r['address']=='10.20.30.40/24']), 'write_waiting':behavior.get('write_waiting',False), 'write_requests':len(writes), 'observation_interfaces':sum(bool(r.get('custom_fields',{}).get('sync_network_observations')) for r in rows['virtualization.interfaces'].values()), 'legacy_disk_reads':sum('/virtual-disks/' in path for _,path in requests), 'invalid_virtual_requests':sum('/-' in path or '=-' in path for _,path in requests)}).encode())
+            return self.respond(json.dumps({**{key:len(value) for key,value in rows.items()}, 'scoped_fixture_ips':sorted([r.get('vrf') or 0 for r in rows['ipam.ip_addresses'].values() if r['address']=='10.20.30.40/24']), 'write_waiting':behavior.get('write_waiting',False), 'write_requests':len(writes), 'successful_writes':behavior.get('successful_writes',0), 'observation_interfaces':sum(bool(r.get('custom_fields',{}).get('sync_network_observations')) for r in rows['virtualization.interfaces'].values()), 'legacy_disk_reads':sum('/virtual-disks/' in path for _,path in requests), 'invalid_virtual_requests':sum('/-' in path or '=-' in path for _,path in requests)}).encode())
         return super().do_GET()
     def do_POST(self):
         if self.path=='/fixture/observe-esxi':
@@ -70,6 +70,10 @@ class Handler(ProbeHandler):
             return self.respond(b'{}')
         if self.path=='/fixture/allow-required':
             behavior['deny_reads']=['virtualization.virtual_disks']
+            return self.respond(b'{}')
+        if self.path=='/fixture/change-esxi-three-objects':
+            properties[('ha-host','hardware')]=properties[('ha-host','hardware')].replace('<memorySize>34359738368</memorySize>','<memorySize>68719476736</memorySize>')
+            properties[('vm-42','config')]=properties[('vm-42','config')].replace('<memoryMB>8192</memoryMB>','<memoryMB>16384</memoryMB>').replace('<label>Network adapter 1</label>','<label>Network adapter renamed</label>')
             return self.respond(b'{}')
         if self.path=='/fixture/change-esxi-memory':
             properties[('vm-42','config')]=properties[('vm-42','config')].replace('<memoryMB>8192</memoryMB>','<memoryMB>16384</memoryMB>')

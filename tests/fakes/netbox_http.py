@@ -95,12 +95,15 @@ def netbox_http(seed, ssl_context=None, authorize=None, behavior=None, bind=('12
                 return self.reply(503, {'detail': 'PRIVATE_REMOTE_RESPONSE_MUST_NOT_APPEAR'})
             if self.command=='POST':
                 identifier=max(table,default=0)+1;value['id']=identifier;table[identifier]=value
+                if behavior is not None: behavior['successful_writes']=behavior.get('successful_writes',0)+1
                 if behavior and behavior.pop('drop_next_post',False):
                     self.close_connection=True
                     return
                 return self.reply(201,project(endpoint,value))
             if self.command=='PATCH' and identifier in table:
-                table[identifier].update(value);return self.reply(200,project(endpoint,table[identifier]))
+                table[identifier].update(value)
+                if behavior is not None: behavior['successful_writes']=behavior.get('successful_writes',0)+1
+                return self.reply(200,project(endpoint,table[identifier]))
             return self.reply(405,{})
         do_GET=handle_request
         do_POST=handle_request

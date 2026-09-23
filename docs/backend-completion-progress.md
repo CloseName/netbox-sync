@@ -75,7 +75,7 @@ physical-host identity from these labels/address alone.
 | 8 PLAN latency | Confirmed redundant reads reduced locally; live root cause not established. |
 | 9 AD/RBAC | Earlier fixture evidence only; fresh Microsoft AD acceptance pending. |
 | 10 Reauthentication | Real API/auth-worker proof expiry, incorrect password, retained session and explicit retry passed locally. Original live logout cause remains unconfirmed. |
-| 11 Apply response loss | Actual accepted HTTP disconnect with durable success/uncertain result, same run/digest, browser reload and worker restart passed in bundled/external production Compose. Live reproduction remains unperformed; partial physical-write fault still needs its separate gate. |
+| 11 Apply response loss | Actual accepted HTTP disconnect with durable success/uncertain result, same run/digest, browser reload and worker restart passed in bundled/external production Compose. Live reproduction remains unperformed; physical partial-write fault passed in the continuation below. |
 | 12 Duplicate hosts | UUID admission/reservations, same-attempt continuation, proven legacy identity and read-only Admin audit implemented locally. Live ownership of the two ESXI-INFRA records is still unproved; no deletion/transfer chosen. Proxmox identity admission is not included. |
 
 ## Isolated resources
@@ -387,3 +387,59 @@ interleaving/model counterexample, not a complete concurrent guarded-delete test
 It proves that parent If-Match alone cannot protect an earlier dependency manifest.
 Atomic NetBox-side closure/creation-claim protection still needs implementation;
 retirement is not silently downgraded to ordinary REST DELETE.
+
+
+## Continuation after 680cfdb — atomic dependency and physical partial-write gates
+
+HEAD and clean tree verified before changes. Prior VRF/response-loss commits are
+preserved. No global resource cleanup, live access, deployment or publication.
+Docker context desktop-linux / Engine 29.7.2; no VHD manipulation.
+
+- Added an independent NetBox-side dependency transaction primitive under
+  deploy/netbox_guard. It is deliberately not registered or reachable from Sync:
+  ownership/creation claims, receipt persistence and lifecycle executor remain open.
+- Real NetBox 4.7.0 + PostgreSQL test passed dependency change, manual-data change,
+  concurrent GFK writer exclusion, bounded lock-contention refusal, retry and
+  surviving-object SET_NULL protection. Final unknown-table/trigger negative checks also passed; the 45 standard
+  triggers are pinned by full definition/function-body fingerprint. Redis is an unprivileged, network-isolated test companion;
+  NetBox model callbacks are not mocked out.
+- Related Linux retirement review and HTTP VRF tests: 26 passed. Existing review
+  execution remains blocked, so this does not enable an unsafe REST DELETE.
+- Extended the production runtime fixture to fail its third write after two
+  committed mutations. External-PostgreSQL smoke exercises this path; bundled
+  smoke retains the first-write-refusal scenario. Both keep actual client loss,
+  durable Run ID/digest, worker restart and no-replay assertions. Full run: **2
+  passed in 490.78s** using the previously verified scope-final-20260923 product
+  image and current test-only fixture/scripts. No new product runtime code was
+  needed for this gate.
+- Historical CM still has no immutable full plan stored in sync_runs; digest and
+  zero action counts cannot prove outcome. No old status has been reset.
+- Proxmox identity research: stable-8 API2Tools derives subscription serverid from
+  the SSH public key, not a hardware UUID. It is therefore not silently treated as
+  equivalent to ESXi hardware identity; rotation/reinstallation/clone compatibility
+  and overlapping multi-node reservations still require explicit implementation.
+  Primary sources: https://github.com/proxmox/pve-manager/blob/stable-8/PVE/API2Tools.pm
+  and https://github.com/proxmox/pve-manager/blob/stable-8/PVE/API2/Subscription.pm.
+
+The full task is not complete. Retirement/orphan executor, historical-result
+reconciliation, compatible PAM/Proxmox identity and Microsoft AD live acceptance
+remain open; these tests do not constitute those gates.
+
+
+Final continuation evidence:
+- 26 retirement/VRF HTTP regressions + 28 planning/revalidation regressions passed.
+- Real pinned NetBox model gate passed with normal callbacks and actual separate
+  PostgreSQL connections, including unknown trigger/table refusal. This is a
+  dependency-fence gate, not an executable retirement acceptance.
+- Production external-DB fixture recorded exactly two successful mutations and
+  three attempted writes; the third returned a controlled refusal. The API retained
+  the accepted Run ID/digest as OUTCOME_UNCERTAIN after client disconnect and worker
+  restart. Retry, fresh confirmation, schedule and mappings writes stayed blocked.
+  Fixture-side evidence establishes partial writes in this test; it does not teach
+  the product to infer a historical outcome from counters or assign SUCCEEDED.
+- Bundled mode retained the first-write refusal scenario; successful Proxmox
+  disconnect/reload, provider cycles, scheduler and populated upgrade remain part
+  of the executed two-mode gate. Microsoft AD and historical CM were not accessed.
+- Dependency fence committed as da72422d66c847c59aa7ef76e569f8fac7eb6da3.
+- No TypeScript/UI implementation changed in this continuation. The production
+  browser gate ran; unrelated visual suites were not repeated.

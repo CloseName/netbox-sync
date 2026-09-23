@@ -253,12 +253,17 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
     if provider=='esxi':
         # Complete successful manual/scheduled cycles first. An uncertain run is
         # terminal for future write admission; never reset its history to continue.
-        run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/change-esxi-memory',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
+        partial_fault = pgmode == 'external'
+        mutation = 'change-esxi-three-objects' if partial_fault else 'change-esxi-memory'
+        run(['docker','exec',peer,'python','-c',f"import requests; requests.post('https://esxi.probe.test:8443/fixture/{mutation}',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
+        before_fault = fixture_state()
         plan=request({},base+'/sync-plan')['body']
         operation_id=next(o['operation_id'] for o in request(None,base+'/operations','GET')['body']['operations'] if o['operation_kind']=='PLAN')
         prepared=request(dict(plan_digest=plan['digest'],operation_id=operation_id,confirmed=True),base+'/sync-confirmations')
         assert prepared['status']==200
-        run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/fail-next-write',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
+        if partial_fault: assert sum(i['action']=='UPDATE' for i in plan['items'])>=3,plan
+        fault = 'partial-apply' if partial_fault else 'fail-next-write'
+        run(['docker','exec',peer,'python','-c',f"import requests; requests.post('https://esxi.probe.test:8443/fixture/{fault}',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
         accepted_id=str(uuid.uuid4())
         run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/hold-next-write',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
         run([*command,'exec','-T','--user','10001','netbox-sync-api','python','-c',Path('/review/tests/disconnect_sync_client.py').read_text()],
@@ -274,6 +279,10 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
             if terminal['status']!='RUNNING':break
             time.sleep(.1)
         assert terminal['status']=='OUTCOME_UNCERTAIN' and terminal['plan_digest']==plan['digest'],terminal
+        after_fault = fixture_state()
+        assert after_fault['successful_writes']-before_fault['successful_writes']==(2 if partial_fault else 0), (before_fault,after_fault)
+        assert after_fault['write_requests']-before_fault['write_requests']==(3 if partial_fault else 1), (before_fault,after_fault)
+        if partial_fault: print('PASS physical partial-write fault: two committed peer writes, third refused; never inferred from zero counters',flush=True)
         compose('restart','netbox-sync-apply-worker')
         print('PASS real HTTP disconnect: accepted RUNNING survives; matching uncertain result survives worker restart',flush=True)
         before_retry=fixture_state()['write_requests']
