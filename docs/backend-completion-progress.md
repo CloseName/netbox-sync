@@ -69,13 +69,13 @@ physical-host identity from these labels/address alone.
 | 2 Orphan reconciliation | Durable authoritative reconciliation/periodic executor missing. |
 | 3 Remove/re-add/recover | Bounded Admin ESXi same-namespace recovery, including verified legacy UUID/placement, implemented/tested. Proxmox and cross-namespace transfer remain unfinished. |
 | 4 Cluster creation | Live cause unconfirmed; previous controlled test is not reproduction. |
-| 5 IP scopes | Explicit observations supported; VRF/scoped assignments remain missing. |
+| 5 IP scopes | Explicit existing-VRF guest mappings and preserved foreign/scope-change observations implemented and locally tested. Host-management VRF and automatic binding migration remain unsupported; MAC ownership safeguards remain. |
 | 6 PAM VM identity | Still ambiguous; no identity schema changed or conflicts bypassed. |
 | 7 CM uncertain run | Reconciliation state machine missing; do not replay old writes. |
 | 8 PLAN latency | Confirmed redundant reads reduced locally; live root cause not established. |
 | 9 AD/RBAC | Earlier fixture evidence only; fresh Microsoft AD acceptance pending. |
 | 10 Reauthentication | Real API/auth-worker proof expiry, incorrect password, retained session and explicit retry passed locally. Original live logout cause remains unconfirmed. |
-| 11 Apply response loss | Earlier same-run UI checks retained; restart/runtime fault gate pending. |
+| 11 Apply response loss | Actual accepted HTTP disconnect with durable success/uncertain result, same run/digest, browser reload and worker restart passed in bundled/external production Compose. Live reproduction remains unperformed; partial physical-write fault still needs its separate gate. |
 | 12 Duplicate hosts | UUID admission/reservations, same-attempt continuation, proven legacy identity and read-only Admin audit implemented locally. Live ownership of the two ESXI-INFRA records is still unproved; no deletion/transfer chosen. Proxmox identity admission is not included. |
 
 ## Isolated resources
@@ -301,3 +301,89 @@ not the full backend assignment or live duplicate remediation. The next required
 ownership evidence is listed in host-identity-registration.md; no source should be
 removed until it is available and reviewed. Other outstanding matrix items remain
 explicitly open and must not be represented as completed or covered by this smoke.
+
+## Continuation after 367efc2 — scoped IPAM and response loss (in progress)
+
+The full 12-item assignment remains active. Existing commits and checkout are
+preserved; no push/deployment/live connection or global cleanup occurred.
+Docker desktop-linux, Engine 29.7.2 is available. The initial unprivileged Docker
+attempt failed because the sandbox could not read Docker config/access its pipe;
+the approved local operator invocation succeeded. This is not an Engine outage.
+
+Implemented explicit existing-VRF rules, safe foreign-address observations and a
+minimal EN/RU editor under existing Admin mappings. See network-observations.md.
+VM/LXC lookup includes CIDR + VRF; old-client omission retains rules, explicit
+removal retains existing IP assignments. Wrong host/revision, changed VRF and
+uncertain runs remain blocked. No automatic VRF creation or MAC ownership bypass.
+Planner version web-5a-6; rebuild existing plans. DB head remains 0009.
+
+Executed so far:
+- 143 related Linux/backend/real-PostgreSQL tests passed, including SDK-over-HTTP
+  ESXi and Proxmox VM/LXC plan/apply/no-op replan and preserved foreign IPs/data.
+- 39 complete directory authorization tests passed after adding actual HTTP
+  Admin/Operator/Viewer enforcement for the VRF update payload. Test transports
+  still simulate AD; this does not constitute Microsoft AD acceptance.
+- 74 frontend unit tests, TypeScript, 31 Source Detail and 33 Sync workflow browser
+  tests passed. EN/RU narrow-screen explicit VRF review/save tested.
+- NetBox Community 4.7.0 image (digest
+  1685e91c61bb4050089db2bb1603718820ae3ce0b266d4d069ff7c682f5d9c58): real Django
+  migrations + IPAddress.full_clean/save against a dedicated isolated test DB.
+  Two VRFs accept the same address; equal/different masks within an enforced VRF
+  refuse. Model-test writes roll back. The first cold migration run was stopped
+  while investigating duration; the bounded repeat completed successfully.
+- Initial production bundled/external workers, scheduler, browser and populated
+  upgrade: 2 passed in 444.84s using scope-continuation-20260923. This image predates
+  the final foreign-existing-address projection; final repeat is required below.
+- Final local image scope-final-20260923 built successfully (TS/Vite included),
+  manifest list 562e4cbf78f96b33ef37f8b6203290d7637c103eb250a69a51250040927cdfd0.
+  Final bundled/external repeat is running and additionally drops the actual
+  accepted ESXi HTTP connection before a controlled failed remote write.
+
+Response-loss gate now deliberately holds a real outbound write while the API
+persists RUNNING and its digest, disconnects the original Unix HTTP client, reloads
+the real browser, releases the controlled peer, reads the same terminal run and
+restarts only the test-owned apply-worker. Proxmox success gate passed in the
+initial production repeat: exactly one sync POST, same run/digest across reload
+and worker restart. ESXi uncertain terminal after actual HTTP loss is added to the
+final repeat; no source status is reset and no write is replayed.
+
+This is not completed retirement/orphan reconciliation, Proxmox host identity
+admission, PAM identity transition, CM historical-result reconciliation, or live AD
+acceptance. No claims about live ownership or a live root cause follow from these
+local tests. Those items still require implementation/evidence, not relabelling the
+remaining work as already covered by this network/runtime block.
+
+### Completed local VRF/HTTP-loss gates
+
+- Final scope-final-20260923 production Compose: **2 passed in 429.41s**. Bundled
+  and external PostgreSQL, actual provider/read/apply/scheduler workers, controlled
+  HTTPS/SOAP endpoints and browser. Explicit VM/LXC VRFs survive populated installer
+  upgrade with identical source rows, credentials/config/READY/policy and exact DB
+  container/volume metadata. Shared lock, broker network:none, private API/DB and
+  ordinary auth requirements remain unchanged.
+- Real ESXi HTTP disconnect after durable RUNNING + digest, controlled remote
+  refusal, matching OUTCOME_UNCERTAIN, worker restart, old-token/fresh-plan write
+  refusal, retained lifecycle/diagnostic evidence. Proxmox success after actual
+  disconnect and browser reload: same run/digest, exactly one POST; worker restart
+  retains stored outcome. This does not prove the old live CM run's result.
+- Complete Source Detail + Sync workflow combined repeat: **64 passed in 49.6s**.
+  Updated screenshots: frontend/test-results/vrf-review-en.png and vrf-review-ru.png.
+  An EN/RU network-scope-blocker copy addition after the runtime image build passed
+  final local TypeScript/Vite and this combined browser suite; no backend change.
+- Final narrow HTTP scope suite: **11 passed** (including propagation of a NetBox
+  VRF-read refusal; no fake empty successful inventory). Final directory/RBAC
+  suite: **39 passed**. Earlier broader suite: 143 passed; frontend units: 74 passed.
+- Implementation: b8adfd63984cd08c32bf279f514f8cf8a7bffc11.
+- Production regressions: ee3d05b98a2ccea0e374b9f97c914b36989b7424.
+- No push, live access or deployment. No global cleanup at the end.
+
+### Retirement boundary checked against real NetBox 4.7
+
+`tests/netbox_guard_contract_scenario.py` passed in the pinned local NetBox image
+and isolated test DB. An IP inserted on a VM interface after reviewing its VM's
+last_updated leaves the VM version unchanged but enters Django's deletion collector
+for that VM. All fixture writes roll back; no delete executes. This is a deterministic
+interleaving/model counterexample, not a complete concurrent guarded-delete test.
+It proves that parent If-Match alone cannot protect an earlier dependency manifest.
+Atomic NetBox-side closure/creation-claim protection still needs implementation;
+retirement is not silently downgraded to ordinary REST DELETE.

@@ -92,3 +92,20 @@ cascade or mass cleanup is offered by this alternative.
 Decision needed: approve the separate guarded-delete extension and its dependency/
 locking contract, or accept review-only cleanup until that capability exists.
 No extension was installed and no live object was deleted during development.
+
+## Local NetBox 4.7 counterexample (23 September)
+
+The pinned NetBox Community 4.7.0 image was tested against a dedicated local DB.
+`tests/netbox_guard_contract_scenario.py` creates a VM/NIC, records the VM version,
+then inserts a separate IP assigned through the NIC's generic relation. The parent
+`last_updated` is unchanged, yet the IP enters Django's deletion collector for the
+VM. All records roll back; DELETE is never executed. This is a deterministic
+interleaving, not a threaded race or a passing atomic-guard implementation.
+
+The installed API code rechecks If-Match under a parent row lock in
+`perform_destroy`; that does not supply a dependency-manifest check. See the
+[official 4.7 viewset](https://github.com/netbox-community/netbox/blob/v4.7.0/netbox/netbox/api/viewsets/__init__.py)
+and [IPAddress generic assignment](https://github.com/netbox-community/netbox/blob/v4.7.0/netbox/ipam/models/ip.py).
+The guard proposal remains an implementation gap, not a reason to ask again for
+permission to perform already authorized local development. Installing such a guard
+on an external NetBox would be a separately reviewed deployment action.
