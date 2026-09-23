@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { testConnection, registerSource, SourceIdReservedError, SourceConnectionError, RegistrationFailure } from '../src/api/onboarding.ts';
+import { testConnection, registerSource, SourceIdReservedError, SourceConnectionError, RegistrationFailure, HostRegistrationFailure } from '../src/api/onboarding.ts';
 
 test('Test Connection sends credentials only in protected JSON and validates token', async (context) => {
   const mock = context.mock.method(globalThis, 'fetch', async (path, options) => {
@@ -53,4 +53,10 @@ test('registration transport failure stays uncertain and never retries',async co
  let calls=0;context.mock.method(globalThis,'fetch',async()=>{calls++;throw new Error('REMOTE_PRIVATE');});
  await assert.rejects(registerSource({confirm_sync_disabled:true}),error=>error instanceof RegistrationFailure&&error.uncertain&&!error.message.includes('REMOTE_PRIVATE'));
  assert.equal(calls,1);
+});
+
+
+test('host duplicate errors preserve only a validated source link and local copy',async(context)=>{
+ context.mock.method(globalThis,'fetch',async()=>Response.json({error:{code:'HOST_ALREADY_REGISTERED',existing_source:'source-existing',message:'untrusted remote text',source_url:'https://untrusted.invalid'}},{status:409}));
+ await assert.rejects(testConnection({source_type:'esxi',address:'alias.test',verify_ssl:true,username:'fixture',secret:'fixture'}),error=>error instanceof HostRegistrationFailure&&error.source==='source-existing'&&error.message==='HOST_ALREADY_REGISTERED');
 });

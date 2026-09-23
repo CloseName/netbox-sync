@@ -24,7 +24,7 @@ class ActiveSourceReader(PostgresSourceReader):
             with self._connector(self._settings.registry_dsn, connect_timeout=3,
                                  options='-c statement_timeout=2000 -c default_transaction_read_only=on') as connection:
                 removed = {row[0] for row in connection.execute(sql.SQL(
-                    'SELECT source_instance FROM {}').format(sql.Identifier(
+                    'SELECT source_instance FROM {} WHERE restored_at IS NULL').format(sql.Identifier(
                         self._settings.registry_schema, 'source_tombstones'))).fetchall()}
             return tuple(row for row in rows if row['source_instance'] not in removed)
         except Exception:
@@ -36,7 +36,7 @@ class LifecycleRegistrationRegistry(RegistrationRegistry):
         try:
             registry = self._registry()
             with registry._connect() as connection:
-                removed = connection.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s')
+                removed = connection.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s AND restored_at IS NULL')
                     .format(sql.Identifier(self._schema, 'source_tombstones')), (instance,)).fetchone()
             if removed:
                 raise ReservedSourceError()
@@ -55,7 +55,7 @@ class LifecycleScheduleStore(ScheduleStore):
             with self._connector(self._dsn, connect_timeout=3,
                     options='-c statement_timeout=5000 -c lock_timeout=3000') as connection:
                 with source_gate(connection, self._schema, source):
-                    removed = connection.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s')
+                    removed = connection.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s AND restored_at IS NULL')
                         .format(sql.Identifier(self._schema, 'source_tombstones')), (source,)).fetchone()
                     if removed:
                         raise ScheduleWorkerError('SOURCE_NOT_FOUND')

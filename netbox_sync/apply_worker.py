@@ -176,6 +176,13 @@ class ApplySupervisor:
             raise ApplyWorkerError('SOURCE_NOT_FOUND')
         if not record.config.enabled:
             raise ApplyWorkerError('SOURCE_DISABLED')
+        from .host_registration import HostRegistrationConflict
+        try:
+            registry.assert_exclusive_host(record.config)
+        except HostRegistrationConflict:
+            raise ApplyWorkerError('PLAN_BLOCKED') from None
+        except Exception:
+            raise ApplyWorkerError('REGISTRY_UNAVAILABLE') from None
         return record.config
 
     def _payload(self, config, operation, expected_digest=None):

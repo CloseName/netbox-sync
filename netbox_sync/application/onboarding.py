@@ -79,6 +79,14 @@ class EphemeralOnboardingStore:
             self._items.pop(token, None)
             self._timers.pop(token, None)
 
+    def recovery_review(self, token, source, value=None):
+        with self._lock:
+            item=self._items.get(token)
+            if item is None or item[0]<=self._clock() or (item[2] or {}).get('recovery_source')!=source:
+                raise OnboardingError(ErrorCode.ONBOARDING_TOKEN_INVALID)
+            if value is not None:item[2]['recovery_review']=value
+            return item[2].get('recovery_review')
+
     def preview(self, token):
         with self._lock:
             item=self._items.get(token)
@@ -167,7 +175,32 @@ class SourceOnboardingService:
 
     def accept_checked_credentials(self, credentials, preview=None):
         """Retain credentials only after the trusted probe transport succeeded."""
+        check = getattr(self._registry, 'check_provider_identity', None)
+        if check is not None:
+            if credentials.source_type == 'esxi' and (not preview or preview.get('provider') != 'esxi'):
+                from ..host_registration import HostRegistrationConflict
+                raise HostRegistrationConflict('HOST_IDENTITY_UNAVAILABLE')
+            check(preview)
         return self._pending.issue(credentials, preview)
+
+    def accept_recovery_credentials(self, credentials, preview, source, expected_anchor):
+        from ..host_registration import esxi_anchor,HostRegistrationConflict
+        if credentials.source_type!='esxi' or esxi_anchor(preview)!=expected_anchor:
+            raise HostRegistrationConflict('HOST_IDENTITY_UNAVAILABLE')
+        return self._pending.issue(credentials,{**preview,'recovery_source':source})
+
+    def recovery_review(self, token, source, value=None):
+        return self._pending.recovery_review(token,source,value)
+
+    def take_recovery_credentials(self, token, source):
+        self._pending.recovery_review(token,source)
+        return self._pending.consume(token)
+
+    def create_recovery_secret(self, credentials, plan):
+        receipt=self._secrets.create(plan['credential_key'],credentials.secret,
+                                    operation_id=plan['broker_operation'])
+        forget=getattr(self._secrets,'forget',None)
+        if forget:forget([receipt])
 
     def preview(self, token):
         return self._pending.preview(token)
@@ -185,6 +218,25 @@ class SourceOnboardingService:
         self._pending.check_binding(request)
         if self._registry.find(request.source_instance) is not None:
             raise OnboardingError(ErrorCode.SOURCE_ALREADY_EXISTS)
+
+    def reserve_provider_identity(self, request, operation_id, actor):
+        self.check_registration(request)
+        reserve = getattr(self._registry, 'reserve_provider_identity', None)
+        if reserve is not None:
+            preview = self.preview(request.onboarding_token)
+            if request.source_type == 'esxi' and (not preview or preview.get('provider') != 'esxi'):
+                from ..host_registration import HostRegistrationConflict
+                raise HostRegistrationConflict('HOST_IDENTITY_UNAVAILABLE')
+            reserve(preview, request.source_instance, operation_id, actor)
+
+    def registration_guard(self, request, operation_id, actor):
+        from contextlib import nullcontext
+        guard=getattr(self._registry,'registration_guard',None)
+        return guard(self.preview(request.onboarding_token),request.source_instance,operation_id,actor) if guard else nullcontext()
+
+    def registration_outcome(self, source, operation_id, actor):
+        lookup = getattr(self._registry, 'registration_outcome', None)
+        return lookup(source, operation_id, actor) if lookup else {'identity_status': 'NO_BOUND_ATTEMPT'}
 
     def register(self, request):
         """Create secrets then exactly one registry row; reconcile uncertain commits."""

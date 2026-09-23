@@ -383,6 +383,9 @@ def apply_grants(environ=None):
                 runs, sql.Identifier(DATABASE_ROLES['web_reader'])))
             cursor.execute(sql.SQL('GRANT SELECT ON {} TO {}').format(
                 sources, sql.Identifier(DATABASE_ROLES['registration_writer'])))
+            cursor.execute(sql.SQL('GRANT SELECT, INSERT ON {} TO {}').format(
+                sql.Identifier(schema, 'host_reservations'),
+                sql.Identifier(DATABASE_ROLES['registration_writer'])))
             _grant_columns(cursor, 'INSERT', sources, REGISTRATION_INSERT_COLUMNS,
                            DATABASE_ROLES['registration_writer'])
             for key in ('discovery_reader', 'apply_registry_reader', 'registry_reader'):
@@ -425,14 +428,19 @@ def apply_grants(environ=None):
                 cursor.execute(sql.SQL('GRANT SELECT ON {} TO {}').format(
                     table, sql.Identifier(DATABASE_ROLES['lifecycle_writer'])))
             _grant_columns(cursor, 'UPDATE', sources, ('enabled','sync_enabled','name',
-                'site_slug','cluster_name','platform_slug','device_role_slug','cluster_type_slug','device_type_slug','settings'),
+                'site_slug','cluster_name','platform_slug','device_role_slug','cluster_type_slug','device_type_slug','settings',
+                'address','verify_ssl','username','token_id_provider','token_id_key','token_secret_provider','token_secret_key'),
                            DATABASE_ROLES['lifecycle_writer'])
             _grant_columns(cursor, 'UPDATE', operations, ('status','result','safe_error_code','updated_at'),
                            DATABASE_ROLES['lifecycle_writer'])
+            recovery_table=sql.Identifier(schema, 'source_recoveries')
+            lifecycle_role=sql.Identifier(DATABASE_ROLES['lifecycle_writer'])
+            cursor.execute(sql.SQL('GRANT SELECT, INSERT ON {} TO {}').format(recovery_table,lifecycle_role))
+            _grant_columns(cursor, 'UPDATE', recovery_table, ('state','finished_at'), DATABASE_ROLES['lifecycle_writer'])
             _grant_columns(cursor, 'INSERT', tombstones,
                            ('source_instance','display_name','credential_state'),
                            DATABASE_ROLES['lifecycle_writer'])
-            _grant_columns(cursor, 'UPDATE', tombstones, ('credential_state',),
+            _grant_columns(cursor, 'UPDATE', tombstones, ('credential_state','restored_at','removed_at','display_name'),
                            DATABASE_ROLES['lifecycle_writer'])
 
 

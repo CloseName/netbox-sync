@@ -14,6 +14,7 @@ from .egress import validate_host
 class ConnectionRequest(PublicModel):
     """Credentials are accepted only in JSON bodies, never URL parameters."""
 
+    recovery_source: str | None = Field(default=None,pattern=r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
     preview: bool = Field(default=False, strict=True)
     source_type: Literal['proxmox', 'esxi']
     address: str = Field(min_length=1, max_length=253)

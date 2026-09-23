@@ -38,6 +38,7 @@ def initialize_tombstones(connection, schema):
     connection.execute(sql.SQL('''CREATE TABLE IF NOT EXISTS {} (
         source_instance TEXT PRIMARY KEY, display_name TEXT NOT NULL,
         removed_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+        restored_at TIMESTAMPTZ,
         credential_state TEXT NOT NULL CHECK (credential_state IN
         ('RETAINED_BY_REQUEST','REMOVED','RETAINED_SHARED_OR_LEGACY','CLEANUP_FAILED'))
     )''').format(sql.Identifier(schema, 'source_tombstones')))
@@ -64,10 +65,10 @@ class LifecycleStore:
 
     def read(self, source):
         with self.connect() as connection:
-            removed = connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s')
+            removed = connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s AND restored_at IS NULL')
                 .format(self.table('source_tombstones')), (source,)).fetchone()
             if removed:
-                return {**removed, 'removed_at': removed['removed_at'].isoformat(), 'revision': None}
+                return {**{k:v for k,v in removed.items() if k!='restored_at'}, 'removed_at': removed['removed_at'].isoformat(), 'revision': None}
             row = connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s')
                 .format(self.table('sources')), (source,)).fetchone()
             if not row:
@@ -102,7 +103,7 @@ class LifecycleStore:
             with self.connect() as connection, source_gate(connection, self.schema, source):
                 row = connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s')
                     .format(self.table('sources')), (source,)).fetchone()
-                if not row or connection.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s')
+                if not row or connection.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s AND restored_at IS NULL')
                     .format(self.table('source_tombstones')), (source,)).fetchone():
                     raise LifecycleError('SOURCE_NOT_FOUND')
                 if self.revision(row) != expected_revision:
@@ -129,7 +130,7 @@ class LifecycleStore:
                     .format(self.table('sources')), (source,)).fetchone()
                 if not row:
                     raise LifecycleError('SOURCE_NOT_FOUND')
-                if connection.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s')
+                if connection.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s AND restored_at IS NULL')
                     .format(self.table('source_tombstones')), (source,)).fetchone():
                     raise LifecycleError('SOURCE_ALREADY_REMOVED')
                 if self.revision(row) != expected_revision:
@@ -147,7 +148,9 @@ class LifecycleStore:
                                            'WHERE source_instance=%s').format(self.table('sources')), (source,))
                 state = 'CLEANUP_FAILED' if remove_credentials else 'RETAINED_BY_REQUEST'
                 connection.execute(sql.SQL('INSERT INTO {} (source_instance,display_name,credential_state) '
-                                           'VALUES (%s,%s,%s)').format(self.table('source_tombstones')),
+                                           'VALUES (%s,%s,%s) ON CONFLICT (source_instance) DO UPDATE SET '
+                                           'display_name=EXCLUDED.display_name,credential_state=EXCLUDED.credential_state,'
+                                           'removed_at=clock_timestamp(),restored_at=NULL').format(self.table('source_tombstones')),
                                    (source, row['name'], state))
             # The lifecycle transition is durable before touching any credential file.
             if remove_credentials:

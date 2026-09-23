@@ -11,7 +11,7 @@ KINDS={'site','cluster','platform','device_role','cluster_type'}
 
 def row(store,connection,source):
     value=connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s').format(store.table('sources')),(source,)).fetchone()
-    if not value or connection.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s').format(store.table('source_tombstones')),(source,)).fetchone():
+    if not value or connection.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s AND restored_at IS NULL').format(store.table('source_tombstones')),(source,)).fetchone():
         raise LifecycleError('SOURCE_NOT_FOUND')
     return value
 

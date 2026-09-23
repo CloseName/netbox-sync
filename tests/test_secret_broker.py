@@ -224,3 +224,14 @@ def test_lifecycle_cleanup_retains_hardlinks_and_legacy_xattrs(store):
         os.removexattr(root / KEY, name)
     assert broker.remove_owned([KEY]) is False
     assert (root / KEY).exists()
+
+
+def test_recovery_verification_checks_metadata_without_reading_secret(store,monkeypatch):
+    broker,root=store
+    broker.create(OP,KEY,VALUE)
+    monkeypatch.setattr(os,'read',lambda *args:pytest.fail('Verification must not read secret bytes'))
+    assert broker.verify_owned(OP,KEY) is True
+    assert broker.verify_owned('another-operation-0123456789abcdef',KEY) is False
+    assert broker.verify_owned(OP,'absent-key-0123456789abcdef') is False
+    os.chmod(root/KEY,0o640)
+    assert broker.verify_owned(OP,KEY) is False

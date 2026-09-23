@@ -53,7 +53,7 @@ def test_clean_bootstrap_migrate_grants_and_idempotency(tmp_path):
     with psycopg.connect(deployment.connection_info('bootstrap', env)) as connection:
         with connection.cursor() as cursor:
             cursor.execute("SELECT version_num FROM netbox_sync.alembic_version")
-            assert cursor.fetchone() == ('0006_auth_policy',)
+            assert cursor.fetchone() == ('0007_host_reservations',)
             cursor.execute("SELECT count(*) FROM netbox_sync.sources")
             assert cursor.fetchone() == (0,)
             cursor.execute("SELECT rolname FROM pg_roles WHERE rolname = ANY(%s)",
@@ -174,7 +174,7 @@ def test_ui6_writers_have_only_the_required_capabilities(tmp_path):
             ('registration_writer','sources','name',False),
             ('lifecycle_writer','sources','sync_enabled',True),
             ('lifecycle_writer','sources','source_instance',False),
-            ('lifecycle_writer','sources','token_secret_key',False),
+            ('lifecycle_writer','sources','token_secret_key',True),
             ('operation_writer','sources','enabled',False),
             ('operation_writer','source_operations','status',True),
             ('web_reader','source_operations','status',False),
@@ -205,3 +205,34 @@ def test_auth_writer_and_existing_roles_remain_separated(tmp_path):
     for key in ('web_reader','registration_writer','registry_reader','operation_writer','lifecycle_writer'):
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             with psycopg.connect(deployment.connection_info(key,env)) as c:c.execute('SELECT * FROM netbox_sync.auth_state')
+
+
+def test_host_reservation_grants_are_insert_only_for_registration(tmp_path):
+    env = _environment(tmp_path)
+    deployment.bootstrap_roles(env)
+    deployment.migrate(env)
+    deployment.apply_grants(env)
+    with psycopg.connect(TEST_DSN) as connection:
+        for key, role in deployment.DATABASE_ROLES.items():
+            if key == 'owner':
+                continue
+            for privilege in ('SELECT', 'INSERT', 'UPDATE', 'DELETE'):
+                actual = connection.execute('SELECT has_table_privilege(%s,%s,%s)',
+                    (role,'netbox_sync.host_reservations',privilege)).fetchone()[0]
+                assert actual == (key == 'registration_writer' and privilege in ('SELECT','INSERT'))
+
+
+def test_recovery_journal_is_confined_to_lifecycle_writer(tmp_path):
+    env=_environment(tmp_path)
+    deployment.bootstrap_roles(env);deployment.migrate(env);deployment.apply_grants(env)
+    with psycopg.connect(TEST_DSN) as connection:
+        for key,role in deployment.DATABASE_ROLES.items():
+            if key=='owner':continue
+            for privilege in ('SELECT','INSERT','UPDATE','DELETE','TRUNCATE'):
+                actual=connection.execute('SELECT has_table_privilege(%s,%s,%s)',
+                    (role,'netbox_sync.source_recoveries',privilege)).fetchone()[0]
+                assert actual==(key=='lifecycle_writer' and privilege in ('SELECT','INSERT'))
+            for column in ('operation_id','source_instance','actor_id','revision','plan','state','finished_at'):
+                actual=connection.execute('SELECT has_column_privilege(%s,%s,%s,%s)',
+                    (role,'netbox_sync.source_recoveries',column,'UPDATE')).fetchone()[0]
+                assert actual==(key=='lifecycle_writer' and column in ('state','finished_at'))

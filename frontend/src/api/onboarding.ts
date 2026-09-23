@@ -1,6 +1,20 @@
 import { isSource } from './sources.ts';
 import type { Source } from './sources';
 
+export const hostRegistrationMessages:Record<string,readonly [string,string]>={
+ HOST_SOURCE_REMOVED:['This host belongs to a removed source. An administrator must review recovery.','Хост связан с удалённым источником. Администратор должен проверить возможность восстановления.'],
+ HOST_ALREADY_REGISTERED:['This host already belongs to a source. Open it; a removed source requires administrator recovery.','Этот хост уже связан с источником. Откройте его; удалённый источник должен восстановить администратор.'],
+ HOST_IDENTITY_CONFLICT:['Several sources claim this host. Administrator reconciliation is required.','Этот хост связан с несколькими источниками. Нужна сверка администратором.'],
+ HOST_REGISTRATION_RESERVED:['An earlier registration reserved this host. Reconcile that attempt before adding it again.','Хост зарезервирован предыдущей попыткой добавления. Сначала нужно проверить её результат.'],
+ HOST_IDENTITY_UNAVAILABLE:['The provider did not supply a reliable hardware identity. Registration is blocked.','Провайдер не предоставил надёжный аппаратный идентификатор. Добавление заблокировано.'],
+ HOST_REGISTRY_REVIEW_REQUIRED:['An existing ESXi source lacks hardware identity. Ask an administrator to verify it before adding a host.','У существующего источника ESXi нет аппаратного идентификатора. Перед добавлением хоста администратор должен проверить его идентичность.'],
+ HOST_REGISTRATION_INVALID:['Reload the registration form to obtain a request ID.','Перезагрузите форму добавления для получения идентификатора запроса.'],
+};
+export class HostRegistrationFailure extends Error {
+ readonly code:string;readonly source:string|null;
+ constructor(code:string,source:string|null){super(code);this.code=code;this.source=source;}
+}
+
 export class SourceIdReservedError extends Error {
   constructor() { super('This Source ID was previously used and is reserved by a removed source.'); }
 }
@@ -26,7 +40,7 @@ export class SourceConnectionError extends Error {
 
 export interface ConnectionInput {
   source_type: 'proxmox' | 'esxi'; address: string; verify_ssl: boolean; port?: number;
-  username: string; secret: string; token_id?: string; preview?: boolean;
+  username: string; secret: string; token_id?: string; preview?: boolean; recovery_source?:string;
 }
 
 export interface RegistrationInput {
@@ -46,6 +60,11 @@ async function post(path: string, payload: ConnectionInput | RegistrationInput |
       body: JSON.stringify(payload), signal: AbortSignal.timeout(path==='/api/v1/sources'?40000:20000) });
   } catch { if(path==='/api/v1/sources')throw new RegistrationFailure('REGISTRATION_UNCERTAIN',true);throw new Error('Request failed or timed out. Registration outcome may require operator review.'); }
   if (!response.ok) {
+    let detail:any;try{detail=(await response.clone().json())?.error;}catch{}
+    if(typeof detail?.code==='string'&&Object.hasOwn(hostRegistrationMessages,detail.code)){
+      const source=typeof detail.existing_source==='string'&&/^[a-z0-9][a-z0-9._-]{1,62}$/.test(detail.existing_source)?detail.existing_source:null;
+      throw new HostRegistrationFailure(detail.code,source);
+    }
     if (path === '/api/v1/sources/test-connection' || path === '/api/v1/sources/check-destination') {
       let code: unknown;
       try { code = (await response.clone().json())?.error?.code; } catch { /* safe fallback */ }

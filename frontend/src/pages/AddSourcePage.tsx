@@ -1,8 +1,9 @@
+import {SourceRecovery} from '../components/SourceRecovery';
 import {useFormValidation} from '../ui/formValidation';
 import {CredentialField} from '../components/CredentialField';
 import {authRequest,usePermission} from '../AuthGate';
 import {useTeams} from '../components/SourceTeams';
-import {RegistrationFailure} from '../api/onboarding';
+import {RegistrationFailure,HostRegistrationFailure,hostRegistrationMessages} from '../api/onboarding';
 import {updateTokenUser} from '../ui/proxmoxToken';
 import {SourcePlacement} from '../components/SourcePlacement';
 import type {Placement} from '../components/SourcePlacement';
@@ -47,9 +48,13 @@ export function AddSourcePage() {
   const [review,setReview]=useState(false);
   const [draft,setDraft]=useState<Placement>(remembered?.draft??{source_instance:'',name:'',interval:600,references:{},host_types:{}});
   const [busy, setBusy] = useState(false);
-  const [busyAction,setBusyAction]=useState<'connection'|'address'|'placement'|'registration'|'reconcile'>('connection');
+  const [busyAction,setBusyAction]=useState<'connection'|'address'|'placement'|'registration'|'reconcile'|'recovery'>('connection');
   const inFlight = useRef(false); const [started,setStarted]=useState(0);
   const [error, setError] = useState("");
+  const [existingSource,setExistingSource]=useState<string|null>(null);
+  const [removedSource,setRemovedSource]=useState(false),[recoveryGeneration,setRecoveryGeneration]=useState(0),[restored,setRestored]=useState(false);
+  const sourceForm=useRef<HTMLFormElement>(null);
+  const canRecover=usePermission('source.remove');
   const [notice,setNotice]=useState('');
   const [connectionCode,setConnectionCode]=useState<keyof typeof connectionMessages|null>(null);
   const [identity,setIdentity]=useState({user:'',token:'',edited:false,parsed:false});
@@ -74,8 +79,8 @@ export function AddSourcePage() {
   useEffect(()=>{if(blocker.state==='blocked')exitDialog.current?.showModal();else exitDialog.current?.close();},[blocker.state]);
   useEffect(()=>{const leave=(event:BeforeUnloadEvent)=>{if(dirty&&!created){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',leave);return()=>window.removeEventListener('beforeunload',leave);},[dirty,created]);
   const go=(next:number)=>setParams({step:String(next)});
-  function invalidate(){if(token)void cancelOnboarding(token).catch(()=>{});setToken('');setReview(false);setExpiresAt(null);}
-  useEffect(()=>{if(created){remembered=null;navigate('/sources',{replace:true,state:{addedSource:{name:created.name,id:created.source_instance,teamUnconfirmed}}});}},[created,navigate,teamUnconfirmed]);
+  function invalidate(){setRecoveryGeneration(value=>value+1);if(token)void cancelOnboarding(token).catch(()=>{});setToken('');setReview(false);setExpiresAt(null);}
+  useEffect(()=>{if(created){remembered=null;navigate(restored?sourcePath(created.source_instance):'/sources',{replace:true,state:{addedSource:{name:created.name,id:created.source_instance,teamUnconfirmed}}});}},[created,navigate,teamUnconfirmed,restored]);
   useEffect(()=>{remembered=created?null:{type,connection,draft,preview,uncertain};},[type,connection,draft,preview,created,uncertain]);
   const workspace = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -101,10 +106,11 @@ export function AddSourcePage() {
     if(token){go(2);return;}
     if(!validation.validate(event.currentTarget))return;
     inFlight.current=true; setStarted(Date.now());setBusyAction('connection');
+    setExistingSource(null);setRemovedSource(false);
     const form = event.currentTarget;
     const data = new FormData(form);
     setBusy(true);
-    setError(""); setConnectionCode(null);
+    setError(""); setExistingSource(null); setConnectionCode(null);
     try {
       const result = await inspectConnection({
         source_type: type,
@@ -121,8 +127,10 @@ export function AddSourcePage() {
       setExpiresAt(Number.isFinite(result.expires_in_seconds)?Date.now()+result.expires_in_seconds!*1000:null);setToken(result.onboarding_token);setPreview(result.preview);setReview(false);
       setDraft(d=>({...d,source_instance:d.source_instance||result.suggested_source_instance,name:d.name||result.preview.name||connection.address,host_types:Object.fromEntries(Object.entries(d.host_types).filter(([id])=>result.preview.hosts.some(h=>h.id===id&&preview?.hosts.some(old=>old.id===id&&old.model===h.model&&old.manufacturer===h.manufacturer))))}));
     } catch (failure) {
+      if(failure instanceof HostRegistrationFailure){setExistingSource(failure.source);setRemovedSource(failure.code==='HOST_SOURCE_REMOVED');}
       if(failure instanceof SourceConnectionError)setConnectionCode(failure.code);
       setError(
+        failure instanceof HostRegistrationFailure ? hostRegistrationMessages[failure.code][language==='ru'?1:0] :
         failure instanceof SourceConnectionError ? connectionMessages[failure.code][language === 'ru' ? 1 : 0] :
         t("Connection check did not complete. Your fields are retained; nothing was registered.", "Проверка подключения не завершена. Поля сохранены; источник не зарегистрирован."),
       );
@@ -152,7 +160,7 @@ export function AddSourcePage() {
     inFlight.current=true; setStarted(Date.now());setBusyAction('registration');
     let selectionRejected=false;
     setBusy(true);
-    setError(""); setConnectionCode(null);
+    setError(""); setExistingSource(null); setConnectionCode(null);
     try {
       const refs=draft.references;const firstType=Object.values(draft.host_types)[0];
       const metadata={source_instance:draft.source_instance,name:draft.name,site_slug:refs.site.slug,
@@ -170,10 +178,12 @@ export function AddSourcePage() {
       if(team&&canAssignTeam&&teams.data){try{await authRequest('teams',{operation:'assign',revision:teams.data.revision,source_instance:result.source_instance,team_id:team});}catch{setTeamUnconfirmed(true);}}
       setCreated(result);
     } catch (failure) {
+      if(failure instanceof HostRegistrationFailure){setExistingSource(failure.source);setRemovedSource(failure.code==='HOST_SOURCE_REMOVED');selectionRejected=true;setReview(false);}
       if(failure instanceof CatalogFailure){selectionRejected=true;setReview(false);}
       if(failure instanceof RegistrationFailure&&failure.uncertain){selectionRejected=true;setUncertain(true);setReconciled(false);}
 
       setError(
+        failure instanceof HostRegistrationFailure?hostRegistrationMessages[failure.code][language==='ru'?1:0]:
         failure instanceof RegistrationFailure?failure.code==='REGISTRATION_CLUSTER_RETAINED'?t('The cluster was created, but adding the source is not confirmed. Check the saved source before retrying; the cluster is retained.','Кластер создан, но добавление источника не подтверждено. Перед повтором проверьте сохранённый источник; кластер оставлен.'):failure.uncertain?t('The registration outcome is unknown. Check server state before any further action. Your choices are retained.','Результат регистрации неизвестен. Сначала сверьте состояние сервера. Ваш выбор сохранён.'):t('The connection check or session is no longer valid. Sign in if needed, re-enter credentials and repeat the check; your placement choices are retained.','Проверка подключения или сеанс больше не действуют. При необходимости войдите, повторно введите данные доступа и выполните проверку; выбранное размещение сохранено.'):
         failure instanceof CatalogFailure&&failure.code==='CATALOG_PERMISSION_DENIED'?t('NetBox refused the required permission. Ask an administrator to check the configured NetBox access; no source was registered.','NetBox отказал в необходимом праве. Попросите администратора проверить настроенный доступ к NetBox; источник не зарегистрирован.'):
         failure instanceof CatalogFailure?t('NetBox selection changed or could not be verified. Refresh the lists and review the site, cluster and host device types; nothing was registered.','Выбор NetBox изменился или не прошёл проверку. Обновите списки, проверьте площадку, кластер и типы устройств хостов; источник не зарегистрирован.'):
@@ -200,6 +210,7 @@ export function AddSourcePage() {
         <div className="page-actions"><button autoFocus type="button" onClick={()=>{if(blocker.state==='blocked')blocker.reset();}}>{t('Stay','Остаться')}</button><button type="button" onClick={()=>{remembered=null;if(token)void cancelOnboarding(token).catch(()=>{});if(blocker.state==='blocked')blocker.proceed();}}>{t('Leave','Выйти')}</button></div>
       </dialog>
       {validation.summary}
+      {error&&existingSource&&!removedSource&&<p><Link to={sourcePath(existingSource)}>{t('Open existing source','Открыть существующий источник')}</Link></p>}
       {uncertain&&<section className="source-panel"><p>{t('No registration request will be retried automatically.','Запрос регистрации не будет повторён автоматически.')}</p><button type="button" disabled={busy} onClick={async()=>{
         setStarted(Date.now());setBusyAction('reconcile');setBusy(true);try{const response=await fetch('/api/v1/sources/'+encodeURIComponent(draft.source_instance),{cache:'no-store',signal:AbortSignal.timeout(10000)});
           if(response.status===404&&draft.create_cluster&&draft.registration_id){
@@ -218,10 +229,16 @@ export function AddSourcePage() {
           {connectionCode?connectionMessages[connectionCode][language==='ru'?1:0]:tr(error)}
         </p>
       )}
+      {canRecover&&removedSource&&existingSource&&type==='esxi'&&<SourceRecovery key={existingSource+':'+recoveryGeneration} source={existingSource}
+        readCredentials={()=>{const form=sourceForm.current;if(!form||!validation.validate(form))return null;
+          const data=new FormData(form);return {source_type:'esxi',...connection,username:String(data.get('username')),secret:String(data.get('secret'))};}}
+        clearSecret={()=>{const input=sourceForm.current?.elements.namedItem('secret') as HTMLInputElement|null;if(input)input.value='';setHasSecret(false);setShowSecret(false);}}
+        busyChanged={value=>{setBusyAction('recovery');setBusy(value);}}
+        done={source=>{setRestored(true);setCreated(source);}}/>}
       {canPolicy&&connectionCode==='SOURCE_DESTINATION_DENIED'&&<DestinationPermission host={connection.address} done={()=>{setConnectionCode(null);setError('');setNotice(t('Destination allowed. Test the connection.','Назначение разрешено. Проверьте подключение.'));}}/>}
-      {busy && <OperationFeedback operation={{connection:t('Checking connection and reading host information','Проверяем подключение и получаем сведения о хостах'),address:t('Checking destination','Проверяем адрес'),placement:t('Checking placement','Проверяем размещение'),registration:t('Registering source','Регистрация источника'),reconcile:t('Checking registration result','Проверяем результат добавления')}[busyAction]} phase="sending" started={started}/>}
+      {busy && <OperationFeedback operation={{connection:t('Checking connection and reading host information','Проверяем подключение и получаем сведения о хостах'),address:t('Checking destination','Проверяем адрес'),placement:t('Checking placement','Проверяем размещение'),registration:t('Registering source','Регистрация источника'),reconcile:t('Checking registration result','Проверяем результат добавления'),recovery:t('Source recovery in progress','Восстановление источника')}[busyAction]} phase="sending" started={started}/>}
       {step===1 ? (
-        <form noValidate onSubmit={test} onChangeCapture={invalidate} className="source-form wizard-form" autoComplete="off">
+        <form ref={sourceForm} noValidate onSubmit={test} onChangeCapture={invalidate} className="source-form wizard-form" autoComplete="off">
           <fieldset disabled={busy} aria-busy={busy}>
             <legend>{tr("Connection")}{" "}</legend>
             <p>{t('Prepare the server address and a dedicated service account.','Подготовьте адрес сервера и отдельную сервисную учётную запись.')}</p>

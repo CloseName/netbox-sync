@@ -35,6 +35,15 @@ class LifecycleClient:
             after=value['next']
         raise LifecycleRequestError('LIFECYCLE_UNAVAILABLE')
 
+    def recovery(self, action, source, **payload):
+        from ..local_control import request,ControlError
+        if action not in {'describe','prepare','credentials','complete','abandon','status'}:
+            raise LifecycleRequestError('REQUEST_INVALID')
+        try:
+            return request(self.path,{'action':'recovery_'+action,'source_instance':source,**payload},timeout=15)['result']
+        except ControlError as exc:raise LifecycleRequestError(exc.code) from None
+        except Exception:raise LifecycleRequestError('LIFECYCLE_UNAVAILABLE') from None
+
     def placement(self, source):
         from ..local_control import request, ControlError
         from .dto import DiscoveryHostDTO

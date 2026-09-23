@@ -88,3 +88,22 @@ def test_client_receipt_can_rollback_after_broker_restart(tmp_path):
     finally:
         process.terminate()
         process.wait(timeout=5)
+
+
+def test_verify_owned_is_root_only_even_for_authorized_api_uid():
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory(prefix='netbox-sync-broker-review-') as directory:
+        base=Path(directory);base.chmod(0o755)
+        root=base/'secrets';root.mkdir(mode=0o700)
+        path=base/'broker.sock';process=start_broker(root,path,uid=10001)
+        payload={'action':'verify_owned','operation_id':'operation-0123456789abcdef','key':'src-review-0123456789abcdef'}
+        try:
+            assert exchange(path,payload)=={'ok':True,'verified':False}
+            script="import os,socket,json,sys; os.setgroups([]); os.setgid(10001); os.setuid(10001); s=socket.socket(socket.AF_UNIX); s.settimeout(5); s.connect(sys.argv[1]); s.sendall(sys.argv[2].encode()+b'\\n'); print(s.recv(2048).decode())"
+            result=subprocess.run([sys.executable,'-c',script,str(path),json.dumps(payload)],capture_output=True,text=True,timeout=10)
+            assert result.returncode==0,result.stderr
+            assert json.loads(result.stdout)=={'ok':False,'error':'PEER_NOT_AUTHORIZED'}
+            assert not list(root.iterdir())
+        finally:
+            process.terminate();process.wait(timeout=5)

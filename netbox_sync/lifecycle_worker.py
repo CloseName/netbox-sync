@@ -9,6 +9,11 @@ class BrokerCleanup:
     def __init__(self, path):
         self.path = path
 
+    def verify_owned(self, key, operation):
+        result=request(self.path, {'action':'verify_owned','key':key,'operation_id':operation})
+        if type(result.get('verified')) is not bool:raise ControlError()
+        return result['verified']
+
     def remove_owned(self, keys):
         result = request(self.path, {'action': 'remove_owned', 'keys': keys})
         if type(result.get('removed')) is not bool:

@@ -3,6 +3,13 @@ import uuid
 import copy
 assert project.startswith('netbox-sync-probe-test-')
 login()
+# The existing auth-test source reserves this physical host, independent of
+# the next source's display name or placement. No new receipt may be issued.
+duplicate=request(dict(source_type='esxi',address='esxi.probe.test',verify_ssl=True,
+    username='netbox-sync',secret=secret,preview=True))
+assert duplicate['status']==409 and duplicate['body']['error']['code']=='HOST_ALREADY_REGISTERED', duplicate
+assert duplicate['body']['error']['existing_source']=='auth-test', duplicate
+print('PASS production connection refuses already registered physical ESXi',flush=True)
 # Replace only this test's existing peer, leaving every product service unmodified.
 peer=project+'-endpoint'
 assert json.loads(run(['docker','inspect',peer]))[0]['Config']['Labels']['com.docker.compose.project']==project
@@ -44,7 +51,7 @@ for provider in (('esxi','proxmox') if pgmode=='bundled' else ('proxmox','esxi')
     rejected=request(dict(onboarding_token=checked['body']['onboarding_token'],references=wrong,host_types={h['id']:dtype for h in checked['body']['preview']['hosts']}),'/api/v1/sources/review-placement')
     assert rejected['status']==409 and rejected['body']['error']['code']=='CATALOG_CHANGED', rejected
     sid='full-'+provider
-    payload=dict(source_type=provider,source_instance=sid,name=refs['cluster']['name'],address='esxi.probe.test',port=8443,
+    payload=dict(registration_id=str(uuid.uuid4()),source_type=provider,source_instance=sid,name=refs['cluster']['name'],address='esxi.probe.test',port=8443,
         verify_ssl=True,sync_interval_seconds=600,confirm_sync_disabled=True,
         onboarding_token=checked['body']['onboarding_token'],references=refs,
         host_types={h['id']:dtype for h in checked['body']['preview']['hosts']},
@@ -107,6 +114,34 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
     repeated=request({},base+'/sync-plan');assert repeated['status']==200,('replan',provider,repeated)
     assert not [i for i in repeated['body']['items'] if i['action'] in ('CREATE','UPDATE')],('duplicate',provider,repeated)
     print('PASS production API/preview/discovery/plan/prepare/apply/replan '+provider+' HTTPS 8443',flush=True)
+
+    if provider=='esxi':
+        before_restore_counts=run(['docker','exec',peer,'python','-c',"import requests; print(requests.get('https://esxi.probe.test:8443/fixture/state',verify='/fixture/server.crt',timeout=5).text)"])
+        before_history=request(None,'/api/v1/runs?source_instance='+sid,'GET')['body']
+        life=request(None,base+'/lifecycle','GET')['body']
+        removed=request(dict(revision=life['revision'],confirmed_source=life['display_name'],remove_credentials=True),base+'/remove')
+        assert removed['status']==200 and removed['body']['credential_state']=='REMOVED',removed
+        duplicate=request(dict(source_type='esxi',address='esxi.probe.test',port=8443,verify_ssl=True,
+            username='netbox-sync',secret=secret,preview=True))
+        assert duplicate['status']==409 and duplicate['body']['error']['code']=='HOST_SOURCE_REMOVED',duplicate
+        checked_restore=request(dict(source_type='esxi',address='esxi.probe.test',port=8443,verify_ssl=True,
+            username='netbox-sync',secret=secret,preview=True,recovery_source=sid))
+        assert checked_restore['status']==200,checked_restore
+        restore_token=checked_restore['body']['onboarding_token']
+        review_restore=request(dict(onboarding_token=restore_token),base+'/recovery-review')
+        assert review_restore['status']==200 and not review_restore['body']['proof']['blockers'],review_restore
+        assert len(review_restore['body']['proof']['owned'])==2,review_restore
+        restored=request(dict(onboarding_token=restore_token,operation_id=review_restore['body']['operation_id'],
+            digest=review_restore['body']['proof']['digest'],confirmed=True),base+'/recover')
+        assert restored['status']==200 and restored['body']['status']=='RESTORED',restored
+        restored_source=request(None,base,'GET')['body']
+        assert restored_source['source_instance']==sid and not restored_source['sync_enabled'],restored_source
+        assert request(None,'/api/v1/runs?source_instance='+sid,'GET')['body']==before_history
+        assert run(['docker','exec',peer,'python','-c',"import requests; print(requests.get('https://esxi.probe.test:8443/fixture/state',verify='/fixture/server.crt',timeout=5).text)"])==before_restore_counts
+        restored_plan=request({},base+'/sync-plan')
+        assert restored_plan['status']==200 and restored_plan['body']['apply_allowed'],restored_plan
+        assert not [i for i in restored_plan['body']['items'] if i['action'] in ('CREATE','UPDATE')],restored_plan
+        print('PASS production ESXi sync/remove/recover: same source, NetBox IDs/data/history retained, new credentials usable, schedule OFF, zero-change plan',flush=True)
 
     counts=json.loads(run(['docker','exec',peer,'python','-c',"import requests; print(requests.get('https://esxi.probe.test:8443/fixture/state',verify='/fixture/server.crt',timeout=5).text)"]))
     assert counts['invalid_virtual_requests']==0,counts

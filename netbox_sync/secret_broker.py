@@ -160,6 +160,21 @@ class SecretBrokerStore:
         os.fsync(self._directory)
         return rollback_token
 
+    def verify_owned(self, operation_id, key):
+        """Check complete ownership metadata only; never read or return secret bytes."""
+        key=self._key(key);_operation(operation_id)
+        descriptor=None
+        try:
+            descriptor=os.open(key,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=self._directory)
+            info=os.fstat(descriptor)
+            stored,_=self._stored_attributes(descriptor)
+            return (file_stat.S_ISREG(info.st_mode) and info.st_uid==0 and info.st_gid==0
+                    and info.st_nlink==1 and file_stat.S_IMODE(info.st_mode)==0o600
+                    and stored['operation']==operation_id.encode() and stored['complete']==b'1')
+        except (OSError,BrokerError):return False
+        finally:
+            if descriptor is not None:os.close(descriptor)
+
     def _repeat_create(self, operation_id, key, value):
         """A same-attempt replay returns its receipt, never overwrites file contents."""
         descriptor = None
@@ -297,6 +312,11 @@ def serve(socket_path, secret_root, allowed_uid):
             try:
                 raw = read_request(connection)
                 request = json.loads(raw)
+                if isinstance(request,dict) and request.get('action')=='verify_owned':
+                    if uid!=0 or set(request)!={'action','operation_id','key'}:
+                        raise BrokerError('PEER_NOT_AUTHORIZED')
+                    _reply(connection,{'ok':True,'verified':store.verify_owned(request['operation_id'],request['key'])})
+                    continue
                 if isinstance(request, dict) and request.get('action') == 'remove_owned':
                     if uid != 0 or set(request) != {'action', 'keys'}:
                         raise BrokerError('PEER_NOT_AUTHORIZED')

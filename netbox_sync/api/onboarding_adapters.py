@@ -36,6 +36,27 @@ class RegistrationRegistry:
             raise OnboardingError(ErrorCode.REGISTRATION_UNAVAILABLE)
         return registry
 
+    def host_reservations(self):
+        from ..host_registration import HostReservations
+        return HostReservations(self._registry()._connect, self._schema)
+
+    def check_provider_identity(self, preview):
+        if isinstance(preview, dict) and preview.get('provider') == 'esxi':
+            self.host_reservations().check(preview)
+
+    def reserve_provider_identity(self, preview, source, operation_id, actor):
+        if isinstance(preview, dict) and preview.get('provider') == 'esxi':
+            self.host_reservations().reserve(preview, source, operation_id, actor)
+
+    def registration_guard(self, preview, source, operation_id, actor):
+        from contextlib import nullcontext
+        if isinstance(preview, dict) and preview.get('provider') == 'esxi':
+            return self.host_reservations().registration_guard(preview, source, operation_id, actor)
+        return nullcontext()
+
+    def registration_outcome(self, source, operation_id, actor):
+        return self.host_reservations().outcome(source, operation_id, actor)
+
     def find(self, instance):
         """Check duplicates through the isolated writer connection."""
         try:
@@ -119,9 +140,9 @@ class BrokerSecretStore:
         code = ErrorCode.REGISTRATION_UNCERTAIN if submitted else ErrorCode.SECRET_STORE_FAILED
         raise OnboardingError(code) from None
 
-    def create(self, key, value):
+    def create(self, key, value, *, operation_id=None):
         """Send bounded secret bytes without exposing the storage path."""
-        operation = secrets.token_urlsafe(24)
+        operation = operation_id or secrets.token_urlsafe(24)
         result = self._request(dict(action='create', operation_id=operation, key=key,
                                     value=base64.b64encode(value.encode()).decode()))
         receipt = SecretReceipt(key, result['rollback_token'])

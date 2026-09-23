@@ -109,6 +109,11 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
         connection.execute("INSERT INTO netbox_sync.source_tombstones(source_instance,display_name,credential_state) VALUES ('esxi-backup-test','Retained ESXi','REMOVED')")
         connection.execute("INSERT INTO netbox_sync.source_operations(source_instance,operation_kind,operation_id,status) VALUES ('pve-backup-test','PLAN',%s,'RUNNING')", (uuid.uuid4(),))
         connection.commit()
+        connection.execute("INSERT INTO netbox_sync.host_reservations(provider,anchor,source_instance,operation_id,actor_id) VALUES ('esxi','503c5ad7-aaaa-bbbb-cccc-0123456789ab','esxi-backup-test',%s,'admin')",(uuid.uuid4(),))
+        connection.execute("INSERT INTO netbox_sync.source_recoveries(operation_id,source_instance,actor_id,revision,plan,state) VALUES (%s,'esxi-backup-test','admin','fixture-revision',%s,'CREDENTIALS_PENDING')",(uuid.uuid4(),Jsonb({'proof':{'digest':'a'*64},'credential_key':'src-recovery-fixture','broker_operation':'fixture-operation'})))
+        connection.commit()
+        expected_claims = connection.execute('SELECT * FROM netbox_sync.host_reservations').fetchall()
+        expected_recoveries = connection.execute('SELECT * FROM netbox_sync.source_recoveries').fetchall()
         expected_tombstone = connection.execute('SELECT * FROM netbox_sync.source_tombstones').fetchall()
         expected = _snapshot(connection)
 
@@ -141,6 +146,8 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
     deployment.apply_grants(environment)
     with psycopg.connect(deployment.connection_info('bootstrap', environment)) as connection:
         assert _snapshot(connection) == expected
+        assert connection.execute('SELECT * FROM netbox_sync.host_reservations').fetchall() == expected_claims
+        assert connection.execute('SELECT * FROM netbox_sync.source_recoveries').fetchall() == expected_recoveries
         assert connection.execute('SELECT * FROM netbox_sync.source_tombstones').fetchall() == expected_tombstone
         assert connection.execute('SELECT status FROM netbox_sync.source_operations').fetchone() == ('RUNNING',)
         with connection.cursor() as cursor:
@@ -171,3 +178,20 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
         assert connection.execute('SELECT status,safe_error_code,result FROM netbox_sync.source_operations').fetchone() == ('FAILED','OPERATION_INTERRUPTED',None)
         assert connection.execute('SELECT * FROM netbox_sync.source_tombstones').fetchall() == expected_tombstone
     assert [row['source_instance'] for row in tool.source_secret_references()] == ['pve-backup-test']
+
+
+def test_new_pending_records_prevent_fresh_restore_and_restored_sources_keep_refs(tmp_path):
+    environment=_environment(tmp_path)
+    deployment.bootstrap_roles(environment)
+    with psycopg.connect(TEST_DSN,autocommit=True) as connection:
+        connection.execute('DROP SCHEMA IF EXISTS netbox_sync CASCADE')
+    deployment.migrate(environment);deployment.apply_grants(environment)
+    tool=backup.DatabaseTool(tmp_path,'external',{'NETBOX_SYNC_BACKUP_DSN':TEST_DSN})
+    with psycopg.connect(TEST_DSN) as connection:
+        connection.execute("INSERT INTO netbox_sync.host_reservations(provider,anchor,source_instance,operation_id,actor_id) VALUES ('esxi','503c5ad7-aaaa-bbbb-cccc-0123456789ab','pending-source',%s,'admin')",(uuid.uuid4(),))
+    with pytest.raises(backup.BackupError,match='host reservation or recovery'):
+        tool.validate_empty_target()
+    with psycopg.connect(TEST_DSN) as connection:
+        _seed(connection)
+        connection.execute("INSERT INTO netbox_sync.source_tombstones(source_instance,display_name,credential_state,restored_at) VALUES ('esxi-backup-test','Restored ESXi','REMOVED',now())")
+    assert [row['source_instance'] for row in tool.source_secret_references()]==['esxi-backup-test','pve-backup-test']

@@ -5,7 +5,7 @@ import {setLanguage} from './menu-helper';
 import {selectPlacement,catalogRow,previewResult} from './source-placement-fixture';
 
 async function fixture(page:any,role='admin',provider='esxi',failure=''){
-  const permissions=['source.read','run.read','diagnostics.read',...(role==='viewer'?[]:['source.register','source.probe','source.plan','source.apply']),...(role==='admin'?['source.configure','catalog.create','policy.read','policy.write','bootstrap.manage','identity.manage']:[])];
+  const permissions=['source.read','run.read','diagnostics.read',...(role==='viewer'?[]:['source.register','source.probe','source.plan','source.apply']),...(role==='admin'?['source.remove','source.configure','catalog.create','policy.read','policy.write','bootstrap.manage','identity.manage']:[])];
   const writes:string[]=[];let registered:any=null,fail=failure;
   await page.route('**/api/v1/**',async(route:any)=>{
     const req=route.request(),path=new URL(req.url()).pathname;
@@ -191,4 +191,55 @@ test('placement review uses its own progress label before final registration',as
  expect(server.writes).toEqual([]);
  release();await expect(page).toHaveURL(/step=3/);
  await expect(page.getByText('Checking placement',{exact:true})).toHaveCount(0);
+});
+
+
+for(const stage of ['connection','registration'])test(`server host duplicate ${stage} retains existing source link`,async({page})=>{
+ const server=await fixture(page);
+ const rejection={error:{code:'HOST_ALREADY_REGISTERED',existing_source:'source-existing',message:'UNTRUSTED_REMOTE_DETAILS'}};
+ if(stage==='connection')await page.route('**/api/v1/sources/test-connection',route=>route.fulfill({status:409,json:rejection}));
+ await connect(page);
+ if(stage==='registration'){
+   await placement(page);await page.getByRole('button',{name:'Continue',exact:true}).click();
+   await page.route('**/api/v1/sources',route=>route.request().method()==='POST'?route.fulfill({status:409,json:rejection}):route.fallback());
+   await page.getByRole('button',{name:'Add source',exact:true}).click();
+ }
+ await expect(page.getByText('This host already belongs to a source. Open it; a removed source requires administrator recovery.',{exact:true})).toBeVisible();
+ await expect(page.getByRole('link',{name:'Open existing source'})).toHaveAttribute('href','/sources/source-existing');
+ await expect(page.getByText('UNTRUSTED_REMOTE_DETAILS')).toHaveCount(0);
+ expect(server.writes).toEqual([]);
+});
+
+
+for(const role of ['admin','operator'])test(`removed host recovery is explicit and ${role} bounded`,async({page})=>{
+ const server=await fixture(page,role);
+ const id='source-existing';let restored=0;
+ await page.route('**/api/v1/sources/test-connection',route=>{
+  if(route.request().postDataJSON().recovery_source===id)return route.fulfill({json:previewResult});
+  return route.fulfill({status:409,json:{error:{code:'HOST_SOURCE_REMOVED',existing_source:id}}});
+ });
+ await connect(page);
+ if(role==='operator'){
+  await expect(page.getByRole('button',{name:'Check recovery',exact:true})).toHaveCount(0);
+  expect(server.writes).toEqual([]);return;
+ }
+ const review={source_instance:id,name:'Retained ESXi',operation_id:randomUUID(),proof:{digest:'a'.repeat(64),
+  host_uuid:'503c5ad7-aaaa-bbbb-cccc-0123456789ab',site_id:1,cluster_id:3,blockers:[],
+  owned:[{kind:'device',id:7},{kind:'vm',id:8}],retained_manual:[{kind:'vm',id:9}]}};
+ await page.route(`**/api/v1/sources/${id}/recovery-review`,route=>route.fulfill({json:review}));
+ await page.route(`**/api/v1/sources/${id}/recover`,route=>{
+  const data=route.request().postDataJSON();expect(data.confirmed).toBe(true);expect(data.digest).toBe(review.proof.digest);
+  restored++;return route.fulfill({json:{status:'RESTORED',source_instance:id}});
+ });
+ await page.route(`**/api/v1/sources/${id}`,route=>route.fulfill({json:{...source(),source_instance:id,type:'esxi',enabled:true,sync_enabled:false}}));
+ await page.getByRole('button',{name:'Check recovery',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'Retained ESXi'})).toBeVisible();
+ await expect(page.locator('[name=secret]')).toHaveValue('');
+ expect(restored).toBe(0);
+ await page.getByText('Review every object',{exact:true}).click();
+ await expect(page.getByText('Host #7',{exact:true})).toBeVisible();
+ await expect(page.getByText('Virtual machine #9',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Confirm recovery of this source',exact:true}).click();
+ await expect(page).toHaveURL(new RegExp(`/sources/${id}$`));
+ expect(restored).toBe(1);expect(server.writes).toEqual([]);
 });

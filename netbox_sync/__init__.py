@@ -855,6 +855,17 @@ def execute_discovered_source(
 ):
     """Run the shared NetBox pipeline for generic discovered objects."""
 
+    # Read-only inspection remains available for duplicate reconciliation.
+    if sync_mode == 'apply' and os.getenv('SOURCE_CONFIG_MODE') in ('registry', 'registry-all'):
+        from .source_bootstrap import _postgres_registry
+        from .host_registration import HostRegistrationConflict
+        from .orchestrator import SourceReconciliationRequired
+        registry = _postgres_registry(os.environ['NETBOX_SYNC_REGISTRY_DSN'], os.environ['NETBOX_SYNC_REGISTRY_SCHEMA'])
+        try:
+            registry.assert_exclusive_host(source_config)
+        except HostRegistrationConflict:
+            raise SourceReconciliationRequired('Duplicate provider host identity requires reconciliation') from None
+
     # Select the NetBox token by synchronization mode.
     #
     # inventory / plan:

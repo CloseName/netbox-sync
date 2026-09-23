@@ -17,6 +17,13 @@ provider_rows[('nodes',)].append({'node':'node-b','status':'online'})
 provider_rows[('cluster','status')].append({'type':'node','name':'node-b','ip':'10.20.30.11'})
 node_reads=0
 class Handler(ProbeHandler):
+    def soap(self, body, status=200):
+        # The full-sync inventory is a different physical host from auth-test.
+        # Apply the same identity to both preview summary and batch hardware data.
+        body = body.replace('12345678-1234-4321-8765-123456789abc',
+                            '22345678-1234-4321-8765-123456789abc')
+        return super().soap(body, status)
+
     def do_GET(self):
         if self.path.startswith('/api2/json/'):
             key=tuple(int(p) if p.isdigit() else p for p in self.path.split('?')[0][11:].split('/'))

@@ -126,7 +126,8 @@ def test_registration_reconciliation_is_actor_bound_and_read_only(monkeypatch,ro
         return {'status':'CREATED','item':{'unexpected':'must not escape'}}
     monkeypatch.setattr(catalog,'create_call',read)
     body={'source_instance':'new-source','registration_id':str(uuid4())}
-    with TestClient(create_app(settings=ApiSettings(bootstrap_socket=''),auth_client=Client()),base_url='https://localhost:8000') as http:
+    onboarding, _, _ = service()
+    with TestClient(create_app(settings=ApiSettings(bootstrap_socket=''),auth_client=Client(),onboarding_service=onboarding),base_url='https://localhost:8000') as http:
         http.cookies.set(COOKIE,session)
         response=http.post('/api/v1/sources/registration-status',headers=HEADERS,json=body)
         if role=='viewer':
@@ -166,3 +167,35 @@ def test_resolution_uses_server_preview_and_permission(monkeypatch,role):
             assert seen[0]['hosts']==preview['hosts'] and seen[0]['default_site_slug']=='configured'
             assert http.post('/api/v1/sources/resolve-placement',headers=HEADERS,json={**body,'hosts':[{'id':'forged'}]}).status_code==422
             assert len(seen)==1
+
+
+@pytest.mark.parametrize('role',['operator','viewer'])
+def test_recovery_and_recovery_probe_are_admin_only(monkeypatch,role):
+    from uuid import uuid4
+    from netbox_sync.api.lifecycle_client import LifecycleClient
+    policy,_,session=configured(role)
+    class Client:
+        def call(self,action,**payload):return policy.call(dict(action=action,**payload))
+    monkeypatch.setattr(LifecycleClient,'recovery',lambda *args,**kw:pytest.fail('No lifecycle capability for this role'))
+    monkeypatch.setattr('netbox_sync.probe_worker.remote_test_authorized',lambda *args,**kw:pytest.fail('No recovery probe for this role'))
+    app=create_app(settings=ApiSettings(bootstrap_socket='',probe_socket='/test-only'),auth_client=Client())
+    with TestClient(app,base_url='https://localhost:8000') as http:
+        http.cookies.set(COOKIE,session)
+        for route,body in [
+            ('recovery-review',{'onboarding_token':'x'*32}),
+            ('recover',{'onboarding_token':'x'*32,'operation_id':str(uuid4()),'digest':'0'*64,'confirmed':True}),
+            ('recovery-abandon',{'operation_id':str(uuid4())}),
+            ('recovery-status',{'operation_id':str(uuid4())})]:
+            assert http.post('/api/v1/sources/old-source/'+route,headers=HEADERS,json=body).status_code==403
+        assert http.post('/api/v1/sources/test-connection',headers=HEADERS,json={
+            'source_type':'esxi','address':'source.test','username':'fixture-user',
+            'secret':'fixture-only','recovery_source':'old-source'}).status_code==403
+
+
+@pytest.mark.parametrize('value',[1,'true',False,None])
+def test_recovery_requires_explicit_boolean_confirmation(value):
+    from uuid import uuid4
+    from pydantic import ValidationError
+    from netbox_sync.api.source_recovery import ConfirmRequest
+    with pytest.raises(ValidationError):
+        ConfirmRequest(onboarding_token='x'*32,operation_id=uuid4(),digest='a'*64,confirmed=value)

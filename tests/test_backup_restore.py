@@ -516,8 +516,10 @@ def test_fresh_database_restore_requires_live_maintenance_boundary(monkeypatch,
         'DROP TABLE IF EXISTS netbox_sync.sync_runs; '
         'DROP TABLE IF EXISTS netbox_sync.sources; '
         'DROP TABLE IF EXISTS netbox_sync.source_tombstones; '
+        'DROP TABLE IF EXISTS netbox_sync.source_recoveries; '
         'DROP TABLE IF EXISTS netbox_sync.source_operations; '
         'DROP TABLE IF EXISTS netbox_sync.schema_meta; '
+        'DROP TABLE IF EXISTS netbox_sync.host_reservations; '
         'DROP TABLE IF EXISTS netbox_sync.auth_state; '
         'DROP TABLE IF EXISTS netbox_sync.auth_audit; '
         'DROP TABLE IF EXISTS netbox_sync.alembic_version; '
@@ -837,3 +839,25 @@ def test_ldap_manifest_cannot_choose_path_and_old_manifests_remain_valid(bundle_
     path.write_text(json.dumps(manifest));backup._write_checksums(bundle)
     with pytest.raises(backup.BackupError,match='LDAP reference is invalid'):
         backup.verify_bundle(bundle,database)
+
+
+@pytest.mark.parametrize('counts',['1|0','0|1'])
+def test_fresh_restore_preserves_orphan_registration_and_recovery_evidence(monkeypatch,tmp_path,counts):
+    tool=backup.DatabaseTool(tmp_path)
+    monkeypatch.setattr(tool,'target_counts',lambda:(0,0))
+    monkeypatch.setattr(tool,'query',lambda statement:[counts if 'host_reservations' in statement else '0|0'])
+    with pytest.raises(backup.BackupError,match='host reservation or recovery'):
+        tool.validate_empty_target()
+
+
+@pytest.mark.parametrize('restored',[True,False])
+def test_backup_references_include_restored_sources_and_support_legacy_schema(monkeypatch,tmp_path,restored):
+    tool=backup.DatabaseTool(tmp_path);seen=[]
+    def query(statement):
+        seen.append(statement)
+        if 'to_regclass' in statement:return ['t']
+        if 'information_schema' in statement:return ['t' if restored else 'f']
+        return ['source-a|file|key-a|file|key-a']
+    monkeypatch.setattr(tool,'query',query)
+    assert tool.source_secret_references()[0]['source_instance']=='source-a'
+    assert ('t.restored_at IS NULL' in seen[-1])==restored

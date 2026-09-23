@@ -292,7 +292,7 @@ added=request(registration,'/api/v1/sources')
 assert added['status']==201,added
 assert request(registration,'/api/v1/sources')['status']!=201
 checked=request({key:registration[key] for key in ('source_instance','registration_id')},'/api/v1/sources/registration-status')
-assert checked['status']==200 and checked['body']=={'status':'CREATED'},checked
+assert checked['status']==200 and checked['body']=={'status':'REGISTERED','identity_status':'REGISTERED','source_instance':'auth-test','source_url':'/sources/auth-test'},checked
 print('Final registration cluster: production API, bootstrap subprocess, HTTPS and durable registration passed')
 assert request(None,'/api/v1/sources','GET')['body']['sources'][0]['source_instance']=='auth-test'
 team_saved=request(dict(operation='assign',revision=teams['body']['revision'],source_instance='auth-test',team_id=team_id),'/api/v1/teams');assert team_saved['status']==200
@@ -326,7 +326,7 @@ if pgmode == 'bundled' and os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST') !
     bundle=next((root/'backups').glob('netbox-sync-backup-*'))
     backup_cli(root,'verify',str(bundle))
     summary=json.loads(backup_cli(root,'inspect',str(bundle)))
-    assert summary['source_count']==1 and summary['alembic_revision']=='0006_auth_policy'
+    assert summary['source_count']==1 and summary['alembic_revision']=='0007_host_reservations'
     assert snapshot()==protected_before and compose('ps','-q','postgres')==db_before
     assert set(compose('ps','--status','running','--services').split())==services_before
     assert request(None,'/api/v1/auth/me','GET')['status']==200

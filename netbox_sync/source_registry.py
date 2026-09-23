@@ -326,6 +326,27 @@ class SourceRegistry:
         )
         return self._get_one(query, (source_instance,))
 
+    def assert_exclusive_host(self, config):
+        """Reject known active duplicate ESXi claims before any runtime write.
+
+        Historical rows without hardware evidence still need explicit review;
+        absence of evidence is not used to merge or assign ownership.
+        """
+        if config.source_type != 'esxi':
+            return
+        from .host_registration import legacy_anchor, HostRegistrationConflict
+        anchor = legacy_anchor(config.settings)
+        if anchor is None:
+            return
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(sql.SQL('SELECT source_instance, settings FROM {} WHERE source_type=%s AND enabled=true').format(
+                    self._table('sources')), ('esxi',))
+                others = [row for row in cursor.fetchall()
+                          if row['source_instance'] != config.source_instance and legacy_anchor(row['settings']) == anchor]
+        if others:
+            raise HostRegistrationConflict('HOST_IDENTITY_CONFLICT')
+
     def list_sources(self):
         """List all source records without resolving credentials."""
 
