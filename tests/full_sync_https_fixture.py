@@ -9,6 +9,8 @@ from tests.netbox_scenarios import add_target
 from tests.fakes.netbox_http import netbox_http
 
 provider_rows=proxmox_responses()
+# Two actual explicitly mapped fixture networks; never infer VRF from their labels.
+provider_rows[('nodes','node-a','lxc',100,'config')]['net0']=provider_rows[('nodes','node-a','lxc',100,'config')]['net0'].replace('bridge=vmbr0','bridge=vmbr1').replace('10.20.30.50/24','10.20.30.40/24')
 secondary=proxmox_responses('node-b')
 secondary[('nodes','node-b','qemu')]=[];secondary[('nodes','node-b','lxc')]=[]
 secondary[('nodes','node-b','network')][0]['cidr']='10.20.30.11/24'
@@ -34,7 +36,7 @@ class Handler(ProbeHandler):
                 data=list(reversed(data)) if node_reads%2 else list(data)
             return self.respond(json.dumps({'data':data}).encode(),200 if data is not None else 404)
         if self.path=='/fixture/state':
-            return self.respond(json.dumps({**{key:len(value) for key,value in rows.items()}, 'write_requests':len(writes), 'observation_interfaces':sum(bool(r.get('custom_fields',{}).get('sync_network_observations')) for r in rows['virtualization.interfaces'].values()), 'legacy_disk_reads':sum('/virtual-disks/' in path for _,path in requests), 'invalid_virtual_requests':sum('/-' in path or '=-' in path for _,path in requests)}).encode())
+            return self.respond(json.dumps({**{key:len(value) for key,value in rows.items()}, 'scoped_fixture_ips':sorted([r.get('vrf') or 0 for r in rows['ipam.ip_addresses'].values() if r['address']=='10.20.30.40/24']), 'write_waiting':behavior.get('write_waiting',False), 'write_requests':len(writes), 'observation_interfaces':sum(bool(r.get('custom_fields',{}).get('sync_network_observations')) for r in rows['virtualization.interfaces'].values()), 'legacy_disk_reads':sum('/virtual-disks/' in path for _,path in requests), 'invalid_virtual_requests':sum('/-' in path or '=-' in path for _,path in requests)}).encode())
         return super().do_GET()
     def do_POST(self):
         if self.path=='/fixture/observe-esxi':
@@ -49,6 +51,13 @@ class Handler(ProbeHandler):
                         for address in list(nic.get('ip-addresses',[])):
                             if address.get('ip-address')=='10.20.30.40':
                                 nic['ip-addresses'].append({**address,'prefix':32})
+            return self.respond(b'{}')
+        if self.path=='/fixture/hold-next-write':
+            gate=threading.Event();behavior['hold_next_write']=gate;behavior['write_gate']=gate
+            return self.respond(b'{}')
+        if self.path=='/fixture/release-write':
+            gate=behavior.pop('write_gate',None)
+            if gate is not None:gate.set()
             return self.respond(b'{}')
         if self.path=='/fixture/fail-next-write':
             behavior['fail_write_number']=len(writes)+1
@@ -91,6 +100,7 @@ seed.dcim.device_roles.add(FakeRecord(id=4,name='Server',slug='server'))
 seed.dcim.platforms.add(FakeRecord(id=5,name='Proxmox',slug='proxmox'))
 seed.dcim.device_types.add(FakeRecord(id=6,model='PowerEdge R650',slug='r650',manufacturer=FakeRecord(id=7,name='Dell Inc.')))
 seed.dcim.device_types.add(FakeRecord(id=8,model='Reviewed replacement',slug='replacement',manufacturer=FakeRecord(id=7,name='Dell Inc.')))
+for identifier in (21,22):seed.ipam.vrfs.add(FakeRecord(id=identifier,name=f'Isolated fixture {identifier}',rd=f'65000:{identifier}',enforce_unique=True))
 requests=[]
 behavior={'reverse_reads':True,'deny_reads':['virtualization.virtual_disks']}
 with netbox_http(seed,context,requests=requests,behavior=behavior,bind=('0.0.0.0',9443),public_base='https://netbox.example.test:9443') as (_api,rows,writes):

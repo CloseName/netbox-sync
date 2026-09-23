@@ -98,6 +98,13 @@ for provider in (('esxi','proxmox') if pgmode=='bundled' else ('proxmox','esxi')
     hardware=[i['properties'] for i in discovery['body']['items'] if i['object_kind'] in ('vm','qemu','lxc')]
     assert hardware and all(p['vcpus'] and p['memory_bytes'] for p in hardware), ('missing discovery hardware',provider)
     assert any(p['interfaces'] for p in hardware), ('missing discovery networks',provider)
+    if provider=='proxmox':
+        placement=request(None,base+'/placement','GET')['body']
+        vrfs=request(None,'/api/v1/catalog/vrf','GET')['body']['items']
+        scope_rules=[dict(host_id='node-a',bridge=bridge,vlan_id=120,vrf=next(v for v in vrfs if v['id']==identifier)) for bridge,identifier in [('vmbr0',21),('vmbr1',22)]]
+        updated=request(dict(revision=placement['revision'],discovery_id=placement['discovery_id'],references=placement['references'],host_types=placement['host_types'],network_scope_rules=scope_rules),base+'/placement','PATCH')
+        assert updated['status']==200,updated
+        assert request(None,base+'/placement','GET')['body']['network_scope_rules']==scope_rules
     if provider=='esxi':
         run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/deny-required',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
         failed=request({},base+'/sync-plan');assert failed['status']>=400
@@ -194,7 +201,10 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
 
     counts=json.loads(run(['docker','exec',peer,'python','-c',"import requests; print(requests.get('https://esxi.probe.test:8443/fixture/state',verify='/fixture/server.crt',timeout=5).text)"]))
     assert counts['invalid_virtual_requests']==0,counts
-    if provider=='proxmox': assert counts['dcim.interfaces']>=1,counts
+    if provider=='proxmox':
+        assert counts['dcim.interfaces']>=1,counts
+        assert counts['scoped_fixture_ips']==[21,22],counts
+        print('PASS production VM/LXC same address in explicit existing VRFs',flush=True)
     expected_devices+=1 if provider=='esxi' else 2;expected_vms+=1 if provider=='esxi' else 2
     assert counts['dcim.devices']==expected_devices,counts
     assert counts['virtualization.virtual_machines']==expected_vms,counts
@@ -250,9 +260,22 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
         assert prepared['status']==200
         run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/fail-next-write',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
         accepted_id=str(uuid.uuid4())
-        uncertain=request(dict(confirmation_token=prepared['body']['confirmation_token'],operation_id=operation_id,run_id=accepted_id),base+'/sync')
-        assert uncertain['status']==503 and uncertain['body']['error']['code']=='OUTCOME_UNCERTAIN'
-        assert request(None,'/api/v1/runs/'+accepted_id,'GET')['body']['status']=='OUTCOME_UNCERTAIN'
+        run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/hold-next-write',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
+        run([*command,'exec','-T','--user','10001','netbox-sync-api','python','-c',Path('/review/tests/disconnect_sync_client.py').read_text()],
+            input=json.dumps(dict(path=base+'/sync',cookie=session_cookie,digest=plan['digest'],body=dict(confirmation_token=prepared['body']['confirmation_token'],operation_id=operation_id,run_id=accepted_id))))
+        for _ in range(60):
+            if fixture_state()['write_waiting']:break
+            time.sleep(.1)
+        else:raise AssertionError('Controlled remote write was not reached')
+        assert request(None,'/api/v1/runs/'+accepted_id,'GET')['body']['status']=='RUNNING'
+        run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/release-write',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
+        for _ in range(120):
+            terminal=request(None,'/api/v1/runs/'+accepted_id,'GET')['body']
+            if terminal['status']!='RUNNING':break
+            time.sleep(.1)
+        assert terminal['status']=='OUTCOME_UNCERTAIN' and terminal['plan_digest']==plan['digest'],terminal
+        compose('restart','netbox-sync-apply-worker')
+        print('PASS real HTTP disconnect: accepted RUNNING survives; matching uncertain result survives worker restart',flush=True)
         before_retry=fixture_state()['write_requests']
         fresh_discovery=request({},base+'/discovery')
         assert fresh_discovery['status']==200 and fresh_discovery['body']['items']
@@ -296,10 +319,12 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
     if os.environ.get('NETBOX_SYNC_BROWSER_FULL_SYNC_TEST')=='1':
         # Synthetic authenticated session is exchanged only through a protected,
         # test-owned transient file. Browser uses the actual API/worker transport.
+        if provider=='proxmox':
+            run(['docker','exec',peer,'python','-c',"import requests; requests.post('https://esxi.probe.test:8443/fixture/hold-next-write',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
         browser_request=root.parent/'browser-request.json';browser_done=root.parent/'browser-done.json'
         if browser_done.exists(): browser_done.unlink()
         fd=os.open(browser_request,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
-        with os.fdopen(fd,'w') as stream: json.dump(dict(api=compose('ps','-q','netbox-sync-api'),cookie=session_cookie,source=sid,project=project,uncertain=provider=='esxi'),stream)
+        with os.fdopen(fd,'w') as stream: json.dump(dict(api=compose('ps','-q','netbox-sync-api'),cookie=session_cookie,source=sid,project=project,uncertain=provider=='esxi',drop_response=provider=='proxmox'),stream)
         for _ in range(240):
             if browser_done.exists(): break
             time.sleep(.5)

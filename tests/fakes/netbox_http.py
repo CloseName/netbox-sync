@@ -80,6 +80,13 @@ def netbox_http(seed, ssl_context=None, authorize=None, behavior=None, bind=('12
                     next_url = ('https' if ssl_context else 'http') + '://' + self.headers['Host'] + path.path + '?' + urlencode(query, doseq=True)
                 return self.reply(200,{'count':len(matches),'next':next_url,'previous':None,'results':[project(endpoint,r) for r in matches[offset:offset+limit]]})
             value=json.loads(self.rfile.read(int(self.headers.get('Content-Length','0'))))
+            gate=behavior.pop('hold_next_write',None) if behavior else None
+            if gate is not None:
+                behavior['write_waiting']=True
+                if not gate.wait(45):
+                    behavior['write_waiting']=False
+                    return self.reply(503, {'detail':'Controlled write gate expired'})
+                behavior['write_waiting']=False
             writes.append((self.command,endpoint,deepcopy(value)))
             if behavior and behavior.get('fail_write_number')==len(writes):
                 behavior.pop('fail_write_number')
