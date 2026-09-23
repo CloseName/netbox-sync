@@ -310,15 +310,16 @@ restore, and upgrade.
 
 ## UI-6 state and recovery
 
-The current chain ends at `0007_host_reservations`; the Foundation inventory also
-contains auth_state/auth_audit, host_reservations and source_recoveries. Dumps preserve tombstones,
+The current chain ends at `0009_source_identity_proof`; the Foundation inventory also
+contains auth_state/auth_audit, host_reservations, source_recoveries,
+registration_intents and source_identity_verifications. Dumps preserve tombstones,
 source identity and durable operation state. Manifest credential references cover active
 sources only: a removed source may retain its original DB references even when its
 exclusive local files were explicitly removed. Remaining secret files still retain the
 existing tar/mode/owner/xattr verification contract.
 
 Fresh restore rejects any source, run, operation, tombstone, host reservation or
-recovery rows, including orphan lifecycle evidence. The exact empty-schema cleanup also removes the known invoker trigger
+recovery/registration-intent/identity-proof rows, including orphan lifecycle evidence. The exact empty-schema cleanup also removes the known invoker trigger
 function without CASCADE. After migration/grants, restored RUNNING operations become
 FAILED/OPERATION_INTERRUPTED and READY plans become STALE; results are cleared. Work is
 not resumed and old confirmation context cannot become applicable. Existing uncertain

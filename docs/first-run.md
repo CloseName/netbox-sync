@@ -20,7 +20,7 @@ fabrication or legacy naming migration is part of a fresh installation.
 The existing installer transaction prepares `${ROOT}/releases/<release-id>`,
 generates protected role-specific config and infrastructure passwords, builds the Web
 image, starts bundled PostgreSQL, provisions roles, migrates through
-`0007_host_reservations`, applies grants and activates `${ROOT}/current`.
+`0009_source_identity_proof`, applies grants and activates `${ROOT}/current`.
 It starts nginx, API, broker, lifecycle, bootstrap, discovery, apply and schedule workers,
 then enables the canonical systemd timer. No legacy naming migration is needed.
 No NetBox token or provider configuration is required to start these processes.
@@ -169,7 +169,7 @@ production action or provider write during repository development.
 2. Install the reviewed current release with the canonical installer.
 3. Verify canonical releases/current/config/secrets/backups/state/runtime paths and modes.
 4. Verify bundled PostgreSQL health and no published DB port.
-5. Verify migration head `0007_host_reservations`.
+5. Verify migration head `0009_source_identity_proof`.
 6. Verify database/schema `netbox_sync` and canonical separated roles/grants.
 7. Verify service/timer units and zero-source scheduler success.
 8. Open a direct application URL in two browsers; both show first-run.

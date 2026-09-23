@@ -215,7 +215,7 @@ bootstrap, discovery, apply and schedule workers (each app service prefixed
 `netbox-sync-`). API/proxy/PostgreSQL health checks pass. Broker network is literally
 none; API/DB PortBindings are empty/null. Standalone nginx publishes 80/443; external-mode Sync publishes nothing; there is no
 API TCP listener, provider/worker publication or database publication. DB/schema are
-both `netbox_sync`, revision is `0007_host_reservations`, source count 0. Timer is
+both `netbox_sync`, revision is `0009_source_identity_proof`, source count 0. Timer is
 enabled/active on a 60-second cadence; its oneshot service may be inactive between
 successful ticks. `netbox-sync-scheduler` is transient, and DB tools/http-init are
 one-shot, not permanent services. Stop for any mismatch or failed unit.

@@ -51,7 +51,7 @@ sudo python3 "$ROOT/repo/deploy/install.py" \
   --public-url https://netbox-sync-test.indeed-id.hq   --ingress-mode external
 ```
 
-Do not recreate env files, credentials, volumes, TLS directories, current or historical naming layout. The installer retains the selected root and protected configuration and applies the lifecycle column grants. The current chain advances to `0007_host_reservations`, preserving hardware reservations and the source recovery journal. Sources missing historical hardware evidence require explicit identity review before additional ESXi registration; do not invent UUIDs from addresses. Existing administrator/onboarding state does not require re-enrollment. For a genuinely pre-auth installation follow local-admin-upgrade-runbook.md and its explicit acknowledgment instead.
+Do not recreate env files, credentials, volumes, TLS directories, current or historical naming layout. The installer retains the selected root and protected configuration and applies the lifecycle column grants. The current chain advances to `0009_source_identity_proof`, preserving hardware reservations and the source recovery journal. Sources missing historical hardware evidence require explicit identity review before additional ESXi registration; do not invent UUIDs from addresses. Existing administrator/onboarding state does not require re-enrollment. For a genuinely pre-auth installation follow local-admin-upgrade-runbook.md and its explicit acknowledgment instead.
 
 Stop on installer failure. Do not blindly rerun an immutable release ID, delete containers/volumes, manually switch current, or roll back across database changes. First collect only phase/error, selected release path and service/volume metadata; retain the verified backup.
 
@@ -81,3 +81,23 @@ The one-shot scheduler logs to `netbox-sync.service`, not the persistent schedul
 or apply worker. Zero failed-run counts/absent digest do not prove absence of
 writes. Do not retry automatically or broaden provider/NetBox permissions without
 the bounded stage/HTTP evidence. No new migration or credential change is needed.
+
+
+## Host identity / registration continuation release
+
+The current head is migration `0009_source_identity_proof`. The supported installer
+runs forward migrations and narrow grants; no manual table creation or env edits
+are required. Back up before upgrade and retain the old release/backup. Rollback
+must not discard pending registrations or verified identity journals.
+
+After reviewed publication/deployment, use the bounded read-only Admin procedure in
+[host identity registration](host-identity-registration.md#minimal-read-only-evidence-for-the-two-esxi-infra-entries)
+for the two ESXI-INFRA records. Do not enable schedules or remove a record to get past
+an identity blocker. An uncertain registration can continue with the original actor,
+source ID, nonce and parameters after a fresh authenticated probe; never clear its
+reservation in SQL. Legacy verification requires existing matching ownership;
+unknown UUIDs, empty inventory and matching DNS names are not enough.
+
+Local acceptance on the final image: both production worker modes passed; a separate
+bundled installer upgrade and host backup/verify/inspect/fresh-restore gate passed.
+These are controlled local fixtures, not an assertion of live ESXI-INFRA ownership.

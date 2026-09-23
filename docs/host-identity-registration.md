@@ -23,13 +23,13 @@ The actor-bound registration-status endpoint can distinguish a committed source
 from an uncertain reserved attempt after API restart. It does not expose secret
 values or credential references. Successful registration leaves scheduling off.
 A reserved attempt without a committed source is not proof that no cluster or
-credential file was created. Automated release/resume of such abandoned attempts
-is not implemented yet; do not delete its reservation or retry with a new source ID.
+credential file was created. Explicit same-attempt continuation is described below. Automatic release is not
+supported; do not delete its reservation or retry with a new source ID.
 
 Legacy source rows without a recorded hardware UUID block new ESXi registration
 with `HOST_REGISTRY_REVIEW_REQUIRED`. They are not assigned UUIDs from addresses or
-names. An administrative identity acquisition workflow is still required for these
-rows. The runtime duplicate guard protects sources with recorded UUIDs; it cannot
+names. The bounded Admin verification endpoint below can acquire identity only with
+fresh provider evidence and matching existing NetBox host provenance. The runtime duplicate guard protects sources with recorded UUIDs; it cannot
 prove equivalence of two legacy rows with no hardware evidence.
 
 ## Removed-source recovery
@@ -66,7 +66,8 @@ is CREDENTIALS_PENDING, a timeout does not authorize deletion. With unchanged
 proof and the same credentials, the same attempt can be reviewed and retried after
 restart. If evidence or credentials have changed, automatic reconciliation is not
 yet supported: retain the journal and secret; do not fabricate a new attempt.
-Proxmox recovery and legacy identity acquisition are not covered by this flow.
+Proxmox recovery is not covered. Verified legacy ESXi sources can use the same
+flow, retaining their namespace and the exact verified placement.
 
 ## Existing duplicate inspection
 
@@ -105,3 +106,76 @@ Use disposable PostgreSQL and controlled SOAP/HTTPS endpoints, never live ESXi:
 Production Compose tests execute the lifecycle through API, broker and workers
 for both bundled/external PostgreSQL. Unit address variants inject trusted preview
 evidence; they are not a claim of testing real corporate DNS aliases or TLS names.
+
+
+## Explicit continuation after registration interruption
+
+This backend workflow is limited to an ESXi attempt held by the same authenticated
+actor, original source ID and registration UUID. Read `POST
+/api/v1/sources/registration-status` first with `source_instance` and
+`registration_id`. REGISTERED links to the existing source; UNCERTAIN with
+`resume_supported: true` permits a fresh connection test with `registration_resume`
+containing those same two fields. The ordinary probe, policy, TLS and provider
+hardware checks still run. The same UUID is required, regardless of DNS spelling.
+
+Use the new receipt to submit the original registration parameters and nonce.
+An immutable digest fences placement and metadata before catalog/secret effects.
+Changing a display label in a catalog reference is harmless; changing its ID,
+source name or effective port is not. Final registration holds the existing UUID
+advisory lock and repeats the active/removed/unknown-source checks. Operator may
+continue only their own registration; recovery remains Admin-only.
+
+Credentials use one deterministic attempt-owned broker key, with the same broker
+operation ID. A DB refusal or lost response retains that file; retry never deletes
+it and cannot create a second source. A changed password after a file has already
+been created is not silently substituted. Keep the original attempt and request
+administrative reconciliation. No automatic reservation release/expiry is offered.
+Pre-0008 attempts may have old randomly named orphan files: they are retained,
+not claimed or deleted by this workflow. The ordinary UI does not yet expose a
+full restart-resume wizard; these are server contracts, not a new UI acceptance.
+
+## Verify an existing ESXi source without historical hardware metadata
+
+Admin invokes `POST /api/v1/sources/{source}/identity-review` after successful
+Discovery. Evidence must be at most 10 minutes old and identify exactly one valid
+hardware UUID. The read worker resolves the configured placement uniquely, then
+reads a complete bounded host/VM inventory. An existing v2 source-owned host must
+match the observed UUID in the configured cluster/site. Empty inventory, old
+`ha-host` provenance, foreign/shared ownership, duplicate identities and ambiguous
+placement do not prove historical ownership and block confirmation.
+
+Review returns the exact source revision, discovery_id, observed UUID/time,
+recorded UUID, placement IDs, owned object IDs, blockers and digest. Confirm with
+`POST /api/v1/sources/{source}/identity-confirm`, copying revision, discovery_id,
+digest and `confirmed: true`. The server rereads evidence, and lifecycle holds the
+shared apply lock/source gate and rechecks revision, Discovery generation and
+active/uncertain work. Only the proof journal and `settings.provider_identity`
+change; READY plans are invalidated. Address, mappings, credentials, schedules,
+NetBox objects and Source ID do not change. Missing legacy mappings still require
+explicit valid catalog choices before they can be saved; identity proof does not
+invent them. A repeated identical confirmation acknowledges its historical result,
+without reactivating or mutating a subsequently changed source.
+
+The inventory digest includes provenance, not just object IDs. Changes to VM
+identity with the same NetBox ID invalidate review. Proxmox verification and legacy
+identity schemas lacking sufficient evidence remain unsupported, not auto-adopted.
+
+## Minimal read-only evidence for the two ESXI-INFRA entries
+
+No winner has been established locally. The earlier authorized browser read was
+blocked with ERR_BLOCKED_BY_CLIENT (no reason supplied); this is not bypassed.
+No live removal, rebind or replay of uncertain work is authorized by this document.
+After a separately reviewed deployment, an Admin can run Discovery sequentially
+for `esxi-4b77b54e47284ce9b284` and `esxi-ad122549fb584d448ce7`, then call
+`POST /api/v1/sources/identity-audit` with `sources` containing those two IDs.
+This is read-only; it reports SAME_OBSERVED_UUID, DISTINCT_OBSERVED_UUIDS or UNPROVED,
+individual proof/error, and never selects an owner or performs remediation.
+
+Supply only that bounded report plus running/uncertain run IDs/statuses and
+credential ownership classification (exclusive/shared/absent). For any proposed
+cross-namespace transfer, additionally obtain source-scoped interface/IP IDs and
+provenance from NetBox; this audit currently reads hosts/VMs only. Do not supply
+tokens, passwords, cookies, env files, private keys, descriptions or full responses.
+A timed-out Discovery cannot prove identity. If either source has no owned host,
+or both namespaces own objects, retain both and resolve ownership explicitly;
+there is no safe automatic deletion based on names, address or empty Runs.

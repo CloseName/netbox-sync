@@ -67,16 +67,16 @@ physical-host identity from these labels/address alone.
 | --- | --- |
 | 1 NetBox retirement | Existing review-only journal; guarded remote deletion not implemented. |
 | 2 Orphan reconciliation | Durable authoritative reconciliation/periodic executor missing. |
-| 3 Remove/re-add/recover | Bounded Admin ESXi same-namespace recovery implemented/tested; legacy, Proxmox and cross-namespace recovery unfinished. |
+| 3 Remove/re-add/recover | Bounded Admin ESXi same-namespace recovery, including verified legacy UUID/placement, implemented/tested. Proxmox and cross-namespace transfer remain unfinished. |
 | 4 Cluster creation | Live cause unconfirmed; previous controlled test is not reproduction. |
 | 5 IP scopes | Explicit observations supported; VRF/scoped assignments remain missing. |
 | 6 PAM VM identity | Still ambiguous; no identity schema changed or conflicts bypassed. |
 | 7 CM uncertain run | Reconciliation state machine missing; do not replay old writes. |
 | 8 PLAN latency | Confirmed redundant reads reduced locally; live root cause not established. |
 | 9 AD/RBAC | Earlier fixture evidence only; fresh Microsoft AD acceptance pending. |
-| 10 Reauthentication | Earlier implementation retained; this iteration runtime gates pending. |
+| 10 Reauthentication | Real API/auth-worker proof expiry, incorrect password, retained session and explicit retry passed locally. Original live logout cause remains unconfirmed. |
 | 11 Apply response loss | Earlier same-run UI checks retained; restart/runtime fault gate pending. |
-| 12 Duplicate hosts | UUID admission/atomic reservation/runtime guard and ESXi recovery tested. Legacy identity acquisition, abandoned-attempt resume and live ownership audit remain. |
+| 12 Duplicate hosts | UUID admission/reservations, same-attempt continuation, proven legacy identity and read-only Admin audit implemented locally. Live ownership of the two ESXI-INFRA records is still unproved; no deletion/transfer chosen. Proxmox identity admission is not included. |
 
 ## Isolated resources
 
@@ -228,3 +228,76 @@ This checkpoint is not completion of the original 12-item backend assignment.
 Remaining local implementation is listed above and in host-identity-registration.md.
 Do not treat missing live UUID/NetBox ownership evidence as proof that the two
 ESXI-INFRA entries represent the same physical server or may safely be deleted.
+
+
+## Continuation after 8230f83 — registration and identity backend
+
+Preserved commits d42410b/8230f83 and all prepared changes. No live connection,
+push or deployment. Docker desktop-linux / Engine 29.7.2 remains available.
+
+Implemented actor/nonce/UUID-bound continuation after uncertain registration,
+immutable intent (0008), deterministic broker key and status reconciliation.
+Fresh authenticated probe is mandatory after API restart. Added Admin-only legacy
+ESXi identity review/confirm and two-source read-only audit (0009). A matching
+historically source-owned host is required; neither empty inventory nor matching
+names/address establishes ownership. Same source, credentials, NetBox IDs, history
+and schedules are retained. Missing legacy mappings require explicit catalog
+selection; identity verification does not manufacture them.
+
+Review found a defect in the uncommitted identity proof: rebuilding the digest
+from projected IDs discarded the original provenance digest. A regression changed
+VM identity while preserving its NetBox ID and reproduced equal digests. Fixed by
+chaining the original inventory hash into the configured-placement hash. The
+regression now passes; it does not establish any cause of the live conflicts.
+
+Local evidence collected so far:
+- 209 affected Linux/PostgreSQL tests passed, no skips (identity, registration,
+  recovery, lifecycle, catalog, backup, generation/revision fences and RBAC).
+- 113 migration/onboarding/deployment tests passed, 1 Compose-render test deselected
+  because the Linux test runner has no Docker CLI; that exact test passed on the
+  Docker host. Populated 0007 -> 0009 upgrade and repeat retain old claims/recoveries.
+- 11 actual PostgreSQL grant and pg_dump/pg_restore tests passed. Both new journals
+  survive dump/restore; runtime roles cannot rewrite/delete their append-only rows.
+- Dockerfile.web build passed, including the cached unchanged TypeScript/Vite
+  frontend build, image netbox-sync-ux:identity-continuation-final-20260923,
+  manifest list d4e80ccc12ce50d14fd3dcc372dac93b6302fefe888dc83545f0313f0d125f85.
+- Initial production runtime run reached resume/restart, legacy proof, removal/
+  recovery, manual and scheduled ESXi success but then failed its own empty-mapping
+  assumption. Server correctly returned CATALOG_SELECTION_REQUIRED. The scenario
+  now asserts that refusal and explicitly submits catalog choices before continuing.
+  Final bundled/external rerun status is recorded below when available.
+
+The live audit is still blocked by missing identity/ownership evidence; no approved
+read-only route has been used to bypass the previous ERR_BLOCKED_BY_CLIENT refusal.
+See host-identity-registration.md for exact minimal metadata and safe audit calls.
+The whole 12-item assignment is not complete. In particular, NetBox retirement,
+authoritative orphan reconciliation, IP scope mapping, PAM identity transition,
+CM uncertain-run reconciliation and Microsoft AD acceptance are not supplied by
+these registration changes. These limits are not claims that all local work is done.
+
+
+### Final local gates for 766db17
+
+- Final production Compose bundled + external PostgreSQL: **2 passed in 417.38s**.
+  Both run actual API/probe/broker/lifecycle/discovery/apply/scheduler processes,
+  controlled HTTPS 8443 ESXi and Proxmox (VM + LXC), required-read refusal,
+  same-attempt continuation after API restart/DB refusal, one credential file and
+  one source, legacy ownership verification, remove/recover, no-op replan,
+  observation mode, mappings/revision checks and actual browser workflow.
+- Separate final bundled installer upgrade + supported host backup create/verify/
+  inspect/fresh restore: **1 passed in 155.49s** (external parametrization excluded
+  intentionally for this bundled-only upgrade gate). The runtime worker mode skips
+  that baseline branch, so this is an additional executed check, not inferred from
+  the preceding workers run. Identity/policy/credential/onboarding state and service
+  restoration are checked by the scenario; new journal contents additionally have
+  the explicit pg_dump/pg_restore regression described above.
+- `git diff --check` and staged diff check passed. Backend/regressions committed as
+  `766db17`; original d42410b/8230f83 preserved. No UI implementation changes.
+- No live-system access, deletion, reassignment, push, deployment, VHD operations or
+  global cleanup. Test cleanup remained scoped to each unique Compose project.
+
+This completes the current local registration-continuation and legacy-proof block,
+not the full backend assignment or live duplicate remediation. The next required
+ownership evidence is listed in host-identity-registration.md; no source should be
+removed until it is available and reviewed. Other outstanding matrix items remain
+explicitly open and must not be represented as completed or covered by this smoke.

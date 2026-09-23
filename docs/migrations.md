@@ -114,7 +114,7 @@ Bootstrap state uses the protected NetBox secrets directory and existing backup 
 metadata contract. No API/worker gains DDL or owner privileges. See [first-run](first-run.md).
 
 
-## Current head: host reservations and recovery
+## Host reservations and recovery
 
 `0006_auth_policy` is followed by `0007_host_reservations`. The latter adds immutable
 ESXi hardware reservations, durable source recovery attempts and `restored_at` on
@@ -124,3 +124,15 @@ reservations but cannot update or delete them. Lifecycle alone can write the rec
 journal and the narrowly required source credential-reference/connection columns;
 API roles cannot update existing source records. Tests verify actual PostgreSQL grants.
 See [host identity registration](host-identity-registration.md) for limitations.
+
+
+## Current head: registration continuation and verified legacy identity
+
+`0008_registration_intents` follows 0007 and adds immutable actor/nonce/UUID-bound
+registration fingerprints. Only registration_writer receives SELECT/INSERT;
+UPDATE/DELETE are not granted. The table references the retained reservation.
+`0009_source_identity_proof` adds append-only legacy identity evidence. Only
+lifecycle_writer receives SELECT/INSERT on that journal. No new role, network,
+credential reader, DDL capability or broker DB connection is introduced.
+Both journals enter the exact backup inventory and block destructive fresh restore
+when nonempty. Existing migrations are unchanged; rollback does not discard proofs.
