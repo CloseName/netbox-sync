@@ -65,7 +65,7 @@ physical-host identity from these labels/address alone.
 
 | Requirement | State / remaining gate |
 | --- | --- |
-| 1 NetBox retirement | NetBox-side claim/manifest/receipt transaction service and actual deletion/rollback/concurrency tested locally. NetBox HTTP and private Sync transport tested; product lifecycle coordinator, legacy claims and rollout remain missing; source removal is still retain-only. |
+| 1 NetBox retirement | Separate approved worker, DB-only lifecycle coordinator, Admin review/confirm, atomic whole-source receipt and uncertain/restart continuation now integrated and locally tested. Historical claims and full provider → retirement → re-registration rollout gates remain open. |
 | 2 Orphan reconciliation | Durable authoritative reconciliation/periodic executor missing. |
 | 3 Remove/re-add/recover | Bounded Admin ESXi same-namespace recovery, including verified legacy UUID/placement, implemented/tested. Proxmox and cross-namespace transfer remain unfinished. |
 | 4 Cluster creation | Live cause unconfirmed; previous controlled test is not reproduction. |
@@ -524,3 +524,134 @@ Experimental pre-wire HTTP receipts are not silently reinterpreted under the new
 wire digest. No released product integration or live guard installation exists;
 internal service receipt semantics remain unchanged. Historical receipts remain
 retained; no failed retry creates a new object automatically.
+
+
+## Continuation after 0453af4 — approved isolated retirement worker
+
+The user explicitly approved a separate NetBox-only worker after automatic review
+mistook the proposed boundary for granting lifecycle-worker a NetBox token. The
+accepted implementation gives lifecycle only the private Unix client and DB journal;
+API cannot mount that socket; broker remains literal network_mode:none. The worker
+has read-only NetBox/CA mounts, bounded verified HTTPS, no DB/provider/host-control
+capabilities, readonly rootfs and only CHOWN. No new KILL capability was needed.
+
+Implemented complete source-tree transaction under the existing NetBox dependency
+fence, durable Sync migration 0010, exact receipt before tombstone, shared-lock and
+source-generation checks, Admin-only API plus minimal EN/RU review/continuation UI.
+Old removal cannot bypass the receipt via production lifecycle protocol. CREATE
+facade can establish atomic claims when an operator explicitly pins guard UUID;
+existing managed objects are never silently adopted. The pinned UUID survives an
+ordinary upgrade; attempting to change it refuses before release preparation.
+
+Reproduced/fixed during integration:
+- apply_registry_reader lacked the new source_gate column grants: fixed narrowly;
+  real role execution and negative metadata checks pass.
+- backing up an older Compose release would pass an unknown new service to stop:
+  actual service inventory now precedes timer changes; fail-closed empty/error tests
+  and exact old/new release stop-list tests pass.
+- undelivered execute left only a REVIEWED external receipt: ordinary polling stays
+  read-only; explicit Admin continuation now verifies the exact same evidence and
+  resumes the original idempotent intent. Changed evidence never dispatches.
+- real runtime fixture initially passed only the secret fragment of a NetBox v2 token:
+  fixed fixture to use its complete authorization value; no product auth relaxation.
+- full suite exposed test-order contamination: in-process discovery child fixture
+  left logging globally disabled. Reproduced with discovery tests followed by the
+  PostgreSQL diagnostic test; restore logging only in the test helper. Product child
+  secrecy policy is unchanged. First full PostgreSQL run: 1381 passed, 1 failed,
+  47 skipped. Full repeat after isolation fix: **1382 passed, 47 skipped**.
+
+Executed gates:
+- Actual production Compose worker, newly built Dockerfile image (no Python bind
+  substitution in final gate), real NetBox 4.7 TLS and PostgreSQL lifecycle: review
+  ten claimed objects, undelivered execute, no-write receipt check, restarted
+  coordinator, explicit continuation, confirmed tombstone, retained Run History and
+  idempotent repeat passed. Endpoint is an isolated fixture, never the test VM.
+- Real NetBox source transaction/dependency/HTTP tests passed: changed/foreign
+  dependencies, rollback, concurrent writer and receipt failure remain protected.
+- Linux deployment/backup/API selected tests: 150 passed, one Docker CLI skip.
+- Separate real narrow-grants and backup pg_dump/pg_restore: 12 passed.
+- Actual host Compose model standalone/external: 3 passed.
+- Frontend 74 unit, TypeScript/Vite, complete durable browser suite 30 passed.
+  EN/RU explicit continuation screenshots are under frontend/test-results; no secrets.
+- Unrelated README.md + docs/containers.md changes appeared during work. Preserved
+  and excluded from these implementation commits.
+
+Remaining full-task blockers are unchanged where not explicitly closed: authoritative
+orphan executor, historical unclaimed inventory, complete provider create → retire →
+readd lifecycle, old CM UNKNOWN proof, PAM/Proxmox identity and populated upgrade
+acceptance. Full external-NetBox backup/restore still has its documented ltree failure.
+This stage does not establish the full twelve-item completion or publication gate.
+See source-retirement-integration.md for current contract and remaining constraints.
+No push, deployment, live connection or final global Docker cleanup was performed.
+
+
+### Classification of the 47 final Linux skips
+
+| Group | Count | Why / relation to this diff / separate evidence |
+| --- | ---: | --- |
+| auth Compose | 2 | Opt-in operator Docker harness; both passed on the current built web image; bundled gate includes supported host CLI create/verify/inspect/restore and service-state restoration. |
+| auth + LDAP upgrade | 2 | Opt-in operator socket harness; both historical upgrades passed; 5acd4c1 baseline assertion fixed to actual0006, post-upgrade assertion0010. |
+| clean Debian backup | 2 | Dedicated Debian host gates, one requires privileged; not run in this continuation. |
+| Docker backup transport | 1 | Opt-in separate full-stack dump/restore gate; real PG journal dump/restore passed separately. |
+| backup PostgreSQL | 2 | Separate DSN required; both ran and passed with isolated backup DB. |
+| deployment PostgreSQL including zero-source | 11 | Separate DSN required; ten role tests and one zero-source test passed separately. |
+| canonical/external Compose rendering | 3 | No Docker CLI/socket inside test runner by design; all three passed on host CLI. |
+| canonical container naming | 2 | Separate runtime opt-in, naming implementation unchanged; not rerun here. |
+| live ESXi | 1 | No live credentials/connectivity used; deliberately not run. |
+| ESXi property inventory cross-UID | 4 | Isolated root-runtime opt-in; provider collection unchanged, not rerun. |
+| naming migration PostgreSQL | 1 | Dedicated migration DB absent; naming compatibility implementation unchanged. |
+| connection probe Compose | 2 | Separate opt-in; probe implementation unchanged, current auth Compose exercises its production path. |
+| production proxy | 1 | Separate standalone smoke opt-in; proxy config unchanged. |
+| retirement production worker | 1 | Ran separately with real NetBox, TLS, DB and actual built production worker; passed. |
+| retirement transport runtime | 1 | Ran separately in isolated internal network with real UDS/child/HTTPS; passed. |
+| TLS Docker | 3 | Separate TLS smoke opt-in; TLS behavior unchanged, retirement verified HTTPS/CA separately. |
+| worker timeout Docker/Linux | 8 | Dedicated cross-UID capability containers; existing termination implementation unchanged, not rerun. |
+
+Counts are skip occurrences in the broad run, not additional passing tests. A
+separate journal-only test does not close full-NetBox restore or full provider
+retirement/re-registration coverage. Runtime results are updated after completion.
+
+
+The full current-image production Compose gate subsequently passed both DB modes
+(2 passed, 219 seconds). It includes actual API/auth/probe/bootstrap/private sockets,
+HTTPS/SOAP connection/registration, explicit cluster creation, restart, auth proof
+expiry/reconfirmation and service isolation. Bundled mode additionally passed the
+supported host CLI backup/create/verify/inspect/fresh-restore with protected state
+and prior service-state preservation. This gate did not enable provider full-sync
+or guard creation; it does not replace the still-open combined provider cycle.
+
+The real pre-auth 897de2a upgrade passed with volume identity, credentials, source,
+history, schedule and READY state preserved, migration0010, root enrollment and
+anonymous denial. The historical LDAP-upgrade harness initially failed before
+upgrading: it incorrectly expected the new migration on its old 5acd4c1 baseline.
+`git show 5acd4c1:deploy/backup.py` proves that baseline ends at0006. Corrected the
+baseline assertion and added a distinct0010 assertion after upgrade; rerun passed (124 seconds), including retained LDAP settings/bind files across another upgrade.
+
+
+Final diff review then caught an API integration gap: the new Admin resume route
+was missing from LifecycleClient's local action allowlist. The earlier API test
+mocked that method and could not catch it. Replaced that mock with the lower-level
+transport boundary; before correction the Admin resume case returned503 (11 pass,
+1 fail). Added resume to the closed allowlist, retained all role restrictions, and
+ran the real lifecycle protocol against PostgreSQL: 21 focused tests passed. Added
+an actual production API → Unix lifecycle check that rejects an unknown intent
+with RETIREMENT_CONFLICT before any remote mutation. Rebuilt the web image and
+repeated both Compose modes: **2 passed in205 seconds**, including the real API/lifecycle continuation refusal check in each mode.
+
+Focused test-isolation commit: ece4512 (test fixture restores global logging state).
+No product logging suppression was relaxed.
+
+
+Network qualification from final review: bundled lifecycle is internal-DB-only.
+The pre-existing external-PostgreSQL override attaches lifecycle/API/schedule to
+netbox-sync-egress for DB connectivity. It was not broadened here, but there is no
+OS destination-only ACL in that mode. No NetBox token or HTTP capability was added
+to lifecycle; retirement destination restriction is its closed protocol and pinned
+HTTP client. Literal network-level DB-only egress in external mode is not proven
+and is retained as a deployment-hardening limitation, not silently claimed complete.
+
+
+Implementation commit: `30dd019c946d3359ae3eb6556906371f9f114416`.
+Both final runtime modes passed after the API allowlist fix. Documentation-only edits
+follow it. Remaining foreign working-tree entries are README.md and docs/containers.md;
+these are intentionally not included. No push or live changes were made.

@@ -408,3 +408,15 @@ mode/owner/xattr protections. Restored sources are included in credential-refere
 validation despite their retained historical tombstone. Older schemas without
 `restored_at` retain their original removal interpretation. Neither backup nor restore
 releases abandoned identity reservations or resumes pending recovery writes.
+
+
+## Reviewed retirement journal
+
+`0010_source_retirements` is included in the protected Sync dump. Pending SENDING
+records become UNCERTAIN on restore; no remote deletion is replayed automatically.
+A restored SUCCEEDED record still requires its matching external NetBox receipt
+before local removal can finish. Claims/receipts in external NetBox need their own
+coherent backup. See [retirement integration](source-retirement-integration.md).
+Maintenance inventories the selected release's actual Compose services before
+stopping its timer; a new helper does not pass new service names to an old release.
+An unavailable/empty inventory fails before any maintenance action.

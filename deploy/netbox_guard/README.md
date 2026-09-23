@@ -43,13 +43,15 @@ The fixed API uses standard NetBox serializers, ordinary constrained add permiss
 plus source-constrained guard permissions, and a durable installation UUID on every
 request. Read-only/revoked tokens cannot mutate; no generic delete endpoint exists.
 The private Sync client requires verified HTTPS, forbids redirects and never retries
-a write automatically. It is not yet connected to a production worker. Remaining
+a write automatically. It is now connected to a separately isolated production retirement worker; see
+`docs/source-retirement-integration.md`. Remaining
 product work includes trustworthy legacy claims,
-Sync Admin confirmation, registry revision/generation fencing, shared lock/source
-operation checks, durable multi-phase coordination, orphan reconciliation, upgrades
-and explicit capability/preflight handling. Lifecycle/broker privileges and product
-Compose have not changed. The broad table fence also needs an end-to-end execution
-budget and its operational impact must remain explicit.
+orphan reconciliation, complete provider/re-registration/upgrade gates and historical
+claim migration. Sync Admin confirmation, revision/generation fencing, shared lock,
+source/run checks and durable receipts are integrated. Only the new retirement worker
+has the approved NetBox mount/egress; lifecycle remains DB-only and broker networkless.
+Whole-source retirement has a 30-second budget, 10-second statements, 2-second lock
+wait and a 10,000-object bound. The broad table fence still has operational impact.
 
 ## Executed local evidence
 

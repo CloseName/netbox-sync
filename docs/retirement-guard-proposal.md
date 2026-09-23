@@ -1,5 +1,9 @@
 # Retirement: review contract and execution decision
 
+Historical 2026-09-22 review-only design; current executable integration and remaining
+limits are described in [source retirement integration](source-retirement-integration.md).
+The statements below about no execution apply to the original review library only.
+
 2026-09-22. This replaces the earlier comment-only proposal as a product target.
 **Destructive execution is not implemented or enabled.** Local review/journal code is
 `netbox_sync/retirement_review.py`. It is not wired into an API, an installer hook,
