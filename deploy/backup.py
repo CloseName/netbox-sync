@@ -31,7 +31,7 @@ RESTORE_BOOTSTRAP_FILE = 'postgres_bootstrap_password_next'
 FORMAT_VERSION = 1
 ALEMBIC_CHAIN = (
     '0001_registry_baseline', '0002_sync_run_history', '0003_netbox_sync_naming',
-    '0004_source_operations', '0005_source_tombstones', '0006_auth_policy', '0007_host_reservations', '0008_registration_intents', '0009_source_identity_proof')
+    '0004_source_operations', '0005_source_tombstones', '0006_auth_policy', '0007_host_reservations', '0008_registration_intents', '0009_source_identity_proof', '0010_source_retirements')
 ALEMBIC_HEAD = ALEMBIC_CHAIN[-1]
 PRODUCT = 'NetBox Sync'
 DATABASE_NAME = 'netbox_sync'
@@ -53,11 +53,11 @@ VALID_BROKER_XATTR_SETS = frozenset({
 })
 PAYLOAD_FILES = ('database.dump', 'state.tar', 'manifest.json')
 FOUNDATION_TABLES = ('alembic_version', 'auth_audit', 'auth_state', 'host_reservations', 'registration_intents', 'schema_meta', 'source_identity_verifications', 'source_operations', 'source_recoveries',
-                     'source_tombstones', 'sources', 'sync_runs')
+                     'source_retirements', 'source_tombstones', 'sources', 'sync_runs')
 SAFE_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
 SAFE_SCHEMA = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,62}$')
 MAINTENANCE_SERVICES = (
-    'netbox-sync-auth-worker', 'netbox-sync-proxy', 'netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker', 'netbox-sync-discovery-worker',
+    'netbox-sync-auth-worker', 'netbox-sync-proxy', 'netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-lifecycle-worker', 'netbox-sync-retirement-worker', 'netbox-sync-bootstrap-worker', 'netbox-sync-discovery-worker',
     'netbox-sync-apply-worker', 'netbox-sync-schedule-worker')
 HOST_LOCAL_COMPOSE_KEYS = (
     'NETBOX_SYNC_COMPOSE_PROJECT', 'NETBOX_SYNC_IMAGE', 'NETBOX_SYNC_CONFIG_DIR',
@@ -512,8 +512,9 @@ class DatabaseTool:
             f'SELECT (SELECT count(*) FROM {SCHEMA_NAME}.host_reservations), '
             f'(SELECT count(*) FROM {SCHEMA_NAME}.source_recoveries), '
             f'(SELECT count(*) FROM {SCHEMA_NAME}.registration_intents), '
-            f'(SELECT count(*) FROM {SCHEMA_NAME}.source_identity_verifications)')
-        if values != ['0|0|0|0']:
+            f'(SELECT count(*) FROM {SCHEMA_NAME}.source_identity_verifications), '
+            f'(SELECT count(*) FROM {SCHEMA_NAME}.source_retirements)')
+        if values != ['0|0|0|0|0']:
             raise BackupError('fresh restore target contains host reservation or recovery rows')
         auth = self.query(f"SELECT value->'principal' = 'null'::jsonb FROM {SCHEMA_NAME}.auth_state WHERE id=1")
         if auth != ['t']:
@@ -542,6 +543,7 @@ class DatabaseTool:
                    "safe_error_code='OPERATION_INTERRUPTED', result=NULL, "
                    "updated_at=clock_timestamp(), finished_at=clock_timestamp() "
                    "WHERE status IN ('RUNNING','READY')")
+        self.query(f"UPDATE {SCHEMA_NAME}.source_retirements SET state='UNCERTAIN',safe_code='RETIREMENT_UNCERTAIN' WHERE state='SENDING'")
 
     def postgres_major(self):
         """Return the connected server major version."""
@@ -795,6 +797,20 @@ def validate_no_legacy_runtime():
         raise BackupError('legacy runtime must be stopped before maintenance')
 
 
+def _maintenance_services(root, postgres_mode):
+    """Read the selected release's service names before changing runtime state.
+
+    The backup helper may be newer than current. Never pass a new service name
+    to an older Compose model, or call bare stop on an empty inventory.
+    """
+    result = install.run(_compose_command(
+        root, 'config', '--services', mode=postgres_mode), capture_output=True)
+    names = set(result.stdout.split())
+    if result.returncode or 'netbox-sync-api' not in names:
+        raise BackupError('maintenance service inventory unavailable')
+    return tuple(name for name in MAINTENANCE_SERVICES if name in names)
+
+
 @dataclass
 class Maintenance:
     """Short v1 maintenance window with exact prior-state restoration for backup."""
@@ -817,6 +833,7 @@ class Maintenance:
         if not self.no_systemd:
             install.validate_systemd_root(self.root)
             validate_no_legacy_runtime()
+        services = _maintenance_services(self.root, self.postgres_mode)
         if not self.no_systemd:
             self.timer_active = install.stop_timer()
         self.timer_stopped = True
@@ -831,7 +848,7 @@ class Maintenance:
             self.running = tuple(service for service in result.stdout.split()
                                  if service in MAINTENANCE_SERVICES)
             install.run(_compose_command(
-                self.root, 'stop', *MAINTENANCE_SERVICES, mode=self.postgres_mode))
+                self.root, 'stop', *services, mode=self.postgres_mode))
             self.writers_stopped = True
         except Exception:
             if self.lock_entered:
@@ -1151,6 +1168,7 @@ def _start_restored_runtime(root, postgres_mode):
     """Start ordinary services, prove liveness/diagnostics, never enable the timer."""
     prepared = install.PreparedDeployment(
         root=root, release=root / 'current', config=root / 'config', image='restored')
+    services = _maintenance_services(root, postgres_mode)
     try:
         overrides = ((root / 'current/compose.external-postgres.yml',)
                      if postgres_mode == 'external' else ())
@@ -1162,7 +1180,7 @@ def _start_restored_runtime(root, postgres_mode):
             raise BackupError('post-restore diagnostics did not become ready')
     except Exception:
         install.run(_compose_command(
-            root, 'stop', *MAINTENANCE_SERVICES, mode=postgres_mode), check=False)
+            root, 'stop', *services, mode=postgres_mode), check=False)
         raise
 
 

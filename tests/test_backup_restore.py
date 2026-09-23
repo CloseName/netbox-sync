@@ -516,6 +516,7 @@ def test_fresh_database_restore_requires_live_maintenance_boundary(monkeypatch,
         'DROP TABLE IF EXISTS netbox_sync.sync_runs; '
         'DROP TABLE IF EXISTS netbox_sync.sources; '
         'DROP TABLE IF EXISTS netbox_sync.source_tombstones; '
+        'DROP TABLE IF EXISTS netbox_sync.source_retirements; '
         'DROP TABLE IF EXISTS netbox_sync.source_recoveries; '
         'DROP TABLE IF EXISTS netbox_sync.source_operations; '
         'DROP TABLE IF EXISTS netbox_sync.source_identity_verifications; '
@@ -599,6 +600,8 @@ def test_maintenance_restores_prior_services_and_timer(monkeypatch, tmp_path):
         calls.append(tuple(command))
         if command[:4] == ['ps', '--status', 'running', '--services']:
             return SimpleNamespace(stdout='netbox-sync-api\nnetbox-sync-apply-worker\n')
+        if command == ['config', '--services']:
+            return SimpleNamespace(stdout='\n'.join(backup.MAINTENANCE_SERVICES), returncode=0)
         return SimpleNamespace(stdout='', returncode=0)
 
     monkeypatch.setattr(install, 'run', run)
@@ -612,6 +615,7 @@ def test_maintenance_restores_prior_services_and_timer(monkeypatch, tmp_path):
 
 
 def test_restore_maintenance_never_restarts_writers_or_timer(monkeypatch, tmp_path):
+    monkeypatch.setattr(backup, '_maintenance_services', lambda *_args: backup.MAINTENANCE_SERVICES)
     monkeypatch.setattr(backup, "validate_no_legacy_runtime", lambda: None)
     calls = []
     monkeypatch.setattr(install, 'stop_timer', lambda: True)
@@ -627,6 +631,7 @@ def test_restore_maintenance_never_restarts_writers_or_timer(monkeypatch, tmp_pa
 
 
 def test_backup_lock_failure_restores_previous_timer_state(monkeypatch, tmp_path):
+    monkeypatch.setattr(backup, '_maintenance_services', lambda *_args: backup.MAINTENANCE_SERVICES)
     monkeypatch.setattr(backup, "validate_no_legacy_runtime", lambda: None)
     calls = []
 
@@ -863,3 +868,33 @@ def test_backup_references_include_restored_sources_and_support_legacy_schema(mo
     monkeypatch.setattr(tool,'query',query)
     assert tool.source_secret_references()[0]['source_instance']=='source-a'
     assert ('t.restored_at IS NULL' in seen[-1])==restored
+
+
+@pytest.mark.parametrize('inventory', ['netbox-sync-api\nnetbox-sync-apply-worker\n',
+                                      '\n'.join(backup.MAINTENANCE_SERVICES)])
+def test_maintenance_stops_only_services_in_selected_release(monkeypatch, tmp_path, inventory):
+    calls = []
+    monkeypatch.setattr(install, 'compose_command', lambda _root, *args, **kw: list(args))
+    monkeypatch.setattr(install, 'shared_apply_lock', lambda _path: nullcontext())
+    def run(command, **kwargs):
+        calls.append(tuple(command))
+        return SimpleNamespace(stdout=inventory if command == ['config', '--services'] else '', returncode=0)
+    monkeypatch.setattr(install, 'run', run)
+    with backup.Maintenance(tmp_path, restore_after=True, no_systemd=True):
+        pass
+    stopped = next(command[1:] for command in calls if command[0] == 'stop')
+    assert stopped and set(stopped) == set(inventory.split())
+    assert calls[0] == ('config', '--services')
+
+
+@pytest.mark.parametrize('inventory,code', [('', 0), ('netbox-sync-db', 0), ('netbox-sync-api', 1)])
+def test_bad_maintenance_inventory_fails_before_timer_or_lock(monkeypatch, tmp_path, inventory, code):
+    monkeypatch.setattr(install, 'validate_systemd_root', lambda *_args: None)
+    monkeypatch.setattr(backup, 'validate_no_legacy_runtime', lambda: None)
+    monkeypatch.setattr(install, 'compose_command', lambda _root, *args, **kw: list(args))
+    monkeypatch.setattr(install, 'run', lambda *_args, **kw: SimpleNamespace(stdout=inventory, returncode=code))
+    monkeypatch.setattr(install, 'stop_timer', lambda: pytest.fail('timer must remain unchanged'))
+    monkeypatch.setattr(install, 'shared_apply_lock', lambda *_args: pytest.fail('must not enter maintenance'))
+    with pytest.raises(backup.BackupError, match='inventory unavailable'):
+        with backup.Maintenance(tmp_path, restore_after=True):
+            pytest.fail('unavailable inventory accepted')

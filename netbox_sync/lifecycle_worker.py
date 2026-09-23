@@ -26,8 +26,11 @@ def main():
         os.environ.get('NETBOX_SYNC_REGISTRY_SCHEMA', ''),
         os.environ.get('NETBOX_SYNC_APPLY_LOCK_PATH', '/run/netbox-sync-lock/apply.lock'))
     broker = BrokerCleanup(os.environ.get('NETBOX_SYNC_BROKER_SOCKET', '/run/netbox-sync-broker/broker.sock'))
+    from .retirement_coordinator import RetirementCoordinator
+    from .retirement_worker import RetirementClient
+    retirement=RetirementCoordinator(store,RetirementClient('/run/netbox-sync-retirement/worker.sock'),broker.remove_owned)
     serve(os.environ.get('NETBOX_SYNC_LIFECYCLE_SOCKET', '/run/netbox-sync-lifecycle/worker.sock'),
-          lambda payload: handle_lifecycle(store, broker, payload))
+          lambda payload: handle_lifecycle(store, broker, payload, retirement=retirement))
 
 
 if __name__ == '__main__':

@@ -32,10 +32,18 @@ class OperationError(RuntimeError):
 
 
 @contextmanager
-def source_gate(connection, schema, source):
+def source_gate(connection, schema, source, *, allow_retirement=False):
     """Serialize short lifecycle/generation transitions for one source only."""
     connection.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))',
                        (f'netbox-sync:{schema}:source:{source}',))
+    if not allow_retirement:
+        # Compatibility with pre-retirement schemas is read-only. A failed query
+        # is never treated as an empty journal or a permission to write.
+        exists=connection.execute('SELECT to_regclass(%s)',(schema+'.source_retirements',)).fetchone()
+        present=(exists.get('to_regclass') if isinstance(exists,dict) else exists[0]) if exists else None
+        if present and connection.execute(sql.SQL("SELECT source_instance FROM {} WHERE source_instance=%s AND state IN ('SENDING','UNCERTAIN','SUCCEEDED') LIMIT 1").format(
+                sql.Identifier(schema,'source_retirements')),(source,)).fetchone():
+            raise OperationError('SOURCE_RETIREMENT_PENDING')
     yield
 
 

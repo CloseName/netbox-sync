@@ -1,5 +1,6 @@
 export interface SourceLifecycle {
-  removal_blocker?: "SOURCE_APPLY_UNCONFIRMED" | "SOURCE_OPERATION_ACTIVE" | null;
+  retirement?: {operation_id: string; state: "SENDING"|"UNCERTAIN"|"SUCCEEDED"|"FINALIZED"} | null;
+  removal_blocker?: "SOURCE_APPLY_UNCONFIRMED" | "SOURCE_OPERATION_ACTIVE" | "SOURCE_RETIREMENT_PENDING" | null;
   source_instance: string; display_name: string; removed_at: string | null;
   revision: string | null; credential_state: 'RETAINED_BY_REQUEST' | 'REMOVED' | 'RETAINED_SHARED_OR_LEGACY' | 'CLEANUP_FAILED' | null;
 }

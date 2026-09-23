@@ -7,7 +7,7 @@ runpy.run_path(str(Path(__file__).with_name('netbox_model_scope_scenario.py')))
 from django.conf import settings
 from django.db import connection,connections
 assert connection.settings_dict['NAME']=='netbox_sync_guard_test'
-settings.ALLOWED_HOSTS=['127.0.0.1']
+settings.ALLOWED_HOSTS=['127.0.0.1','guard-netbox.test']
 settings.API_TOKEN_PEPPERS={1:secrets.token_urlsafe(64)}
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
@@ -34,7 +34,7 @@ now=datetime.now(datetime_timezone.utc)
 cert=(x509.CertificateBuilder().subject_name(subject).issuer_name(subject).public_key(key.public_key())
     .serial_number(x509.random_serial_number()).not_valid_before(now-timedelta(minutes=1))
     .not_valid_after(now+timedelta(hours=1))
-    .add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address('127.0.0.1'))]),False)
+    .add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address('127.0.0.1')),x509.DNSName('guard-netbox.test')]),False)
     .add_extension(x509.BasicConstraints(ca=True,path_length=0),True).sign(key,hashes.SHA256()))
 certfile=Path(certdir.name)/'cert.pem';keyfile=Path(certdir.name)/'key.pem'
 certfile.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
@@ -98,6 +98,7 @@ try:
     host=result.json()['id']
     vm_body={'nonce':str(uuid4()),'source_instance':source,'resource':'vm','cluster_id':cluster,'data':{'name':'owned-http-vm','cluster':cluster,'device':host,'vcpus':4,'memory':8192,'disk':20}}
     result=post('objects/create/',vm_body);assert result.status_code==201,(result.status_code,result.text)
+    assert result.json()['comments']==''
     vm=result.json()['id']
     def child(resource,data):
         value={'nonce':str(uuid4()),'source_instance':source,'resource':resource,'cluster_id':cluster,'data':data}
@@ -127,21 +128,35 @@ try:
     assert client.create(failed_body['nonce'],source,'vm',cluster,failed_body['data'])['id']==failed_vm
     assert VirtualMachine.objects.get(pk=failed_vm).comments=='manual fixture value'
     assert not User.objects.get(pk=user.pk).has_perm('virtualization.delete_virtualmachine')
-    # Every phase uses source-bound server permissions and read-only token refusal.
-    for root in (['vm',failed_vm],['vm',vm],['device',host],['cluster',cluster]):
-        proposal={'nonce':str(uuid4()),'source_instance':source,'cluster_id':cluster,'root':root}
-        result=post('retirements/review/',proposal);assert result.status_code==200,result.text
-        intent=result.json()
-        assert client.review(proposal['nonce'],source,cluster,root)==intent
-        execution={'nonce':intent['nonce'],'digest':intent['digest']}
-        assert post('retirements/execute/',execution,headers[1]).status_code==403
-        done=post('retirements/execute/',execution);assert done.status_code==200,done.text
-        assert done.json()['status']=='SUCCEEDED'
-        assert post('retirements/execute/',execution).json()==done.json()
-        assert client.execute(intent['nonce'],intent['digest'])==done.json()
-        assert client.receipt(intent['nonce'])==done.json()
-        observed=session.get(url+'retirements/'+intent['nonce']+'/',headers=headers[1],timeout=10)
-        assert observed.json()==done.json()
+    import os
+    if os.environ.get('NETBOX_SYNC_GUARD_WORKER_TEST')=='1':
+        helper=runpy.run_path('/app/tests/netbox_worker_fixture.py')
+        helper['exercise'](context,get_wsgi_application(),certfile,source,cluster,capability['guard_instance'],headers[0]['Authorization'].split(' ',1)[1])
+    elif os.environ.get('NETBOX_SYNC_GUARD_TREE')=='1':
+        nonce=str(uuid4())
+        intent=client.review_source(nonce,source,cluster)
+        assert intent['manifest']['format']==2
+        assert post('sources/execute/',{'nonce':nonce,'digest':intent['digest']},headers[1]).status_code==403
+        done=client.execute_source(nonce,intent['digest'])
+        assert done['status']=='SUCCEEDED' and len(done['deleted'])==10
+        assert client.execute_source(nonce,intent['digest'])==done
+        assert client.receipt(nonce)==done
+    else:
+        # Every phase uses source-bound server permissions and read-only token refusal.
+        for root in (['vm',failed_vm],['vm',vm],['device',host],['cluster',cluster]):
+            proposal={'nonce':str(uuid4()),'source_instance':source,'cluster_id':cluster,'root':root}
+            result=post('retirements/review/',proposal);assert result.status_code==200,result.text
+            intent=result.json()
+            assert client.review(proposal['nonce'],source,cluster,root)==intent
+            execution={'nonce':intent['nonce'],'digest':intent['digest']}
+            assert post('retirements/execute/',execution,headers[1]).status_code==403
+            done=post('retirements/execute/',execution);assert done.status_code==200,done.text
+            assert done.json()['status']=='SUCCEEDED'
+            assert post('retirements/execute/',execution).json()==done.json()
+            assert client.execute(intent['nonce'],intent['digest'])==done.json()
+            assert client.receipt(intent['nonce'])==done.json()
+            observed=session.get(url+'retirements/'+intent['nonce']+'/',headers=headers[1],timeout=10)
+            assert observed.json()==done.json()
     assert not Cluster.objects.filter(pk=cluster).exists()
     assert not VirtualMachine.objects.filter(pk=vm).exists()
     assert ClusterType.objects.filter(pk=kind.pk).exists()

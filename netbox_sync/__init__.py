@@ -930,6 +930,10 @@ def execute_discovered_source(
         if not history_plan.apply_allowed:
             from .scheduled_failure import ScheduledPlanBlocked
             raise ScheduledPlanBlocked('PLAN_BLOCKED')
+        from .guarded_creation import for_run
+        from .scheduled_failure import current_run_id
+        nb_api = for_run(nb_api, source_config, instance=os.environ.get('NETBOX_SYNC_GUARD_INSTANCE'),
+                         run_id=current_run_id(), url=netbox_url, token=netbox_token)
         _scheduled_stage('apply', history_plan)
         if source_config.source_type == 'esxi':
             execute_esxi_runtime(nb_api, hosts, source_config,

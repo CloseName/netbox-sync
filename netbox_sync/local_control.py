@@ -14,14 +14,14 @@ class ControlError(RuntimeError):
         super().__init__(code)
 
 
-def request(path, payload, timeout=10):
+def request(path, payload, timeout=10, response_limit=32768):
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
             deadline = time.monotonic() + timeout
             connection.settimeout(timeout)
             connection.connect(path)
             connection.sendall(json.dumps(payload).encode() + b'\n')
-            raw = receive(connection, deadline)
+            raw = receive(connection, deadline, max_bytes=response_limit)
         response = json.loads(raw)
         if response.get('ok') is not True:
             raise ControlError(response.get('error', 'CONTROL_UNAVAILABLE'))
@@ -32,14 +32,16 @@ def request(path, payload, timeout=10):
         raise ControlError() from None
 
 
-def receive(connection, deadline):
+def receive(connection, deadline, max_bytes=32768):
+    if type(max_bytes) is not int or not 1 <= max_bytes <= 2*1024*1024:
+        raise ControlError('CONTROL_REQUEST_INVALID')
     raw = b''
     while not raw.endswith(b'\n'):
         remaining = deadline - time.monotonic()
-        if remaining <= 0 or len(raw) >= 32768:
+        if remaining <= 0 or len(raw) >= max_bytes:
             raise ControlError('CONTROL_REQUEST_INVALID')
         connection.settimeout(remaining)
-        chunk = connection.recv(32768 - len(raw))
+        chunk = connection.recv(max_bytes - len(raw))
         if not chunk:
             raise ControlError('CONTROL_REQUEST_INVALID')
         raw += chunk
@@ -113,3 +115,6 @@ SAFE_CODES = SAFE_CODES | frozenset({'AUTH_REQUIRED','AUTH_REAUTH_REQUIRED','AUT
 
 from .ldap_directory import CODES as LDAP_CODES
 SAFE_CODES = SAFE_CODES | LDAP_CODES
+
+SAFE_CODES = SAFE_CODES | frozenset({'SOURCE_RETIREMENT_PENDING','SOURCE_RETIREMENT_REVIEW_REQUIRED',
+    'RETIREMENT_UNAVAILABLE','RETIREMENT_CONFLICT','RETIREMENT_BLOCKED','RETIREMENT_UNCERTAIN'})

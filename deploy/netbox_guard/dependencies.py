@@ -80,38 +80,43 @@ def _snapshot(collector):
     return DependencySnapshot(rows, updates, _digest([rows, updates]))
 
 
-@contextmanager
-def _locked_closure(roots, *, expected=None):
-    """Yield the exact current closure while concurrent database writers are fenced.
-
-    No DELETE is performed or exposed. A future executor must remain inside this
-    context AND prove claims/ownership/intent and commit its receipt atomically.
-    Locking all managed NetBox tables deliberately covers GenericForeignKeys,
-    whose dependencies cannot be protected by locking only parent rows. Reads
-    remain possible. This conservative fence is short and fails on contention;
-    it is not yet a supported live deployment path.
-    """
-    from django.apps import apps
-    from django.conf import settings
-    from django.db import connection, transaction, DatabaseError
-    from django.db.models.deletion import Collector, ProtectedError, RestrictedError
-
-    if settings.RELEASE.version != '4.7.0' or settings.PLUGINS not in ([], ['netbox_guard']):
-        raise DependencyGuardBlocked('UNSUPPORTED_NETBOX_SCHEMA')
-    if connection.vendor != 'postgresql' or connection.in_atomic_block:
-        # An outer transaction could retain these disruptive locks unexpectedly.
-        raise DependencyGuardBlocked('INDEPENDENT_TRANSACTION_REQUIRED')
+def _checked_roots(roots):
     if not isinstance(roots, (tuple, list)) or not 1 <= len(roots) <= MAX_OBJECTS:
         raise DependencyGuardBlocked('INVALID_ROOTS')
     seen = set()
     for root in roots:
         if (not isinstance(root, (tuple, list)) or len(root) != 2
-                or not isinstance(root[0], str) or root[0] not in MODELS or type(root[1]) is not int or root[1] <= 0
-                or tuple(root) in seen):
+                or not isinstance(root[0], str) or root[0] not in MODELS
+                or type(root[1]) is not int or root[1] <= 0 or tuple(root) in seen):
             raise DependencyGuardBlocked('INVALID_ROOTS')
         seen.add(tuple(root))
-    if expected is not None and not isinstance(expected, DependencySnapshot):
-        raise DependencyGuardBlocked('INVALID_REVIEW')
+    return sorted(seen)
+
+
+def _closure(roots):
+    from django.apps import apps
+    from django.db import connection
+    from django.db.models.deletion import Collector
+    collector = Collector(using=connection.alias)
+    for kind, identifier in _checked_roots(roots):
+        obj = apps.get_model(MODELS[kind]).objects.filter(pk=identifier).first()
+        if obj is None:
+            raise DependencyGuardBlocked('OBJECT_MISSING')
+        collector.collect([obj])
+    return _snapshot(collector), collector
+
+
+@contextmanager
+def _database_fence():
+    """One independent transaction; every guarded path shares the same fence."""
+    from django.apps import apps
+    from django.conf import settings
+    from django.db import connection, transaction, DatabaseError
+    from django.db.models.deletion import ProtectedError, RestrictedError
+    if settings.RELEASE.version != '4.7.0' or settings.PLUGINS not in ([], ['netbox_guard']):
+        raise DependencyGuardBlocked('UNSUPPORTED_NETBOX_SCHEMA')
+    if connection.vendor != 'postgresql' or connection.in_atomic_block:
+        raise DependencyGuardBlocked('INDEPENDENT_TRANSACTION_REQUIRED')
     tables = sorted({model._meta.db_table for model in apps.get_models(include_auto_created=True)
                      if model._meta.managed and not model._meta.proxy})
     if not 1 <= len(tables) <= MAX_TABLES:
@@ -132,22 +137,23 @@ def _locked_closure(roots, *, expected=None):
                                'WHERE n.nspname=current_schema() AND NOT t.tgisinternal ORDER BY c.relname,t.tgname')
                 if _digest(cursor.fetchall()) != NETBOX_470_HOOKS:
                     raise DependencyGuardBlocked('UNSUPPORTED_DATABASE_HOOK')
-            collector = Collector(using=connection.alias)
-            for kind, identifier in sorted(seen):
-                model = apps.get_model(MODELS[kind])
-                obj = model.objects.filter(pk=identifier).first()
-                if obj is None:
-                    raise DependencyGuardBlocked('OBJECT_MISSING')
-                collector.collect([obj])
-            snapshot = _snapshot(collector)
-            if expected is not None and snapshot != expected:
-                raise DependencyGuardBlocked('DEPENDENCIES_CHANGED')
-            yield snapshot, collector
+            yield
     except (ProtectedError, RestrictedError):
         raise DependencyGuardBlocked('PROTECTED_DEPENDENCY') from None
     except DatabaseError:
-        # Never report a failed read/lock as a successfully empty dependency set.
         raise DependencyGuardBlocked('DEPENDENCY_DATABASE_REFUSAL') from None
+
+
+@contextmanager
+def _locked_closure(roots, *, expected=None):
+    _checked_roots(roots)
+    if expected is not None and not isinstance(expected, DependencySnapshot):
+        raise DependencyGuardBlocked('INVALID_REVIEW')
+    with _database_fence():
+        snapshot, collector = _closure(roots)
+        if expected is not None and snapshot != expected:
+            raise DependencyGuardBlocked('DEPENDENCIES_CHANGED')
+        yield snapshot, collector
 
 
 @contextmanager

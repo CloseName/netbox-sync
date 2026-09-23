@@ -50,7 +50,7 @@ def test_canonical_compose_has_private_bundled_postgres_and_one_app_image():
     assert 'internal: true' in text
     assert 'x-app: &app' in text
     assert text.count('dockerfile: Dockerfile.web') == 1
-    assert text.count('container_name:') == 11
+    assert text.count('container_name:') == 12
     assert 'container_name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}-postgres' in text
     assert 'name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}' in text
     for service in ('netbox-sync-api', 'netbox-sync-discovery-worker',
@@ -709,3 +709,48 @@ def test_installer_waits_for_final_postgres_tcp_listener(monkeypatch):
     install._wait_for_postgres(None,None,None)
     assert calls[0][calls[0].index('pg_isready')+1:][:2]==['-h','127.0.0.1']
     assert 'pg_isready -h 127.0.0.1' in COMPOSE.read_text()
+
+
+def test_retirement_worker_has_separate_netbox_only_boundary():
+    text = COMPOSE.read_text(encoding='utf-8')
+    def service(name):
+        return text.split(f'  {name}:', 1)[1].split('\n  netbox-sync-', 1)[0]
+    worker = service('netbox-sync-retirement-worker')
+    lifecycle = service('netbox-sync-lifecycle-worker')
+    api = service('netbox-sync-api')
+    broker = service('netbox-sync-secret-broker')
+    assert 'networks: [netbox-sync-egress]' in worker
+    assert '/run/secrets/netbox:ro' in worker
+    assert '/run/netbox-sync-ca:ro' in worker
+    assert 'cap_add: [CHOWN]' in worker
+    for forbidden in ('env_file:', 'ports:', 'netbox-sync-db', 'SOURCE_SECRET', 'docker.sock', 'systemd'):
+        assert forbidden not in worker
+    assert 'networks: [netbox-sync-db]' in lifecycle
+    assert 'netbox-sync-retirement-socket:/run/netbox-sync-retirement:ro' in lifecycle
+    for forbidden in ('NETBOX_SECRET', '/run/secrets/netbox', 'netbox-sync-egress'):
+        assert forbidden not in lifecycle
+    assert 'netbox-sync-retirement-socket' not in api
+    assert 'network_mode: none' in broker
+    assert 'cap_drop: [ALL]' in text.split('services:', 1)[0]
+    assert 'read_only: true' in text.split('services:', 1)[0]
+
+
+@pytest.mark.parametrize('saved,explicit', [('', None), ('', '11111111-1111-4111-8111-111111111111'),
+    ('11111111-1111-4111-8111-111111111111', None),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111')])
+def test_guard_namespace_preserved_during_upgrade(tmp_path, saved, explicit):
+    (tmp_path/'config').mkdir()
+    (tmp_path/'config/compose.env').write_text('NETBOX_SYNC_GUARD_INSTANCE='+saved+'\n')
+    assert install.resolve_guard_instance(tmp_path,explicit)==(explicit or saved)
+
+
+@pytest.mark.parametrize('saved,explicit', [('bad', None),
+    ('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'),
+    ('11111111-1111-4111-8111-111111111111\nNETBOX_SYNC_GUARD_INSTANCE=', None)])
+def test_guard_namespace_replacement_or_malformed_config_refused(tmp_path, saved, explicit):
+    (tmp_path/'config').mkdir()
+    path=tmp_path/'config/compose.env'
+    payload='NETBOX_SYNC_GUARD_INSTANCE='+saved+'\n'
+    path.write_text(payload)
+    with pytest.raises(install.InstallError):install.resolve_guard_instance(tmp_path,explicit)
+    assert path.read_text()==payload

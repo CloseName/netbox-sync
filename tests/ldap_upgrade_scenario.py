@@ -33,7 +33,7 @@ install.prepare_stack(p);install.publish_configuration(p);install.activate_relea
 install.start_runtime(p)
 command=install.compose_command(root)
 def db(query):return run([*command,'exec','-T','postgres','psql','-U','netbox_sync_bootstrap','-d','netbox_sync','-At','--set','ON_ERROR_STOP=1'],input=query)
-assert db('SELECT version_num FROM netbox_sync.alembic_version')=='0009_source_identity_proof'
+assert db('SELECT version_num FROM netbox_sync.alembic_version')=='0006_auth_policy'
 db("""INSERT INTO netbox_sync.sources(id,source_instance,name,source_type,address,enabled,sync_enabled,
 sync_interval_seconds,verify_ssl,site_slug,device_role_slug,platform_slug,device_type_slug,cluster_type_slug,
 cluster_name,username,token_id_provider,token_id_key,token_secret_provider,token_secret_key,legacy_identity_owner,settings)
@@ -74,9 +74,10 @@ for action in ('verify','inspect'):
 assert snapshot()==before and (root/'current').resolve().name==OLD
 
 upgrade=['python3','/review/deploy/install.py','--root',str(root),'--source','/new-source',
-    '--release-id','ldap-upgrade','--image','netbox-sync-auth:review','--no-systemd']
+    '--release-id','ldap-upgrade','--image',os.environ.get('NETBOX_SYNC_REVIEW_IMAGE','netbox-sync-auth:review'),'--no-systemd']
 run(upgrade)
 assert (root/'current').resolve().name=='ldap-upgrade'
+assert db('SELECT version_num FROM netbox_sync.alembic_version')=='0010_source_retirements'
 assert db('SELECT row_to_json(s) FROM netbox_sync.sources s')==rows
 assert db('SELECT row_to_json(s) FROM netbox_sync.sync_runs s')==history
 assert run([*command,'ps','-q','postgres'])==pg

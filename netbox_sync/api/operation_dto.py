@@ -48,8 +48,15 @@ class OperationDTO(BaseModel):
         return self
 
 
+class RetirementHintDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    operation_id: UUID
+    state: Literal['SENDING','UNCERTAIN','SUCCEEDED','FINALIZED']
+
+
 class LifecycleDTO(BaseModel):
-    removal_blocker: Literal["SOURCE_APPLY_UNCONFIRMED","SOURCE_OPERATION_ACTIVE"] | None = None
+    retirement: RetirementHintDTO | None = None
+    removal_blocker: Literal["SOURCE_APPLY_UNCONFIRMED","SOURCE_OPERATION_ACTIVE","SOURCE_RETIREMENT_PENDING"] | None = None
     model_config = ConfigDict(extra='forbid')
     source_instance: str
     display_name: str

@@ -42,14 +42,15 @@ class BootstrapControl:
         if action == 'registration-cluster':
             from .catalog_creation import CatalogCreation
             from .bootstrap_probe import ProbeError
-            if set(payload) != {'action','operation_id','name','site_id','cluster_type_id'}:
+            if set(payload) not in ({'action','operation_id','name','site_id','cluster_type_id'},
+                                    {'action','operation_id','name','site_id','cluster_type_id','source_instance'}):
                 raise ControlError('BOOTSTRAP_INVALID')
             command = dict(action='catalog-create', operation_id=payload['operation_id'], kind='cluster',
                 object=dict(name=payload['name'], type=payload['cluster_type_id'],
                             scope_type='dcim.site', scope_id=payload['site_id']), confirm=True)
             try:
                 with apply_lock(self.lock_path):
-                    result = CatalogCreation(self.store).execute(command, registration=True)
+                    result = CatalogCreation(self.store).execute(command, registration=True, source_instance=payload.get('source_instance'))
                 # Another intent may have reached NetBox first. Its journal is not
                 # evidence that this actor/source registration created the cluster.
                 if result.get('operation_id') != payload['operation_id']:

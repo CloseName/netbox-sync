@@ -80,6 +80,15 @@ def query(value, session_factory=requests.Session):
             for key, dependency in (('manufacturer', 'manufacturer'), ('type', 'cluster_type'), ('scope_id', 'site')):
                 if key in obj:
                     fetch(session, value['url'] + '/api/' + ENDPOINTS[dependency] + '/' + str(obj[key]) + '/', value['read_token'])
+            if value.get('guard'):
+                from .retirement_transport import GuardClient
+                guard = value['guard']
+                if kind != 'cluster': raise ProbeError('SELECTION_REQUIRED')
+                client = GuardClient(session, value['url'], authorization(value['write_token']), guard['instance'])
+                client.capabilities()
+                write_started = True
+                row = client.create(guard['operation_id'], guard['source_instance'], 'cluster', None, obj)
+                return {'status': 'CREATED', 'item': project(kind,row)}
             write_started = True
             with session.post(endpoint, json=obj, headers={'Authorization': authorization(value['write_token'])},
                               timeout=(3, 8), allow_redirects=False, stream=True) as response:
@@ -126,7 +135,7 @@ class CatalogCreation:
     def __init__(self, store, child=run_child):
         self.store, self.child = store, child
 
-    def execute(self, request, *, registration=False):
+    def execute(self, request, *, registration=False, source_instance=None):
         action = request.get('action')
         allowed = {'action', 'operation_id'} if action == 'catalog-reconcile' else {
             'action', 'operation_id', 'kind', 'object', 'write_token', 'confirm'}
@@ -164,7 +173,14 @@ class CatalogCreation:
             token = runtime_netbox(self.store.path, 'apply')[1] if registration else request['write_token']
             if request['confirm'] is not True or not isinstance(token, str) or not 8 <= len(token) <= 4096 or any(c.isspace() for c in token):
                 raise ProbeError('SELECTION_REQUIRED')
-            digest = fingerprint(dict(url=url, kind=request['kind'], object=obj))
+            guard = None
+            if registration and os.environ.get('NETBOX_SYNC_GUARD_INSTANCE'):
+                from .source_config import SOURCE_INSTANCE_PATTERN
+                if not isinstance(source_instance,str) or not SOURCE_INSTANCE_PATTERN.fullmatch(source_instance):
+                    raise ProbeError('SELECTION_REQUIRED')
+                guard = {'instance': str(UUID(os.environ['NETBOX_SYNC_GUARD_INSTANCE'])),
+                         'source_instance': source_instance, 'operation_id': identifier}
+            digest = fingerprint(dict(url=url, kind=request['kind'], object=obj, **({'guard':guard} if guard else {})))
             if recorded is not None:
                 if recorded.get('digest') != digest: raise ProbeError('CONFLICT')
                 return self.public(recorded)
@@ -180,13 +196,13 @@ class CatalogCreation:
                 if previous.get('digest') != digest: raise ProbeError('CONFLICT')
                 if previous['status'] != 'REFUSED': return self.public(previous)
             recorded = dict(format=1, operation_id=identifier, digest=digest, url=url, kind=request['kind'],
-                            object=obj, status='UNCERTAIN', item=None)
+                            object=obj, status='UNCERTAIN', item=None, **({'guard':guard} if guard else {}))
             # Persist before launching a subprocess that could send a POST. A crash or
             # cancellation leaves UNCERTAIN and cannot cause replay on this UUID.
             journal.write(recorded)
             intent.write({'format':1,'operation_id':identifier})
             result = self.child(dict(action='create', url=url, read_token=read_token,
-                                     kind=request['kind'], object=obj, write_token=token))
+                                     kind=request['kind'], object=obj, write_token=token, **({'guard':guard} if guard else {})))
             recorded.update({key:result[key] for key in ('status','item','error') if key in result})
             journal.write(recorded)
             return self.public(recorded)

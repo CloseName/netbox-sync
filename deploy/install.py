@@ -399,6 +399,7 @@ def _configuration_values(root, image):
             'NETBOX_SYNC_NETBOX_SECRET_DIR': str(root / 'secrets' / 'netbox'),
             'NETBOX_SYNC_APPLY_LOCK_DIR': '/run/netbox-sync',
             'NETBOX_SYNC_POSTGRES_VOLUME': 'netbox-sync-postgres-data',
+            'NETBOX_SYNC_GUARD_INSTANCE': '',
         },
         'api.env': {
             **common, 'NETBOX_SYNC_REGISTRY_DSN': dsns['web_reader'],
@@ -557,7 +558,7 @@ def prepare_stack(prepared):
 
 
 def _runtime_services():
-    return ('netbox-sync-auth-worker', 'netbox-sync-probe-worker', 'netbox-sync-proxy', 'netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker', 'netbox-sync-discovery-worker',
+    return ('netbox-sync-auth-worker', 'netbox-sync-probe-worker', 'netbox-sync-proxy', 'netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-lifecycle-worker', 'netbox-sync-retirement-worker', 'netbox-sync-bootstrap-worker', 'netbox-sync-discovery-worker',
             'netbox-sync-apply-worker', 'netbox-sync-schedule-worker')
 
 
@@ -647,7 +648,7 @@ def quiesce_uncertain_runtime(prepared):
     """Best-effort stop of write entrypoints after a partial runtime activation."""
     run(compose_command(
         prepared.root, 'stop', 'netbox-sync-api', 'netbox-sync-apply-worker',
-        'netbox-sync-schedule-worker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker',
+        'netbox-sync-schedule-worker', 'netbox-sync-lifecycle-worker', 'netbox-sync-retirement-worker', 'netbox-sync-bootstrap-worker',
         'netbox-sync-auth-worker', release=prepared.release,
         config=prepared.root / 'config'), check=False)
 
@@ -814,6 +815,25 @@ def read_compose_values(root):
                 if '=' in line and not line.startswith('#'))
 
 
+def resolve_guard_instance(root, explicit=None):
+    """Preserve the pinned external NetBox namespace across ordinary upgrades."""
+    from uuid import UUID
+    path = root / 'config/compose.env'
+    values = [line.split('=', 1)[1] for line in path.read_text(encoding='utf-8').splitlines()
+              if line.startswith('NETBOX_SYNC_GUARD_INSTANCE=')] if path.exists() else []
+    if len(values) > 1:
+        raise InstallError('duplicate NetBox guard installation setting')
+    saved = values[0] if values else ''
+    try:
+        if saved: saved = str(UUID(saved))
+        selected = str(UUID(str(explicit))) if explicit is not None else saved
+    except (ValueError, TypeError):
+        raise InstallError('invalid NetBox guard installation UUID') from None
+    if saved and selected != saved:
+        raise InstallError('NetBox guard installation cannot change during ordinary upgrade')
+    return selected
+
+
 def resolve_tls_settings(root, explicit=None):
     saved = read_compose_values(root)
     if explicit is not None:
@@ -911,6 +931,8 @@ def parse_args(argv=None):
     parser.add_argument('--tls-dir', type=Path, help='Operator TLS directory with ssl.crt, ssl.key and dhparam.pem')
     parser.add_argument('--ingress-mode', choices=('standalone', 'external'),
                         help='Explicit ingress mode; fresh default standalone, existing setting preserved')
+    from uuid import UUID
+    parser.add_argument('--netbox-guard-instance',type=UUID,help='Explicit reviewed NetBox guard installation UUID; never inferred from URL')
     parser.add_argument('--public-url', help='Canonical https://FQDN, required for first HTTPS installation')
     parser.add_argument('--init-tls-layout', action='store_true', help='Create TLS/CA directories only; no certificates or deployment')
     parser.add_argument('--check-tls', action='store_true', help='Validate public URL and operator TLS/CA files only')
@@ -971,9 +993,14 @@ def main(argv=None):
         if current_release(root) is not None and not (root/'config/auth.env').exists() and not args.acknowledge_admin_enrollment:
             print('Upgrade requires --acknowledge-admin-enrollment; prepare root-only enrollment after activation', file=sys.stderr)
             return 1
+        guard_instance = resolve_guard_instance(root, args.netbox_guard_instance)
         prepared = prepare_layout(root, args.source.resolve(), args.release_id, image)
         configure_tls(prepared,public_url,tls_settings)
         configure_ingress(prepared,mode)
+        if guard_instance:
+            value=guard_instance
+            path=prepared.config/'compose.env'
+            _atomic_write(path,_merged_config(path,{'NETBOX_SYNC_GUARD_INSTANCE':value},{'NETBOX_SYNC_GUARD_INSTANCE':value}))
         if mode == 'external':
             initialize_ingress_directory(root)
         upgrading = current_release(root) is not None

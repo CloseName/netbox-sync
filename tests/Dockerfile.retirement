@@ -1,0 +1,5 @@
+# Extend the existing isolated protocol test runtime; no product image privileges.
+ARG TEST_IMAGE=netbox-sync-ldap-tests:review
+FROM ${TEST_IMAGE}
+USER root
+RUN pip install --no-cache-dir 'jinja2>=3.1,<4'

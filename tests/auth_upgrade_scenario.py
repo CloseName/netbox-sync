@@ -52,13 +52,13 @@ bundle=next((root/'backups').glob('netbox-sync-backup-*'))
 for action in ('verify','inspect'):
     run(['python3',str(root/'current/deploy/backup.py'),'--root',str(root),'--no-systemd',action,str(bundle)])
 assert snapshot()==before and (root/'current').resolve().name==OLD
-upgrade=['python3','/review/deploy/install.py','--root',str(root),'--source','/review','--release-id','auth-upgrade','--image','netbox-sync-auth:review','--no-systemd']
+upgrade=['python3','/review/deploy/install.py','--root',str(root),'--source','/review','--release-id','auth-upgrade','--image',os.environ.get('NETBOX_SYNC_REVIEW_IMAGE','netbox-sync-auth:review'),'--no-systemd']
 refused=subprocess.run(upgrade,capture_output=True,text=True)
 assert refused.returncode==1 and '--acknowledge-admin-enrollment' in refused.stderr
 assert snapshot()==before and (root/'current').resolve().name==OLD
 run([*upgrade,'--acknowledge-admin-enrollment'])
 assert (root/'current').resolve().name=='auth-upgrade'
-assert db('SELECT version_num FROM netbox_sync.alembic_version')=='0009_source_identity_proof'
+assert db('SELECT version_num FROM netbox_sync.alembic_version')=='0010_source_retirements'
 assert rows==db('SELECT row_to_json(s) FROM netbox_sync.sources s') and history==db('SELECT row_to_json(s) FROM netbox_sync.sync_runs s')
 assert run([*command,'ps','-q','postgres'])==pg and run(['docker','inspect',pg,'--format','{{json .Mounts}}'])==mounts
 for path,value in before.items():

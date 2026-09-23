@@ -63,20 +63,32 @@ class LifecycleStore:
         return hashlib.sha256(json.dumps(dict(row), sort_keys=True, default=str,
                                         separators=(',', ':')).encode()).hexdigest()
 
+    def _retirement_hint(self, connection, source, removed=None):
+        present=connection.execute('SELECT to_regclass(%s)',(self.schema+'.source_retirements',)).fetchone()
+        if not present or not present['to_regclass']:return None
+        condition=("state='FINALIZED' AND finished_at>=%s" if removed else
+                   "state IN ('SENDING','UNCERTAIN','SUCCEEDED')")
+        parameters=(source,removed['removed_at']) if removed else (source,)
+        result=connection.execute(sql.SQL('SELECT operation_id,state FROM {} WHERE source_instance=%s AND '+condition+' ORDER BY created_at DESC LIMIT 1').format(
+            self.table('source_retirements')),parameters).fetchone()
+        return {'operation_id':str(result['operation_id']),'state':result['state']} if result else None
+
     def read(self, source):
         with self.connect() as connection:
             removed = connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s AND restored_at IS NULL')
                 .format(self.table('source_tombstones')), (source,)).fetchone()
             if removed:
-                return {**{k:v for k,v in removed.items() if k!='restored_at'}, 'removed_at': removed['removed_at'].isoformat(), 'revision': None}
+                return {**{k:v for k,v in removed.items() if k!='restored_at'}, 'removed_at': removed['removed_at'].isoformat(), 'revision': None,
+                        'retirement':self._retirement_hint(connection,source,removed)}
             row = connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s')
                 .format(self.table('sources')), (source,)).fetchone()
             if not row:
                 raise LifecycleError('SOURCE_NOT_FOUND')
             blocked = connection.execute(sql.SQL("SELECT status FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED') ORDER BY CASE WHEN status='RUNNING' THEN 1 ELSE 0 END LIMIT 1").format(self.table('sync_runs')), (source,)).fetchone()
             active = connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status='RUNNING' LIMIT 1").format(self.table('source_operations')), (source,)).fetchone()
-            return {'source_instance': source, 'display_name': row['name'],
-                    'removal_blocker': 'SOURCE_APPLY_UNCONFIRMED' if blocked and blocked['status']!='RUNNING' else 'SOURCE_OPERATION_ACTIVE' if active or blocked else None,
+            retirement=self._retirement_hint(connection,source)
+            return {'source_instance': source, 'display_name': row['name'], 'retirement':retirement,
+                    'removal_blocker': 'SOURCE_RETIREMENT_PENDING' if retirement else 'SOURCE_APPLY_UNCONFIRMED' if blocked and blocked['status']!='RUNNING' else 'SOURCE_OPERATION_ACTIVE' if active or blocked else None,
                     'removed_at': None, 'credential_state': None, 'revision': self.revision(row)}
 
     def evidence(self, after):
@@ -116,68 +128,73 @@ class LifecycleStore:
         return self.read(source)
 
     def remove(self, source, expected_revision, confirmed_source, remove_credentials, cleanup):
-        """Commit the tombstone first; remove only broker-owned, exclusive local refs.
-
-        The credential-reference gate excludes registration/reference changes during the
-        exclusivity check and cleanup. The global apply lock spans both phases.
-        A crash leaves a tombstone with CLEANUP_FAILED; it never resumes deletion.
-        """
         with self.lock(self.lock_path):
-            with self.connect() as connection, source_gate(connection, self.schema, source):
-                connection.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
-                                   (f'netbox-sync:{self.schema}:credential-refs',))
-                row = connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s')
-                    .format(self.table('sources')), (source,)).fetchone()
-                if not row:
-                    raise LifecycleError('SOURCE_NOT_FOUND')
-                if connection.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s AND restored_at IS NULL')
-                    .format(self.table('source_tombstones')), (source,)).fetchone():
-                    raise LifecycleError('SOURCE_ALREADY_REMOVED')
-                if self.revision(row) != expected_revision:
-                    raise LifecycleError('SOURCE_LIFECYCLE_CONFLICT')
-                if confirmed_source != row['name']:
-                    raise LifecycleError('SOURCE_CONFIRMATION_INVALID')
-                if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status='RUNNING'")
-                    .format(self.table('source_operations')), (source,)).fetchone():
-                    raise LifecycleError('SOURCE_OPERATION_ACTIVE')
-                if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status IN "
-                    "('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED') LIMIT 1")
-                    .format(self.table('sync_runs')), (source,)).fetchone():
-                    raise LifecycleError('SOURCE_APPLY_UNCONFIRMED')
-                connection.execute(sql.SQL('UPDATE {} SET enabled=false, sync_enabled=false '
-                                           'WHERE source_instance=%s').format(self.table('sources')), (source,))
-                state = 'CLEANUP_FAILED' if remove_credentials else 'RETAINED_BY_REQUEST'
-                connection.execute(sql.SQL('INSERT INTO {} (source_instance,display_name,credential_state) '
-                                           'VALUES (%s,%s,%s) ON CONFLICT (source_instance) DO UPDATE SET '
-                                           'display_name=EXCLUDED.display_name,credential_state=EXCLUDED.credential_state,'
-                                           'removed_at=clock_timestamp(),restored_at=NULL').format(self.table('source_tombstones')),
-                                   (source, row['name'], state))
-            # The lifecycle transition is durable before touching any credential file.
-            if remove_credentials:
-                try:
-                    with self.connect() as connection:
-                        connection.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
-                                           (f'netbox-sync:{self.schema}:credential-refs',))
-                        refs = {(row['token_id_provider'], row['token_id_key']),
-                                (row['token_secret_provider'], row['token_secret_key'])}
-                        others = connection.execute(sql.SQL('SELECT token_id_provider,token_id_key,'
-                            'token_secret_provider,token_secret_key FROM {} WHERE source_instance<>%s')
-                            .format(self.table('sources')), (source,)).fetchall()
-                        shared = {(item[provider], item[key]) for item in others
-                                  for provider,key in [('token_id_provider','token_id_key'),
-                                                       ('token_secret_provider','token_secret_key')]}
-                        # Retain the entire credential pair if any ref is ambiguous/shared.
-                        import re
-                        exclusive = all(provider == 'file' and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{15,127}', key)
-                                        and (provider,key) not in shared for provider,key in refs)
-                        if exclusive:
-                            cleaned = cleanup([key for _,key in sorted(refs)])
-                            state = 'RETAINED_SHARED_OR_LEGACY' if cleaned is False else 'REMOVED'
-                        else:
-                            state = 'RETAINED_SHARED_OR_LEGACY'
-                        connection.execute(sql.SQL('UPDATE {} SET credential_state=%s WHERE source_instance=%s')
-                            .format(self.table('source_tombstones')), (state,source))
-                except Exception:
-                    # Persisted CLEANUP_FAILED is deliberately retained on ambiguity/failure.
-                    pass
-            return self.read(source)
+            return self._remove_locked(source,expected_revision,confirmed_source,remove_credentials,cleanup)
+
+    def _remove_locked(self, source, expected_revision, confirmed_source, remove_credentials, cleanup, retirement_operation=None):
+        """Caller holds shared apply lock; private finalized-retirement entrypoint."""
+        with self.connect() as connection, source_gate(connection, self.schema, source, allow_retirement=retirement_operation is not None):
+            if retirement_operation is not None:
+                if not connection.execute(sql.SQL("SELECT 1 FROM {} WHERE operation_id=%s AND source_instance=%s AND state='SUCCEEDED' AND receipt IS NOT NULL").format(
+                        self.table('source_retirements')),(retirement_operation,source)).fetchone():
+                    raise LifecycleError('RETIREMENT_CONFLICT')
+            connection.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
+                               (f'netbox-sync:{self.schema}:credential-refs',))
+            row = connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s')
+                .format(self.table('sources')), (source,)).fetchone()
+            if not row:
+                raise LifecycleError('SOURCE_NOT_FOUND')
+            if connection.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s AND restored_at IS NULL')
+                .format(self.table('source_tombstones')), (source,)).fetchone():
+                raise LifecycleError('SOURCE_ALREADY_REMOVED')
+            if self.revision(row) != expected_revision:
+                raise LifecycleError('SOURCE_LIFECYCLE_CONFLICT')
+            if confirmed_source != row['name']:
+                raise LifecycleError('SOURCE_CONFIRMATION_INVALID')
+            if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status='RUNNING'")
+                .format(self.table('source_operations')), (source,)).fetchone():
+                raise LifecycleError('SOURCE_OPERATION_ACTIVE')
+            if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status IN "
+                "('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED') LIMIT 1")
+                .format(self.table('sync_runs')), (source,)).fetchone():
+                raise LifecycleError('SOURCE_APPLY_UNCONFIRMED')
+            connection.execute(sql.SQL('UPDATE {} SET enabled=false, sync_enabled=false '
+                                       'WHERE source_instance=%s').format(self.table('sources')), (source,))
+            state = 'CLEANUP_FAILED' if remove_credentials else 'RETAINED_BY_REQUEST'
+            connection.execute(sql.SQL('INSERT INTO {} (source_instance,display_name,credential_state) '
+                                       'VALUES (%s,%s,%s) ON CONFLICT (source_instance) DO UPDATE SET '
+                                       'display_name=EXCLUDED.display_name,credential_state=EXCLUDED.credential_state,'
+                                       'removed_at=clock_timestamp(),restored_at=NULL').format(self.table('source_tombstones')),
+                               (source, row['name'], state))
+            if retirement_operation is not None:
+                connection.execute(sql.SQL("UPDATE {} SET state='FINALIZED',finished_at=clock_timestamp() WHERE operation_id=%s AND state='SUCCEEDED'").format(
+                    self.table('source_retirements')),(retirement_operation,))
+        # The lifecycle transition is durable before touching any credential file.
+        if remove_credentials:
+            try:
+                with self.connect() as connection:
+                    connection.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
+                                       (f'netbox-sync:{self.schema}:credential-refs',))
+                    refs = {(row['token_id_provider'], row['token_id_key']),
+                            (row['token_secret_provider'], row['token_secret_key'])}
+                    others = connection.execute(sql.SQL('SELECT token_id_provider,token_id_key,'
+                        'token_secret_provider,token_secret_key FROM {} WHERE source_instance<>%s')
+                        .format(self.table('sources')), (source,)).fetchall()
+                    shared = {(item[provider], item[key]) for item in others
+                              for provider,key in [('token_id_provider','token_id_key'),
+                                                   ('token_secret_provider','token_secret_key')]}
+                    # Retain the entire credential pair if any ref is ambiguous/shared.
+                    import re
+                    exclusive = all(provider == 'file' and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{15,127}', key)
+                                    and (provider,key) not in shared for provider,key in refs)
+                    if exclusive:
+                        cleaned = cleanup([key for _,key in sorted(refs)])
+                        state = 'RETAINED_SHARED_OR_LEGACY' if cleaned is False else 'REMOVED'
+                    else:
+                        state = 'RETAINED_SHARED_OR_LEGACY'
+                    connection.execute(sql.SQL('UPDATE {} SET credential_state=%s WHERE source_instance=%s')
+                        .format(self.table('source_tombstones')), (state,source))
+            except Exception:
+                # Persisted CLEANUP_FAILED is deliberately retained on ambiguity/failure.
+                pass
+        return self.read(source)

@@ -35,6 +35,17 @@ class LifecycleClient:
             after=value['next']
         raise LifecycleRequestError('LIFECYCLE_UNAVAILABLE')
 
+    def retirement(self,action,source,**payload):
+        from ..local_control import request,ControlError
+        if action not in {'review','execute','resume','status'}:raise LifecycleRequestError('REQUEST_INVALID')
+        try:
+            value=request(self.path,{'action':'retirement_'+action,'source_instance':source,**payload},
+                          timeout=60,response_limit=2*1024*1024)['result']
+            if value.get('source_instance')!=source:raise ValueError()
+            return value
+        except ControlError as exc:raise LifecycleRequestError(exc.code) from None
+        except Exception:raise LifecycleRequestError('RETIREMENT_UNAVAILABLE') from None
+
     def identity(self,action,source,**payload):
         from ..local_control import request,ControlError
         if action not in {'describe','confirm'}:raise LifecycleRequestError('REQUEST_INVALID')

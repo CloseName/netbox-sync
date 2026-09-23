@@ -32,7 +32,7 @@ def test_pre_auth_upgrade_without_systemd():
             docker('cp',str(archive),host+':/old.tar')
         docker('exec',host,'mkdir','/old-source')
         docker('exec',host,'tar','-xf','/old.tar','-C','/old-source')
-        result=docker('exec',host,'python3','/review/tests/auth_upgrade_scenario.py',mount+'/netbox-sync-test',project,check=False)
+        result=docker('exec',*(['-e','NETBOX_SYNC_REVIEW_IMAGE='+os.environ['NETBOX_SYNC_REVIEW_IMAGE']] if os.environ.get('NETBOX_SYNC_REVIEW_IMAGE') else []),host,'python3','/review/tests/auth_upgrade_scenario.py',mount+'/netbox-sync-test',project,check=False)
         assert result.returncode==0,result.stdout[-1500:]+result.stderr[-2500:]
         print(result.stdout[-1200:])
     finally:

@@ -294,6 +294,13 @@ assert request(registration,'/api/v1/sources')['status']!=201
 checked=request({key:registration[key] for key in ('source_instance','registration_id')},'/api/v1/sources/registration-status')
 assert checked['status']==200 and checked['body']=={'status':'REGISTERED','identity_status':'REGISTERED','source_instance':'auth-test','source_url':'/sources/auth-test'},checked
 print('Final registration cluster: production API, bootstrap subprocess, HTTPS and durable registration passed')
+# Exercise real API -> lifecycle Unix transport for the new action. An unknown
+# immutable intent must be rejected before any NetBox request, never as an unknown
+# client action or accidental 503. No deletion is authorized by this fixture.
+refused_resume=request(dict(operation_id=str(uuid4()),digest='a'*64,confirmed=True,
+    confirmed_source=registration['name'],remove_credentials=False),'/api/v1/sources/auth-test/retirement-resume')
+assert refused_resume['status']==409 and refused_resume['body']['error']['code']=='RETIREMENT_CONFLICT',refused_resume
+print('PASS actual API/lifecycle retirement continuation transport refuses unknown intent without mutation')
 assert request(None,'/api/v1/sources','GET')['body']['sources'][0]['source_instance']=='auth-test'
 team_saved=request(dict(operation='assign',revision=teams['body']['revision'],source_instance='auth-test',team_id=team_id),'/api/v1/teams');assert team_saved['status']==200
 team_saved=team_saved['body']
@@ -326,7 +333,7 @@ if pgmode == 'bundled' and os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST') !
     bundle=next((root/'backups').glob('netbox-sync-backup-*'))
     backup_cli(root,'verify',str(bundle))
     summary=json.loads(backup_cli(root,'inspect',str(bundle)))
-    assert summary['source_count']==1 and summary['alembic_revision']=='0009_source_identity_proof'
+    assert summary['source_count']==1 and summary['alembic_revision']=='0010_source_retirements'
     assert snapshot()==protected_before and compose('ps','-q','postgres')==db_before
     assert set(compose('ps','--status','running','--services').split())==services_before
     assert request(None,'/api/v1/auth/me','GET')['status']==200

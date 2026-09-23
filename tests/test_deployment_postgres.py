@@ -53,7 +53,7 @@ def test_clean_bootstrap_migrate_grants_and_idempotency(tmp_path):
     with psycopg.connect(deployment.connection_info('bootstrap', env)) as connection:
         with connection.cursor() as cursor:
             cursor.execute("SELECT version_num FROM netbox_sync.alembic_version")
-            assert cursor.fetchone() == ('0009_source_identity_proof',)
+            assert cursor.fetchone() == ('0010_source_retirements',)
             cursor.execute("SELECT count(*) FROM netbox_sync.sources")
             assert cursor.fetchone() == (0,)
             cursor.execute("SELECT rolname FROM pg_roles WHERE rolname = ANY(%s)",
@@ -260,3 +260,24 @@ def test_identity_proof_audit_is_append_only_and_lifecycle_only(tmp_path):
                 actual=connection.execute('SELECT has_table_privilege(%s,%s,%s)',
                     (role,'netbox_sync.source_identity_verifications',privilege)).fetchone()[0]
                 assert actual==(key=='lifecycle_writer' and privilege in ('SELECT','INSERT'))
+
+
+def test_retirement_grants_and_apply_gate_are_column_limited(tmp_path):
+    env=_environment(tmp_path)
+    deployment.bootstrap_roles(env); deployment.migrate(env); deployment.apply_grants(env)
+    readers={'web_reader','registration_writer','schedule_writer','operation_writer','run_writer','apply_registry_reader'}
+    with psycopg.connect(TEST_DSN) as connection:
+        for key,role in deployment.DATABASE_ROLES.items():
+            if key=='owner': continue
+            for privilege in ('SELECT','INSERT','UPDATE','DELETE','TRUNCATE'):
+                actual=connection.execute('SELECT has_table_privilege(%s,%s,%s)',
+                    (role,'netbox_sync.source_retirements',privilege)).fetchone()[0]
+                assert actual==(key=='lifecycle_writer' and privilege in ('SELECT','INSERT'))
+            for column in ('source_instance','state','plan','actor_id','receipt'):
+                actual=connection.execute('SELECT has_column_privilege(%s,%s,%s,%s)',
+                    (role,'netbox_sync.source_retirements',column,'SELECT')).fetchone()[0]
+                assert actual==(key=='lifecycle_writer' or key in readers and column in ('source_instance','state'))
+    # Exercise the real role/SQL path used by apply review_guard, not metadata alone.
+    from netbox_sync.source_operations import source_gate
+    with psycopg.connect(deployment.connection_info('apply_registry_reader',env)) as connection:
+        with source_gate(connection,'netbox_sync','isolated-absent-source'): pass

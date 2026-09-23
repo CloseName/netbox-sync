@@ -441,6 +441,11 @@ def apply_grants(environ=None):
             cursor.execute(sql.SQL('GRANT SELECT, INSERT ON {} TO {}').format(recovery_table,lifecycle_role))
             _grant_columns(cursor, 'UPDATE', recovery_table, ('state','finished_at'), DATABASE_ROLES['lifecycle_writer'])
             cursor.execute(sql.SQL('GRANT SELECT, INSERT ON {} TO {}').format(sql.Identifier(schema,'source_identity_verifications'),lifecycle_role))
+            retirements=sql.Identifier(schema,'source_retirements')
+            cursor.execute(sql.SQL('GRANT SELECT, INSERT ON {} TO {}').format(retirements,lifecycle_role))
+            _grant_columns(cursor,'UPDATE',retirements,('state','receipt','safe_code','remove_credentials','finished_at'),DATABASE_ROLES['lifecycle_writer'])
+            for role in ('web_reader','registration_writer','schedule_writer','operation_writer','run_writer','apply_registry_reader'):
+                _grant_columns(cursor,'SELECT',retirements,('source_instance','state'),DATABASE_ROLES[role])
             _grant_columns(cursor, 'INSERT', tombstones,
                            ('source_instance','display_name','credential_state'),
                            DATABASE_ROLES['lifecycle_writer'])

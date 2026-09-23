@@ -42,7 +42,7 @@ def test_description_discovery_plan_apply_replan(provider,value,fake_netbox):
         execute()
         read=lambda:next(row for row in fake_netbox.virtualization.virtual_machines.all() if row.name==vm.original_name)
         stored=read()
-        assert stored.serialize().get('comments')==value
+        assert stored.serialize().get('comments')==(value if value is not None else '')
         assert not [row for row in build_runtime_plan(fake_netbox,hosts,config).items if row.action.value in ('CREATE','UPDATE')]
         vm.description='Changed\nFull text'
         assert any(dict(row.after).get('comments')==vm.description for row in build_runtime_plan(fake_netbox,hosts,config).items)

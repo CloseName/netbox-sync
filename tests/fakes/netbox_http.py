@@ -28,7 +28,9 @@ def netbox_http(seed, ssl_context=None, authorize=None, behavior=None, bind=('12
         value['url']=base+'/api/'+endpoint.replace('.','/').replace('_','-')+'/'+str(value['id'])+'/'
         if brief:return {k:v for k,v in value.items() if k in ('id','url','name','slug','model')}
         value.setdefault('custom_fields',{})
-        if endpoint=='virtualization.virtual_machines': value.setdefault('serial','')
+        if endpoint=='virtualization.virtual_machines':
+            value.setdefault('serial','')
+            value.setdefault('comments','')  # NetBox serializes this concrete field even when blank.
         if endpoint in ('dcim.devices','virtualization.virtual_machines'):
             for field in ('primary_ip4','primary_ip6','tenant'):value.setdefault(field,None)
         if endpoint.endswith('interfaces'):

@@ -117,6 +117,10 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
         connection.commit()
         expected_intents=connection.execute('SELECT * FROM netbox_sync.registration_intents').fetchall()
         expected_identity=connection.execute('SELECT * FROM netbox_sync.source_identity_verifications').fetchall()
+        connection.execute("INSERT INTO netbox_sync.source_retirements(operation_id,source_instance,actor_id,revision,guard_instance,plan,state,remove_credentials) VALUES (%s,'esxi-backup-test','admin',%s,%s,%s,'SENDING',false)",
+            (uuid.uuid4(),'d'*64,uuid.uuid4(),Jsonb({'remote':{'digest':'e'*64,'manifest':{'format':2,'cluster_id':7,'objects':[['vm:8','f'*64]]}},'removal_generation':None,'source_flags':{'enabled':False,'sync_enabled':False}})))
+        connection.commit()
+        expected_retirements=connection.execute('SELECT * FROM netbox_sync.source_retirements').fetchall()
         expected_claims = connection.execute('SELECT * FROM netbox_sync.host_reservations').fetchall()
         expected_recoveries = connection.execute('SELECT * FROM netbox_sync.source_recoveries').fetchall()
         expected_tombstone = connection.execute('SELECT * FROM netbox_sync.source_tombstones').fetchall()
@@ -153,6 +157,7 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
         assert _snapshot(connection) == expected
         assert connection.execute('SELECT * FROM netbox_sync.registration_intents').fetchall()==expected_intents
         assert connection.execute('SELECT * FROM netbox_sync.source_identity_verifications').fetchall()==expected_identity
+        assert connection.execute('SELECT * FROM netbox_sync.source_retirements').fetchall()==expected_retirements
         assert connection.execute('SELECT * FROM netbox_sync.host_reservations').fetchall() == expected_claims
         assert connection.execute('SELECT * FROM netbox_sync.source_recoveries').fetchall() == expected_recoveries
         assert connection.execute('SELECT * FROM netbox_sync.source_tombstones').fetchall() == expected_tombstone
@@ -183,6 +188,7 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
     tool.reconcile_operations()
     with psycopg.connect(deployment.connection_info('bootstrap', environment)) as connection:
         assert connection.execute('SELECT status,safe_error_code,result FROM netbox_sync.source_operations').fetchone() == ('FAILED','OPERATION_INTERRUPTED',None)
+        assert connection.execute('SELECT state,safe_code,receipt FROM netbox_sync.source_retirements').fetchone()==('UNCERTAIN','RETIREMENT_UNCERTAIN',None)
         assert connection.execute('SELECT * FROM netbox_sync.source_tombstones').fetchall() == expected_tombstone
     assert [row['source_instance'] for row in tool.source_secret_references()] == ['pve-backup-test']
 

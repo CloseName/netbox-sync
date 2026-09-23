@@ -35,7 +35,7 @@ def test_existing_admin_ldap_upgrade_without_systemd():
         # Freeze release input: browser screenshots may change while other gates run.
         docker('exec',host,'python3','-c',
             "import shutil,sys; sys.path.insert(0,'/review'); from deploy.install import _ignore; shutil.copytree('/review','/new-source',ignore=lambda d,n: _ignore(d,n)+[v for v in n if v in ('test-results','playwright-report')])")
-        result=docker('exec',host,'python3','/review/tests/ldap_upgrade_scenario.py',mount+'/netbox-sync-test',project,check=False)
+        result=docker('exec',*(['-e','NETBOX_SYNC_REVIEW_IMAGE='+os.environ['NETBOX_SYNC_REVIEW_IMAGE']] if os.environ.get('NETBOX_SYNC_REVIEW_IMAGE') else []),host,'python3','/review/tests/ldap_upgrade_scenario.py',mount+'/netbox-sync-test',project,check=False)
         assert result.returncode==0,result.stdout[-1500:]+result.stderr[-2500:]
         print(result.stdout[-1200:])
     finally:

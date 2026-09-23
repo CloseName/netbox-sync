@@ -69,6 +69,10 @@ class GuardClient:
                     raise GuardTransportError(code if refused else 'GUARD_RESPONSE_UNCONFIRMED',
                                               uncertain=mutation and not refused)
                 return value
+        except requests.exceptions.SSLError:
+            raise GuardTransportError('GUARD_TLS_FAILED', uncertain=mutation) from None
+        except requests.exceptions.Timeout:
+            raise GuardTransportError('GUARD_TIMEOUT', uncertain=mutation) from None
         except requests.RequestException:
             raise GuardTransportError('GUARD_CONNECTION_FAILED', uncertain=mutation) from None
 
@@ -117,6 +121,26 @@ class GuardClient:
         self._receipt(value, nonce, uncertain=True)
         if value['digest'] != digest or value['status'] != 'SUCCEEDED':
             raise GuardTransportError('GUARD_RESPONSE_INVALID', uncertain=True)
+        return value
+
+    def review_source(self, nonce, source, cluster):
+        nonce = self._nonce(nonce)
+        value = self._request('POST','sources/review/',{
+            'nonce':nonce,'source_instance':source,'cluster_id':cluster})
+        self._receipt(value,nonce)
+        if (value.get('source_instance')!=source or value['manifest'].get('format')!=2
+                or value['manifest'].get('cluster_id')!=cluster):
+            raise GuardTransportError('GUARD_RESPONSE_INVALID')
+        return value
+
+    def execute_source(self, nonce, digest):
+        nonce = self._nonce(nonce)
+        if not isinstance(digest,str) or not re.fullmatch('[a-f0-9]{64}',digest):
+            raise GuardTransportError('GUARD_DIGEST_INVALID')
+        value=self._request('POST','sources/execute/',{'nonce':nonce,'digest':digest})
+        self._receipt(value,nonce,uncertain=True)
+        if value['digest']!=digest or value['status']!='SUCCEEDED' or value['manifest'].get('format')!=2:
+            raise GuardTransportError('GUARD_RESPONSE_INVALID',uncertain=True)
         return value
 
     @staticmethod

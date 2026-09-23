@@ -76,7 +76,8 @@ def test_cluster_is_created_only_at_final_registration_after_server_checks(monke
     def read(_path, query):
         return {'selections':[dict(kind=choice['kind'],**row(choice['kind'])) for choice in query['selections']]}
     def create(_path, payload):
-        assert set(payload)=={'action','operation_id','name','site_id','cluster_type_id'}
+        assert set(payload)=={'action','operation_id','name','site_id','cluster_type_id','source_instance'}
+        assert payload['source_instance']=='new-source'
         assert payload['action']=='registration-cluster' and payload['name']=='Example'
         writes.append(payload)
         if outcome=='transport': raise catalog.CatalogError('UNAVAILABLE')

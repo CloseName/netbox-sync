@@ -26,10 +26,11 @@ class ExecutionEvidence:
     stage: str = 'dispatch'
     plan: object = None
     writes_possible: bool = False
+    run_id: object = None
 
 
-def begin():
-    evidence = ExecutionEvidence()
+def begin(run_id=None):
+    evidence = ExecutionEvidence(run_id=run_id)
     return evidence, _current.set(evidence)
 
 
@@ -100,3 +101,8 @@ def record(exc, evidence, run_id):
 
 def emit(exc, evidence, run_id):
     print(json.dumps(record(exc, evidence, run_id), sort_keys=True), file=sys.stderr, flush=True)
+
+
+def current_run_id():
+    evidence = _current.get()
+    return evidence.run_id if evidence is not None else None

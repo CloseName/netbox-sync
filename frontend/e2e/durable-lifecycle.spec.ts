@@ -8,8 +8,10 @@ const digest='a'.repeat(64);
 const canonical=(id:string)=>({source_instance:id,source_type:'proxmox',source_fingerprint:'s',target_fingerprint:'t',provider_fingerprint:'p',netbox_fingerprint:'n',schema_version:1,planner_version:'web-5a-1',digest,apply_allowed:true,items:[]});
 function backend(){
   const sources=[source(),{...source(2),enabled:true}], slots=new Map<string,any>(), removed=new Map<string,any>();
-  const calls:string[]=[];
-  const lifecycle=(id:string)=>removed.get(id)??{source_instance:id,display_name:sources.find(s=>s.source_instance===id)?.name??id,removed_at:null,credential_state:null,revision:'a'.repeat(64)};
+  const calls:string[]=[], retirements=new Map<string,any>();
+  const retirementControl={lose:false,undelivered:false,writes:0};
+  const lifecycle=(id:string)=>removed.get(id)??{source_instance:id,display_name:sources.find(s=>s.source_instance===id)?.name??id,removed_at:null,credential_state:null,revision:'a'.repeat(64),
+    ...(retirements.get(id)?.state==='UNCERTAIN'?{removal_blocker:'SOURCE_RETIREMENT_PENDING',retirement:{operation_id:retirements.get(id).operation_id,state:'UNCERTAIN'}}:{})};
   const complete=(id:string,kind:string,status?:string)=>{const key=id+kind,row=slots.get(key);slots.set(key,{...row,status:status??(kind==='PLAN'?'READY':'SUCCEEDED'),finished_at:new Date().toISOString(),result:status?null:kind==='PLAN'?canonical(id):{source_instance:id,source_type:'proxmox',site_slug:'dc1',cluster_name:'Cluster 1',items:[]},safe_error_code:status==='FAILED'?'OPERATION_INTERRUPTED':null});};
   const attach=async(context:any)=>context.route('**/api/v1/**',async(route:any)=>{
     const request=route.request(),path=new URL(request.url()).pathname,id=path.split('/')[4];
@@ -22,11 +24,32 @@ function backend(){
     }
     if(path.endsWith('/name')&&request.method()==='PATCH'){const body=request.postDataJSON();expect(Object.keys(body).sort()).toEqual(['name','revision']);sources.find(s=>s.source_instance===id)!.name=body.name;return route.fulfill({json:lifecycle(id)});}
     if(path.endsWith('/lifecycle'))return route.fulfill({json:lifecycle(id)});
-    if(path.endsWith('/remove')){
+    if(path.endsWith('/retirement-review')){
       if([...slots.values()].some(row=>row.source_instance===id&&row.status==='RUNNING'))return route.fulfill({status:409,json:{error:{code:'SOURCE_OPERATION_ACTIVE'}}});
-      const body=request.postDataJSON();expect(body.confirmed_source).toBe(lifecycle(id).display_name);expect(body.revision).toBe('a'.repeat(64));expect(body.remove_credentials).toBe(true);
-      removed.set(id,{...lifecycle(id),revision:null,removed_at:new Date().toISOString(),credential_state:body.remove_credentials?'REMOVED':'RETAINED_BY_REQUEST'});
-      return route.fulfill({json:lifecycle(id)});
+      const body=request.postDataJSON();expect(body.revision).toBe('a'.repeat(64));
+      const result={source_instance:id,operation_id:body.operation_id,state:'READY',digest:'b'.repeat(64),revision:'a'.repeat(64),guard_instance:randomUUID(),
+        manifest:{format:2,cluster_id:7,objects:[['cluster:7','c'.repeat(64)],['vm:9','d'.repeat(64)]]}};
+      retirements.set(id,result);return route.fulfill({json:result});
+    }
+    if(path.endsWith('/retirement-status')){
+      expect(request.postDataJSON().operation_id).toBe(retirements.get(id)?.operation_id);
+      return route.fulfill({json:retirements.get(id)});
+    }
+    if(path.endsWith('/retire')||path.endsWith('/retirement-resume')){
+      if([...slots.values()].some(row=>row.source_instance===id&&row.status==='RUNNING'))return route.fulfill({status:409,json:{error:{code:'SOURCE_OPERATION_ACTIVE'}}});
+      const body=request.postDataJSON(),record=retirements.get(id);
+      expect(body.confirmed).toBe(true);expect(body.confirmed_source).toBe(lifecycle(id).display_name);
+      expect(body.operation_id).toBe(record.operation_id);expect(body.digest).toBe(record.digest);expect(body.remove_credentials).toBe(true);
+      if(retirementControl.undelivered&&!path.endsWith('/retirement-resume')){
+        record.state='UNCERTAIN';return route.fulfill({json:record});
+      }
+      if(record.state==='READY'||retirementControl.undelivered)retirementControl.writes++;
+      retirementControl.undelivered=false;
+      if(retirementControl.lose){retirementControl.lose=false;record.state='UNCERTAIN';return route.abort('connectionreset');}
+      record.state='FINALIZED';record.remove_credentials=true;
+      removed.set(id,{...lifecycle(id),revision:null,removed_at:new Date().toISOString(),credential_state:'REMOVED',
+        retirement:{operation_id:record.operation_id,state:'FINALIZED'}});
+      return route.fulfill({json:record});
     }
     if(path==='/api/v1/sources')return route.fulfill({json:{sources:sources.filter(s=>!removed.has(s.source_instance))}});
     if(path==='/api/v1/diagnostics')return route.fulfill({json:diagnostics(sources)});
@@ -35,7 +58,7 @@ function backend(){
     const found=sources.find(s=>s.source_instance===id&&!removed.has(id));
     return route.fulfill({status:found?200:404,json:found??{error:{code:'SOURCE_NOT_FOUND'}}});
   });
-  return {attach,slots,complete,calls,removed};
+  return {attach,slots,complete,calls,removed,retirements,retirementControl};
 }
 test('two browsers share Plan and Discovery; close, reopen, deduplicate and isolate sources',async({browser})=>{
   const server=backend(),a=await browser.newContext(),b=await browser.newContext();
@@ -67,10 +90,15 @@ for(const width of [1440,1024,768])test(`Remove Source confirmation, active bloc
   await page.goto(url+'/sources/source-1/sync');await page.getByRole('button',{name:'Build plan',exact:true}).click();
   await page.goto(url+'/sources/source-1/configuration');
   await page.getByRole('button',{name:'Remove Source',exact:true}).click();const dialog=page.getByRole('dialog');
-  await expect(dialog.getByRole('textbox')).toHaveCount(0);await expect(dialog.getByRole('checkbox')).toHaveCount(0);await expect(dialog.getByRole('button',{name:'Remove Source',exact:true})).toBeEnabled();
+  await expect(dialog.getByText('Wait for the active operation to finish.')).toBeVisible();
+  await expect(dialog.getByRole('button',{name:'Confirm removal',exact:true})).toHaveCount(0);
+  server.complete('source-1','PLAN');await dialog.getByRole('button',{name:'Review again',exact:true}).click();
+  await page.getByRole('button',{name:'Remove Source',exact:true}).click();
+  await expect(dialog.getByRole('textbox')).toHaveCount(0);await expect(dialog.getByRole('checkbox')).toHaveCount(0);
+  await dialog.getByText('View every object',{exact:true}).click();
+  await expect(dialog.getByText('VM · NetBox ID 9',{exact:true})).toBeVisible();
   await dialog.screenshot({path:info.outputPath('remove-confirmation.png')});
-  await dialog.getByRole('button',{name:'Remove Source',exact:true}).click();await expect(dialog.getByText('Wait for active Plan or Discovery to finish.')).toBeVisible();
-  server.complete('source-1','PLAN');await dialog.getByRole('button',{name:'Remove Source',exact:true}).click();
+  await dialog.getByRole('button',{name:'Confirm removal',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Source removed from NetBox Sync'})).toBeVisible();await expect(page.getByText(/Local stored credentials removed/)).toBeVisible();
   await page.reload();await expect(page.getByRole('heading',{name:'Source removed from NetBox Sync'})).toBeVisible();await expect(page.getByRole('button',{name:'Build plan'})).toHaveCount(0);
   await page.screenshot({path:info.outputPath('removed-source.png'),fullPage:true});await page.getByRole('link',{name:'Back to Sources',exact:true}).click();expect(server.removed.has('source-1')).toBe(true);
@@ -177,4 +205,44 @@ for(const locale of ['en','ru'])for(const sameInterface of [true,false])test(`co
  await expect(page.locator('.sync-filters')).toHaveCount(0);
  await expect(page.getByRole('button',{name:/Review and confirm sync|Проверить и подтвердить/})).toBeDisabled();
  await page.locator('.conflict-summary').screenshot({path:info.outputPath('ip-conflict.png')});
+});
+
+
+test('removal response loss and reload keep the original operation',async({page,context},info)=>{
+  const server=backend();await server.attach(context);server.retirementControl.lose=true;
+  await page.goto(url+'/sources/source-1/configuration');
+  await page.getByRole('button',{name:'Remove Source',exact:true}).click();
+  const dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'Confirm removal',exact:true}).click();
+  await expect(dialog.getByText(/The result could not be confirmed/)).toBeVisible();
+  const original=server.retirements.get('source-1').operation_id;
+  expect(server.retirementControl.writes).toBe(1);
+  await page.reload();await page.getByRole('button',{name:'Check removal',exact:true}).click();
+  await expect(dialog.getByText(/Removal is not yet confirmed/)).toBeVisible();
+  expect(server.retirements.get('source-1').operation_id).toBe(original);
+  expect(server.retirementControl.writes).toBe(1);
+  await page.screenshot({path:info.outputPath('retirement-uncertain.png'),fullPage:true});
+  await dialog.getByRole('button',{name:'Check result',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Source removed from NetBox Sync'})).toBeVisible();
+  await expect(page.getByText(/deleted with a confirmed receipt/)).toBeVisible();
+  expect(server.retirementControl.writes).toBe(1);
+});
+
+
+for(const language of ['en','ru'] as const)test(`explicit removal continuation ${language}`,async({page,context},info)=>{
+  const server=backend();await server.attach(context);server.retirementControl.undelivered=true;
+  await page.setViewportSize({width:768,height:900});
+  await page.goto(url+'/sources/source-1/configuration');await setLanguage(page,language);
+  await page.getByRole('button',{name:language==='ru'?'Удалить источник':'Remove Source',exact:true}).click();
+  const dialog=page.getByRole('dialog');
+  await dialog.getByRole('button',{name:language==='ru'?'Подтвердить удаление':'Confirm removal',exact:true}).click();
+  const resume=dialog.getByRole('button',{name:language==='ru'?'Подтвердить продолжение':'Confirm continuation',exact:true});
+  await expect(resume).toBeVisible();
+  const operation=server.retirements.get('source-1').operation_id;
+  await dialog.getByRole('button',{name:language==='ru'?'Проверить результат':'Check result',exact:true}).click();
+  await expect(resume).toBeEnabled();expect(server.retirementControl.writes).toBe(0);
+  await page.screenshot({path:info.outputPath('explicit-continuation.png'),fullPage:true});
+  await resume.click();
+  await expect(page.getByRole('heading',{name:language==='ru'?'Источник удалён из NetBox Sync':'Source removed from NetBox Sync'})).toBeVisible();
+  expect(server.retirementControl.writes).toBe(1);
+  expect(server.retirements.get('source-1').operation_id).toBe(operation);
 });

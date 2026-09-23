@@ -89,8 +89,9 @@ def _parent_owner(resource, obj, source):
     if not identities: raise DependencyGuardBlocked('OWNERSHIP_CONFLICT')
 
 
-def _claims(snapshot, source, cluster):
+def _claims(snapshot, source, cluster, check_budget=None):
     for key, _ in snapshot.objects:
+        if check_budget is not None: check_budget()
         resource, identifier = key.split(':')
         claim = CreationClaim.objects.filter(resource=resource, object_id=int(identifier)).first()
         if claim is None or claim.source_instance != source or claim.cluster_id != cluster:

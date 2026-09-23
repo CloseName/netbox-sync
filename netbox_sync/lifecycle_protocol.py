@@ -4,7 +4,7 @@ from .source_config import SOURCE_INSTANCE_PATTERN
 from .source_lifecycle import LifecycleError
 
 
-def handle_lifecycle(lifecycle, secrets, request):
+def handle_lifecycle(lifecycle, secrets, request, retirement=None):
     if request.get('action')=='source_evidence' and set(request)=={'action','after'}:
         after=request['after']
         if not isinstance(after,str) or len(after)>200 or after and not SOURCE_INSTANCE_PATTERN.fullmatch(after):
@@ -17,6 +17,18 @@ def handle_lifecycle(lifecycle, secrets, request):
     if lifecycle is None:
         raise LifecycleError('LIFECYCLE_UNAVAILABLE')
     try:
+        if request.get('action') in {'retirement_review','retirement_execute','retirement_resume','retirement_status'}:
+            if retirement is None:raise LifecycleError('RETIREMENT_UNAVAILABLE')
+            actor=request.get('actor_id')
+            if not isinstance(actor,str) or not actor or len(actor)>200:raise LifecycleError('REQUEST_INVALID')
+            base={'action','source_instance','operation_id','actor_id'}
+            if request['action']=='retirement_review' and set(request)==base|{'revision'}:
+                return retirement.review(source,request['operation_id'],actor,request['revision'])
+            if request['action']=='retirement_status' and set(request)==base:
+                return retirement.status(source,request['operation_id'],actor)
+            if request['action'] in {'retirement_execute','retirement_resume'} and set(request)==base|{'digest','confirmed_source','remove_credentials'}:
+                return retirement.execute(source,request['operation_id'],actor,request['digest'],request['confirmed_source'],request['remove_credentials'],resume=request['action']=='retirement_resume')
+            raise LifecycleError('REQUEST_INVALID')
         if request.get('action') in {'identity_describe','identity_confirm'}:
             from .source_identity_verification import IdentityVerification
             verification=IdentityVerification(lifecycle)
@@ -72,6 +84,7 @@ def handle_lifecycle(lifecycle, secrets, request):
                 or not re.fullmatch('[a-f0-9]{64}', request['revision'])
                 or type(request['remove_credentials']) is not bool):
             raise LifecycleError('REQUEST_INVALID')
+        if retirement is not None:raise LifecycleError('SOURCE_RETIREMENT_REVIEW_REQUIRED')
         return lifecycle.remove(source, request['revision'], request['confirmed_source'],
                                 request['remove_credentials'], secrets.remove_owned)
     except (ValueError,TypeError,KeyError):

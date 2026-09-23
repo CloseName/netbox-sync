@@ -86,6 +86,12 @@ def _install_boundaries(app, settings, auth_client):
     @app.exception_handler(LifecycleRequestError)
     async def lifecycle_error(request, exc):
         messages = {
+            'SOURCE_RETIREMENT_REVIEW_REQUIRED': (409, 'Review the owned NetBox objects before confirming source removal'),
+            'SOURCE_RETIREMENT_PENDING': (409, 'Source retirement is awaiting its original receipt; do not start another write'),
+            'RETIREMENT_UNAVAILABLE': (503, 'The configured NetBox guard is unavailable or its installation identity is unverified'),
+            'RETIREMENT_CONFLICT': (409, 'The retirement evidence changed; review the current operation'),
+            'RETIREMENT_BLOCKED': (409, 'Retirement was refused; shared, manual or unproven objects must be reviewed'),
+            'RETIREMENT_UNCERTAIN': (409, 'Retirement outcome is not confirmed; check the original receipt'),
             'SOURCE_RECOVERY_NOT_REMOVED': (409, 'This source is active; open its existing page'),
             'SOURCE_IDENTITY_UNSUPPORTED': (409, 'This provider has no supported legacy hardware identity verification'),
             'SOURCE_IDENTITY_CHANGED': (409, 'Current hardware identity differs from the recorded source; do not reassign by address'),
@@ -413,6 +419,8 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         return SourceDTO.from_view(source_service.get_source(source_instance))
 
     lifecycle_client = LifecycleClient(settings.lifecycle_socket)
+    from .source_retirement import routes as retirement_routes
+    app.include_router(retirement_routes(lifecycle_client))
     from .source_recovery import routes as recovery_routes
     app.include_router(recovery_routes(settings,onboarding_service,auth_client,lifecycle_client,source_service))
 
@@ -671,7 +679,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
                 bind_intent()
                 try:
                     outcome=create_call(settings.bootstrap_socket, dict(action='registration-cluster',
-                        operation_id=operation_id, name=request.name,
+                        operation_id=operation_id, name=request.name, source_instance=request.source_instance,
                         site_id=pending['references']['site']['id'],
                         cluster_type_id=pending['references']['cluster_type']['id']))
                 except CatalogError as exc:

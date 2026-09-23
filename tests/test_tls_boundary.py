@@ -80,7 +80,7 @@ def test_compose_proxy_and_mount_boundaries():
     assert '/run/netbox-sync-tls:ro' in proxy and '/run/netbox-sync-http:ro' in proxy
     assert 'ports:' not in api and 'network_mode: none' in broker
     assert 'CA_DIR' not in api+broker+proxy
-    assert text.count('/run/netbox-sync-ca:ro')==4
+    assert text.count('/run/netbox-sync-ca:ro')==5
     assert 'docker.sock' not in text
     assert 'proxy_headers=False' in (ROOT/'netbox_sync/web_runtime.py').read_text()
 

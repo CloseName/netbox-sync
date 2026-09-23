@@ -95,7 +95,7 @@ def test_bootstrap_write_origin_and_secrecy(monkeypatch,caplog):
 def test_networkless_broker_and_separate_worker_mounts():
     text=(ROOT/'compose.production.yml').read_text()
     broker=text.split('  netbox-sync-secret-broker:',1)[1].split('  netbox-sync-lifecycle-worker:',1)[0]
-    lifecycle=text.split('  netbox-sync-lifecycle-worker:',1)[1].split('  netbox-sync-bootstrap-worker:',1)[0]
+    lifecycle=text.split('  netbox-sync-lifecycle-worker:',1)[1].split('  netbox-sync-retirement-worker:',1)[0]
     assert 'network_mode: none' in broker
     for forbidden in ('networks:', 'env_file:', 'APPLY_LOCK_DIR'):
         assert forbidden not in broker

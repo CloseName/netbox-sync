@@ -104,6 +104,9 @@ def execute_child(payload):
         raise ApplyWorkerError('PLAN_STALE', 'PLAN_DIGEST', differences(payload.get('expected_summary'), plan.canonical_dict()))
     if not any(item.action.value in ('CREATE', 'UPDATE') for item in plan.items):
         raise ApplyWorkerError('PLAN_BLOCKED', 'PLAN_FORBIDDEN')
+    from .guarded_creation import for_run
+    nb_api = for_run(nb_api, config, instance=payload.get('guard_instance'),
+                     run_id=payload.get('run_id'), url=payload['netbox_url'], token=payload['netbox_token'])
     # Prove all provider-specific prechecks before entering the write call.
     try:
         if config.source_type == 'proxmox':
@@ -201,7 +204,8 @@ class ApplySupervisor:
             raise ApplyWorkerError('CREDENTIAL_UNAVAILABLE') from None
         return {'source': _config_payload(config), 'credentials': asdict(credentials),
                 'netbox_url': netbox_url, 'netbox_token': token,
-                'operation': operation, 'expected_digest': expected_digest}
+                'operation': operation, 'expected_digest': expected_digest,
+                'guard_instance': os.environ.get('NETBOX_SYNC_GUARD_INSTANCE', '')}
 
     def _child(self, payload):
         started = time.monotonic()
@@ -318,6 +322,7 @@ class ApplySupervisor:
                             self._runs.bind_plan(run.run_id, claims.plan_digest, claims.planner_version)
                         apply_started = True
                         payload = self._payload(config, 'apply', claims.plan_digest)
+                        payload['run_id'] = str(run.run_id) if run else None
                         if isinstance(reviewed, dict): payload['expected_summary'] = summary(reviewed)
                         self._active_lock_fd = lock_fd
                         try:

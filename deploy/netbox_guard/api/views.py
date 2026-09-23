@@ -73,7 +73,7 @@ class Capabilities(GuardView):
     def get(self,request):
         return Response({'protocol':1,'guard_instance':str(GuardIdentity.objects.get(pk=1).identifier),'netbox_version':'4.7.0','atomic_dependency_guard':True,
                          'creation_receipts':True,'retirement_receipts':True,
-                         'source_coordinator_required':True})
+                         'source_coordinator_required':True,'source_tree_retirement':True})
 
 
 class CreateOwned(GuardView):
@@ -138,3 +138,20 @@ class Receipt(GuardView):
         actor=_permission(request.user,'retire_retirementintent',intent)
         if actor!=intent.actor: raise DependencyGuardBlocked('PERMISSION_DENIED')
         return Response(_public(intent,RetirementReceipt.objects.filter(intent=intent).first()))
+
+
+class ReviewSource(GuardView):
+    def post(self,request):
+        from ..source_retirement import review_source
+        body=_body(request,('nonce','source_instance','cluster_id'))
+        intent=review_source(request.user,body['nonce'],body['source_instance'],body['cluster_id'])
+        receipt=RetirementReceipt.objects.filter(intent=intent).first()
+        return Response(_public(intent,receipt))
+
+
+class RetireSource(GuardView):
+    def post(self,request):
+        from ..source_retirement import retire_source
+        body=_body(request,('nonce','digest'))
+        receipt=retire_source(request.user,body['nonce'],body['digest'])
+        return Response(_public(receipt.intent,receipt))
