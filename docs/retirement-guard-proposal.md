@@ -89,8 +89,9 @@ Even deleting a seemingly empty parent after a GET leaves a concurrent-write gap
 an ordinary REST DELETE cannot supply the above atomic guarantee. No automatic
 cascade or mass cleanup is offered by this alternative.
 
-Decision needed: approve the separate guarded-delete extension and its dependency/
-locking contract, or accept review-only cleanup until that capability exists.
+Local implementation of the guarded-delete extension is authorized. Its installation
+on the external NetBox is a separate deployment action. Review-only cleanup is the
+current limitation, not a replacement for the requested executable workflow.
 No extension was installed and no live object was deleted during development.
 
 ## Local NetBox 4.7 counterexample (23 September)
@@ -109,3 +110,43 @@ and [IPAddress generic assignment](https://github.com/netbox-community/netbox/bl
 The guard proposal remains an implementation gap, not a reason to ask again for
 permission to perform already authorized local development. Installing such a guard
 on an external NetBox would be a separately reviewed deployment action.
+
+
+## Dependency-fence implementation checkpoint
+
+`deploy/netbox_guard/dependencies.py` now implements a NetBox-side transaction
+context, independently of Sync runtime dependencies. It is not a registered plugin,
+HTTP endpoint, ownership claim, receipt store, or source-removal executor. No
+production service loads it and ordinary REST deletion remains unavailable.
+
+Within an independent PostgreSQL transaction it obtains deterministic SHARE ROW
+EXCLUSIVE locks on the managed NetBox tables, then uses the actual Django Collector
+(including fast-delete querysets and field updates). It fingerprints concrete
+stored values without returning raw contents. Any external SET_NULL target,
+unknown dependency, changed manifest, unknown table/plugin/SQL trigger, invalid
+root or failed database read refuses. Contention has a two-second lock timeout;
+individual statements have a ten-second timeout. These are not yet an executor's
+end-to-end deadline. Only the pinned NetBox 4.7.0 model has been tested.
+
+This deliberately conservative table fence protects generic relations that have
+no database foreign key. It also temporarily blocks unrelated writers: it is not
+a production-ready locking budget/topology. A narrower certified relation set,
+overall execution deadline, broader schema validation, creation provenance,
+idempotent transaction receipts, authorization and source lifecycle integration
+still belong to the remaining executor work. None is inferred from this primitive.
+
+Executed `tests/netbox_atomic_dependency_scenario.py` against the real NetBox
+4.7.0 image with isolated PostgreSQL and Redis (normal model callbacks enabled):
+changed cascade despite unchanged parent version; changed manual field; concurrent
+IP generic-assignment insertion refused while fenced and successful after release;
+existing writer causes bounded refusal; later retry succeeds; a surviving VM's
+primary-IP reference blocks deletion closure. No retirement DELETE executes.
+Cleanup removes only the scenario's exact fixture IDs in its fixed isolated DB.
+The first attempts exposed missing pynetbox coupling and missing Redis in the
+model harness; the guard was separated from Sync imports and Redis supplied.
+
+The final repeat also passed refusal on an additional table and an additional SQL
+trigger. Vanilla NetBox has 45 SQL triggers; the guard pins their full definitions,
+function bodies and enabled states, not merely their names. The first strict hook
+check intentionally refused that standard schema; the final version recognizes
+only the exact checked migration fingerprint. No production deployment is implied.
