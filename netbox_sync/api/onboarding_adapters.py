@@ -54,6 +54,14 @@ class RegistrationRegistry:
             return self.host_reservations().registration_guard(preview, source, operation_id, actor)
         return nullcontext()
 
+    def check_registration_resume(self, preview, source, operation_id, actor):
+        self.host_reservations().check(preview,resume={'source_instance':source,'registration_id':operation_id},actor_id=actor)
+
+    def registration_intent(self, preview, source, operation_id, actor, fingerprint):
+        if isinstance(preview,dict) and preview.get('provider')=='esxi':
+            return self.host_reservations().bind_intent(preview,source,operation_id,actor,fingerprint)
+        return None
+
     def registration_outcome(self, source, operation_id, actor):
         return self.host_reservations().outcome(source, operation_id, actor)
 

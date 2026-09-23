@@ -54,11 +54,16 @@ class FakeSecrets:
     def __init__(self):
         self.values = {}
         self.fail_after = None
+        self.operations = {}
 
-    def create(self, key, value):
+    def create(self, key, value, *, operation_id=None):
         if self.fail_after == len(self.values):
             raise OnboardingError(ErrorCode.SECRET_STORE_FAILED)
-        assert key not in self.values
+        if key in self.values:
+            if operation_id and self.operations.get(key)==operation_id and self.values[key]==value:
+                return SecretReceipt(key,'receipt')
+            raise OnboardingError(ErrorCode.SECRET_STORE_FAILED)
+        self.operations[key]=operation_id
         self.values[key] = value
         return SecretReceipt(key, 'receipt')
 

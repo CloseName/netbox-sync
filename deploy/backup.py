@@ -31,7 +31,7 @@ RESTORE_BOOTSTRAP_FILE = 'postgres_bootstrap_password_next'
 FORMAT_VERSION = 1
 ALEMBIC_CHAIN = (
     '0001_registry_baseline', '0002_sync_run_history', '0003_netbox_sync_naming',
-    '0004_source_operations', '0005_source_tombstones', '0006_auth_policy', '0007_host_reservations')
+    '0004_source_operations', '0005_source_tombstones', '0006_auth_policy', '0007_host_reservations', '0008_registration_intents', '0009_source_identity_proof')
 ALEMBIC_HEAD = ALEMBIC_CHAIN[-1]
 PRODUCT = 'NetBox Sync'
 DATABASE_NAME = 'netbox_sync'
@@ -52,7 +52,7 @@ VALID_BROKER_XATTR_SETS = frozenset({
     frozenset(BROKER_XATTRS),
 })
 PAYLOAD_FILES = ('database.dump', 'state.tar', 'manifest.json')
-FOUNDATION_TABLES = ('alembic_version', 'auth_audit', 'auth_state', 'host_reservations', 'schema_meta', 'source_operations', 'source_recoveries',
+FOUNDATION_TABLES = ('alembic_version', 'auth_audit', 'auth_state', 'host_reservations', 'registration_intents', 'schema_meta', 'source_identity_verifications', 'source_operations', 'source_recoveries',
                      'source_tombstones', 'sources', 'sync_runs')
 SAFE_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
 SAFE_SCHEMA = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,62}$')
@@ -510,8 +510,10 @@ class DatabaseTool:
             raise BackupError('fresh restore target contains operation or tombstone rows')
         values = self.query(
             f'SELECT (SELECT count(*) FROM {SCHEMA_NAME}.host_reservations), '
-            f'(SELECT count(*) FROM {SCHEMA_NAME}.source_recoveries)')
-        if values != ['0|0']:
+            f'(SELECT count(*) FROM {SCHEMA_NAME}.source_recoveries), '
+            f'(SELECT count(*) FROM {SCHEMA_NAME}.registration_intents), '
+            f'(SELECT count(*) FROM {SCHEMA_NAME}.source_identity_verifications)')
+        if values != ['0|0|0|0']:
             raise BackupError('fresh restore target contains host reservation or recovery rows')
         auth = self.query(f"SELECT value->'principal' = 'null'::jsonb FROM {SCHEMA_NAME}.auth_state WHERE id=1")
         if auth != ['t']:

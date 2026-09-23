@@ -183,6 +183,14 @@ class SourceOnboardingService:
             check(preview)
         return self._pending.issue(credentials, preview)
 
+    def accept_registration_resume(self, credentials, preview, source, operation, actor):
+        from ..host_registration import esxi_anchor,HostRegistrationConflict
+        if credentials.source_type!='esxi':raise HostRegistrationConflict('HOST_REGISTRATION_INVALID')
+        esxi_anchor(preview)
+        self._registry.check_registration_resume(preview,source,operation,actor)
+        return self._pending.issue(credentials,{**preview,'registration_resume':{
+            'source_instance':source,'registration_id':str(operation),'actor_id':actor}})
+
     def accept_recovery_credentials(self, credentials, preview, source, expected_anchor):
         from ..host_registration import esxi_anchor,HostRegistrationConflict
         if credentials.source_type!='esxi' or esxi_anchor(preview)!=expected_anchor:
@@ -224,6 +232,9 @@ class SourceOnboardingService:
         reserve = getattr(self._registry, 'reserve_provider_identity', None)
         if reserve is not None:
             preview = self.preview(request.onboarding_token)
+            resume=(preview or {}).get('registration_resume')
+            if resume and resume!={'source_instance':request.source_instance,'registration_id':str(operation_id),'actor_id':actor}:
+                raise OnboardingError(ErrorCode.ONBOARDING_TOKEN_INVALID)
             if request.source_type == 'esxi' and (not preview or preview.get('provider') != 'esxi'):
                 from ..host_registration import HostRegistrationConflict
                 raise HostRegistrationConflict('HOST_IDENTITY_UNAVAILABLE')
@@ -234,21 +245,27 @@ class SourceOnboardingService:
         guard=getattr(self._registry,'registration_guard',None)
         return guard(self.preview(request.onboarding_token),request.source_instance,operation_id,actor) if guard else nullcontext()
 
+    def registration_intent(self, request, operation, actor, fingerprint):
+        bind=getattr(self._registry,'registration_intent',None)
+        return bind(self.preview(request.onboarding_token),request.source_instance,operation,actor,fingerprint) if bind else None
+
     def registration_outcome(self, source, operation_id, actor):
         lookup = getattr(self._registry, 'registration_outcome', None)
         return lookup(source, operation_id, actor) if lookup else {'identity_status': 'NO_BOUND_ATTEMPT'}
 
-    def register(self, request):
+    def register(self, request, *, registration=None):
         """Create secrets then exactly one registry row; reconcile uncertain commits."""
         receipts = []
         try:
-            return self._register(request, receipts)
+            return self._register(request, receipts, registration)
         finally:
             forget = getattr(self._secrets, 'forget', None)
             if forget is not None:
                 forget(receipts)
 
-    def _register(self, request, receipts):
+    def _register(self, request, receipts, registration=None):
+        if registration and request.source_type!='esxi':
+            raise OnboardingError(ErrorCode.REGISTRATION_FAILED)
         if request.confirm_sync_disabled is not True:
             raise OnboardingError(ErrorCode.REGISTRATION_FAILED)
         source_view({**request.__dict__, 'enabled': True, 'sync_enabled': False, 'legacy_identity_owner': False})
@@ -266,10 +283,13 @@ class SourceOnboardingService:
                 )
                 receipts.append(token_receipt)
             secret_receipt = self._secrets.create(
-                self._key(request.source_instance, 'secret'), credentials.secret,
+                registration['credential_key'] if registration else self._key(request.source_instance, 'secret'), credentials.secret,
+                **({'operation_id':registration['broker_operation']} if registration else {}),
             )
             receipts.append(secret_receipt)
         except Exception as exc:
+            if registration:
+                raise OnboardingError(ErrorCode.REGISTRATION_UNCERTAIN) from None
             if not self._rollback(receipts):
                 raise OnboardingError(ErrorCode.REGISTRATION_UNCERTAIN) from None
             if isinstance(exc, OnboardingError):
@@ -298,6 +318,12 @@ class SourceOnboardingService:
         try:
             return self._registry.create(config)
         except Exception as exc:
+            if registration:
+                # The deterministic key may already be referenced by a committed
+                # retry. No rollback may delete it, even after an INSERT refusal.
+                state=self._registry.reconcile(request.source_instance)
+                if state==config:return config
+                raise OnboardingError(ErrorCode.REGISTRATION_UNCERTAIN) from None
             if getattr(exc, 'definitely_failed', False):
                 if not self._rollback(receipts):
                     raise OnboardingError(ErrorCode.REGISTRATION_UNCERTAIN) from None

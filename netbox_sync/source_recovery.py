@@ -7,7 +7,7 @@ import re
 from uuid import UUID
 from psycopg import sql
 from psycopg.types.json import Jsonb
-from .host_registration import legacy_anchor
+from .host_registration import legacy_anchor,identity_placement
 from .source_lifecycle import LifecycleError
 from .source_operations import source_gate
 
@@ -22,9 +22,7 @@ class Recovery:
             removed=connection.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s AND restored_at IS NULL').format(
                 self.store.table('source_tombstones')), (source,)).fetchone()
             if not removed:raise LifecycleError('SOURCE_RECOVERY_NOT_REMOVED')
-            mapping=(row['settings'] or {}).get('onboarding_mapping',{})
-            refs=mapping.get('references',{})
-            site=refs.get('site',{}).get('id');cluster=refs.get('cluster',{}).get('id')
+            site,cluster=identity_placement(row['settings'])
             if row['source_type']!='esxi' or any(type(v) is not int or v<=0 for v in (site,cluster)):
                 raise LifecycleError('SOURCE_RECOVERY_IDENTITY_REVIEW')
             pending=connection.execute(sql.SQL("SELECT operation_id FROM {} WHERE source_instance=%s AND actor_id=%s AND state IN ('PREPARED','CREDENTIALS_PENDING')").format(
@@ -51,13 +49,13 @@ class Recovery:
         if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')").format(
                 self.store.table('sync_runs')), (source,)).fetchone():
             raise LifecycleError('SOURCE_APPLY_UNCONFIRMED')
-        refs=(row['settings'] or {}).get('onboarding_mapping',{}).get('references',{})
+        site,cluster=identity_placement(row['settings'])
         anchor=legacy_anchor(row['settings'])
         if (row['source_type']!='esxi' or not anchor or not isinstance(proof,dict)
                 or proof.get('source_instance')!=source or proof.get('host_uuid')!=anchor
                 or proof.get('blockers')!=[] or not re.fullmatch('[a-f0-9]{64}',proof.get('digest',''))
-                or proof.get('site_id')!=refs.get('site',{}).get('id')
-                or proof.get('cluster_id')!=refs.get('cluster',{}).get('id')):
+                or proof.get('site_id')!=site
+                or proof.get('cluster_id')!=cluster):
             raise LifecycleError('SOURCE_RECOVERY_IDENTITY_REVIEW')
         others=connection.execute(sql.SQL("SELECT settings FROM {} WHERE source_type='esxi' AND enabled=true AND source_instance<>%s").format(
             self.store.table('sources')), (source,)).fetchall()

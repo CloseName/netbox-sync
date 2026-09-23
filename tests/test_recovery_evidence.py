@@ -109,3 +109,39 @@ def test_wrong_kind_and_multiple_identities_on_one_owned_object_block():
     machine=object_row(7,kind='vm',external='vm-a')
     machine['custom_fields']['sync_identities']+=object_row(7,kind='vm',external='vm-b')['custom_fields']['sync_identities']
     assert 'OBJECT_IDENTITY_CONFLICT' in report([object_row()],[machine])['blockers']
+
+
+def test_legacy_identity_evidence_uses_configured_scope_and_requires_owned_host(monkeypatch):
+    monkeypatch.setattr(catalog,'EgressPolicy',lambda **kw:SimpleNamespace(resolve=lambda h,p:(h,'192.0.2.1')))
+    monkeypatch.setattr(catalog,'pinned_dns',lambda *a:nullcontext())
+    monkeypatch.setattr(catalog,'configure_session',lambda s:None)
+    devices=[object_row()]
+    machines=[object_row(7,kind='vm',external='vm-a')]
+    clusters=[{**CLUSTER,'name':'Configured cluster'}]
+    requests=[]
+    def fetch(session,url,token):
+        requests.append(url)
+        if '/sites/' in url:rows=[{'id':1,'slug':'configured-site'}]
+        elif '/clusters/3/' in url:return clusters[0]
+        elif '/clusters/' in url:rows=clusters
+        elif '/devices/' in url:rows=devices
+        else:rows=machines
+        return {'count':len(rows),'next':None,'results':rows}
+    monkeypatch.setattr(catalog,'fetch',fetch)
+    payload={'action':'identity-evidence','source_instance':'source-a','host_uuid':UUID,
+             'site_slug':'configured-site','cluster_name':'Configured cluster'}
+    def read():return catalog.query({'url':'https://netbox.test','read_token':'','query':payload},lambda:nullcontext(None))
+    result=read()
+    assert not result['blockers'] and result['owned']==[{'kind':'device','id':1},{'kind':'vm','id':7}]
+    assert result['configured_target']=={'site_slug':'configured-site','cluster_name':'Configured cluster'}
+    machines[0]['custom_fields']['sync_identities'][0]['external_id']='vm-b'
+    changed=read()
+    assert changed['owned']==result['owned'] and not changed['blockers']
+    assert changed['digest']!=result['digest']
+    devices.clear()
+    assert 'HISTORICAL_IDENTITY_UNPROVED' in read()['blockers']
+    devices.append(object_row(source='another-source'))
+    assert 'HOST_OWNED_BY_OTHER_SOURCE' in read()['blockers']
+    clusters.append({**clusters[0],'id':4})
+    with pytest.raises(ProbeError,match='SELECTION_REQUIRED'):read()
+    assert all(url.startswith('https://netbox.test/api/') for url in requests)

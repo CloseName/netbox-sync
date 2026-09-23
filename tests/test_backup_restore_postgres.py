@@ -112,6 +112,11 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
         connection.execute("INSERT INTO netbox_sync.host_reservations(provider,anchor,source_instance,operation_id,actor_id) VALUES ('esxi','503c5ad7-aaaa-bbbb-cccc-0123456789ab','esxi-backup-test',%s,'admin')",(uuid.uuid4(),))
         connection.execute("INSERT INTO netbox_sync.source_recoveries(operation_id,source_instance,actor_id,revision,plan,state) VALUES (%s,'esxi-backup-test','admin','fixture-revision',%s,'CREDENTIALS_PENDING')",(uuid.uuid4(),Jsonb({'proof':{'digest':'a'*64},'credential_key':'src-recovery-fixture','broker_operation':'fixture-operation'})))
         connection.commit()
+        connection.execute("INSERT INTO netbox_sync.registration_intents(source_instance,operation_id,actor_id,anchor,fingerprint) SELECT source_instance,operation_id,actor_id,anchor,%s FROM netbox_sync.host_reservations",('b'*64,))
+        connection.execute("INSERT INTO netbox_sync.source_identity_verifications(operation_id,source_instance,actor_id,revision,anchor,proof) VALUES (%s,'esxi-backup-test','admin',%s,'503c5ad7-aaaa-bbbb-cccc-0123456789ab',%s)",(uuid.uuid4(),'c'*64,Jsonb({'owned':[{'kind':'device','id':7}],'blockers':[]})))
+        connection.commit()
+        expected_intents=connection.execute('SELECT * FROM netbox_sync.registration_intents').fetchall()
+        expected_identity=connection.execute('SELECT * FROM netbox_sync.source_identity_verifications').fetchall()
         expected_claims = connection.execute('SELECT * FROM netbox_sync.host_reservations').fetchall()
         expected_recoveries = connection.execute('SELECT * FROM netbox_sync.source_recoveries').fetchall()
         expected_tombstone = connection.execute('SELECT * FROM netbox_sync.source_tombstones').fetchall()
@@ -146,6 +151,8 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
     deployment.apply_grants(environment)
     with psycopg.connect(deployment.connection_info('bootstrap', environment)) as connection:
         assert _snapshot(connection) == expected
+        assert connection.execute('SELECT * FROM netbox_sync.registration_intents').fetchall()==expected_intents
+        assert connection.execute('SELECT * FROM netbox_sync.source_identity_verifications').fetchall()==expected_identity
         assert connection.execute('SELECT * FROM netbox_sync.host_reservations').fetchall() == expected_claims
         assert connection.execute('SELECT * FROM netbox_sync.source_recoveries').fetchall() == expected_recoveries
         assert connection.execute('SELECT * FROM netbox_sync.source_tombstones').fetchall() == expected_tombstone

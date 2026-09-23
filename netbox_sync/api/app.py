@@ -87,6 +87,10 @@ def _install_boundaries(app, settings, auth_client):
     async def lifecycle_error(request, exc):
         messages = {
             'SOURCE_RECOVERY_NOT_REMOVED': (409, 'This source is active; open its existing page'),
+            'SOURCE_IDENTITY_UNSUPPORTED': (409, 'This provider has no supported legacy hardware identity verification'),
+            'SOURCE_IDENTITY_CHANGED': (409, 'Current hardware identity differs from the recorded source; do not reassign by address'),
+            'SOURCE_IDENTITY_UNPROVED': (409, 'Fresh hardware evidence does not prove the historical NetBox source ownership'),
+            'SOURCE_IDENTITY_CONFLICT': (409, 'Another retained source claims this hardware identity; administrator ownership review is required'),
             'SOURCE_RECOVERY_IDENTITY_REVIEW': (409, 'Hardware identity and original NetBox placement require administrator review'),
             'SOURCE_RECOVERY_IDENTITY_CONFLICT': (409, 'Another active source claims this host; recovery is blocked'),
             'SOURCE_RECOVERY_ACTIVE': (409, 'A recovery attempt already exists; reconcile that attempt'),
@@ -112,6 +116,7 @@ def _install_boundaries(app, settings, auth_client):
     async def host_registration_error(request, exc):
         messages = {
             'HOST_REGISTRY_REVIEW_REQUIRED': 'An existing ESXi source lacks verified hardware identity. Administrator identity review is required before adding a host.',
+            'HOST_REGISTRATION_INTENT_CHANGED': 'This attempt already started with different parameters. Restore the original confirmed parameters; do not create another source.',
             'HOST_REGISTRATION_INVALID': 'A stable registration request ID is required. Reload the registration form.',
             'HOST_IDENTITY_UNAVAILABLE': 'The provider did not supply a reliable hardware identity. Registration is blocked.',
             'HOST_SOURCE_REMOVED': 'This host belongs to a removed source. An administrator must review recovery of the original source.',
@@ -583,10 +588,15 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
                 actor_id=http.state.principal['principal_id'])
         if settings.probe_socket:
             preview=remote_test_authorized(settings.probe_socket, request.credentials(), session, policy['revision'], **({'preview':True} if request.preview or request.source_type == 'esxi' else {}))
-            token = (onboarding_service.accept_recovery_credentials(request.credentials(),preview,
-                request.recovery_source,recovery_meta['host_uuid']) if recovery_meta else
-                onboarding_service.accept_checked_credentials(request.credentials(), preview))
-        elif onboarding_injected and not request.recovery_source:
+            if request.registration_resume:
+                token=onboarding_service.accept_registration_resume(request.credentials(),preview,
+                    request.registration_resume.source_instance,request.registration_resume.registration_id,
+                    http.state.principal['principal_id'])
+            else:
+                token = (onboarding_service.accept_recovery_credentials(request.credentials(),preview,
+                    request.recovery_source,recovery_meta['host_uuid']) if recovery_meta else
+                    onboarding_service.accept_checked_credentials(request.credentials(), preview))
+        elif onboarding_injected and not request.recovery_source and not request.registration_resume:
             token = onboarding_service.test_connection(request.credentials())
         else:
             # Explicit in-process adapter injection is only for tests. Production
@@ -598,7 +608,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         except AuthError:
             onboarding_service.cancel(token)
             raise
-        return ConnectionResult(onboarding_token=token,preview=preview,suggested_source_instance=request.source_type+'-'+uuid4().hex[:20])
+        return ConnectionResult(onboarding_token=token,preview=preview,suggested_source_instance=request.registration_resume.source_instance if request.registration_resume else request.source_type+'-'+uuid4().hex[:20])
 
     from .onboarding_dto import PlacementReviewRequest
 
@@ -622,6 +632,10 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
     def register_source(request: RegistrationRequest, http: Request):
         from dataclasses import replace
         mapping={}
+        fingerprint=request.intent_fingerprint()
+        def bind_intent():
+            return onboarding_service.registration_intent(request.command(),request.registration_id,
+                http.state.principal['principal_id'],fingerprint)
         # Reserve before catalog POSTs or filesystem credentials. The actor/nonce
         # binding survives response loss and cannot be claimed by another request.
         auth_client.call('receipt.check', session=http.cookies.get(COOKIE), receipt=request.onboarding_token)
@@ -651,6 +665,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
                     onboarding_service.preview(request.onboarding_token), pending_cluster=True)
                 operation_id=str(uuid5(UUID('b6c311eb-0d55-45af-80a5-b949a20bfe47'),
                     http.state.principal['principal_id']+':'+request.source_instance+':'+str(request.registration_id)))
+                bind_intent()
                 try:
                     outcome=create_call(settings.bootstrap_socket, dict(action='registration-cluster',
                         operation_id=operation_id, name=request.name,
@@ -677,9 +692,10 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
                         'cluster_type_slug':refs['cluster_type']['slug'],'device_type_slug':next(iter(types.values()))['slug']})
                 elif not onboarding_injected:
                     raise CatalogError('SELECTION_REQUIRED')
+                registration=bind_intent()
                 auth_client.call('receipt.consume', session=http.cookies.get(COOKIE),
                                  receipt=request.onboarding_token, destination=request.address, provider=request.source_type)
-                onboarding_service.register(replace(request.command(),mapping=mapping))
+                onboarding_service.register(replace(request.command(),mapping=mapping),registration=registration)
                 return SourceDTO.from_view(source_view({
                     **request.model_dump(), 'enabled': True, 'sync_enabled': False, 'legacy_identity_owner': False,
                 }))
@@ -698,6 +714,8 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
             request.registration_id, http.state.principal['principal_id'])
         if identity['identity_status'] == 'REGISTERED':
             return {**identity, 'status': 'REGISTERED'}
+        if identity['identity_status']=='OUTCOME_UNCERTAIN':
+            return {**identity,'status':'UNCERTAIN','resume_supported':True}
         if identity['identity_status'] in {'RESTORE_REQUIRED', 'IDENTITY_CONFLICT'}:
             return {**identity, 'status': 'UNCERTAIN'}
         from uuid import uuid5

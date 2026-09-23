@@ -5,7 +5,7 @@ have lost a response after a remote cluster write. Recovery must reconcile it.
 """
 from contextlib import contextmanager
 from collections.abc import Mapping
-from uuid import UUID
+from uuid import UUID, uuid5
 from psycopg import sql
 from psycopg.rows import dict_row
 from .esxi_discovery import _validated_host_hardware_uuid
@@ -34,13 +34,38 @@ def legacy_anchor(settings):
     """Read only a previously recorded provider host UUID, never name/address."""
     if not isinstance(settings, Mapping):
         return None
-    mapping = settings.get('onboarding_mapping')
-    if not isinstance(mapping, Mapping):
-        return None
-    try:
-        return esxi_anchor({'provider': 'esxi', 'hosts': mapping.get('hosts')})
-    except HostRegistrationConflict:
-        return None
+    mapping=settings.get('onboarding_mapping')
+    proof=settings.get('provider_identity')
+    if proof is not None:
+        if not isinstance(proof,Mapping) or proof.get('provider')!='esxi' or proof.get('version')!=1:
+            return None
+        anchor=_validated_host_hardware_uuid(proof.get('hardware_uuid'))
+        if not anchor:return None
+        try:UUID(str(proof['verification_id']))
+        except (ValueError,TypeError,KeyError):return None
+        # Explicit verification may replace an old local ha-host placeholder,
+        # but must never hide a different recorded hardware UUID.
+        hosts=mapping.get('hosts',[]) if isinstance(mapping,Mapping) else []
+        if not isinstance(hosts,list):return None
+        for host in hosts:
+            if not isinstance(host,Mapping):return None
+            recorded=_validated_host_hardware_uuid(host.get('id'))
+            if recorded and recorded!=anchor:return None
+        return anchor
+    if not isinstance(mapping,Mapping):return None
+    try:return esxi_anchor({'provider':'esxi','hosts':mapping.get('hosts')})
+    except HostRegistrationConflict:return None
+
+
+def identity_placement(settings):
+    """Use current reviewed mapping IDs, otherwise the verified legacy scope."""
+    mapping=(settings or {}).get('onboarding_mapping',{})
+    refs=mapping.get('references',{}) if isinstance(mapping,Mapping) else {}
+    if refs.get('site') and refs.get('cluster'):
+        return refs['site'].get('id'),refs['cluster'].get('id')
+    proof=(settings or {}).get('provider_identity',{})
+    return proof.get('site_id'),proof.get('cluster_id')
+
 
 
 class HostReservations:
@@ -54,7 +79,7 @@ class HostReservations:
         code='HOST_SOURCE_REMOVED' if cursor.fetchone() else 'HOST_ALREADY_REGISTERED'
         raise HostRegistrationConflict(code,existing[0])
 
-    def check(self, preview):
+    def check(self, preview, *, resume=None, actor_id=None):
         anchor = esxi_anchor(preview)
         with self.connector() as connection:
             with connection.cursor(row_factory=dict_row) as cursor:
@@ -68,11 +93,15 @@ class HostReservations:
                     self._existing(cursor,existing)
                 if unknown:
                     raise HostRegistrationConflict('HOST_REGISTRY_REVIEW_REQUIRED', unknown[0])
-                cursor.execute(sql.SQL('SELECT source_instance FROM {} WHERE provider=%s AND anchor=%s').format(
+                cursor.execute(sql.SQL('SELECT source_instance,operation_id,actor_id FROM {} WHERE provider=%s AND anchor=%s').format(
                     sql.Identifier(self.schema, 'host_reservations')), ('esxi', anchor))
                 reserved = cursor.fetchone()
                 if reserved:
+                    if resume is not None and (reserved['source_instance'],reserved['operation_id'],reserved['actor_id'])==(resume['source_instance'],UUID(str(resume['registration_id'])),actor_id):
+                        return
                     raise HostRegistrationConflict('HOST_REGISTRATION_RESERVED', reserved['source_instance'])
+                if resume is not None:
+                    raise HostRegistrationConflict('HOST_REGISTRATION_INVALID')
 
     def reserve(self, preview, source_instance, operation_id, actor_id):
         anchor = esxi_anchor(preview)
@@ -183,3 +212,31 @@ class HostReservations:
             finally:
                 if acquired:
                     connection.execute('SELECT pg_advisory_unlock(hashtextextended(%s,0))',(lock_key,))
+
+
+    def bind_intent(self, preview, source, operation, actor, fingerprint):
+        """Persist only a digest before side effects; never retain credentials.
+
+        The caller holds registration_guard across this call and all subsequent
+        effects. Unique INSERT is an additional fence if that connection is lost.
+        No intent update or reservation deletion is authorized.
+        """
+        import re
+        if not isinstance(fingerprint,str) or not re.fullmatch('[a-f0-9]{64}',fingerprint):
+            raise HostRegistrationConflict('HOST_REGISTRATION_INVALID')
+        anchor=esxi_anchor(preview);operation=UUID(str(operation))
+        with self.connector() as connection,connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(sql.SQL('SELECT operation_id,actor_id,anchor FROM {} WHERE source_instance=%s').format(
+                sql.Identifier(self.schema,'host_reservations')),(source,))
+            claim=cursor.fetchone()
+            if not claim or (claim['operation_id'],claim['actor_id'],claim['anchor'])!=(operation,actor,anchor):
+                raise HostRegistrationConflict('HOST_REGISTRATION_INVALID')
+            table=sql.Identifier(self.schema,'registration_intents')
+            cursor.execute(sql.SQL('INSERT INTO {} (source_instance,operation_id,actor_id,anchor,fingerprint) VALUES (%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING').format(table),
+                (source,operation,actor,anchor,fingerprint))
+            cursor.execute(sql.SQL('SELECT operation_id,actor_id,anchor,fingerprint FROM {} WHERE source_instance=%s').format(table),(source,))
+            intent=cursor.fetchone()
+            if not intent or (intent['operation_id'],intent['actor_id'],intent['anchor'],intent['fingerprint'])!=(operation,actor,anchor,fingerprint):
+                raise HostRegistrationConflict('HOST_REGISTRATION_INTENT_CHANGED')
+        key=uuid5(UUID('59ecc401-7157-4694-9c10-58f30652e3ec'),actor+':'+source+':'+str(operation)).hex
+        return {'credential_key':'src-registration-'+key,'broker_operation':key}

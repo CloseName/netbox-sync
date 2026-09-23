@@ -17,6 +17,14 @@ def handle_lifecycle(lifecycle, secrets, request):
     if lifecycle is None:
         raise LifecycleError('LIFECYCLE_UNAVAILABLE')
     try:
+        if request.get('action') in {'identity_describe','identity_confirm'}:
+            from .source_identity_verification import IdentityVerification
+            verification=IdentityVerification(lifecycle)
+            if request['action']=='identity_describe' and set(request)=={'action','source_instance'}:
+                return verification.describe(source)
+            if request['action']=='identity_confirm' and set(request)=={'action','source_instance','actor_id','revision','discovery_id','proof'}:
+                return verification.confirm(source,request['actor_id'],request['revision'],request['discovery_id'],request['proof'])
+            raise LifecycleError('REQUEST_INVALID')
         if request.get('action') in {'recovery_describe','recovery_prepare','recovery_credentials','recovery_complete','recovery_abandon','recovery_status'}:
             from .source_recovery import Recovery
             recovery=Recovery(lifecycle)

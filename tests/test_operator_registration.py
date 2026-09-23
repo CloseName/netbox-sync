@@ -176,12 +176,15 @@ def test_recovery_and_recovery_probe_are_admin_only(monkeypatch,role):
     policy,_,session=configured(role)
     class Client:
         def call(self,action,**payload):return policy.call(dict(action=action,**payload))
+    monkeypatch.setattr(LifecycleClient,'identity',lambda *args,**kw:pytest.fail('No identity capability for this role'))
     monkeypatch.setattr(LifecycleClient,'recovery',lambda *args,**kw:pytest.fail('No lifecycle capability for this role'))
     monkeypatch.setattr('netbox_sync.probe_worker.remote_test_authorized',lambda *args,**kw:pytest.fail('No recovery probe for this role'))
     app=create_app(settings=ApiSettings(bootstrap_socket='',probe_socket='/test-only'),auth_client=Client())
     with TestClient(app,base_url='https://localhost:8000') as http:
         http.cookies.set(COOKIE,session)
         for route,body in [
+            ('identity-review',{}),
+            ('identity-confirm',{'revision':'a'*64,'discovery_id':str(uuid4()),'digest':'a'*64,'confirmed':True}),
             ('recovery-review',{'onboarding_token':'x'*32}),
             ('recover',{'onboarding_token':'x'*32,'operation_id':str(uuid4()),'digest':'0'*64,'confirmed':True}),
             ('recovery-abandon',{'operation_id':str(uuid4())}),
@@ -199,3 +202,45 @@ def test_recovery_requires_explicit_boolean_confirmation(value):
     from netbox_sync.api.source_recovery import ConfirmRequest
     with pytest.raises(ValidationError):
         ConfirmRequest(onboarding_token='x'*32,operation_id=uuid4(),digest='a'*64,confirmed=value)
+
+
+@pytest.mark.parametrize('role',['admin','operator','viewer'])
+@pytest.mark.parametrize('mode',['same','distinct','missing','catalog_error','changed'])
+def test_identity_audit_is_admin_read_only_and_never_selects_owner(monkeypatch,role,mode):
+    from netbox_sync.api.lifecycle_client import LifecycleClient,LifecycleRequestError
+    from netbox_sync.api.catalog import CatalogError
+    import netbox_sync.api.source_recovery as recovery
+    policy,_,session=configured(role)
+    class Client:
+        def call(self,action,**payload):return policy.call(dict(action=action,**payload))
+    calls=[]
+    def identity(self,action,source,**kw):
+        assert action=='describe' and not kw
+        calls.append(source)
+        if source=='second' and mode=='missing':raise LifecycleRequestError('SOURCE_DISCOVERY_REQUIRED')
+        return dict(source_instance=source,host_uuid='uuid-b' if source=='second' and mode=='distinct' else 'uuid-a',
+            recorded_uuid='old-uuid' if mode=='changed' else None,site_slug='site',cluster_name='cluster',
+            observed_at='2026-09-23T00:00:00Z',revision='a'*64,discovery_id='fixture')
+    def catalog(path,payload):
+        assert payload['action']=='identity-evidence'
+        if mode=='catalog_error':raise CatalogError('remote-sensitive-error')
+        return dict(blockers=[],digest='a'*64,owned=[{'kind':'device','id':7}])
+    monkeypatch.setattr(LifecycleClient,'identity',identity)
+    monkeypatch.setattr(recovery,'call',catalog)
+    with TestClient(create_app(settings=ApiSettings(bootstrap_socket=''),auth_client=Client()),base_url='https://localhost:8000') as http:
+        http.cookies.set(COOKIE,session)
+        result=http.post('/api/v1/sources/identity-audit',headers=HEADERS,json={'sources':['first','second']})
+        if role!='admin':
+            assert result.status_code==403 and not calls
+            return
+        assert result.status_code==200,result.text
+        data=result.json()
+        assert not data['writes_performed'] and not data['automatic_remediation']
+        assert data['comparison']==({'distinct':'DISTINCT_OBSERVED_UUIDS','missing':'UNPROVED'}.get(mode,'SAME_OBSERVED_UUID'))
+        assert calls==['first','second']
+        if mode=='changed':assert all('RECORDED_IDENTITY_CHANGED' in entry['proof']['blockers'] for entry in data['sources'])
+        if mode=='catalog_error':
+            assert all(entry['evidence_error']=='UNAVAILABLE' for entry in data['sources'])
+            assert 'remote-sensitive-error' not in result.text
+        assert http.post('/api/v1/sources/identity-audit',headers=HEADERS,json={'sources':['first','first']}).status_code==422
+        assert calls==['first','second']

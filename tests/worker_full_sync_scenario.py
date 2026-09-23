@@ -57,7 +57,42 @@ for provider in (('esxi','proxmox') if pgmode=='bundled' else ('proxmox','esxi')
         host_types={h['id']:dtype for h in checked['body']['preview']['hosts']},
         site_slug=refs['site']['slug'],cluster_name=refs['cluster']['name'],platform_slug=refs['platform']['slug'],
         device_role_slug=refs['device_role']['slug'],device_type_slug=dtype['slug'],cluster_type_slug=refs['cluster_type']['slug'])
+    if provider=='esxi':
+        # Fault only this disposable database, after the real broker effect.
+        fixture_db=compose('ps','-q','postgres') if pgmode=='bundled' else project+'-external-db'
+        def fixture_sql(statement):
+            return run(['docker','exec','-i',fixture_db,'psql','-U','netbox_sync_bootstrap','-d','netbox_sync','--set','ON_ERROR_STOP=1','-At'],input=statement)
+        original_files={p.name for p in (root/'secrets/sources').iterdir()}
+        fixture_sql("""CREATE FUNCTION netbox_sync.fixture_registration_stop() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN IF NEW.source_instance='full-esxi' THEN RAISE EXCEPTION 'controlled registration refusal' USING ERRCODE='23514'; END IF; RETURN NEW; END$$;
+        CREATE TRIGGER fixture_registration_stop BEFORE INSERT ON netbox_sync.sources FOR EACH ROW EXECUTE FUNCTION netbox_sync.fixture_registration_stop();""")
+        try:
+            stopped=request(payload,'/api/v1/sources')
+            assert stopped['status']==503 and stopped['body']['error']['code']=='REGISTRATION_UNCERTAIN',stopped
+        finally:
+            fixture_sql('DROP TRIGGER fixture_registration_stop ON netbox_sync.sources; DROP FUNCTION netbox_sync.fixture_registration_stop();')
+        pending_files={p.name for p in (root/'secrets/sources').iterdir()}
+        assert len(pending_files-original_files)==1
+        assert fixture_sql("SELECT count(*) FROM netbox_sync.sources WHERE source_instance='full-esxi'")=='0'
+        compose('restart','netbox-sync-api')
+        for _ in range(60):
+            check=subprocess.run([*command,'exec','-T','netbox-sync-api','python','-m','netbox_sync.web_runtime','health'],capture_output=True)
+            if check.returncode==0:break
+            time.sleep(.25)
+        else:raise RuntimeError('Restarted API did not become healthy')
+        state=request({'source_instance':sid,'registration_id':payload['registration_id']},'/api/v1/sources/registration-status')
+        assert state['status']==200 and state['body']['resume_supported'] is True,state
+        resumed=request(dict(source_type='esxi',address='esxi.probe.test',port=8443,verify_ssl=True,
+            username='netbox-sync',secret=secret,preview=True,
+            registration_resume={'source_instance':sid,'registration_id':payload['registration_id']}))
+        assert resumed['status']==200,resumed
+        payload['onboarding_token']=resumed['body']['onboarding_token']
+        assert resumed['body']['suggested_source_instance']==sid
     result=request(payload,'/api/v1/sources');assert result['status']==201,('register',provider,result['status'],result['body'].get('error'))
+    if provider=='esxi':
+        assert {p.name for p in (root/'secrets/sources').iterdir()}==pending_files
+        assert fixture_sql("SELECT count(*) FROM netbox_sync.sources WHERE source_instance='full-esxi'")=='1'
+        print('PASS real API restart after broker create/DB refusal: actor-bound resume, one credential file and one source',flush=True)
     base='/api/v1/sources/'+sid
     discovery=request({},base+'/discovery');assert discovery['status']==200,('discovery',provider,discovery)
     hardware=[i['properties'] for i in discovery['body']['items'] if i['object_kind'] in ('vm','qemu','lxc')]
@@ -116,6 +151,20 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
     print('PASS production API/preview/discovery/plan/prepare/apply/replan '+provider+' HTTPS 8443',flush=True)
 
     if provider=='esxi':
+        # Model an existing imported source without onboarding hardware metadata.
+        # Keep address, credentials, schedules, mappings in NetBox and run history.
+        fixture_sql("UPDATE netbox_sync.sources SET settings=settings-'onboarding_mapping' WHERE source_instance='full-esxi'")
+        identity_review=request({},base+'/identity-review')
+        assert identity_review['status']==200 and not identity_review['body']['proof']['blockers'],identity_review
+        evidence=identity_review['body']
+        verified=request(dict(revision=evidence['revision'],discovery_id=evidence['discovery_id'],
+            digest=evidence['proof']['digest'],confirmed=True),base+'/identity-confirm')
+        assert verified['status']==200 and verified['body']['status']=='VERIFIED',verified
+        assert {p.name for p in (root/'secrets/sources').iterdir()}==pending_files
+        legacy_plan=request({},base+'/sync-plan')
+        assert legacy_plan['status']==200 and legacy_plan['body']['apply_allowed'],legacy_plan
+        assert not [i for i in legacy_plan['body']['items'] if i['action'] in ('CREATE','UPDATE')],legacy_plan
+        print('PASS legacy identity: fresh Discovery matches existing NetBox provenance; same source/credentials and zero-change plan',flush=True)
         before_restore_counts=run(['docker','exec',peer,'python','-c',"import requests; print(requests.get('https://esxi.probe.test:8443/fixture/state',verify='/fixture/server.crt',timeout=5).text)"])
         before_history=request(None,'/api/v1/runs?source_instance='+sid,'GET')['body']
         life=request(None,base+'/lifecycle','GET')['body']
@@ -157,6 +206,14 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
     conflict=request({},base+'/sync-plan')['body']
     assert not conflict['apply_allowed'] and any(c['kind']=='IP_ASSIGNMENT' for c in conflict['conflicts']),('observation-fixture',provider,conflict)
     pv=request(None,base+'/placement','GET')['body']
+    if provider=='esxi':
+        # Legacy identity verification intentionally does not invent mappings.
+        # An empty choice is refused; explicitly choose the same catalog entries.
+        assert pv['references']=={} and pv['host_types']=={},pv
+        empty=request(dict(revision=pv['revision'],discovery_id=pv['discovery_id'],references={},host_types={},ip_conflict_policy='observe'),base+'/placement','PATCH')
+        assert empty['status']==409 and empty['body']['error']['code']=='CATALOG_SELECTION_REQUIRED',empty
+        pv['references']=refs
+        pv['host_types']={h['id']:dtype for h in pv['preview']['hosts']}
     chosen=request(dict(revision=pv['revision'],discovery_id=pv['discovery_id'],references=pv['references'],host_types=pv['host_types'],ip_conflict_policy='observe'),base+'/placement','PATCH')
     assert chosen['status']==200,chosen
     observed=request({},base+'/sync-plan')['body']

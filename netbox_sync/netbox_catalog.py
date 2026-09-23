@@ -34,22 +34,22 @@ def query(value,session_factory=requests.Session):
         configure_session(session)
         def get(kind,tail):
             return fetch(session,value['url']+'/api/'+ENDPOINTS[kind]+'/'+tail,value['read_token'])
-        if action=='recovery-evidence':
+        if action in ('recovery-evidence','identity-evidence'):
             from .recovery_evidence import assess
             from .source_config import SOURCE_INSTANCE_PATTERN
             from .esxi_discovery import _validated_host_hardware_uuid
-            if (set(payload)!={'action','source_instance','host_uuid','site_id','cluster_id'}
+            expected={'action','source_instance','host_uuid'} | ({'site_slug','cluster_name'} if action=='identity-evidence' else {'site_id','cluster_id'})
+            if (set(payload)!=expected
                     or not isinstance(payload['source_instance'],str)
                     or not SOURCE_INSTANCE_PATTERN.fullmatch(payload['source_instance'])
                     or not isinstance(payload['host_uuid'],str)
-                    or _validated_host_hardware_uuid(payload['host_uuid'])!=payload['host_uuid']
-                    or any(type(payload[k]) is not int or payload[k]<=0 for k in ('site_id','cluster_id'))):
+                    or _validated_host_hardware_uuid(payload['host_uuid'])!=payload['host_uuid']):
                 raise ProbeError('RESPONSE_INVALID')
-            def inventory(endpoint):
+            def inventory(endpoint,filters=None):
                 rows=[];total=None
                 while True:
                     page=fetch(session,value['url']+'/api/'+endpoint+'/?'+urlencode(
-                        dict(limit=100,offset=len(rows),ordering='id')),value['read_token'])
+                        dict(limit=100,offset=len(rows),ordering='id',**(filters or {}))),value['read_token'])
                     batch=page.get('results');count=page.get('count')
                     if (not isinstance(batch,list) or len(batch)>100 or type(count) is not int
                             or not 0<=count<=10000 or total is not None and count!=total):
@@ -61,9 +61,29 @@ def query(value,session_factory=requests.Session):
                         return rows
                     if not batch or page.get('next') is None:raise ProbeError('RESPONSE_INVALID')
                     # Never follow an API-provided URL with the read token.
+            configured=None
+            if action=='identity-evidence':
+                if any(not isinstance(payload[k],str) or not payload[k] or len(payload[k])>200 for k in ('site_slug','cluster_name')):
+                    raise ProbeError('RESPONSE_INVALID')
+                configured={k:payload[k] for k in ('site_slug','cluster_name')}
+                sites=[r for r in inventory('dcim/sites',{'slug':payload['site_slug']}) if r.get('slug')==payload['site_slug']]
+                if len(sites)!=1:raise ProbeError('SELECTION_REQUIRED')
+                site_id=sites[0].get('id')
+                if type(site_id) is not int or site_id<=0:raise ProbeError('RESPONSE_INVALID')
+                clusters=[r for r in inventory('virtualization/clusters',{'name':payload['cluster_name']})
+                    if r.get('name')==payload['cluster_name'] and r.get('scope_type')=='dcim.site' and r.get('scope_id')==site_id]
+                if len(clusters)!=1:raise ProbeError('SELECTION_REQUIRED')
+                payload={**payload,'site_id':site_id,'cluster_id':clusters[0].get('id')}
+            if any(type(payload[k]) is not int or payload[k]<=0 for k in ('site_id','cluster_id')):
+                raise ProbeError('RESPONSE_INVALID')
             result=assess(payload['source_instance'],payload['host_uuid'],payload['site_id'],
                 payload['cluster_id'],get('cluster',str(payload['cluster_id'])+'/'),
-                inventory('dcim/devices'),inventory('virtualization/virtual-machines'))
+                inventory('dcim/devices'),inventory('virtualization/virtual-machines'),require_host=action=='identity-evidence')
+            if configured:
+                result['configured_target']=configured
+                # Chain the inventory digest: object provenance may change while
+                # the projected IDs and blockers remain identical.
+                result['digest']=fingerprint(result)
             return result
         if action=='list':
             if kind not in ENDPOINTS: raise ProbeError('RESPONSE_INVALID')

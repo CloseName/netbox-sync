@@ -35,6 +35,14 @@ class LifecycleClient:
             after=value['next']
         raise LifecycleRequestError('LIFECYCLE_UNAVAILABLE')
 
+    def identity(self,action,source,**payload):
+        from ..local_control import request,ControlError
+        if action not in {'describe','confirm'}:raise LifecycleRequestError('REQUEST_INVALID')
+        try:
+            return request(self.path,{'action':'identity_'+action,'source_instance':source,**payload},timeout=15)['result']
+        except ControlError as exc:raise LifecycleRequestError(exc.code) from None
+        except Exception:raise LifecycleRequestError('LIFECYCLE_UNAVAILABLE') from None
+
     def recovery(self, action, source, **payload):
         from ..local_control import request,ControlError
         if action not in {'describe','prepare','credentials','complete','abandon','status'}:

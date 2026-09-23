@@ -386,6 +386,9 @@ def apply_grants(environ=None):
             cursor.execute(sql.SQL('GRANT SELECT, INSERT ON {} TO {}').format(
                 sql.Identifier(schema, 'host_reservations'),
                 sql.Identifier(DATABASE_ROLES['registration_writer'])))
+            cursor.execute(sql.SQL('GRANT SELECT, INSERT ON {} TO {}').format(
+                sql.Identifier(schema, 'registration_intents'),
+                sql.Identifier(DATABASE_ROLES['registration_writer'])))
             _grant_columns(cursor, 'INSERT', sources, REGISTRATION_INSERT_COLUMNS,
                            DATABASE_ROLES['registration_writer'])
             for key in ('discovery_reader', 'apply_registry_reader', 'registry_reader'):
@@ -437,6 +440,7 @@ def apply_grants(environ=None):
             lifecycle_role=sql.Identifier(DATABASE_ROLES['lifecycle_writer'])
             cursor.execute(sql.SQL('GRANT SELECT, INSERT ON {} TO {}').format(recovery_table,lifecycle_role))
             _grant_columns(cursor, 'UPDATE', recovery_table, ('state','finished_at'), DATABASE_ROLES['lifecycle_writer'])
+            cursor.execute(sql.SQL('GRANT SELECT, INSERT ON {} TO {}').format(sql.Identifier(schema,'source_identity_verifications'),lifecycle_role))
             _grant_columns(cursor, 'INSERT', tombstones,
                            ('source_instance','display_name','credential_state'),
                            DATABASE_ROLES['lifecycle_writer'])

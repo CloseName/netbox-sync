@@ -59,7 +59,7 @@ def test_existing_populated_registry_is_preserved(migration_database):
         marker = sa.Table('alembic_version', sa.MetaData(), schema=registry.schema,
                           autoload_with=connection)
         assert connection.execute(sa.select(marker.c.version_num)).scalar_one() == (
-            '0007_host_reservations')
+            '0009_source_identity_proof')
         inspector = sa.inspect(connection)
         assert inspector.has_table('sync_runs', schema=registry.schema)
         assert inspector.get_foreign_keys('sync_runs', schema=registry.schema) == []
@@ -94,3 +94,27 @@ def test_partial_schema_is_not_stamped(migration_database):
         _upgrade(registry, engine)
     with engine.connect() as connection:
         assert set(sa.inspect(connection).get_table_names(schema=registry.schema)) == {'schema_meta'}
+
+
+def test_populated_0007_upgrade_retains_reservations_and_recovery(migration_database):
+    from uuid import uuid4
+    registry,engine=migration_database
+    config=Config('alembic.ini');config.attributes['schema']=registry.schema
+    with engine.connect() as connection:
+        config.attributes['connection']=connection
+        command.upgrade(config,'0007_host_reservations')
+    before=registry.create_source(sample_source_config())
+    with registry._connect() as connection:
+        connection.execute(sql.SQL("INSERT INTO {} (provider,anchor,source_instance,operation_id,actor_id) VALUES ('esxi',%s,%s,%s,'operator')").format(sql.Identifier(registry.schema,'host_reservations')),
+            (str(uuid4()),'pending-esxi',uuid4()))
+        connection.execute(sql.SQL("INSERT INTO {} (operation_id,source_instance,actor_id,revision,plan,state) VALUES (%s,%s,'admin','previous-revision','{{}}','PREPARED')").format(sql.Identifier(registry.schema,'source_recoveries')),
+            (uuid4(),before.config.source_instance))
+        claims=connection.execute(sql.SQL('SELECT * FROM {}').format(sql.Identifier(registry.schema,'host_reservations'))).fetchall()
+        recovery=connection.execute(sql.SQL('SELECT * FROM {}').format(sql.Identifier(registry.schema,'source_recoveries'))).fetchall()
+    _upgrade(registry,engine);_upgrade(registry,engine)
+    assert registry.list_sources()==(before,)
+    with registry._connect() as connection:
+        assert connection.execute(sql.SQL('SELECT * FROM {}').format(sql.Identifier(registry.schema,'host_reservations'))).fetchall()==claims
+        assert connection.execute(sql.SQL('SELECT * FROM {}').format(sql.Identifier(registry.schema,'source_recoveries'))).fetchall()==recovery
+        for table in ('registration_intents','source_identity_verifications'):
+            assert connection.execute(sql.SQL('SELECT count(*) FROM {}').format(sql.Identifier(registry.schema,table))).fetchone()['count']==0

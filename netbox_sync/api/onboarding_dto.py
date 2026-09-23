@@ -11,9 +11,15 @@ from .dto import PublicModel
 from .egress import validate_host
 
 
+class RegistrationResume(PublicModel):
+    source_instance: str=Field(pattern=r'^[a-z0-9][a-z0-9._-]{1,62}$')
+    registration_id: UUID
+
+
 class ConnectionRequest(PublicModel):
     """Credentials are accepted only in JSON bodies, never URL parameters."""
 
+    registration_resume: RegistrationResume | None = None
     recovery_source: str | None = Field(default=None,pattern=r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
     preview: bool = Field(default=False, strict=True)
     source_type: Literal['proxmox', 'esxi']
@@ -32,6 +38,8 @@ class ConnectionRequest(PublicModel):
 
     @model_validator(mode='after')
     def credentials_valid(self):
+        if self.registration_resume and (self.recovery_source or self.source_type!='esxi'):
+            raise ValueError('Registration continuation requires ESXi and cannot restore a removed source')
         values = [self.username.get_secret_value(), self.secret.get_secret_value()]
         if self.source_type == 'proxmox':
             if self.token_id is None:
@@ -123,6 +131,17 @@ class RegistrationRequest(PublicModel):
         except SourceReadError:
             raise ValueError('Invalid source metadata') from None
         return self
+
+    def intent_fingerprint(self):
+        """Only the digest leaves this boundary; credentials are excluded by DTO."""
+        import hashlib,json
+        from ..source_config import source_port
+        value=self.model_dump(mode='json',exclude={'onboarding_token'})
+        value['address']=value['address'].lower().rstrip('.')
+        value['port']=source_port(self.source_type,self.port)
+        value['references']={k:{'id':v.get('id')} for k,v in self.references.items()}
+        value['host_types']={k:{'id':v.get('id')} for k,v in self.host_types.items()}
+        return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
     def command(self):
         """Translate explicitly to application command, retaining no transport dependency."""

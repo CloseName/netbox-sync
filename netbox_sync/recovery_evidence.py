@@ -7,7 +7,7 @@ from .esxi_discovery import _validated_host_hardware_uuid
 from .bootstrap_probe import ProbeError
 
 
-def assess(source, anchor, site_id, cluster_id, cluster, devices, machines):
+def assess(source, anchor, site_id, cluster_id, cluster, devices, machines, *, require_host=False):
     """Assess a complete bounded inventory fetched by the trusted read worker.
 
     A restored source keeps its namespace; names and transport addresses play no
@@ -81,6 +81,7 @@ def assess(source, anchor, site_id, cluster_id, cluster, devices, machines):
                     i.external_id==anchor and i.instance!=source for i in parsed):
                 blockers.add('HOST_OWNED_BY_OTHER_SOURCE')
     if len(host_matches)>1: blockers.add('DUPLICATE_MANAGED_HOST')
+    if require_host and not host_matches:blockers.add('HISTORICAL_IDENTITY_UNPROVED')
     result={'source_instance':source,'host_uuid':anchor,'site_id':site_id,
             'cluster_id':cluster_id,'owned':sorted(owned,key=lambda r:(r['kind'],r['id'])),
             'retained_manual':sorted(manual,key=lambda r:(r['kind'],r['id'])),

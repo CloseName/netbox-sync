@@ -326,7 +326,7 @@ if pgmode == 'bundled' and os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST') !
     bundle=next((root/'backups').glob('netbox-sync-backup-*'))
     backup_cli(root,'verify',str(bundle))
     summary=json.loads(backup_cli(root,'inspect',str(bundle)))
-    assert summary['source_count']==1 and summary['alembic_revision']=='0007_host_reservations'
+    assert summary['source_count']==1 and summary['alembic_revision']=='0009_source_identity_proof'
     assert snapshot()==protected_before and compose('ps','-q','postgres')==db_before
     assert set(compose('ps','--status','running','--services').split())==services_before
     assert request(None,'/api/v1/auth/me','GET')['status']==200

@@ -58,7 +58,7 @@ assert refused.returncode==1 and '--acknowledge-admin-enrollment' in refused.std
 assert snapshot()==before and (root/'current').resolve().name==OLD
 run([*upgrade,'--acknowledge-admin-enrollment'])
 assert (root/'current').resolve().name=='auth-upgrade'
-assert db('SELECT version_num FROM netbox_sync.alembic_version')=='0007_host_reservations'
+assert db('SELECT version_num FROM netbox_sync.alembic_version')=='0009_source_identity_proof'
 assert rows==db('SELECT row_to_json(s) FROM netbox_sync.sources s') and history==db('SELECT row_to_json(s) FROM netbox_sync.sync_runs s')
 assert run([*command,'ps','-q','postgres'])==pg and run(['docker','inspect',pg,'--format','{{json .Mounts}}'])==mounts
 for path,value in before.items():

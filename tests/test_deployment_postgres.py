@@ -53,7 +53,7 @@ def test_clean_bootstrap_migrate_grants_and_idempotency(tmp_path):
     with psycopg.connect(deployment.connection_info('bootstrap', env)) as connection:
         with connection.cursor() as cursor:
             cursor.execute("SELECT version_num FROM netbox_sync.alembic_version")
-            assert cursor.fetchone() == ('0007_host_reservations',)
+            assert cursor.fetchone() == ('0009_source_identity_proof',)
             cursor.execute("SELECT count(*) FROM netbox_sync.sources")
             assert cursor.fetchone() == (0,)
             cursor.execute("SELECT rolname FROM pg_roles WHERE rolname = ANY(%s)",
@@ -236,3 +236,27 @@ def test_recovery_journal_is_confined_to_lifecycle_writer(tmp_path):
                 actual=connection.execute('SELECT has_column_privilege(%s,%s,%s,%s)',
                     (role,'netbox_sync.source_recoveries',column,'UPDATE')).fetchone()[0]
                 assert actual==(key=='lifecycle_writer' and column in ('state','finished_at'))
+
+
+def test_registration_intent_grants_never_allow_rewriting_attempts(tmp_path):
+    env=_environment(tmp_path)
+    deployment.bootstrap_roles(env);deployment.migrate(env);deployment.apply_grants(env)
+    with psycopg.connect(TEST_DSN) as connection:
+        for key,role in deployment.DATABASE_ROLES.items():
+            if key=='owner':continue
+            for privilege in ('SELECT','INSERT','UPDATE','DELETE','TRUNCATE'):
+                actual=connection.execute('SELECT has_table_privilege(%s,%s,%s)',
+                    (role,'netbox_sync.registration_intents',privilege)).fetchone()[0]
+                assert actual==(key=='registration_writer' and privilege in ('SELECT','INSERT'))
+
+
+def test_identity_proof_audit_is_append_only_and_lifecycle_only(tmp_path):
+    env=_environment(tmp_path)
+    deployment.bootstrap_roles(env);deployment.migrate(env);deployment.apply_grants(env)
+    with psycopg.connect(TEST_DSN) as connection:
+        for key,role in deployment.DATABASE_ROLES.items():
+            if key=='owner':continue
+            for privilege in ('SELECT','INSERT','UPDATE','DELETE','TRUNCATE'):
+                actual=connection.execute('SELECT has_table_privilege(%s,%s,%s)',
+                    (role,'netbox_sync.source_identity_verifications',privilege)).fetchone()[0]
+                assert actual==(key=='lifecycle_writer' and privilege in ('SELECT','INSERT'))
