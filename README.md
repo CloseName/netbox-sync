@@ -46,6 +46,8 @@ Discovery reads provider inventory. Planning compares it with NetBox without wri
 The Web/API process has no provider secrets or apply authority. Dedicated Unix-socket workers handle discovery, confirmed apply, and schedule changes. A root secret broker supports create-only credential onboarding without exposing a read API. PostgreSQL stores sources and run history. A fixed systemd tick invokes the sequential scheduler, while per-source cadence is evaluated from persisted scheduled runs.
 
 See [Architecture](docs/architecture.md) for the complete process and privilege model.
+For a short explanation of each NetBox Sync container, see
+[Containers](docs/containers.md).
 
 ## Quick start
 
