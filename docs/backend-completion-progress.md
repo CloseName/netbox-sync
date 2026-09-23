@@ -65,7 +65,7 @@ physical-host identity from these labels/address alone.
 
 | Requirement | State / remaining gate |
 | --- | --- |
-| 1 NetBox retirement | NetBox-side claim/manifest/receipt transaction service and actual deletion/rollback/concurrency tested locally. Product HTTP/lifecycle coordinator, legacy claims and rollout remain missing; source removal is still retain-only. |
+| 1 NetBox retirement | NetBox-side claim/manifest/receipt transaction service and actual deletion/rollback/concurrency tested locally. NetBox HTTP and private Sync transport tested; product lifecycle coordinator, legacy claims and rollout remain missing; source removal is still retain-only. |
 | 2 Orphan reconciliation | Durable authoritative reconciliation/periodic executor missing. |
 | 3 Remove/re-add/recover | Bounded Admin ESXi same-namespace recovery, including verified legacy UUID/placement, implemented/tested. Proxmox and cross-namespace transfer remain unfinished. |
 | 4 Cluster creation | Live cause unconfirmed; previous controlled test is not reproduction. |
@@ -476,3 +476,23 @@ new Sync grants, secret mounts, egress or containers in production Compose. Exis
 Sync CREATEs do not automatically acquire these claims. Historical managed identities
 alone remain insufficient for retirement. Orphan processing, old UNKNOWN and identity
 matrix entries are still active work. No push/deployment/live actions occurred.
+
+
+## Continuation after 3813b32 — authenticated guard transport
+
+- Added fixed NetBox API routes and durable installation UUID; real source-scoped
+  permissions, ordinary object add permission, read-only and revoked token refusal.
+- Added private Sync HTTPS client: pinned namespace, redirects forbidden, bounded
+  response, no automatic write retries, safe refusal versus uncertain result.
+- Tightened parent ownership: same placement is insufficient; malformed v2 records
+  and reassignment to a manual NIC are rejected. Standard provider identity schema
+  was not changed.
+- Real NetBox HTTPS host/VM/NIC/IP/MAC/disk and phased receipts passed. 17 transport
+  tests passed. Full transaction/journal restore gate passed; migration check passed.
+- One repeat stopped on Windows CP1251 printing a NetBox emoji; the complete test
+  was rerun successfully with PYTHONUTF8=1. This was a harness output failure.
+
+No production hook, grants, mounts, egress or broker changes. Product retirement
+coordination and authoritative orphan execution remain unfinished; existing source
+removal is still retain-only. Full NetBox restore and Microsoft AD live acceptance
+remain separate gaps. No push/deployment/live connection was made.

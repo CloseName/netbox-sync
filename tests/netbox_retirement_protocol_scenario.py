@@ -26,6 +26,12 @@ from django.contrib.contenttypes.models import ContentType
 permission=ObjectPermission.objects.create(name=tag, actions=['create','retire'], constraints={'source_instance':source})
 permission.object_types.set([ContentType.objects.get_for_model(CreationReceipt),ContentType.objects.get_for_model(RetirementIntent)])
 permission.users.add(admin)
+from django.apps import apps
+from netbox_guard.dependencies import MODELS
+add_permission=ObjectPermission.objects.create(name=tag+'-add',actions=['add'])
+add_permission.object_types.set([ContentType.objects.get_for_model(apps.get_model(label)) for label in MODELS.values()])
+add_permission.users.add(admin)
+assert not admin.has_perm('virtualization.delete_virtualmachine')
 clusters=[]
 checks=[]
 
@@ -71,6 +77,18 @@ try:
     VirtualMachine.objects.filter(pk=vm.pk).update(custom_field_data={'sync_identities':[{'schema':'v2','instance':'esxi-foreign','kind':'vm','external_id':'fixture','type':'esxi'}]})
     refuse('OWNERSHIP_CONFLICT',lambda:review(admin,uuid4(),source,cluster.pk,root=('vm',vm.pk)))
     VirtualMachine.objects.filter(pk=vm.pk).update(custom_field_data={})
+    # Same placement does not establish ownership after a manual reassignment.
+    manual_vm=VirtualMachine.objects.create(name='manual-parent',cluster=cluster)
+    manual_nic=VMInterface.objects.create(name='manual-parent-nic',virtual_machine=manual_vm)
+    original_type=address.assigned_object_type
+    original_id=address.assigned_object_id
+    address.assigned_object=manual_nic;address.save()
+    refuse('OWNERSHIP_CONFLICT',lambda:review(admin,uuid4(),source,cluster.pk,root=('ip',address.pk)))
+    # An incomplete v2 dictionary is not a valid retained-parent identity.
+    VMInterface.objects.filter(pk=manual_nic.pk).update(custom_field_data={'sync_identities':[{'schema':'v2','instance':source}]})
+    refuse('OWNERSHIP_CONFLICT',lambda:review(admin,uuid4(),source,cluster.pk,root=('ip',address.pk)))
+    address.assigned_object_type=original_type;address.assigned_object_id=original_id;address.save()
+    manual_vm.delete() # exact locally created fixture only
     intent=review(admin,uuid4(),source,cluster.pk,root=('vm',vm.pk))
     # Foreign/manual dependency added after preview must invalidate the manifest.
     foreign=VMInterface.objects.create(name='manual',virtual_machine=vm)
@@ -164,5 +182,5 @@ finally:
     RetirementIntent.objects.filter(source_instance=source).delete()
     CreationReceipt.objects.filter(source_instance=source).delete()
     CreationClaim.objects.filter(source_instance=source).delete()
-    permission.delete(); kind.delete(); admin.delete(); viewer.delete()
+    add_permission.delete(); permission.delete(); kind.delete(); admin.delete(); viewer.delete()
 print('NetBox retirement protocol passed:', '; '.join(checks))

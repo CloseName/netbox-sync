@@ -38,7 +38,7 @@ with tempfile.TemporaryDirectory(prefix='netbox-sync-guard-gate-') as directory:
         # This gate restores the NEW guard journals against preserved NetBox state.
         # Full vanilla 4.7 schema pg_restore has an independently reproduced ltree
         # trigger search_path refusal; do not silently weaken that schema/security.
-        dump=run(['exec',pg,'pg_dump','-U','postgres','-d','netbox_sync_guard_test','-Fc','-t','public.netbox_guard_*']).stdout
+        dump=run(['exec',pg,'pg_dump','-U','postgres','-d','netbox_sync_guard_test','-Fc','-t','public.netbox_guard_creation*','-t','public.netbox_guard_retirement*']).stdout
         run(['exec',pg,'psql','-U','postgres','-d','netbox_sync_guard_restore_test','-v','ON_ERROR_STOP=1','-c',
              'TRUNCATE netbox_guard_creationclaim,netbox_guard_creationreceipt,netbox_guard_retirementreceipt,netbox_guard_retirementintent RESTART IDENTITY'])
         try:

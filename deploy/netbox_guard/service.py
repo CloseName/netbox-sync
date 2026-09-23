@@ -21,6 +21,13 @@ def _permission(user, action, obj=None):
     return str(user.pk)
 
 
+def _add_permission(user, obj):
+    user = type(user).objects.get(pk=user.pk)
+    permission = f'{obj._meta.app_label}.add_{obj._meta.model_name}'
+    if not user.has_perm(permission, obj):
+        raise DependencyGuardBlocked('PERMISSION_DENIED')
+
+
 def _source(source):
     if not isinstance(source, str) or not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,127}', source):
         raise DependencyGuardBlocked('INVALID_SOURCE')
@@ -52,8 +59,34 @@ def _owners(obj, source):
         raise DependencyGuardBlocked('OWNERSHIP_CONFLICT')
     for record in records:
         if (not isinstance(record, dict) or record.get('schema') != 'v2'
-                or record.get('instance') != source):
+                or record.get('instance') != source
+                or record.get('type') not in ('esxi', 'proxmox')
+                or any(not isinstance(record.get(key), str) or not record[key].strip()
+                       for key in ('kind', 'external_id'))):
             raise DependencyGuardBlocked('OWNERSHIP_CONFLICT')
+
+
+def _parent_owner(resource, obj, source):
+    parent = None
+    if resource == 'vm': parent = obj.device
+    elif resource == 'interface': parent = obj.device
+    elif resource in ('vminterface','disk'): parent = obj.virtual_machine
+    elif resource in ('ip','mac'): parent = obj.assigned_object
+    if parent is None:
+        if resource in ('ip','mac'): raise DependencyGuardBlocked('OWNERSHIP_CONFLICT')
+        return
+    kind = next((kind for kind,label in MODELS.items() if label.lower()==parent._meta.label_lower),None)
+    if kind is None: raise DependencyGuardBlocked('OWNERSHIP_CONFLICT')
+    _owners(parent,source)
+    claim = CreationClaim.objects.filter(resource=kind,object_id=parent.pk).first()
+    if claim is not None:
+        if claim.source_instance!=source or claim.object_created!=parent.created:
+            raise DependencyGuardBlocked('OWNERSHIP_CONFLICT')
+        return
+    # A retained/adopted parent may be managed by this source without being ours
+    # to delete. Empty/manual/foreign provenance does not authorize attachment.
+    identities = getattr(parent,'custom_field_data',{}).get('sync_identities',[])
+    if not identities: raise DependencyGuardBlocked('OWNERSHIP_CONFLICT')
 
 
 def _claims(snapshot, source, cluster):
@@ -68,10 +101,15 @@ def _claims(snapshot, source, cluster):
         if _scope(resource, obj) != cluster:
             raise DependencyGuardBlocked('PLACEMENT_CHANGED')
         _owners(obj, source)
+        _parent_owner(resource, obj, source)
 
 
 def _creation_value(value):
     from django.db.models import Model
+    from decimal import Decimal
+    from netaddr import IPNetwork, IPAddress, EUI
+    from ipaddress import IPv4Address, IPv6Address, IPv4Interface, IPv6Interface
+    import math
     if isinstance(value, Model):
         if not value.pk:
             raise DependencyGuardBlocked('UNSAVED_REFERENCE')
@@ -80,6 +118,13 @@ def _creation_value(value):
         return {key: _creation_value(item) for key, item in value.items()}
     if isinstance(value, (tuple, list)):
         return [_creation_value(item) for item in value]
+    if isinstance(value, Decimal):
+        if not value.is_finite(): raise DependencyGuardBlocked('INVALID_CREATE_VALUE')
+        return {'decimal': str(value)}
+    if isinstance(value, (IPNetwork, IPAddress, EUI, IPv4Address, IPv6Address, IPv4Interface, IPv6Interface)):
+        return {'network_value': str(value)}
+    if type(value) is float and not math.isfinite(value):
+        raise DependencyGuardBlocked('INVALID_CREATE_VALUE')
     if value is None or type(value) in (str, int, bool, float):
         return value
     raise DependencyGuardBlocked('INVALID_CREATE_VALUE')
@@ -94,6 +139,8 @@ def create_owned(user, nonce, source, resource, values, *, cluster=None):
     actor = _permission(user, 'create_creationreceipt')
     source = _source(source); nonce = UUID(str(nonce))
     if resource not in MODELS or not isinstance(values, dict) or any(k in values for k in ('pk','id')):
+        raise DependencyGuardBlocked('INVALID_CREATE')
+    if resource == 'cluster' and cluster is not None:
         raise DependencyGuardBlocked('INVALID_CREATE')
     digest = _digest([source, resource, _creation_value(values), cluster])
     with transaction.atomic():
@@ -113,10 +160,14 @@ def create_owned(user, nonce, source, resource, values, *, cluster=None):
             if resource != 'cluster' and _scope(resource, obj) != cluster:
                 raise DependencyGuardBlocked('PLACEMENT_CHANGED')
             _owners(obj, source)
+            _parent_owner(resource, obj, source)
+            _add_permission(user, obj)
             return obj
         obj = apps.get_model(MODELS[resource])(**values)
         _owners(obj, source)
         obj.full_clean(); obj.save()
+        _add_permission(user, obj)
+        _parent_owner(resource, obj, source)
         actual_cluster = _scope(resource, obj)
         if resource != 'cluster' and (type(cluster) is not int or cluster != actual_cluster):
             raise DependencyGuardBlocked('PLACEMENT_CHANGED')
@@ -135,6 +186,8 @@ def _cluster_fingerprint(cluster):
 
 
 def review(user, nonce, source, cluster, *, root=None):
+    if type(cluster) is not int or cluster <= 0:
+        raise DependencyGuardBlocked('INVALID_PLACEMENT')
     actor = _permission(user, 'retire_retirementintent')
     source = _source(source); nonce = UUID(str(nonce))
     root = root or ('cluster', cluster)

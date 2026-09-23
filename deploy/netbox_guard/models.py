@@ -46,3 +46,10 @@ class CreationReceipt(models.Model):
     class Meta:
         default_permissions = ()
         permissions = [('create_creationreceipt', 'Create source-owned objects with atomic claims')]
+
+class GuardIdentity(models.Model):
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    identifier = models.UUIDField(unique=True)
+    class Meta:
+        default_permissions = ()
+        constraints = [models.CheckConstraint(condition=models.Q(id=1), name='guard_single_identity')]

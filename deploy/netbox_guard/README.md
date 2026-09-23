@@ -1,7 +1,8 @@
 # NetBox-side guarded lifecycle (integration in progress)
 
 This optional package is **not installed or enabled by NetBox Sync Compose**. It
-has no HTTP routes yet. Sync still refuses destructive retirement. Do not install
+now exposes a narrow token-authenticated HTTP protocol when explicitly installed.
+Sync source removal still refuses destructive retirement. Do not install
 it on a live NetBox as a completed product workflow.
 
 The locally tested target is NetBox Community 4.7.0 / Docker-5.1.1, image digest
@@ -38,8 +39,12 @@ independent receipts remain for audit.
   insufficient. The test uses a non-superuser constrained to one source. No
   standard delete permission is granted to an application token by this package.
 
-These are internal service methods, not browser payload schemas. Remaining product
-work includes narrow authenticated transport/serializers, trustworthy legacy claims,
+The fixed API uses standard NetBox serializers, ordinary constrained add permissions
+plus source-constrained guard permissions, and a durable installation UUID on every
+request. Read-only/revoked tokens cannot mutate; no generic delete endpoint exists.
+The private Sync client requires verified HTTPS, forbids redirects and never retries
+a write automatically. It is not yet connected to a production worker. Remaining
+product work includes trustworthy legacy claims,
 Sync Admin confirmation, registry revision/generation fencing, shared lock/source
 operation checks, durable multi-phase coordination, orphan reconciliation, upgrades
 and explicit capability/preflight handling. Lifecycle/broker privileges and product
@@ -71,3 +76,29 @@ https://www.postgresql.org/message-id/17134-41b9adb547cb6e8e%40postgresql.org
 https://www.postgresql.org/message-id/CAKFQuwZtC_xPgf%2BWSSxDEC5oftUrvhyr8QzKGZuErMxM-CEpog%40mail.gmail.com
 A supported complete external-NetBox recovery procedure remains a deployment gate.
 Sync's own backup/restore code was not changed by this test.
+
+## HTTP protocol checkpoint
+
+The route prefix is `/api/plugins/netbox-sync-guard/`. Capabilities are read-only;
+`objects/create/`, `retirements/review/`, `retirements/execute/` use fixed request
+schemas. A receipt is read at `retirements/<nonce>/`. Requests pin
+`X-Netbox-Sync-Guard-Instance` to the persisted UUID created by migration 0002.
+Fresh unrelated NetBox databases cannot accept an old installation's intent.
+A restored database deliberately preserves its installation UUID; clone handling
+and deployment pinning remain coordinator work, not automatic URL-based trust.
+
+`tests/netbox_guard_http_scenario.py` passed against real NetBox WSGI and PostgreSQL
+over loopback HTTPS with a locally generated short-lived test certificate, verified
+by the client (no insecure TLS). It covers scoped cluster/device/physical NIC/IP,
+VM/virtual NIC/IP/MAC/disk; create replay; source/read-only/revoked-token refusal;
+wrong namespace; VM→device→cluster receipts and retained shared catalog. It executes
+Sync's GuardClient for capabilities, creation retry, review, execute retry and receipt.
+17 focused transport tests cover no retry, safe refusals versus uncertain responses,
+redirect refusal, bounded response, TLS and wrong namespace/nonce.
+
+Protocol regression also passed same-cluster IP reassignment to a manual NIC and
+malformed parent identity refusal. Matching placement alone does not grant ownership.
+The guard journal backup test passed again after 0002, as did migration completeness.
+The journal-only dump deliberately includes the four creation/retirement tables;
+the preserved template DB retains its namespace. This still does not establish the
+full vanilla NetBox schema restore gate described above.
