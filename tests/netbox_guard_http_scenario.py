@@ -110,9 +110,25 @@ try:
     child('ip',{'address':'192.0.2.188/24','assigned_object_type':'virtualization.vminterface','assigned_object_id':nic})
     child('mac',{'mac_address':'02:00:00:00:42:11','assigned_object_type':'virtualization.vminterface','assigned_object_id':nic})
     child('disk',{'virtual_machine':vm,'name':'disk0','size':20480})
+    # A representation failure after commit is uncertain, not a failed CREATE.
+    from unittest.mock import patch
+    from virtualization.api.serializers import VirtualMachineSerializer
+    failed_body={**vm_body,'nonce':str(uuid4()),'data':{'name':'response-loss-vm','cluster':cluster,'device':host}}
+    with patch.object(VirtualMachineSerializer,'to_representation',side_effect=ValueError('not-public-response')):
+        response=post('objects/create/',failed_body)
+    assert response.status_code==503 and response.json()['code']=='GUARD_UNAVAILABLE'
+    assert 'not-public-response' not in response.text
+    retry=client.create(failed_body['nonce'],source,'vm',cluster,failed_body['data'])
+    assert VirtualMachine.objects.filter(cluster_id=cluster,name='response-loss-vm').count()==1
+    failed_vm=retry['id']
+    conflict=post('objects/create/',{**failed_body,'data':{**failed_body['data'],'name':'changed-retry'}})
+    assert conflict.status_code==409 and conflict.json()['code']=='REQUEST_CONFLICT'
+    VirtualMachine.objects.filter(pk=failed_vm).update(comments='manual fixture value')
+    assert client.create(failed_body['nonce'],source,'vm',cluster,failed_body['data'])['id']==failed_vm
+    assert VirtualMachine.objects.get(pk=failed_vm).comments=='manual fixture value'
     assert not User.objects.get(pk=user.pk).has_perm('virtualization.delete_virtualmachine')
     # Every phase uses source-bound server permissions and read-only token refusal.
-    for root in (['vm',vm],['device',host],['cluster',cluster]):
+    for root in (['vm',failed_vm],['vm',vm],['device',host],['cluster',cluster]):
         proposal={'nonce':str(uuid4()),'source_instance':source,'cluster_id':cluster,'root':root}
         result=post('retirements/review/',proposal);assert result.status_code==200,result.text
         intent=result.json()

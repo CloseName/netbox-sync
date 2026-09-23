@@ -130,7 +130,7 @@ def _creation_value(value):
     raise DependencyGuardBlocked('INVALID_CREATE_VALUE')
 
 
-def create_owned(user, nonce, source, resource, values, *, cluster=None):
+def create_owned(user, nonce, source, resource, values, *, cluster=None, request_digest=None):
     """Atomic CREATE + claim + receipt. No adoption/update of an existing ID.
 
     This is an internal service method, not an arbitrary browser payload schema.
@@ -142,7 +142,13 @@ def create_owned(user, nonce, source, resource, values, *, cluster=None):
         raise DependencyGuardBlocked('INVALID_CREATE')
     if resource == 'cluster' and cluster is not None:
         raise DependencyGuardBlocked('INVALID_CREATE')
-    digest = _digest([source, resource, _creation_value(values), cluster])
+    if request_digest is not None and (not isinstance(request_digest,str) or not re.fullmatch('[a-f0-9]{64}',request_digest)):
+        raise DependencyGuardBlocked('INVALID_CREATE')
+    # The authenticated transport hashes its exact validated wire request. This
+    # remains stable across a retry even when serializer defaults/uniqueness checks
+    # now observe the newly created object. Internal callers hash model values.
+    payload = {'wire':request_digest} if request_digest is not None else _creation_value(values)
+    digest = _digest([source, resource, payload, cluster])
     with transaction.atomic():
         with connection.cursor() as cursor:
             cursor.execute("SET LOCAL lock_timeout = '2000ms'")

@@ -3,13 +3,12 @@ import json
 import logging
 from uuid import UUID, uuid4
 from django.apps import apps
-from django.core.exceptions import ValidationError
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from netbox.api.authentication import TokenWritePermission
-from ..dependencies import MODELS, DependencyGuardBlocked
-from ..models import RetirementIntent, RetirementReceipt, GuardIdentity
+from ..dependencies import MODELS, DependencyGuardBlocked, _digest
+from ..models import RetirementIntent, RetirementReceipt, GuardIdentity, CreationReceipt
 from ..service import create_owned, review, retire, _permission
 
 SERIALIZERS = {
@@ -54,8 +53,8 @@ class GuardView(APIView):
     def handle_exception(self, exc):
         if isinstance(exc, DependencyGuardBlocked):
             return Response({'code':str(exc)},status=403 if str(exc)=='PERMISSION_DENIED' else 409)
-        if isinstance(exc,(ValueError,TypeError,KeyError,ValidationError)):
-            return Response({'code':'REQUEST_INVALID'},status=400)
+        # A serializer can fail AFTER the transaction committed. Do not label
+        # arbitrary ValueError/TypeError as a definitive pre-write refusal.
         if isinstance(exc,RetirementIntent.DoesNotExist):
             return Response({'code':'REQUEST_NOT_FOUND'},status=404)
         from rest_framework.exceptions import APIException
@@ -88,6 +87,17 @@ class CreateOwned(GuardView):
             raise DependencyGuardBlocked('REQUEST_INVALID')
         module,name=SERIALIZERS[kind]
         serializer_class=getattr(import_module(module),name)
+        try: nonce=UUID(str(body['nonce']))
+        except (ValueError,TypeError): raise DependencyGuardBlocked('REQUEST_INVALID') from None
+        wire_digest=_digest(body)
+        previous=CreationReceipt.objects.filter(nonce=nonce).first()
+        if previous is not None:
+            # Exact wire digest, actor, source, resource, generation and ownership
+            # are checked by the transaction service. Never run CREATE uniqueness
+            # validation against an object whose creation already committed.
+            obj=create_owned(request.user,nonce,body['source_instance'],kind,{},
+                             cluster=body['cluster_id'],request_digest=wire_digest)
+            return Response(serializer_class(obj,context={'request':request}).data,status=201)
         serializer=serializer_class(data=body['data'],context={'request':request})
         if any(key not in serializer.fields or serializer.fields[key].read_only for key in body['data']):
             raise DependencyGuardBlocked('OBJECT_FIELDS_UNSUPPORTED')
@@ -100,7 +110,7 @@ class CreateOwned(GuardView):
             except Exception: raise DependencyGuardBlocked('OBJECT_FIELDS_UNSUPPORTED') from None
             if field.many_to_many:
                 if values.pop(key): raise DependencyGuardBlocked('OBJECT_FIELDS_UNSUPPORTED')
-        obj=create_owned(request.user,body['nonce'],body['source_instance'],kind,values,cluster=body['cluster_id'])
+        obj=create_owned(request.user,body['nonce'],body['source_instance'],kind,values,cluster=body['cluster_id'],request_digest=wire_digest)
         return Response(serializer_class(obj,context={'request':request}).data,status=201)
 
 

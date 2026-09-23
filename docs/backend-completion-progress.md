@@ -496,3 +496,31 @@ No production hook, grants, mounts, egress or broker changes. Product retirement
 coordination and authoritative orphan execution remain unfinished; existing source
 removal is still retain-only. Full NetBox restore and Microsoft AD live acceptance
 remain separate gaps. No push/deployment/live connection was made.
+
+
+### Lost-response CREATE regression found during continuation
+
+A real NetBox VM test injected a response-serialization ValueError after commit.
+It exposed two confirmed transport defects: a post-commit failure was classified
+as REQUEST_INVALID, and a repeated VM CREATE was rejected by standard uniqueness
+validation before its existing receipt was consulted. The initial instance-based
+serializer correction also changed defaults/digest on cluster replay and failed
+the complete HTTP test; it was replaced, not accepted as a passing fix.
+
+The final adapter uses an exact server-computed wire digest, source/resource/actor
+and nonce, then checks the existing receipt before CREATE validation. The service
+still verifies object generation, ownership, placement and current permissions;
+it never updates an existing object on replay. Post-commit unexpected failures are
+GUARD_UNAVAILABLE/uncertain with event ID and exception class only.
+
+Final real HTTPS gate passed: one VM after lost response, exact retry returns the
+same ID, modified retry refuses, manual comment survives; all previous tree, token,
+namespace and retirement receipt scenarios passed together. Real transaction +
+journal dump/restore gate passed after the change. Linux transport/review selection:
+32 passed (the single Windows-only skip was executed successfully on Linux).
+git diff --check passed.
+
+Experimental pre-wire HTTP receipts are not silently reinterpreted under the new
+wire digest. No released product integration or live guard installation exists;
+internal service receipt semantics remain unchanged. Historical receipts remain
+retained; no failed retry creates a new object automatically.

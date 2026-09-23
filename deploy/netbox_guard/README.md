@@ -102,3 +102,12 @@ The guard journal backup test passed again after 0002, as did migration complete
 The journal-only dump deliberately includes the four creation/retirement tables;
 the preserved template DB retains its namespace. This still does not establish the
 full vanilla NetBox schema restore gate described above.
+
+HTTP CREATE retries are resolved before ordinary uniqueness validation using the
+server's exact wire-request digest and the original receipt. Generation, ownership,
+placement and current permission are still checked. A serialization failure after
+commit is an uncertain response, not a definitive rejection. This was reproduced
+and fixed against a real VM API request; retry creates no duplicate and preserves
+a later manual comment. A changed retry is refused. Experimental older HTTP digest
+records are not automatically converted; internal service receipts are unchanged.
+The complete transport/review selection passed 32 tests under Linux.
