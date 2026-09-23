@@ -2,6 +2,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from ipaddress import ip_interface
+from ..network_scopes import scope_key
 
 
 @dataclass(frozen=True)
@@ -13,6 +14,8 @@ class ConflictParticipant:
     interface: str | None = None
     interface_id: str | None = None
     address: str | None = None
+    vrf_id: int | None = None
+    netbox_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -47,9 +50,14 @@ def inventory_conflicts(hosts):
                         if str(address) in seen:
                             continue  # Identical fact within this specific NIC only.
                         seen.add(str(address))
-                        addresses[str(address.ip)].append(ConflictParticipant(
+                        addresses[scope_key(str(address.ip),nic.ip_vrf_id)].append(ConflictParticipant(
                             **base, interface=nic.name, interface_id=nic.external_id,
-                            address=str(address)))
+                            address=str(address),vrf_id=nic.ip_vrf_id))
+                    for previous in nic.ip_scope_conflicts:
+                        value=scope_key(str(ip_interface(previous['address']).ip),nic.ip_vrf_id)
+                        addresses[value].append(ConflictParticipant(**base,interface=nic.name,
+                            interface_id=nic.external_id,address=previous['address'],
+                            vrf_id=previous['vrf_id'],netbox_id=previous['netbox_id']))
     result = []
     for (_, value), members in sorted(identities.items()):
         if len(members) > 1:

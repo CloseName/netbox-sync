@@ -9,7 +9,7 @@ from .bootstrap_probe import fetch,ProbeError
 from .netbox_tls import configure_session
 
 ENDPOINTS={'manufacturer':'dcim/manufacturers','site':'dcim/sites','cluster':'virtualization/clusters','platform':'dcim/platforms',
-    'device_role':'dcim/device-roles','device_type':'dcim/device-types','cluster_type':'virtualization/cluster-types'}
+    'device_role':'dcim/device-roles','device_type':'dcim/device-types','cluster_type':'virtualization/cluster-types','vrf':'ipam/vrfs'}
 
 def fingerprint(row):
     return hashlib.sha256(json.dumps(row,sort_keys=True,separators=(',',':')).encode()).hexdigest()
@@ -23,6 +23,10 @@ def project(kind,row):
         slug=short(row.get('slug')),manufacturer=related(row.get('manufacturer')),
         type=related(row.get('type')),scope_type=row.get('scope_type'),scope_id=row.get('scope_id'),
         site=related(row.get('site')),scope=related(row.get('scope')))
+    if kind=='vrf':
+        value=dict(id=row['id'],name=short(row.get('name')),rd=row.get('rd'),enforce_unique=row.get('enforce_unique',True))
+        if value['rd'] is not None and (not isinstance(value['rd'],str) or len(value['rd'])>64):raise ProbeError('RESPONSE_INVALID')
+        if type(value['enforce_unique']) is not bool:raise ProbeError('RESPONSE_INVALID')
     value['fingerprint']=fingerprint(value)
     return value
 
@@ -34,6 +38,15 @@ def query(value,session_factory=requests.Session):
         configure_session(session)
         def get(kind,tail):
             return fetch(session,value['url']+'/api/'+ENDPOINTS[kind]+'/'+tail,value['read_token'])
+        if action=='validate-scopes':
+            from .network_scopes import rules,NetworkScopeError
+            if set(payload)!={'action','rules'}:raise ProbeError('RESPONSE_INVALID')
+            try:selected=rules(payload['rules'])
+            except NetworkScopeError:raise ProbeError('RESPONSE_INVALID') from None
+            for rule in selected:
+                current=project('vrf',get('vrf',str(rule['vrf']['id'])+'/'))
+                if current!=rule['vrf']:raise ProbeError('CATALOG_CHANGED')
+            return {'rules':selected}
         if action in ('recovery-evidence','identity-evidence'):
             from .recovery_evidence import assess
             from .source_config import SOURCE_INSTANCE_PATTERN

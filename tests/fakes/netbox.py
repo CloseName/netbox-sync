@@ -153,6 +153,7 @@ class FakeNetBox:
             'mac_addresses',
         ),
         'ipam': (
+            'vrfs',
             'ip_addresses',
             'prefixes',
             'vlans',

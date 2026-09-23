@@ -66,6 +66,7 @@ class RemovalDTO(BaseModel):
 
 
 class PlacementUpdateDTO(BaseModel):
+    network_scope_rules: list[dict] | None = Field(default=None,max_length=128)
     ip_conflict_policy: Literal['strict', 'observe'] | None = None
     model_config = ConfigDict(extra='forbid')
     revision: str = Field(pattern=r'^[a-f0-9]{64}$')

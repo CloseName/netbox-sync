@@ -121,3 +121,24 @@ def test_existing_cluster_inventory_never_silently_adopted(monkeypatch,count):
         assert bool(result['issues'])==bool(count)
         if count:assert result['issues']==[{'kind':'cluster','code':'OWNERSHIP_REVIEW_REQUIRED'}]
         else:assert any('/virtualization/virtual-machines/' in url for url in seen)
+
+
+@pytest.mark.parametrize('mutate', [False, True])
+def test_network_scope_catalog_fresh_validation(monkeypatch, mutate):
+    row = dict(id=11, name='Isolated', rd=None, enforce_unique=True)
+    selected = dict(host_id='host-a', bridge='network-a', vlan_id=None, vrf=catalog.project('vrf', row))
+    monkeypatch.setattr(catalog, 'EgressPolicy', lambda **kw: N(resolve=lambda h,p: (h,'192.0.2.1')))
+    monkeypatch.setattr(catalog, 'pinned_dns', lambda *a: nullcontext())
+    monkeypatch.setattr(catalog, 'configure_session', lambda s: None)
+    seen = []
+    def fetch(session, url, token):
+        seen.append(url)
+        return {**row, 'enforce_unique': False} if mutate else row
+    monkeypatch.setattr(catalog, 'fetch', fetch)
+    value = dict(url='https://netbox.test', read_token='', query=dict(action='validate-scopes', rules=[selected]))
+    if mutate:
+        with pytest.raises(catalog.ProbeError, match='CATALOG_CHANGED'):
+            catalog.query(value, lambda: nullcontext(N()))
+    else:
+        assert catalog.query(value, lambda: nullcontext(N())) == {'rules': [selected]}
+    assert seen == ['https://netbox.test/api/ipam/vrfs/11/']

@@ -8,7 +8,7 @@ from urllib.parse import urlsplit, parse_qs, urlencode
 import pynetbox
 
 RELATIONS = {
- 'site':'dcim.sites', 'role':'dcim.device_roles', 'platform':'dcim.platforms',
+ 'vrf':'ipam.vrfs', 'site':'dcim.sites', 'role':'dcim.device_roles', 'platform':'dcim.platforms',
  'device_type':'dcim.device_types', 'manufacturer':'dcim.manufacturers',
  'cluster':'virtualization.clusters', 'device':'dcim.devices',
  'virtual_machine':'virtualization.virtual_machines', 'primary_ip4':'ipam.ip_addresses',

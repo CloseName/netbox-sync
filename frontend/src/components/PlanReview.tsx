@@ -89,7 +89,7 @@ export function PlanReview({
       {plan.items.some(item=>item.reason_code==='IP_OBSERVATION_ONLY')&&<section className="sync-attention" aria-label={t('Incomplete IPAM','Неполная синхронизация IPAM')}>
         <h4>{t('Some addresses require review','Часть адресов требует проверки')}</h4>
         <p>{t('The plan saves these addresses and masks on NetBox interfaces as observations. It does not create disputed IPAM assignments. Existing assignments are retained.','План сохраняет эти адреса и маски на интерфейсах NetBox как наблюдения. Спорные назначения IPAM не создаются. Существующие назначения сохраняются.')}</p>
-        <details><summary>{t('Show observations','Показать наблюдения')}</summary><ul>{plan.items.filter(item=>item.reason_code==='IP_OBSERVATION_ONLY').map(item=><li key={item.external_id}>{item.name}<ul>{observationLines(item).map((line,index)=><li key={index}>{line}</li>)}</ul></li>)}</ul></details>
+        <details><summary>{t('Show observations','Показать наблюдения')}</summary><ul>{plan.items.filter(item=>item.reason_code==='IP_OBSERVATION_ONLY').map(item=><li key={item.external_id}>{item.name}<ul>{observationLines(item,t('global table','глобальная таблица')).map((line,index)=><li key={index}>{line}</li>)}</ul></li>)}</ul></details>
       </section>}
       {!!planCounts(plan.items).UNSUPPORTED&&<button onClick={()=>{setView('Attention');setAction('UNSUPPORTED');setKind('');setSearch('');setLimit(50);}}>{tr('Show unsupported categories')}</button>}
       {!plan.conflicts?.length&&<p className="muted">
@@ -114,7 +114,7 @@ export function PlanReview({
           const identities=new Set(conflict.participants.map(p=>[p.host_id,p.provider_object_id||p.external_id,p.interface_id||p.interface].join(':')));
           const masks=conflict.kind==='IP_ASSIGNMENT'&&identities.size===1&&new Set(conflict.participants.map(p=>p.address)).size>1;
           return <article key={index} className="conflict-summary"><h4>{conflict.kind==='VM_IDENTITY'?`${conflict.participants.length} VM`:conflict.value}: {masks?t('Different masks for one IP','Разные маски одного IP'):conflict.kind==='VM_IDENTITY'?tr('Shared VM identifier'):t('Ambiguous IP mapping','Неоднозначное сопоставление IP')}</h4>
-          <ul>{Array.from(new Set(conflict.participants.map(p=>[p.name,p.interface,p.address].filter(Boolean).join(' · ')))).map(value=><li key={value}>{value}</li>)}</ul>
+          <ul>{Array.from(new Set(conflict.participants.map(p=>[p.name,p.interface,p.address,conflict.kind==='IP_ASSIGNMENT'?(p.vrf_id?`VRF #${p.vrf_id}`:t('global table','глобальная таблица')):null,p.netbox_id?`NetBox IP #${p.netbox_id}`:null].filter(Boolean).join(' · ')))).map(value=><li key={value}>{value}</li>)}</ul>
           <details><summary>{tr('Technical details')}</summary><p>{tr('Source')}: {plan.source_instance}</p><p>{conflict.value}</p><ul>{conflict.participants.map((p,i)=><li key={i}>{p.host_id} · {p.external_id} · {p.provider_object_id} · {p.interface_id}</li>)}</ul></details></article>;
         })}
       </section>}
@@ -314,11 +314,11 @@ function PlanRow({ item,raw }: { item: SyncPlanItem;raw:SyncPlanItem }) {
   );
 }
 
-function observationLines(item:SyncPlanItem):string[] {
+function observationLines(item:SyncPlanItem,globalLabel:string):string[] {
   const value=item.after.find(([key])=>key==='participants')?.[1];
   if(!Array.isArray(value))return [];
   return value.filter(p=>p && typeof p==='object').map(p=>{
     const row=p as Record<string,unknown>;
-    return [row.name,row.interface,row.address].filter(v=>typeof v==='string').join(' · ');
+    return [row.name,row.interface,row.address,typeof row.vrf_id==='number'?`VRF #${row.vrf_id}`:globalLabel,typeof row.netbox_id==='number'?`NetBox IP #${row.netbox_id}`:null].filter(v=>typeof v==='string').join(' · ');
   });
 }

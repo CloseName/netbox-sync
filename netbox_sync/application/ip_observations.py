@@ -4,6 +4,7 @@ Never infer network areas from bridge names or choose one conflicting mask.
 The caller must persist the returned interface evidence with the reviewed plan.
 """
 from ipaddress import ip_interface
+from ..network_scopes import scope_key,scoped_inventory
 from .inventory_order import canonical_hosts
 from .inventory_conflicts import inventory_conflicts
 
@@ -39,7 +40,7 @@ def assignment_inventory(hosts, policy='strict'):
                 observed = []
                 for raw in nic.ip_addresses:
                     try:
-                        disputed = str(ip_interface(raw).ip) in excluded
+                        disputed = scope_key(str(ip_interface(raw).ip),nic.ip_vrf_id) in excluded
                     except ValueError:
                         disputed = False  # Existing validation remains authoritative.
                     if disputed:
@@ -51,6 +52,8 @@ def assignment_inventory(hosts, policy='strict'):
                     'version': 1, 'status': 'REVIEW_REQUIRED' if observed else 'NO_DISPUTED_ADDRESSES',
                     'addresses': observed, 'bridge': nic.bridge, 'vlan_id': nic.vlan_id,
                     'ipam_complete': not bool(observed),
+                    **({'vrf_id':nic.ip_vrf_id} if nic.ip_vrf_id is not None else {}),
+                    **({'scope_conflicts':nic.ip_scope_conflicts} if nic.ip_scope_conflicts else {}),
                 }
     return result, (), observations
 
@@ -62,6 +65,7 @@ def source_policy(config):
 
 def executable_inventory(api, hosts, config):
     """Executors repeat the same projection and refuse unresolved identity conflicts."""
+    hosts=scoped_inventory(api,hosts,config)
     policy = source_policy(config)
     projected, blockers, observations = assignment_inventory(hosts, policy)
     if policy == 'observe':

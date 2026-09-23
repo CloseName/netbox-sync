@@ -9,7 +9,7 @@ from .inventory_conflicts import InventoryConflict
 
 
 PLAN_SCHEMA_VERSION = 1
-PLANNER_VERSION = 'web-5a-5'
+PLANNER_VERSION = 'web-5a-6'
 
 
 class SyncAction(str, Enum):

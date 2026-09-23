@@ -347,6 +347,8 @@ class SyncPlanItemDTO(PublicModel):
 
 
 class ConflictParticipantDTO(PublicModel):
+    vrf_id: int | None = None
+    netbox_id: int | None = None
     name: str
     external_id: str
     provider_object_id: str | None

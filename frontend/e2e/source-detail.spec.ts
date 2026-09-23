@@ -685,6 +685,38 @@ test('placement requires review, preserves source fields and never retries uncer
  await expect(editor).toContainText('Result requires review');
  expect(writes).toHaveLength(1);
  expect(writes[0].ip_conflict_policy).toBe('observe');
- expect(Object.keys(writes[0]).sort()).toEqual(['discovery_id','host_types','ip_conflict_policy','references','revision']);
+ expect(Object.keys(writes[0]).sort()).toEqual(['discovery_id','host_types','ip_conflict_policy','network_scope_rules','references','revision']);
  await expect(editor.getByRole('button',{name:'Confirm placement',exact:true})).toHaveCount(0);
+});
+
+for(const language of ['en','ru'])test(`explicit VRF mapping review ${language}`,async({page})=>{
+ await fixture(page);
+ const {setLanguage}=await import('./menu-helper');
+ const {previewResult,catalogRow}=await import('./source-placement-fixture');
+ const references=Object.fromEntries(['site','cluster','platform','device_role','cluster_type'].map(k=>[k,catalogRow(k)]));
+ const vrf={id:21,name:'Isolated network A',rd:'65000:21',enforce_unique:true,fingerprint:'f'.repeat(64)};
+ let writes:any[]=[];
+ await page.route('**/api/v1/catalog/vrf?**',r=>r.fulfill({json:{items:[vrf],count:1,more:false,offset:0,url:'https://netbox.example.test/ipam/vrfs/'}}));
+ await page.route('**/api/v1/sources/source-1/placement',r=>{
+  if(r.request().method()==='PATCH'){writes.push(r.request().postDataJSON());return r.fulfill({json:{}});}
+  return r.fulfill({json:{revision:'b'.repeat(64),discovery_id:'11111111-1111-4111-8111-111111111111',preview:previewResult.preview,references,host_types:{'host-a':catalogRow('device_type')},network_scope_rules:[]}});
+ });
+ await page.goto('/sources/source-1/configuration');await setLanguage(page,language);
+ await page.setViewportSize({width:390,height:900});
+ const ru=language==='ru';
+ await page.getByRole('button',{name:ru?'Изменить сопоставления':'Edit placement',exact:true}).click();
+ await page.getByText(ru?'Добавить правило сетевой области':'Add a network scope rule',{exact:true}).click();
+ await page.getByLabel(ru?'Точное имя сети / моста из Discovery':'Exact network / bridge name from Discovery',{exact:true}).fill('isolated-a');
+ await page.getByRole('combobox',{name:'VRF',exact:true}).click();
+ await page.getByRole('option',{name:'Isolated network A'}).click();
+ await page.getByRole('button',{name:ru?'Добавить к проверяемым изменениям':'Add to reviewed changes',exact:true}).click();
+ expect(writes).toHaveLength(0);
+ await page.getByRole('button',{name:ru?'Проверить изменения':'Review changes',exact:true}).click();
+ await expect(page.getByText(/isolated-a.*VRF #21/)).toBeVisible();
+ await page.evaluate(()=>document.documentElement.style.zoom='1.5');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+ await page.screenshot({path:`test-results/vrf-review-${language}.png`,fullPage:true});
+ await page.getByRole('button',{name:ru?'Подтвердить сопоставления':'Confirm placement',exact:true}).click();
+ await expect.poll(()=>writes.length).toBe(1);
+ expect(writes[0].network_scope_rules[0]).toMatchObject({host_id:'host-a',bridge:'isolated-a',vlan_id:null,vrf:{id:21,fingerprint:vrf.fingerprint}});
 });

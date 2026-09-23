@@ -320,3 +320,44 @@ def test_directory_reauthentication_cannot_confirm_replaced_identity():
         service.call(dict(action='reauthenticate',session=token,password='fixture-user-password'))
     assert 'confirmed_at' not in service.state['ldap_sessions'][digest(token)]
     assert auth(service,local)['provider']=='local'
+
+
+@pytest.mark.parametrize('role', ['viewer', 'operator', 'admin'])
+def test_http_network_scope_update_preserves_admin_boundary(monkeypatch, role):
+    from fastapi.testclient import TestClient
+    from netbox_sync.api.app import create_app
+    from netbox_sync.api.settings import ApiSettings
+    from netbox_sync.api.auth import COOKIE
+    from netbox_sync.api.lifecycle_client import LifecycleRequestError
+    from netbox_sync.netbox_catalog import project
+    from uuid import uuid4
+    service, _, token = configured(role)
+    class Transport:
+        def call(self, action, **payload): return service.call(dict(action=action, **payload))
+    seen = []
+    operation = str(uuid4())
+    selected = dict(host_id='host-a', bridge='network-a', vlan_id=None,
+                    vrf=project('vrf',dict(id=11,name='Isolated',rd=None,enforce_unique=True)))
+    class Lifecycle:
+        def placement(self, source):
+            seen.append('read')
+            return dict(revision='b'*64, discovery_id=operation, preview={'hosts':[]})
+        def request(self, source, payload, action):
+            assert payload['mapping']['network_scope_rules'] == [selected]
+            seen.append('write')
+            # A competing update remains a conflict even after successful read validation.
+            raise LifecycleRequestError('SOURCE_LIFECYCLE_CONFLICT')
+    monkeypatch.setattr('netbox_sync.api.catalog.validate',lambda *args: {})
+    def catalog_call(socket, payload):
+        assert payload==dict(action='validate-scopes',rules=[selected])
+        seen.append('catalog')
+        return {'rules':[selected]}
+    monkeypatch.setattr('netbox_sync.api.catalog.call',catalog_call)
+    monkeypatch.setattr('netbox_sync.api.app.LifecycleClient',lambda *args: Lifecycle())
+    with TestClient(create_app(settings=ApiSettings(bootstrap_socket=''),auth_client=Transport()),base_url='https://localhost:8000') as http:
+        http.cookies.set(COOKIE,token)
+        response=http.patch('/api/v1/sources/source-fixture/placement',
+            headers={'Origin':'https://localhost:8000','X-NetBox-Sync-CSRF':'same-origin'},
+            json=dict(revision='b'*64, discovery_id=operation, references={},host_types={},network_scope_rules=[selected]))
+    assert response.status_code==(409 if role=='admin' else 403)
+    assert seen==(['read','catalog','write'] if role=='admin' else [])

@@ -1,9 +1,9 @@
 # Explicit network observations — implementation checkpoint
 
-This checkpoint implements the explicitly approved **observation-only fallback**.
-It does not implement automatic VRF inference or duplicate IPAddress allocation.
-Those additional scenarios remain pending; this is not acceptance of the entire
-network-scope or retirement task.
+This implementation retains the explicitly approved **observation-only fallback**
+and adds operator-selected existing VRFs for genuinely isolated networks. It never
+infers isolation from labels or creates VRFs, prefixes or VLANs. Retirement remains
+a separate incomplete task.
 
 ## Operator path
 
@@ -34,7 +34,7 @@ Discovery itself is unchanged and continues to retain all provider facts.
 
 The full reviewed plan persists the exact VM/interface participants and binds this
 policy/evidence to its digest. Manual prepare/apply and scheduled execution use the
-same projection; planner version is `web-5a-5`. Old confirmations must be rebuilt.
+same projection; planner version is `web-5a-6`. Old confirmations must be rebuilt.
 There is no automatic apply, role widening, token exposure or network change.
 
 ## Proven locally
@@ -53,14 +53,53 @@ There is no automatic apply, role widening, token exposure or network change.
   opt-in and apply; repeat plans do not duplicate objects. This gate also exercises
   scheduler, browser and populated upgrade. No live infrastructure was contacted.
 
-## Remaining expanded requirements
+## Explicit VRF mapping
 
-Explicit, validated VRF mappings and separate IPAddress records where current NetBox
-uniqueness rules permit them are **not yet implemented**. No artificial VRF or shared
-address role is created and no uniqueness setting is modified. Repeated addresses
-currently use observations even if a particular NetBox would permit duplicate rows.
-Additional runtime tests are needed for those future branches. Observations are not
-proof that a real network conflict has been resolved.
+Admin can open Configuration → Source placement → IP network scopes after a fresh
+Discovery. Add the exact provider host, network/bridge name and VLAN (empty means
+no VLAN, not a wildcard), select an existing VRF, then review and confirm the whole
+placement change. The catalog read token needs `ipam.view_vrf` for this optional
+feature. No VRF write privilege is required or used. Operator/Viewer cannot change
+these mappings; existing `source.configure` enforcement is unchanged.
+
+The persisted `onboarding_mapping.network_scope_rules` is a bounded list (128) of
+`host_id`, `bridge`, `vlan_id`, and a projected VRF with ID, name, RD,
+`enforce_unique` and fingerprint. Selectors are exact, source-local and unique.
+VRF names/IDs are never derived from the network name. Any interface without a rule
+uses the global routing table. Physical host management IPs remain global; this
+mapping currently applies only to guest VM/LXC interfaces.
+
+Server catalog validation and each new plan/prepare/apply reread the selected VRF.
+Deleted/changed VRF evidence blocks the plan (`NETWORK_SCOPE_REVIEW_REQUIRED`).
+Mapping revision/generation/shared-lock checks and old-plan invalidation remain.
+An older client omitting the rules cannot erase them. Explicit `[]` removes the
+rules, not existing NetBox addresses. Credentials, Source ID, schedule and manual
+NetBox data are untouched by mapping edits. Settings use existing backup/restore
+storage; no new DB schema or external secret material is introduced.
+
+IP lookup/creation keys include canonical CIDR plus selected VRF. Real routing
+isolation permits the same IP on separate interfaces in separate selected VRFs.
+Identical facts on one interface deduplicate; different masks or owners in one
+scope do not. Existing foreign/unassigned IPs are never stolen. In observation
+mode their conflict is preserved with NetBox IP ID and scope, while unrelated
+inventory can sync. Strict mode still blocks ambiguous assignments.
+
+Changing the scope of a previously owned interface never silently moves its IPs
+or allocates a second binding. The old assignment is retained and conflicts are
+recorded; an operator must review the real network/NetBox assignment separately.
+No automatic cleanup is authorized by selecting a different VRF. Manual primary IPs
+retain the existing protection. A coincident MAC still follows the existing MAC
+ownership guard: VRF is an IP routing domain, not proof of unique MAC ownership.
+Shared-address roles, arbitrary duplicate IPAM allocation, host-management VRF and
+automatic migration of existing bindings are not implemented by this feature.
+
+The controlled NetBox 4.7 image test `tests/netbox_model_scope_scenario.py` runs
+against a dedicated database inside the isolated local test PostgreSQL network
+namespace, with no external DB/server and no published ports. It runs real Django
+migrations and model validation: same IP in two VRFs is valid; same address within
+an enforced VRF is rejected with either equal or different masks. Test writes roll
+back. It is an ORM/model test, distinct from the real SDK HTTP fixture and actual
+Sync production-worker tests; it is not a live NetBox acceptance.
 
 NetBox v4.7.0 checks duplicates by host address within a VRF, independently of mask;
 its global/VRF uniqueness configuration determines rejection. The live configuration
@@ -69,3 +108,5 @@ was not inspected. Source: [official IPAddress implementation](https://github.co
 Controlled NetBox retirement remains a separate incomplete capability described in
 [retirement-guard-proposal.md](retirement-guard-proposal.md). No live cleanup or
 reconciliation of historical unknown operations is authorized by this checkpoint.
+
+VRF contract: [official NetBox VRF documentation](https://netbox.readthedocs.io/en/stable/models/ipam/vrf/).

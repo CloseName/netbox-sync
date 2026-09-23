@@ -1,5 +1,6 @@
 from .host_mapping import cluster_filter
 import ipaddress
+from .network_scopes import scope_key,object_id as scope_object_id
 
 from .netbox_lxc_metadata import (
     find_lxc_sync_identity_matches,
@@ -324,7 +325,7 @@ def apply_lxc_networks(
             continue
 
         ips_by_address.setdefault(
-            canonical,
+            scope_key(canonical,scope_object_id(ip.serialize().get('vrf'))),
             [],
         ).append(ip)
 
@@ -517,8 +518,9 @@ def apply_lxc_networks(
                     if address is None:
                         continue
 
+                    address_identity=scope_key(address,nic.ip_vrf_id)
                     discovered_ips.setdefault(
-                        address,
+                        address_identity,
                         [],
                     ).append(
                         (
@@ -533,12 +535,12 @@ def apply_lxc_networks(
                         ).version == 4
                     ):
                         ipv4_candidates.append(
-                            address
+                            address_identity
                         )
 
                     matches = (
                         ips_by_address.get(
-                            address,
+                            address_identity,
                             [],
                         )
                     )
@@ -586,6 +588,7 @@ def apply_lxc_networks(
                             )
 
                     ip_contexts.append({
+                        'key':address_identity,'vrf_id':nic.ip_vrf_id,
                         'address':
                             address,
                         'existing':
@@ -1012,6 +1015,7 @@ def apply_lxc_networks(
                         .ip_addresses
                         .create(
                             address=address,
+                            **({'vrf':ip_context['vrf_id']} if ip_context['vrf_id'] is not None else {}),
                             status='active',
                             assigned_object_type=(
                                 'virtualization.'
@@ -1057,7 +1061,7 @@ def apply_lxc_networks(
                         skipped += 1
 
                 applied_ips[
-                    address
+                    ip_context['key']
                 ] = ip
 
         candidate = context[

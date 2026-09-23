@@ -15,6 +15,16 @@ def build_runtime_plan(nb_api, hosts, config):
     from .sync_plan import (SyncPlan, SyncPlanItem, SyncAction, safe_source_fingerprint,
                             target_fingerprint, stable_fingerprint)
     from .ip_observations import assignment_inventory, source_policy
+    from ..network_scopes import scoped_inventory,NetworkScopeError
+    nb_api=PlanningNetBox(nb_api)
+    try:hosts=scoped_inventory(nb_api,hosts,config)
+    except NetworkScopeError:
+        return SyncPlan(source_instance=config.source_instance,source_id=config.id,source_type=config.source_type,
+            source_fingerprint=safe_source_fingerprint(config),target_fingerprint=target_fingerprint(config),
+            provider_fingerprint=stable_fingerprint(None),netbox_fingerprint=stable_fingerprint(None),
+            items=(SyncPlanItem(object_kind='source',external_id=config.source_instance,name=config.name,
+                action=SyncAction.BLOCKED,reason_code='NETWORK_SCOPE_REVIEW_REQUIRED',
+                reason='Selected network scope changed or no longer exists. Review the source VRF mapping.'),))
     _, conflicts, observations = assignment_inventory(hosts, source_policy(config))
     if conflicts:
         from dataclasses import asdict
@@ -29,7 +39,6 @@ def build_runtime_plan(nb_api, hosts, config):
                 reason='Inventory conflict. Resolve the ambiguity and build a new plan.')
                 for c in conflicts))
     # Reuse exact remote reads within one plan; prepare/apply reads afresh.
-    nb_api = PlanningNetBox(nb_api)
     from ..host_mapping import validate
     from ..child_process import measured_phase
     with measured_phase('netbox_mapping'):

@@ -1,4 +1,5 @@
 export const ru: Record<string,string> = {
+  "Selected network scope changed or no longer exists. Review the source VRF mapping.": "Выбранная сетевая область изменилась или больше не существует. Проверьте сопоставление VRF источника.",
   "Review inventory limitations": "Проверьте ограничения синхронизации",
   "The server has recorded this run as running. Waiting for its result; do not resubmit.": "Сервер зарегистрировал выполняющийся запуск. Ожидаем результат; не отправляйте запрос повторно.",
   "Stored on NetBox interfaces for review; disputed IPAM assignments are not synchronized.": "Сохраняется на интерфейсах NetBox для проверки; спорные назначения IPAM не синхронизируются.",

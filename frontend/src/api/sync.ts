@@ -23,7 +23,7 @@ export interface InventoryConflict {
   kind: 'VM_IDENTITY' | 'IP_ASSIGNMENT';
   value: string;
   participants: {name: string; external_id: string; provider_object_id: string | null;
-    host_id: string; interface: string | null; interface_id: string | null; address: string | null}[];
+    vrf_id?:number|null; netbox_id?:number|null; host_id: string; interface: string | null; interface_id: string | null; address: string | null}[];
 }
 export interface SyncPlan {
   source_instance: string;

@@ -69,3 +69,25 @@ def test_observation_policy_revision_preservation_and_plan_fencing(lifecycle):
     mapping['ip_conflict_policy']='guess'
     with pytest.raises(LifecycleError,match='REQUEST_INVALID'):
         control.save(store,source.source_instance,fresh['revision'],fresh['discovery_id'],mapping)
+
+
+def test_network_scope_rules_persist_and_older_clients_cannot_erase_them(lifecycle):
+    store, registry, source = lifecycle
+    view, mapping = seed(store, source.source_instance)
+    selected = dict(host_id='host-a', bridge='network-a', vlan_id=None,
+                    vrf=project('vrf', dict(id=11, name='Isolated', rd=None, enforce_unique=True)))
+    mapping['network_scope_rules'] = [selected]
+    control.save(store, source.source_instance, view['revision'], view['discovery_id'], mapping)
+    fresh = control.read(store, source.source_instance)
+    assert fresh['network_scope_rules'] == [selected]
+    mapping.pop('network_scope_rules')
+    control.save(store, source.source_instance, fresh['revision'], fresh['discovery_id'], mapping)
+    fresh = control.read(store, source.source_instance)
+    assert fresh['network_scope_rules'] == [selected]
+    mapping['network_scope_rules'] = [{**selected, 'host_id': 'another-host'}]
+    with pytest.raises(LifecycleError, match='REQUEST_INVALID'):
+        control.save(store, source.source_instance, fresh['revision'], fresh['discovery_id'], mapping)
+    assert control.read(store, source.source_instance)['network_scope_rules'] == [selected]
+    mapping['network_scope_rules'] = []
+    control.save(store, source.source_instance, fresh['revision'], fresh['discovery_id'], mapping)
+    assert control.read(store, source.source_instance)['network_scope_rules'] == []

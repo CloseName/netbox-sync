@@ -434,6 +434,9 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         mapping = catalog_validate(settings.bootstrap_socket, payload.references, payload.host_types, current['preview'])
         if payload.ip_conflict_policy is not None:
             mapping['ip_conflict_policy'] = payload.ip_conflict_policy
+        if payload.network_scope_rules is not None:
+            from .catalog import call
+            mapping['network_scope_rules']=call(settings.bootstrap_socket,{'action':'validate-scopes','rules':payload.network_scope_rules})['rules']
         return lifecycle_client.request(source_instance, dict(revision=payload.revision,
             discovery_id=str(payload.discovery_id), mapping=mapping), action='save_placement')
 

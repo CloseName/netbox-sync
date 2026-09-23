@@ -240,6 +240,7 @@ def _find_ip_matches(
         if (
             _canonical_address(candidate.address)
             == canonical
+            and getattr(candidate, 'vrf', None) is None
         ):
             result.append(candidate)
 
