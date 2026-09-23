@@ -51,7 +51,7 @@ sudo python3 "$ROOT/repo/deploy/install.py" \
   --public-url https://netbox-sync-test.indeed-id.hq   --ingress-mode external
 ```
 
-Do not recreate env files, credentials, volumes, TLS directories, current or historical naming layout. The installer retains the selected root and protected configuration and applies the lifecycle column grants. This change adds no migration revision: head remains 0006_auth_policy. Existing administrator/onboarding state does not require re-enrollment. For a genuinely pre-auth installation follow local-admin-upgrade-runbook.md and its explicit acknowledgment instead.
+Do not recreate env files, credentials, volumes, TLS directories, current or historical naming layout. The installer retains the selected root and protected configuration and applies the lifecycle column grants. The current chain advances to `0007_host_reservations`, preserving hardware reservations and the source recovery journal. Sources missing historical hardware evidence require explicit identity review before additional ESXi registration; do not invent UUIDs from addresses. Existing administrator/onboarding state does not require re-enrollment. For a genuinely pre-auth installation follow local-admin-upgrade-runbook.md and its explicit acknowledgment instead.
 
 Stop on installer failure. Do not blindly rerun an immutable release ID, delete containers/volumes, manually switch current, or roll back across database changes. First collect only phase/error, selected release path and service/volume metadata; retain the verified backup.
 

@@ -310,15 +310,15 @@ restore, and upgrade.
 
 ## UI-6 state and recovery
 
-The reviewed chain now ends at `0005_source_tombstones`; the Foundation inventory has
-six tables, adding source_operations and source_tombstones. Dumps preserve tombstones,
+The current chain ends at `0007_host_reservations`; the Foundation inventory also
+contains auth_state/auth_audit, host_reservations and source_recoveries. Dumps preserve tombstones,
 source identity and durable operation state. Manifest credential references cover active
 sources only: a removed source may retain its original DB references even when its
 exclusive local files were explicitly removed. Remaining secret files still retain the
 existing tar/mode/owner/xattr verification contract.
 
-Fresh restore rejects any source, run, operation or tombstone rows, including orphan
-lifecycle evidence. The exact empty-schema cleanup also removes the known invoker trigger
+Fresh restore rejects any source, run, operation, tombstone, host reservation or
+recovery rows, including orphan lifecycle evidence. The exact empty-schema cleanup also removes the known invoker trigger
 function without CASCADE. After migration/grants, restored RUNNING operations become
 FAILED/OPERATION_INTERRUPTED and READY plans become STALE; results are cleared. Work is
 not resumed and old confirmation context cannot become applicable. Existing uncertain
@@ -400,3 +400,10 @@ active reference against the archive; arbitrary manifest filesystem destinations
 are never accepted. Restore retains that configuration while revoking sessions and
 pending LDAP test proofs. Older manifests remain supported by the new tool; use
 matching new tools for new bundles. See [LDAPS upgrade/recovery](ldaps-upgrade-runbook.md).
+
+
+Recovery journals and their broker-owned credential files retain the same backup
+mode/owner/xattr protections. Restored sources are included in credential-reference
+validation despite their retained historical tombstone. Older schemas without
+`restored_at` retain their original removal interpretation. Neither backup nor restore
+releases abandoned identity reservations or resumes pending recovery writes.

@@ -90,7 +90,7 @@ The connection-sharing/transaction approach follows the
 
 `0004_source_operations` follows `0003_netbox_sync_naming` and adds bounded latest
 PLAN/DISCOVERY slots with a composite source/kind key and unique generation UUID.
-`0005_source_tombstones` follows it and is the current head. It reserves removed source
+`0005_source_tombstones` follows it (the UI-6 head at that stage). It reserves removed source
 IDs without deleting source/history rows or creating a cascading relationship.
 Historical migrations remain unchanged; downgrade remains deliberately unsupported.
 
@@ -108,7 +108,19 @@ and READY review context; see [backup/restore](backup-restore.md).
 
 ## Bootstrap stage
 
-The migration head remains `0005_source_tombstones`; no new DB role or schema object
+At the original Bootstrap stage the head remained `0005_source_tombstones`; no new DB role or schema object
 is required. The existing lifecycle_writer capability moves to the lifecycle process.
 Bootstrap state uses the protected NetBox secrets directory and existing backup file
 metadata contract. No API/worker gains DDL or owner privileges. See [first-run](first-run.md).
+
+
+## Current head: host reservations and recovery
+
+`0006_auth_policy` is followed by `0007_host_reservations`. The latter adds immutable
+ESXi hardware reservations, durable source recovery attempts and `restored_at` on
+tombstones. The namespace and removal history remain retained. No historical
+migration is edited and no downgrade is offered. Registration can SELECT/INSERT
+reservations but cannot update or delete them. Lifecycle alone can write the recovery
+journal and the narrowly required source credential-reference/connection columns;
+API roles cannot update existing source records. Tests verify actual PostgreSQL grants.
+See [host identity registration](host-identity-registration.md) for limitations.
