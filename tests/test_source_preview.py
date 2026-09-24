@@ -28,14 +28,14 @@ def test_proxmox_bound_before_node_reads():
 
 
 @pytest.mark.parametrize('manufacturer,model',[('Dell Inc.','PowerEdge R650'),('Supermicro','Super Server'),(None,None),(None,'R650')])
-def test_esxi_host_summary_never_reads_vm_or_full_hardware(monkeypatch,manufacturer,model):
+def test_esxi_host_identity_reads_hardware_but_never_vm(monkeypatch,manufacturer,model):
     import pyVmomi
     class Host:
         _moId='host-1';name='esxi.test'
         @property
         def vm(self):raise AssertionError('VM inventory must not be read')
         @property
-        def hardware(self):raise AssertionError('Full hardware must not be read')
+        def hardware(self):return N(systemInfo=N(uuid='12345678-1234-4321-8765-123456789abc'))
     class Folder:
         _moId='root'
         childEntity=[Host()]

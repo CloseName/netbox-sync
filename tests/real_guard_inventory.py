@@ -42,6 +42,7 @@ def exercise(meta):
         for host in hosts:
             host.original_name=slug+'-'+provider;host.normalized_name=host.original_name
         if provider=='esxi':
+            hosts[0].source_id='00000000-0000-0000-0000-ac1f6be2c4da'
             other=deepcopy(hosts[0].virtual_machines[0]);other.external_id=str(uuid4());other.vmid=other.external_id;other.source_id='esxi:'+other.external_id;other.provider_object_id='vm-other';other.original_name+='-other';other.normalized_name+='-other';other.interfaces[0].mac_address='00:50:56:AA:BB:CD';hosts[0].virtual_machines.append(other)
         guests=[*hosts[0].virtual_machines,*hosts[0].containers]
         for guest in guests:guest.interfaces[0].ip_addresses=['192.0.2.60/24','192.0.2.60/32']

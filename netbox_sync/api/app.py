@@ -165,6 +165,7 @@ def _install_boundaries(app, settings, auth_client):
             'SOURCE_PERMISSION_DENIED': (422, 'The source denied inventory access. Grant the service account read access at the ESXi host root, including children; keep lockdown enabled.'),
             'HOST_IDENTITY_MISSING': (422, 'ESXi returned no hardware UUID in either host summary or hardware data. Verify SMBIOS system UUID and inventory visibility with the ESXi administrator; names and IP addresses cannot replace it.'),
             'HOST_IDENTITY_INVALID': (422, 'ESXi returned an invalid or placeholder hardware UUID. Verify SMBIOS system identity on the host before retrying.'),
+            'HOST_IDENTITY_INCONSISTENT': (422, 'ESXi summary and hardware return different BIOS UUIDs. Re-read both fields under the same service account and investigate the discrepancy before retrying; neither value was selected.'),
             'HOST_INVENTORY_EMPTY': (422, 'No ESXi host is visible to this account. Verify host-root read permissions and lockdown account access.'),
             'SOURCE_TLS_FAILED': (422, 'Source TLS verification failed'),
             'SOURCE_TIMEOUT': (504, 'Source connection timed out'),

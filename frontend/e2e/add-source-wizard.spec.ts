@@ -4,20 +4,21 @@ import {source,diagnostics} from '../tests/fixtures.mjs';
 import {setLanguage} from './menu-helper';
 import {selectPlacement,catalogRow,previewResult} from './source-placement-fixture';
 
-async function fixture(page:any,role='admin',provider='esxi',failure=''){
+async function fixture(page:any,role='admin',provider='esxi',failure='',hostId='host-a'){
   const permissions=['source.read','run.read','diagnostics.read',...(role==='viewer'?[]:['source.register','source.probe','source.plan','source.apply']),...(role==='admin'?['source.remove','source.configure','catalog.create','policy.read','policy.write','bootstrap.manage','identity.manage']:[])];
   const writes:string[]=[];let registered:any=null,fail=failure;
   await page.route('**/api/v1/**',async(route:any)=>{
     const req=route.request(),path=new URL(req.url()).pathname;
+    if(path==='/api/v1/registration-attempts')return route.fulfill({json:{attempts:[]}});
     if(path==='/api/v1/auth/me')return route.fulfill({json:{principal_id:'fixture-user',username:role,role,provider:'local',permissions}});
     if(path==='/api/v1/bootstrap')return route.fulfill({json:{revision:1,status:'READY',url:'https://netbox.example.test',completed:true,read_token_present:true,apply_token_present:true,safe_code:null,checks:[],validated_at:1}});
     if(path==='/api/v1/teams')return route.fulfill({json:{version:1,revision:1,teams:{team1:{id:'team1',name:'Infrastructure'}},assignments:{}}});
-    if(path.endsWith('test-connection')){if(fail){const code=fail;fail='';return route.fulfill({status:400,json:{error:{code}}});}return route.fulfill({json:{...previewResult,preview:{...previewResult.preview,provider,name:'Fixture host'}}});}
+    if(path.endsWith('test-connection')){if(fail){const code=fail;fail='';return route.fulfill({status:400,json:{error:{code}}});}return route.fulfill({json:{...previewResult,preview:{...previewResult.preview,provider,name:'Fixture host',hosts:previewResult.preview.hosts.map(h=>({...h,id:hostId}))}}});}
     if(path.endsWith('cancel-onboarding'))return route.fulfill({json:{status:'cancelled'}});
-    if(path.endsWith('resolve-placement'))return route.fulfill({json:{references:Object.fromEntries(['site','platform','device_role','cluster_type'].map(kind=>[kind,{...catalogRow(kind),...(['platform','cluster_type'].includes(kind)&&provider==='proxmox'?{name:'Proxmox VE'}:{})}])),host_types:{'host-a':catalogRow('device_type')},sites:[catalogRow('site')],create_cluster:true,issues:[]}});
+    if(path.endsWith('resolve-placement'))return route.fulfill({json:{references:Object.fromEntries(['site','platform','device_role','cluster_type'].map(kind=>[kind,{...catalogRow(kind),...(['platform','cluster_type'].includes(kind)&&provider==='proxmox'?{name:'Proxmox VE'}:{})}])),host_types:{[hostId]:catalogRow('device_type')},sites:[catalogRow('site')],create_cluster:true,issues:[]}});
     if(path.endsWith('review-placement'))return route.fulfill({json:{valid:true}});
     if(path.includes('/catalog/')){const kind=path.split('/').pop()!,row=catalogRow(kind);if(kind==='cluster')row.name='Fixture host';if(provider==='proxmox'&&['platform','cluster_type'].includes(kind))row.name='Proxmox VE';return route.fulfill({json:{items:[row],count:1,offset:0,more:false,url:'https://netbox.example.test/'}});}
-    if(path==='/api/v1/sources'&&req.method()==='POST'){writes.push(path);const data=req.postDataJSON();expect(data.sync_interval_seconds).toBe(600);expect(data.confirm_sync_disabled).toBe(true);registered={...source(),source_instance:data.source_instance,name:data.name,address:data.address,type:data.source_type,enabled:true,sync_enabled:false,status:'sync_disabled',legacy_identity_owner:false};return route.fulfill({json:registered});}
+    if(path==='/api/v1/sources'&&req.method()==='POST'){writes.push(path);const data=req.postDataJSON();expect(Object.keys(data.host_types)).toContain(hostId);expect(data.sync_interval_seconds).toBe(600);expect(data.confirm_sync_disabled).toBe(true);registered={...source(),source_instance:data.source_instance,name:data.name,address:data.address,type:data.source_type,enabled:true,sync_enabled:false,status:'sync_disabled',legacy_identity_owner:false};return route.fulfill({json:registered});}
     if(path==='/api/v1/sources')return route.fulfill({json:{sources:registered?[registered]:[]}});
     if(path==='/api/v1/diagnostics')return route.fulfill({json:diagnostics(registered?[registered]:[])});
     if(req.method()!=='GET')writes.push(path);
@@ -242,4 +243,31 @@ for(const role of ['admin','operator'])test(`removed host recovery is explicit a
  await page.getByRole('button',{name:'Confirm recovery of this source',exact:true}).click();
  await expect(page).toHaveURL(new RegExp(`/sources/${id}$`));
  expect(restored).toBe(1);expect(server.writes).toEqual([]);
+});
+
+for(const lang of ['en','ru'])test(`inconsistent hardware UUID refuses without clearing form ${lang}`,async({page})=>{
+ const server=await fixture(page,'admin','esxi','HOST_IDENTITY_INCONSISTENT');
+ await page.getByLabel('Source type').selectOption('esxi');
+ await page.getByLabel('Hostname or IPv4 address').fill('fixture.example.test');
+ await page.locator('[name=username]').fill('netbox-sync');
+ await page.locator('[name=secret]').fill(randomUUID());
+ if(lang==='ru')await setLanguage(page,lang);
+ await page.getByRole('button',{name:lang==='ru'?'Продолжить':'Continue',exact:true}).click();
+ await expect(page.getByRole('alert').first()).toContainText(lang==='ru'?'разные BIOS UUID':'different BIOS UUIDs');
+ await expect(page.locator('[name=username]')).toHaveValue('netbox-sync');
+ await expect(page.locator('[name=secret]')).not.toBeEmpty();
+ expect(server.writes).toEqual([]);
+ await page.screenshot({path:test.info().outputPath(`uuid-conflict-${lang}.png`),fullPage:true});
+ await page.getByRole('button',{name:lang==='ru'?'Продолжить':'Continue',exact:true}).click();
+ await expect(page).toHaveURL(/step=2/);
+});
+
+
+test('exact AM BIOS UUID survives preview placement and final registration',async({page})=>{
+ const server=await fixture(page,'admin','esxi','','00000000-0000-0000-0000-ac1f6be2c4da');
+ await connect(page);await placement(page);
+ await page.getByRole('button',{name:'Continue',exact:true}).click();
+ await page.getByRole('button',{name:'Add source',exact:true}).click();
+ await expect(page).toHaveURL(/\/sources$/);
+ expect(server.writes).toEqual(['/api/v1/sources']);
 });

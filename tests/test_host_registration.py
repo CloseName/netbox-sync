@@ -9,7 +9,14 @@ from tests.test_esxi_runtime import _config
 
 ANCHOR = '503c5ad7-aaaa-bbbb-cccc-0123456789ab'
 
-def preview(anchor=ANCHOR, name='host'):
+_DEFAULT = object()
+
+@pytest.fixture(autouse=True, params=[ANCHOR, '00000000-0000-0000-0000-ac1f6be2c4da'])
+def host_uuid_variant(request, monkeypatch):
+    monkeypatch.setattr(__import__(__name__, fromlist=['ANCHOR']), 'ANCHOR', request.param)
+
+def preview(anchor=_DEFAULT, name='host'):
+    if anchor is _DEFAULT: anchor = ANCHOR
     return {'provider':'esxi', 'hosts':[{'id':anchor, 'name':name}]}
 
 @pytest.mark.parametrize('identifier', ['ha-host', '', None, '00000000-0000-0000-0000-000000000000'])

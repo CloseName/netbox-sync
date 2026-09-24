@@ -262,5 +262,27 @@
       "en": "Ask an administrator to review the saved site and cluster and NetBox object visibility. No placement is created automatically.",
       "ru": "Попросите администратора проверить сохранённые площадку и кластер, а также доступность объектов токену NetBox. Размещение не создаётся автоматически."
     }
+  },
+  "HOST_IDENTITY_INCONSISTENT": {
+    "stage": "provider",
+    "message": {
+      "en": "ESXi summary and hardware BIOS UUIDs disagree.",
+      "ru": "BIOS UUID в сводке ESXi и данных оборудования различаются."
+    },
+    "action": {
+      "en": "Read summary.hardware.uuid and hardware.systemInfo.uuid under the same account and investigate the discrepancy. Neither value can be chosen automatically.",
+      "ru": "Прочитайте summary.hardware.uuid и hardware.systemInfo.uuid под одной учётной записью и выясните причину расхождения. Автоматически выбирать одно значение нельзя."
+    }
+  },
+  "HOST_IDENTITY_CHANGED": {
+    "stage": "planning",
+    "message": {
+      "en": "Discovered host identity differs from a host already owned by this source.",
+      "ru": "Идентификатор хоста отличается от ранее закреплённого за этим источником."
+    },
+    "action": {
+      "en": "Compare the stored sync_identities with the host BIOS UUID under the same account. Preserve the source and NetBox IDs; do not register another source or edit ownership to bypass this check. A reviewed identity transition is required.",
+      "ru": "Сравните сохранённые sync_identities с BIOS UUID хоста под той же учётной записью. Сохраните источник и NetBox ID; не создавайте второй источник и не меняйте принадлежность для обхода проверки. Нужен проверенный переход идентичности."
+    }
   }
 }

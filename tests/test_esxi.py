@@ -180,7 +180,7 @@ def test_host_uuid_is_canonicalized_across_case_braces_and_whitespace():
     (
         '',
         '00000000-0000-0000-0000-000000000000',
-        '00000000-0000-0000-0000-ac1f6b021cb0',
+        'ffffffff-ffff-ffff-ffff-ffffffffffff',
         'not-a-uuid',
     ),
 )
@@ -196,7 +196,7 @@ def test_unusable_esxi_host_hardware_uuid_falls_back_to_managed_id(
     assert discovered.source_id == 'ha-host'
 
 
-def test_same_managed_host_id_is_isolated_by_source_instance():
+def test_same_bios_host_id_is_scoped_by_source_instance_in_discovery():
     first_service = fake_esxi_service()
     second_service = fake_esxi_service()
     for service in (first_service, second_service):
@@ -208,7 +208,7 @@ def test_same_managed_host_id_is_isolated_by_source_instance():
     first = discover_hosts(first_service, esxi_config('esxi-a'))[0]
     second = discover_hosts(second_service, esxi_config('esxi-b'))[0]
 
-    assert first.source_id == second.source_id == 'ha-host'
+    assert first.source_id == second.source_id == '00000000-0000-0000-0000-ac1f6b021cb0'
     assert host_source_identity(first) != host_source_identity(second)
 
 

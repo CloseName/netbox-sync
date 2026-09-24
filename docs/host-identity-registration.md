@@ -4,6 +4,8 @@ Current recovery delivery and remaining limitations: [24 September acceptance](b
 
 Status: local implementation under review, not a live duplicate remediation.
 
+Current BIOS UUID normalization, trust limits and tested update procedure: [AM UUID review](esxi-bios-uuid-acceptance-20260924.md).
+
 ## Identity and admission
 
 ESXi registration requires one valid hardware UUID from the authenticated provider

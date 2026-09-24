@@ -187,3 +187,7 @@ initially skipped without NETBOX_SYNC_TIMEOUT_TEST. Existing timeout/reaping,
 to capabilities, schedules, TLS settings, egress or production Compose were made.
 The last Compose image gate predates this isolated preview fallback; the fallback
 itself was verified by the current real TLS/SOAP test, not claimed as live acceptance.
+
+## Later UUID evidence
+
+The AM eight-nonzero-byte rejection above is now reproduced and superseded by [the BIOS UUID compatibility review](esxi-bios-uuid-acceptance-20260924.md). Historical checkpoint statements are not the current UUID admission contract.

@@ -79,21 +79,42 @@ def _vm_external_id(vm):
     raise ValueError('ESXi VM has no usable stable external identifier')
 
 
+# Reserved sentinel values, not an entropy threshold. The single-one value
+# remains explicitly refused for compatibility with the existing placeholder gate.
+_HOST_UUID_SENTINELS = frozenset({'00000000-0000-0000-0000-000000000001',
+                                  'ffffffff-ffff-ffff-ffff-ffffffffffff'})
+
+class HostHardwareIdentityConflict(ValueError):
+    code = 'HOST_IDENTITY_INCONSISTENT'
+    def __init__(self):super().__init__(self.code)
+
+
 def _validated_host_hardware_uuid(value):
+    """Usable BIOS key only: this does not establish physical uniqueness.
+
+    HostSystemInfo.uuid is BIOS identification, not necessarily an RFC-generated
+    random UUID. Duplicate ownership remains a separate atomic registry check.
+    """
     candidate = _normalized_uuid(value)
-    if candidate is None:
-        return None
-    parsed = UUID(candidate)
-    if sum(byte != 0 for byte in parsed.bytes) < len(parsed.bytes) // 2:
+    if candidate is None or candidate in _HOST_UUID_SENTINELS:
         return None
     return candidate
 
 
+def _consistent_host_hardware_uuid(summary_uuid, hardware_uuid):
+    summary = _validated_host_hardware_uuid(summary_uuid)
+    hardware = _validated_host_hardware_uuid(hardware_uuid)
+    if summary and hardware and summary != hardware:
+        raise HostHardwareIdentityConflict()
+    return hardware or summary
+
+
 def _host_external_id(host):
-    for path in ('hardware.systemInfo.uuid', 'summary.hardware.uuid'):
-        candidate = _validated_host_hardware_uuid(_value(host, path))
-        if candidate is not None:
-            return candidate
+    candidate = _consistent_host_hardware_uuid(
+        _value(host, 'summary.hardware.uuid'), _value(host, 'hardware.systemInfo.uuid'))
+    if candidate is not None:
+        return candidate
+    # Legacy discovery compatibility only; registration never accepts a MoRef.
     managed_id = _managed_object_id(host)
     if managed_id is not None:
         return managed_id

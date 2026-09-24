@@ -1,5 +1,7 @@
 # Source-sync update after review and publication
 
+For the BIOS UUID fix on an already installed f90743a release, use [the narrower UUID update procedure](esxi-bios-uuid-acceptance-20260924.md). That fix does not change NetBox guard and does not require repeating the guard upgrade in section3 below.
+
 The 24 September recovery task authorizes publication; deployment remains an operator action. Use only the final published full SHA from the delivery report. Current evidence and limits: [recovery acceptance](backend-completion-acceptance-20260924.md). Keep normal host/systemd operation; do not use --no-systemd/--no-start/--prepare-only on the actual VM.
 
 ## 1. Preserve the installed release first

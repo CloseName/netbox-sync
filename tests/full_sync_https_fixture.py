@@ -23,7 +23,7 @@ class Handler(ProbeHandler):
         # The full-sync inventory is a different physical host from auth-test.
         # Apply the same identity to both preview summary and batch hardware data.
         body = body.replace('12345678-1234-4321-8765-123456789abc',
-                            '22345678-1234-4321-8765-123456789abc')
+                            '00000000-0000-0000-0000-ac1f6be2c4da')
         return super().soap(body, status)
 
     def do_GET(self):

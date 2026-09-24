@@ -27,6 +27,13 @@ class AdoptionClassification(str, Enum):
     UNMATCHED = 'UNMATCHED'
 
 
+class EsxiHostIdentityChanged(ValueError):
+    code = 'HOST_IDENTITY_CHANGED'
+
+    def __init__(self):
+        super().__init__(self.code)
+
+
 class EsxiAdoptionError(RuntimeError):
     """An adoption plan or confirmed adoption failed safely."""
 
@@ -414,6 +421,17 @@ def build_esxi_adoption_plan(nb_api, hosts, config):
         raise ValueError('ESXi adoption requires source_type=esxi')
     site, cluster = _resolve_target(nb_api, config)
     all_devices = list(nb_api.dcim.devices.all())
+    # A newly usable BIOS identifier must not silently replace an owned MoRef
+    # or UUID, even if the host name/address also changed.
+    from .source_identity import SourceIdentity
+    discovered_ids = {host.source_id for host in hosts}
+    for record in all_devices:
+        for raw in (_custom_fields(record).get('sync_identities') or []):
+            identity = SourceIdentity.from_record(raw)
+            if (identity is not None and identity.type == 'esxi'
+                    and identity.instance == config.source_instance and identity.kind == 'host'
+                    and identity.external_id not in discovered_ids):
+                raise EsxiHostIdentityChanged()
     all_vms = list(nb_api.virtualization.virtual_machines.all())
     target_devices = [
         record for record in all_devices

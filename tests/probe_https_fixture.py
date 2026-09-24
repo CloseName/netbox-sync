@@ -100,6 +100,8 @@ class Handler(BaseHTTPRequestHandler):
             if object_id=='ha-folder-root' and path=='childEntity':
                 val='<val xsi:type="ArrayOfManagedObjectReference"><ManagedObjectReference type="HostSystem">ha-host</ManagedObjectReference></val>'
             elif object_id=='ha-host' and path=='name':val='<val xsi:type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema">esxi.probe.test</val>'
+            elif object_id=='ha-host' and path=='hardware':
+                val='<val xsi:type="HostHardwareInfo"><systemInfo><vendor>Dell Inc.</vendor><model>PowerEdge R650</model><uuid>12345678-1234-4321-8765-123456789abc</uuid></systemInfo></val>'
             elif object_id=='ha-host' and path=='summary':
                 val='<val xsi:type="HostListSummary"><hardware><vendor>Dell Inc.</vendor><model>PowerEdge R650</model><uuid>12345678-1234-4321-8765-123456789abc</uuid><memorySize>34359738368</memorySize><cpuModel>Fixture CPU</cpuModel><cpuMhz>2400</cpuMhz><numCpuPkgs>1</numCpuPkgs><numCpuCores>8</numCpuCores><numCpuThreads>16</numCpuThreads><numNics>2</numNics><numHBAs>1</numHBAs></hardware><config><name>esxi.probe.test</name><product><name>VMware ESXi</name><fullName>VMware ESXi</fullName><vendor>VMware</vendor><version>6.7.0</version><build>1</build><osType>vmnix-x86</osType><productLineId>embeddedEsx</productLineId><apiType>HostAgent</apiType><apiVersion>6.7</apiVersion></product></config></val>'
             else:return self.respond(b'',400)

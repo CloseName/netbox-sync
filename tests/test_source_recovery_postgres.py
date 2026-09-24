@@ -17,6 +17,10 @@ from tests.test_esxi_runtime import _config
 ANCHOR='503c5ad7-aaaa-bbbb-cccc-0123456789ab'
 
 
+@pytest.fixture(autouse=True, params=[ANCHOR, '00000000-0000-0000-0000-ac1f6be2c4da'])
+def host_uuid_variant(request, monkeypatch):
+    monkeypatch.setattr(__import__(__name__, fromlist=['ANCHOR']), 'ANCHOR', request.param)
+
 @pytest.fixture
 def setup(migration_database):
     registry,engine=migration_database;_upgrade(registry,engine)

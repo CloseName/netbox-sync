@@ -9,6 +9,7 @@ from .esxi_migration import (
 )
 from .netbox_vm_apply import apply_virtual_machines
 from .netbox_apply import apply_hosts
+from .esxi_adoption import EsxiHostIdentityChanged
 from .application.planning_netbox import PlanningNetBox
 from .netbox_vm_network_apply import apply_vm_networks
 from .source_identity import virtual_machine_source_identity
@@ -108,6 +109,8 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False):
         plan = build_esxi_migration_plan(nb_api, hosts, config)
         managed_ids = _managed_vm_ids(plan)
         filtered_hosts = _filtered_hosts(hosts, config, managed_ids)
+    except EsxiHostIdentityChanged:
+        raise
     except EsxiRuntimeError:
         raise
     except Exception as exc:

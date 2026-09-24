@@ -22,6 +22,8 @@ MAX_RESPONSE = 65536
 
 def classify(exc):
     """Never propagate remote error text or response payloads."""
+    from ..esxi_discovery import HostHardwareIdentityConflict
+    if isinstance(exc, HostHardwareIdentityConflict):return ErrorCode.HOST_IDENTITY_INCONSISTENT
     if isinstance(exc, OnboardingError):
         return exc.code
     if isinstance(exc, socket.gaierror):
@@ -157,7 +159,7 @@ def run_connection_test(credentials, policy=None, popen=subprocess.Popen, *, chi
                 code = ErrorCode(result.get('error'))
                 if code not in (ErrorCode.SOURCE_DNS_FAILED, ErrorCode.SOURCE_TIMEOUT, ErrorCode.SOURCE_TLS_FAILED,
                                 ErrorCode.SOURCE_AUTH_FAILED, ErrorCode.SOURCE_DESTINATION_DENIED,
-                                ErrorCode.SOURCE_CONNECTION_FAILED, ErrorCode.SOURCE_PERMISSION_DENIED, ErrorCode.HOST_IDENTITY_MISSING, ErrorCode.HOST_IDENTITY_INVALID, ErrorCode.HOST_INVENTORY_EMPTY):
+                                ErrorCode.SOURCE_CONNECTION_FAILED, ErrorCode.SOURCE_PERMISSION_DENIED, ErrorCode.HOST_IDENTITY_MISSING, ErrorCode.HOST_IDENTITY_INVALID, ErrorCode.HOST_IDENTITY_INCONSISTENT, ErrorCode.HOST_INVENTORY_EMPTY):
                     raise ValueError('Invalid probe result')
                 raise OnboardingError(code)
     except OnboardingError:

@@ -13,7 +13,7 @@ def text(value):
 def esxi(content):
     # A standalone HostAgent exposes rootFolder -> Datacenter -> hostFolder ->
     # ComputeResource -> host. No VM or guest property reads; hardware identity
-    # is read only when the summary omits a usable UUID.
+    # is compared across summary and hardware without reading VM inventory.
     if getattr(content.about, 'apiType', None) != 'HostAgent':
         raise ValueError('Standalone ESXi required')
     nodes=[content.rootFolder]; hosts=[]; seen=set(); visited=0
@@ -42,14 +42,11 @@ def esxi(content):
     return dict(provider='esxi',name=hosts[0]['name'] if len(hosts)==1 else None,cluster=None,hosts=hosts)
 
 def _host_external_id_summary(host,summary):
-    from .esxi_discovery import _validated_host_hardware_uuid
-    candidate = _validated_host_hardware_uuid(_value(summary,'hardware.uuid'))
-    if candidate is not None:
-        return candidate
-    # Match the hardware UUID already used by Discovery. Read once per host;
-    # permission/transport errors must propagate rather than inventing identity.
+    from .esxi_discovery import _consistent_host_hardware_uuid
+    # Read both views of BIOS identity once. A permission/transport error is not
+    # missing data; conflicting valid views cannot choose different plan owners.
     hardware = _value(host, 'hardware.systemInfo.uuid')
-    candidate = _validated_host_hardware_uuid(hardware)
+    candidate = _consistent_host_hardware_uuid(_value(summary,'hardware.uuid'), hardware)
     if candidate is not None:
         return candidate
     from .application.onboarding import OnboardingError

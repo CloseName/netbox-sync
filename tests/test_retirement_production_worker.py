@@ -22,7 +22,7 @@ def test_real_netbox_receipt_before_tombstone(migration_database,tmp_path):
     meta=json.loads(Path('/bridge/ready.json').read_text())
     registry,engine=migration_database;_upgrade(registry,engine)
     source=replace(sample_source_config(),id=meta['source'],source_instance=meta['source'],source_type='esxi',legacy_identity_owner=False,
-        settings={'onboarding_mapping':{'hosts':[{'id':'503c5ad7-aaaa-bbbb-cccc-0123456789ab','name':'fixture'}],'references':{'site':{'id':1},'cluster':{'id':meta['cluster']}}}})
+        settings={'onboarding_mapping':{'hosts':[{'id':'00000000-0000-0000-0000-ac1f6be2c4da','name':'fixture'}],'references':{'site':{'id':1},'cluster':{'id':meta['cluster']}}}})
     registry.create_source(source)
     store=LifecycleStore(_safe_test_dsn(),registry.schema,str(tmp_path/'apply.lock'))
     history=postgres_run_repository(_safe_test_dsn(),registry.schema)

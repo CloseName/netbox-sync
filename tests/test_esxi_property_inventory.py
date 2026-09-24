@@ -20,7 +20,7 @@ from netbox_sync.esxi_discovery import discover_hosts, _walk_hosts, _convert_hos
 
 
 @contextmanager
-def endpoint(tmp_path, monkeypatch, count=147, delay=0, incomplete=False, identity_conflict=False, missing_summary_uuid=False, property_calls=None):
+def endpoint(tmp_path, monkeypatch, count=147, delay=0, incomplete=False, identity_conflict=False, missing_summary_uuid=False, property_calls=None, host_uuid=None, conflicting_uuid=None, hardware_denied=False):
     cert=tmp_path/'cert.pem';key=tmp_path/'key.pem'
     subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1',
         '-keyout',str(key),'-out',str(cert),'-subj','/CN=localhost','-addext','subjectAltName=IP:127.0.0.1'],
@@ -29,6 +29,11 @@ def endpoint(tmp_path, monkeypatch, count=147, delay=0, incomplete=False, identi
     rows=deepcopy(properties)
     if missing_summary_uuid:
         rows[('ha-host','summary')]='<val xsi:type="HostListSummary"><hardware><vendor>Dell Inc.</vendor><model>PowerEdge R650</model></hardware></val>'
+    if host_uuid:
+        for field in ('hardware',):
+            rows[('ha-host',field)] = rows[('ha-host',field)].replace('12345678-1234-4321-8765-123456789abc', host_uuid)
+    if conflicting_uuid:
+        rows[('ha-host','hardware')] = rows[('ha-host','hardware')].replace(host_uuid, conflicting_uuid)
     refs=[]
     for i in range(count):
         ident='vm-'+str(1000+i);refs.append('<ManagedObjectReference type="VirtualMachine">'+ident+'</ManagedObjectReference>')
@@ -41,6 +46,10 @@ def endpoint(tmp_path, monkeypatch, count=147, delay=0, incomplete=False, identi
     rows[('ha-host','vm')]='<val xsi:type="ArrayOfManagedObjectReference">'+''.join(refs)+'</val>'
     calls=[]
     class Handler(Base):
+        def soap(self, body, status=200):
+            if host_uuid and 'HostListSummary' in body:
+                body=body.replace('12345678-1234-4321-8765-123456789abc', host_uuid)
+            return super().soap(body,status)
         def do_POST(self):
             body=self.rfile.read(int(self.headers.get('Content-Length','0')))
             method=next(iter(next(e for e in ET.fromstring(body) if e.tag.endswith('Body'))))
@@ -51,6 +60,8 @@ def endpoint(tmp_path, monkeypatch, count=147, delay=0, incomplete=False, identi
                 time.sleep(delay)
                 if incomplete:
                     return self.soap('<RetrievePropertiesExResponse xmlns="urn:vim25"><returnval/></RetrievePropertiesExResponse>')
+            if hardware_denied and any(e.text=='hardware' for e in method.iter() if e.tag.split('}')[-1] in ('prop','pathSet')):
+                return self.soap('<soap:Fault><faultcode>ServerFaultCode</faultcode><faultstring>PRIVATE_PROVIDER_DETAIL</faultstring><detail><NoPermissionFault xmlns="urn:vim25" xsi:type="NoPermission"><privilegeId>System.View</privilegeId></NoPermissionFault></detail></soap:Fault>',500)
             reply=property_reply(method,rows)
             if reply is not None: return self.soap(reply)
             self.rfile=BytesIO(body)
@@ -191,6 +202,35 @@ def test_real_soap_preview_reads_only_needed_host_identity(tmp_path,monkeypatch,
             preview=esxi(service.RetrieveContent())
             assert esxi_anchor(preview)=='12345678-1234-4321-8765-123456789abc'
             assert reads.count('summary')==1
-            assert reads.count('hardware')==(1 if missing_summary_uuid else 0)
+            assert reads.count('hardware')==1
             assert not set(reads)&{'vm','guest','config'}
-            assert len(preview['hosts'])==1 and len(calls)==6+int(missing_summary_uuid)
+            assert len(preview['hosts'])==1 and len(calls)==7
+
+
+@pytest.mark.parametrize('conflict',[False,True])
+def test_real_soap_am_identity_consistency(tmp_path,monkeypatch,conflict):
+    from netbox_sync.source_preview import esxi
+    from netbox_sync.host_registration import esxi_anchor
+    from netbox_sync.esxi_discovery import HostHardwareIdentityConflict
+    anchor='00000000-0000-0000-0000-ac1f6be2c4da'
+    with endpoint(tmp_path,monkeypatch,count=3,host_uuid=anchor,
+                  conflicting_uuid='12345678-1234-4321-8765-123456789abc' if conflict else None) as (config,calls):
+        with EsxiClient(resolver=FakeResolver()).session(config) as service:
+            if conflict:
+                with pytest.raises(HostHardwareIdentityConflict): esxi(service.RetrieveContent())
+                with pytest.raises(HostHardwareIdentityConflict): discover_hosts(service,config)
+            else:
+                assert esxi_anchor(esxi(service.RetrieveContent()))==anchor
+                hosts=discover_hosts(service,config)
+                assert hosts[0].source_id==anchor and len(hosts[0].virtual_machines)==3
+
+
+def test_real_soap_hardware_denial_is_safe_and_no_summary_fallback(tmp_path,monkeypatch):
+    from netbox_sync.source_preview import esxi
+    from netbox_sync.api.connection_probe import classify
+    from pyVmomi import vim
+    with endpoint(tmp_path,monkeypatch,count=1,hardware_denied=True) as (config,calls):
+        with EsxiClient(resolver=FakeResolver()).session(config) as service:
+            with pytest.raises(vim.fault.NoPermission) as caught:esxi(service.RetrieveContent())
+            assert classify(caught.value).value=='SOURCE_PERMISSION_DENIED'
+            assert calls.count('RetrievePropertiesEx')==0

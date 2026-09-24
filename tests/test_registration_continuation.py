@@ -12,6 +12,11 @@ from tests.test_onboarding import credentials,command
 from tests.test_secret_broker_transport import start_broker
 
 
+@pytest.fixture(autouse=True, params=['503c5ad7-aaaa-bbbb-cccc-0123456789ab', '00000000-0000-0000-0000-ac1f6be2c4da'])
+def host_uuid_variant(request, monkeypatch):
+    import tests.test_host_registration as registration
+    monkeypatch.setattr(registration, 'ANCHOR', request.param)
+
 def test_intent_is_immutable_and_resume_never_bypasses_actor_or_uuid(migration_database):
     registry,engine=migration_database;_upgrade(registry,engine)
     reservations=HostReservations(registry._connect,registry.schema)
