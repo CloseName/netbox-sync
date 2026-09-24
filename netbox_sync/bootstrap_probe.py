@@ -21,6 +21,11 @@ class ProbeError(Exception):
         super().__init__(code)
 
 
+class ObjectNotVisible(ProbeError):
+    def __init__(self):
+        super().__init__('RESPONSE_INVALID')
+
+
 def fetch(session, url, token, method='GET'):
     with session.request(method, url, headers={'Authorization': authorization(token)},
                          timeout=(3, 5), allow_redirects=False, stream=True) as response:
@@ -28,6 +33,8 @@ def fetch(session, url, token, method='GET'):
             raise ProbeError('AUTH_FAILED')
         if response.status_code == 403:
             raise ProbeError('PERMISSION_DENIED')
+        if response.status_code == 404:
+            raise ObjectNotVisible()
         if response.status_code != 200:
             raise ProbeError('RESPONSE_INVALID')
         raw = bytearray()

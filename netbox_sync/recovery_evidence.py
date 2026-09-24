@@ -7,7 +7,7 @@ from .esxi_discovery import _validated_host_hardware_uuid
 from .bootstrap_probe import ProbeError
 
 
-def assess(source, anchor, site_id, cluster_id, cluster, devices, machines, *, require_host=False):
+def assess(source, anchor, site_id, cluster_id, cluster, devices, machines, *, require_host=False, placement_unavailable=False):
     """Assess a complete bounded inventory fetched by the trusted read worker.
 
     A restored source keeps its namespace; names and transport addresses play no
@@ -20,7 +20,7 @@ def assess(source, anchor, site_id, cluster_id, cluster, devices, machines, *, r
     if len(devices)+len(machines)>10000:
         raise ProbeError('RESPONSE_INVALID')
     blockers=set()
-    if (cluster.get('id')!=cluster_id or cluster.get('scope_type')!='dcim.site'
+    if not placement_unavailable and (cluster.get('id')!=cluster_id or cluster.get('scope_type')!='dcim.site'
             or cluster.get('scope_id')!=site_id):
         blockers.add('PLACEMENT_CHANGED')
     owned=[]
@@ -67,7 +67,10 @@ def assess(source, anchor, site_id, cluster_id, cluster, devices, machines, *, r
                     owner=identity_owners.setdefault(identity,(kind,identifier))
                     if owner!=(kind,identifier):
                         blockers.add('DUPLICATE_OBJECT_IDENTITY')
-                if not in_target: blockers.add('OWNED_OBJECT_OUTSIDE_PLACEMENT')
+                detached_site=row.get('site')
+                detached_site=detached_site.get('id') if isinstance(detached_site,dict) else detached_site
+                detached_owned_host=placement_unavailable and kind=='device' and parent_id is None and detached_site==site_id
+                if not in_target and not detached_owned_host: blockers.add('OWNED_OBJECT_OUTSIDE_PLACEMENT')
                 if foreign: blockers.add('SHARED_OWNERSHIP')
                 if kind=='device':
                     hosts=[i for i in current if i.kind=='host']
@@ -86,5 +89,8 @@ def assess(source, anchor, site_id, cluster_id, cluster, devices, machines, *, r
             'cluster_id':cluster_id,'owned':sorted(owned,key=lambda r:(r['kind'],r['id'])),
             'retained_manual':sorted(manual,key=lambda r:(r['kind'],r['id'])),
             'blockers':sorted(blockers)}
+    if placement_unavailable:
+        result['placement_requires_review']=True
+        result['placement_status']='MISSING_OR_NOT_VISIBLE'
     result['digest']=hashlib.sha256(json.dumps({'result':result,'identities':sorted(identity_evidence,key=lambda r:(r['object']['kind'],r['object']['id']))},sort_keys=True,separators=(',',':')).encode()).hexdigest()
     return result

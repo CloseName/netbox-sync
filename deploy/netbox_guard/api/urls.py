@@ -1,6 +1,7 @@
 from django.urls import path
-from .views import Capabilities, CreateOwned, Review, Retire, Receipt, ReviewSource, RetireSource, CreationProof
+from .views import Capabilities, CreateOwned, Review, Retire, Receipt, ReviewSource, RetireSource, CreationProof, SourceAudit
 urlpatterns = [
+    path('sources/<str:source>/audit/', SourceAudit.as_view()),
     path('sources/review/', ReviewSource.as_view()),
     path('sources/execute/', RetireSource.as_view()),
     path('capabilities/', Capabilities.as_view()),

@@ -122,7 +122,7 @@ class RunRecorder:
         self.started = []
         self.finished = []
 
-    def reconciliation_required(self, source_instance):
+    def scheduled_reconciliation_required(self, source_instance):
         return False
 
     def start_run(self, source_instance, source_type, trigger, created_by):
@@ -260,7 +260,7 @@ def test_second_history_failure_does_not_change_first_terminal_run():
 def test_uncertain_history_blocks_scheduled_execution_without_provider_calls():
     from netbox_sync.run_history import RunStatus
     recorder=RunRecorder()
-    recorder.reconciliation_required=lambda _:True
+    recorder.scheduled_reconciliation_required=lambda _:True
     calls=[]
     result=run_sources((source('pve-a'),),lambda config:calls.append(config),run_repository=recorder)
     assert result.failed==1 and not calls

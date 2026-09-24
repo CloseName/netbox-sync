@@ -103,3 +103,13 @@ def test_creation_receipt_is_get_only_and_binds_original_wire_request():
     with pytest.raises(GuardTransportError,match='GUARD_RESPONSE_INVALID'):
         guard.creation_receipt(nonce,'esxi-fixture','cluster',None,{'name':'changed','type':1})
     assert all(call[0]=='GET' for call in session.calls)
+
+
+@pytest.mark.parametrize('source',['x','esxi-'+('a'*123)])
+def test_inventory_audit_keeps_supported_source_id_length(source):
+    import hashlib
+    value=dict(source_instance=source,historical_outcome='UNPROVED',objects=[])
+    value['digest']=hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    guard,session=client(Response(200,value))
+    assert guard.audit_source(source,uuid4())==value
+    assert session.calls[0][0]=='POST'

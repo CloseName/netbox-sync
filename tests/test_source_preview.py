@@ -73,11 +73,12 @@ def test_preview_does_not_suppress_hardware_identity_access_error():
 @pytest.mark.parametrize('hardware_uuid',[None,'','bad','00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000001'])
 def test_preview_missing_usable_hardware_still_fails_admission(hardware_uuid):
     from netbox_sync.source_preview import _host_external_id_summary
-    from netbox_sync.host_registration import esxi_anchor,HostRegistrationConflict
+    from netbox_sync.application.onboarding import OnboardingError
     host=N(_moId='ha-host',hardware=N(systemInfo=N(uuid=hardware_uuid)))
-    identifier=_host_external_id_summary(host,N(hardware=N(uuid=None)))
-    with pytest.raises(HostRegistrationConflict,match='HOST_IDENTITY_UNAVAILABLE'):
-        esxi_anchor({'provider':'esxi','hosts':[{'id':identifier}]})
+    code='HOST_IDENTITY_MISSING' if hardware_uuid in (None,'') else 'HOST_IDENTITY_INVALID'
+    with pytest.raises(OnboardingError) as caught:
+        _host_external_id_summary(host,N(hardware=N(uuid=None)))
+    assert caught.value.code.value==code
 
 
 def test_preview_fallback_is_single_host_read_and_normalized():
@@ -93,3 +94,9 @@ def test_preview_fallback_is_single_host_read_and_normalized():
     identifier=_host_external_id_summary(Host(),N(hardware=N(uuid=None)))
     assert esxi_anchor({'provider':'esxi','hosts':[{'id':identifier}]})=='12345678-1234-4321-abcd-123456789abc'
     assert calls==['hardware']
+
+
+def test_probe_classifies_permission_without_remote_text():
+    from netbox_sync.api.connection_probe import classify
+    from pyVmomi import vim
+    assert classify(vim.fault.NoPermission(msg='private response')).value=='SOURCE_PERMISSION_DENIED'

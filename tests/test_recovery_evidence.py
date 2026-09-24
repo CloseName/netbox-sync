@@ -145,3 +145,42 @@ def test_legacy_identity_evidence_uses_configured_scope_and_requires_owned_host(
     clusters.append({**clusters[0],'id':4})
     with pytest.raises(ProbeError,match='SELECTION_REQUIRED'):read()
     assert all(url.startswith('https://netbox.test/api/') for url in requests)
+
+
+def test_missing_placement_allows_same_namespace_without_adopting_detached_foreign_host():
+    owned=object_row(cluster=None);owned['site']={'id':1}
+    result=assess('source-a',UUID,1,3,{},[owned],[],placement_unavailable=True)
+    assert not result['blockers'] and result['placement_requires_review']
+    assert result['placement_status']=='MISSING_OR_NOT_VISIBLE'
+    assert result['owned']==[{'kind':'device','id':1}]
+    for change in ({'site':{'id':2}},{'cluster':{'id':9}}):
+        changed=assess('source-a',UUID,1,3,{},[{**owned,**change}],[],placement_unavailable=True)
+        assert 'OWNED_OBJECT_OUTSIDE_PLACEMENT' in changed['blockers']
+    foreign=object_row(source='foreign-source',cluster=None);foreign['site']={'id':1}
+    assert 'HOST_OWNED_BY_OTHER_SOURCE' in assess('source-a',UUID,1,3,{},[foreign],[],placement_unavailable=True)['blockers']
+
+
+@pytest.mark.parametrize('failure',['missing','permission','network'])
+def test_recovery_missing_cluster_exception_is_narrow_and_never_writes(monkeypatch,failure):
+    from netbox_sync.bootstrap_probe import ObjectNotVisible
+    import requests
+    monkeypatch.setattr(catalog,'EgressPolicy',lambda **kw:SimpleNamespace(resolve=lambda h,p:(h,'192.0.2.1')))
+    monkeypatch.setattr(catalog,'pinned_dns',lambda *a:nullcontext())
+    monkeypatch.setattr(catalog,'configure_session',lambda s:None)
+    calls=[]
+    def fetch(session,url,token):
+        calls.append(url)
+        if '/clusters/3/' in url:
+            if failure=='missing':raise ObjectNotVisible()
+            if failure=='permission':raise ProbeError('PERMISSION_DENIED')
+            raise requests.ConnectionError('private diagnostic')
+        return {'count':0,'next':None,'results':[]}
+    monkeypatch.setattr(catalog,'fetch',fetch)
+    payload={'action':'recovery-evidence','source_instance':'source-a','host_uuid':UUID,'site_id':1,'cluster_id':3}
+    if failure=='missing':
+        value=catalog.query({'url':'https://netbox.test','read_token':'','query':payload},lambda:nullcontext(None))
+        assert value['placement_requires_review'] and not value['blockers'] and len(calls)==3
+    else:
+        with pytest.raises((ProbeError,requests.ConnectionError)):
+            catalog.query({'url':'https://netbox.test','read_token':'','query':payload},lambda:nullcontext(None))
+        assert len(calls)==1

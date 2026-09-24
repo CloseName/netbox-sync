@@ -5,6 +5,8 @@ not itself perform retirement, activate old tombstones or authorize API callers.
 """
 import json
 from uuid import UUID
+from .run_gates import blocking_runs
+from .retirement_codes import DEFINITE_REFUSALS
 from psycopg import sql
 from psycopg.types.json import Jsonb
 from .host_registration import identity_placement
@@ -32,7 +34,7 @@ class RetirementJournal:
                 self.store.table('source_operations')),(source,)).fetchone():
             raise LifecycleError('SOURCE_OPERATION_ACTIVE')
         if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')").format(
-                self.store.table('sync_runs')),(source,)).fetchone():
+                blocking_runs(connection,self.store.schema)),(source,)).fetchone():
             raise LifecycleError('SOURCE_APPLY_UNCONFIRMED')
         _,cluster=identity_placement(row['settings'])
         if type(cluster) is not int or cluster<=0:raise LifecycleError('RETIREMENT_BLOCKED')
@@ -118,12 +120,13 @@ class RetirementJournal:
                 self.store.table('source_retirements')),(Jsonb(receipt),record['operation_id'])).fetchone()
 
 
-    def blocked(self,source,operation,actor):
+    def blocked(self,source,operation,actor,code='RETIREMENT_BLOCKED'):
+        if code not in DEFINITE_REFUSALS:raise LifecycleError('REQUEST_INVALID')
         with self.store.connect() as connection,source_gate(connection,self.store.schema,source,allow_retirement=True):
             record=self._record(connection,source,operation,actor)
             if record['state'] not in ('SENDING','UNCERTAIN'):raise LifecycleError('RETIREMENT_CONFLICT')
-            connection.execute(sql.SQL("UPDATE {} SET state='BLOCKED',safe_code='RETIREMENT_BLOCKED' WHERE operation_id=%s").format(
-                self.store.table('source_retirements')),(record['operation_id'],))
+            connection.execute(sql.SQL("UPDATE {} SET state='BLOCKED',safe_code=%s WHERE operation_id=%s").format(
+                self.store.table('source_retirements')),(code,record['operation_id']))
 
     def finalized(self,source,operation,actor):
         with self.store.connect() as connection,source_gate(connection,self.store.schema,source,allow_retirement=True):

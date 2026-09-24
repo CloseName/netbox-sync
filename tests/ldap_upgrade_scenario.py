@@ -65,7 +65,7 @@ session_cookie=response['cookie'].split(';')[0]
 old_identity=request(None,'/api/v1/auth/me','GET')['body']['principal_id']
 auth_before=json.loads(db('SELECT value FROM netbox_sync.auth_state'))
 
-before=snapshot();pg=run([*command,'ps','-q','postgres']);mounts=run(['docker','inspect',pg,'--format','{{json .Mounts}}'])
+before=snapshot();pg=run([*command,'ps','-q','postgres']);mounts=sorted(json.loads(run(['docker','inspect',pg,'--format','{{json .Mounts}}'])),key=lambda item:item['Destination'])
 rows=db('SELECT row_to_json(s) FROM netbox_sync.sources s');history=db('SELECT row_to_json(s) FROM netbox_sync.sync_runs s')
 run(['python3',str(root/'current/deploy/backup.py'),'--root',str(root),'--no-systemd','create'])
 bundle=next((root/'backups').glob('netbox-sync-backup-*'))
@@ -77,11 +77,11 @@ upgrade=['python3','/review/deploy/install.py','--root',str(root),'--source','/n
     '--release-id','ldap-upgrade','--image',os.environ.get('NETBOX_SYNC_REVIEW_IMAGE','netbox-sync-auth:review'),'--no-systemd']
 run(upgrade)
 assert (root/'current').resolve().name=='ldap-upgrade'
-assert db('SELECT version_num FROM netbox_sync.alembic_version')=='0010_source_retirements'
+assert db('SELECT version_num FROM netbox_sync.alembic_version')=='0012_run_reconciliation'
 assert db('SELECT row_to_json(s) FROM netbox_sync.sources s')==rows
 assert db('SELECT row_to_json(s) FROM netbox_sync.sync_runs s')==history
 assert run([*command,'ps','-q','postgres'])==pg
-assert run(['docker','inspect',pg,'--format','{{json .Mounts}}'])==mounts
+assert sorted(json.loads(run(['docker','inspect',pg,'--format','{{json .Mounts}}'])),key=lambda item:item['Destination'])==mounts
 for path,digest in before.items():
     if path.startswith('secrets/'):
         assert hashlib.sha256((root/path).read_bytes()).digest()==digest

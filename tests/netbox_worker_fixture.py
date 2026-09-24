@@ -9,7 +9,7 @@ import time
 from wsgiref.simple_server import WSGIServer, WSGIRequestHandler
 
 
-def exercise(context,application,certfile,source,cluster,instance,token):
+def exercise(context,application,certfile,source,cluster,instance,token,direct_url,catalog_slug,vrfs):
     assert Path('/.dockerenv').is_file() and os.environ.get('NETBOX_SYNC_GUARD_WORKER_TEST')=='1'
     root=Path('/fixture')
     for name,mode in (('bridge',0o755),('worker',0o755),('config',0o700),('ca',0o755)):
@@ -34,9 +34,9 @@ def exercise(context,application,certfile,source,cluster,instance,token):
     (root/'bridge/netbox.sock').chmod(0o666)
     server.socket=context.wrap_socket(server.socket,server_side=True)
     thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
-    (root/'bridge/ready.json').write_text(json.dumps({'guard_instance':instance,'source':source,'cluster':cluster}))
+    (root/'bridge/ready.json').write_text(json.dumps({'guard_instance':instance,'source':source,'cluster':cluster,'direct_url':direct_url,'catalog_slug':catalog_slug,'vrfs':vrfs}))
     try:
-        deadline=time.monotonic()+120
+        deadline=time.monotonic()+240
         while not (root/'bridge/done.json').exists():
             if time.monotonic()>deadline:raise AssertionError('isolated worker gate did not finish')
             time.sleep(.1)

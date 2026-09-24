@@ -5,7 +5,7 @@ import sys
 from urllib.parse import urlencode,urlsplit
 import requests
 from .api.egress import EgressPolicy,pinned_dns
-from .bootstrap_probe import fetch,ProbeError
+from .bootstrap_probe import fetch,ProbeError,ObjectNotVisible
 from .netbox_tls import configure_session
 
 ENDPOINTS={'manufacturer':'dcim/manufacturers','site':'dcim/sites','cluster':'virtualization/clusters','platform':'dcim/platforms',
@@ -89,9 +89,17 @@ def query(value,session_factory=requests.Session):
                 payload={**payload,'site_id':site_id,'cluster_id':clusters[0].get('id')}
             if any(type(payload[k]) is not int or payload[k]<=0 for k in ('site_id','cluster_id')):
                 raise ProbeError('RESPONSE_INVALID')
+            placement_unavailable=False
+            try: cluster=get('cluster',str(payload['cluster_id'])+'/')
+            except ProbeError as exc:
+                if not isinstance(exc,ObjectNotVisible) or action!='recovery-evidence':raise
+                # A 404 may also mean scoped permissions. Never claim deletion.
+                # Restoring the same source changes no NetBox ownership/placement.
+                cluster={};placement_unavailable=True
             result=assess(payload['source_instance'],payload['host_uuid'],payload['site_id'],
-                payload['cluster_id'],get('cluster',str(payload['cluster_id'])+'/'),
-                inventory('dcim/devices'),inventory('virtualization/virtual-machines'),require_host=action=='identity-evidence')
+                payload['cluster_id'],cluster,
+                inventory('dcim/devices'),inventory('virtualization/virtual-machines'),require_host=action=='identity-evidence',
+                placement_unavailable=placement_unavailable)
             if configured:
                 result['configured_target']=configured
                 # Chain the inventory digest: object provenance may change while

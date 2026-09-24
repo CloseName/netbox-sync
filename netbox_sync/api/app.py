@@ -86,11 +86,19 @@ def _install_boundaries(app, settings, auth_client):
     @app.exception_handler(LifecycleRequestError)
     async def lifecycle_error(request, exc):
         messages = {
+            'RUN_RECONCILIATION_UNAVAILABLE': (409, 'Run evidence is incomplete or exceeds the bounded review; no baseline decision was recorded'),
             'SOURCE_RETIREMENT_REVIEW_REQUIRED': (409, 'Review the owned NetBox objects before confirming source removal'),
             'SOURCE_RETIREMENT_PENDING': (409, 'Source retirement is awaiting its original receipt; do not start another write'),
             'RETIREMENT_UNAVAILABLE': (503, 'The configured NetBox guard is unavailable or its installation identity is unverified'),
             'RETIREMENT_CONFLICT': (409, 'The retirement evidence changed; review the current operation'),
             'RETIREMENT_BLOCKED': (409, 'Retirement was refused; shared, manual or unproven objects must be reviewed'),
+            'RETIREMENT_PERMISSION_DENIED': (403, 'NetBox refused the guard service account; review its narrowly scoped permissions'),
+            'RETIREMENT_OWNERSHIP_UNPROVEN': (409, 'Creation ownership is not proved; no deletion is authorized by identity alone'),
+            'RETIREMENT_OWNERSHIP_CONFLICT': (409, 'Object ownership conflicts with this source'),
+            'RETIREMENT_DEPENDENCIES_CHANGED': (409, 'Object generation, placement or dependencies changed; review again'),
+            'RETIREMENT_MANUAL_CHANGE': (409, 'Manual field changes require review; no deletion was confirmed'),
+            'RETIREMENT_PROTECTED_DEPENDENCY': (409, 'A protected dependency must be resolved in NetBox before a new review'),
+            'RETIREMENT_GUARD_CHANGED': (409, 'The pinned NetBox guard installation or protocol differs'),
             'RETIREMENT_UNCERTAIN': (409, 'Retirement outcome is not confirmed; check the original receipt'),
             'SOURCE_RECOVERY_NOT_REMOVED': (409, 'This source is active; open its existing page'),
             'SOURCE_IDENTITY_UNSUPPORTED': (409, 'This provider has no supported legacy hardware identity verification'),
@@ -154,6 +162,10 @@ def _install_boundaries(app, settings, auth_client):
             'SOURCE_UNSUPPORTED': (422, 'Source type is unsupported'),
             'SOURCE_DNS_FAILED': (422, 'Source hostname could not be resolved'),
             'SOURCE_AUTH_FAILED': (422, 'Source authentication failed'),
+            'SOURCE_PERMISSION_DENIED': (422, 'The source denied inventory access. Grant the service account read access at the ESXi host root, including children; keep lockdown enabled.'),
+            'HOST_IDENTITY_MISSING': (422, 'ESXi returned no hardware UUID in either host summary or hardware data. Verify SMBIOS system UUID and inventory visibility with the ESXi administrator; names and IP addresses cannot replace it.'),
+            'HOST_IDENTITY_INVALID': (422, 'ESXi returned an invalid or placeholder hardware UUID. Verify SMBIOS system identity on the host before retrying.'),
+            'HOST_INVENTORY_EMPTY': (422, 'No ESXi host is visible to this account. Verify host-root read permissions and lockdown account access.'),
             'SOURCE_TLS_FAILED': (422, 'Source TLS verification failed'),
             'SOURCE_TIMEOUT': (504, 'Source connection timed out'),
             'SOURCE_DESTINATION_DENIED': (422, 'Source destination is not permitted'),
@@ -653,9 +665,10 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         from dataclasses import replace
         mapping={}
         fingerprint=request.intent_fingerprint()
+        durable_request=request.durable_request()
         def bind_intent():
             return onboarding_service.registration_intent(request.command(),request.registration_id,
-                http.state.principal['principal_id'],fingerprint)
+                http.state.principal['principal_id'],fingerprint,durable_request)
         # Reserve before catalog POSTs or filesystem credentials. The actor/nonce
         # binding survives response loss and cannot be claimed by another request.
         auth_client.call('receipt.check', session=http.cookies.get(COOKIE), receipt=request.onboarding_token)
@@ -663,6 +676,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
                                                       http.state.principal['principal_id'])
         with onboarding_service.registration_guard(request.command(), request.registration_id,
                                                     http.state.principal['principal_id']):
+            bind_intent()
             if request.automatic_placement:
                 from .catalog import call
                 auth_client.call('receipt.check',session=http.cookies.get(COOKIE),receipt=request.onboarding_token)
@@ -739,6 +753,10 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
                     # delete it on registry/secret/receipt failure or claim no writes.
                     raise OnboardingError(ErrorCode.REGISTRATION_CLUSTER_RETAINED) from None
                 raise
+
+    @router.get('/registration-attempts')
+    def pending_registrations(http: Request):
+        return {'attempts':onboarding_service.pending_registrations(http.state.principal['principal_id'])}
 
     @router.post('/sources/registration-status')
     def registration_status(request: RegistrationStatusRequest, http: Request):

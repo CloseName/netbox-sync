@@ -6,6 +6,7 @@ from .local_control import ControlError
 from .source_lifecycle import LifecycleError
 from .source_operations import source_gate
 from .retirement_journal import RetirementJournal
+from .retirement_codes import DEFINITE_REFUSALS
 
 
 class RetirementCoordinator:
@@ -20,6 +21,16 @@ class RetirementCoordinator:
             'state':record['state'],'digest':remote['digest'],'revision':record['revision'],
             'guard_instance':str(record['guard_instance']),'manifest':remote['manifest'],
             'safe_code':record.get('safe_code'),'remove_credentials':record.get('remove_credentials')}
+
+    def retained_context(self,source):
+        current=self.store.read(source)
+        if not current.get('removed_at'):raise LifecycleError('SOURCE_RECOVERY_NOT_REMOVED')
+        with self.store.connect() as connection:
+            row=self.journal._row(connection,source)
+            # This is a review capability only. Execute repeats revision, source,
+            # uncertainty and generation checks under the shared lock.
+            return {**current,'revision':self.store.revision(row),
+                    'retirement':self.store._retirement_hint(connection,source) or current.get('retirement')}
 
     def status(self,source,operation,actor):
         with self.store.connect() as connection:
@@ -74,7 +85,7 @@ class RetirementCoordinator:
                         return self.status(source,operation,actor)
                     record=self.journal.resolve(source,operation,actor,result['guard_instance'],result['result'])
                 except ControlError as exc:
-                    if dispatch and exc.code=='RETIREMENT_BLOCKED':self.journal.blocked(source,operation,actor)
+                    if dispatch and exc.code in DEFINITE_REFUSALS:self.journal.blocked(source,operation,actor,exc.code)
                     else:self.journal.uncertain(source,operation,actor)
                     return self.status(source,operation,actor)
             with self.store.connect() as connection,source_gate(connection,self.store.schema,source,allow_retirement=True):

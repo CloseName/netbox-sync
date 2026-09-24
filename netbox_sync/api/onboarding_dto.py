@@ -132,16 +132,19 @@ class RegistrationRequest(PublicModel):
             raise ValueError('Invalid source metadata') from None
         return self
 
-    def intent_fingerprint(self):
+    def durable_request(self):
         """Only the digest leaves this boundary; credentials are excluded by DTO."""
-        import hashlib,json
         from ..source_config import source_port
         value=self.model_dump(mode='json',exclude={'onboarding_token'})
         value['address']=value['address'].lower().rstrip('.')
         value['port']=source_port(self.source_type,self.port)
         value['references']={k:{'id':v.get('id')} for k,v in self.references.items()}
         value['host_types']={k:{'id':v.get('id')} for k,v in self.host_types.items()}
-        return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        return value
+
+    def intent_fingerprint(self):
+        import hashlib,json
+        return hashlib.sha256(json.dumps(self.durable_request(),sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
     def command(self):
         """Translate explicitly to application command, retaining no transport dependency."""

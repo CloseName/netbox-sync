@@ -1,4 +1,5 @@
 """Narrow lifecycle capability for reviewed placement; no NetBox or secret access."""
+from .run_gates import blocking_runs
 from psycopg import sql
 from psycopg.types.json import Jsonb
 from .source_lifecycle import LifecycleError
@@ -53,7 +54,7 @@ def save(store,source,revision,discovery_id,mapping):
             if store.revision(current)!=revision:raise LifecycleError('SOURCE_LIFECYCLE_CONFLICT')
             if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status='RUNNING'").format(store.table('source_operations')),(source,)).fetchone():
                 raise LifecycleError('SOURCE_OPERATION_ACTIVE')
-            if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')").format(store.table('sync_runs')),(source,)).fetchone():
+            if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')").format(blocking_runs(connection,store.schema)),(source,)).fetchone():
                 raise LifecycleError('SOURCE_APPLY_UNCONFIRMED')
             identifier,hosts=evidence(store,connection,source)
             if identifier!=discovery_id:raise LifecycleError('SOURCE_LIFECYCLE_CONFLICT')

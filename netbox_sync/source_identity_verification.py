@@ -3,6 +3,7 @@
 No object adoption, source activation, address change or credential operation.
 """
 from uuid import UUID
+from .run_gates import blocking_runs
 from psycopg import sql
 from psycopg.types.json import Jsonb
 from .host_registration import legacy_anchor,esxi_anchor,HostRegistrationConflict
@@ -56,7 +57,7 @@ class IdentityVerification:
                     raise LifecycleError('SOURCE_LIFECYCLE_CONFLICT')
                 if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status='RUNNING'").format(self.store.table('source_operations')),(source,)).fetchone():
                     raise LifecycleError('SOURCE_OPERATION_ACTIVE')
-                if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')").format(self.store.table('sync_runs')),(source,)).fetchone():
+                if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')").format(blocking_runs(connection,self.store.schema)),(source,)).fetchone():
                     raise LifecycleError('SOURCE_APPLY_UNCONFIRMED')
                 if (not isinstance(proof,dict) or proof.get('source_instance')!=source
                     or proof.get('host_uuid')!=meta['host_uuid'] or proof.get('blockers')!=[]

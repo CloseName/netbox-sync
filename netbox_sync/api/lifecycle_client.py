@@ -37,7 +37,7 @@ class LifecycleClient:
 
     def retirement(self,action,source,**payload):
         from ..local_control import request,ControlError
-        if action not in {'review','execute','resume','status'}:raise LifecycleRequestError('REQUEST_INVALID')
+        if action not in {'context','review','execute','resume','status'}:raise LifecycleRequestError('REQUEST_INVALID')
         try:
             value=request(self.path,{'action':'retirement_'+action,'source_instance':source,**payload},
                           timeout=60,response_limit=2*1024*1024)['result']
@@ -45,6 +45,13 @@ class LifecycleClient:
             return value
         except ControlError as exc:raise LifecycleRequestError(exc.code) from None
         except Exception:raise LifecycleRequestError('RETIREMENT_UNAVAILABLE') from None
+
+    def reconciliation(self,action,source,**payload):
+        from ..local_control import request,ControlError
+        if action not in {'review','confirm'}:raise LifecycleRequestError('REQUEST_INVALID')
+        try:return request(self.path,{'action':'run_reconciliation_'+action,'source_instance':source,**payload},timeout=60,response_limit=2*1024*1024)['result']
+        except ControlError as exc:raise LifecycleRequestError(exc.code) from None
+        except Exception:raise LifecycleRequestError('LIFECYCLE_UNAVAILABLE') from None
 
     def identity(self,action,source,**payload):
         from ..local_control import request,ControlError
@@ -56,10 +63,10 @@ class LifecycleClient:
 
     def recovery(self, action, source, **payload):
         from ..local_control import request,ControlError
-        if action not in {'describe','prepare','credentials','complete','abandon','status'}:
+        if action not in {'inventory','records','retired_evidence','describe','prepare','credentials','complete','abandon','status'}:
             raise LifecycleRequestError('REQUEST_INVALID')
         try:
-            return request(self.path,{'action':'recovery_'+action,'source_instance':source,**payload},timeout=15)['result']
+            return request(self.path,{'action':'recovery_'+action,'source_instance':source,**payload},timeout=100,response_limit=2*1024*1024)['result']
         except ControlError as exc:raise LifecycleRequestError(exc.code) from None
         except Exception:raise LifecycleRequestError('LIFECYCLE_UNAVAILABLE') from None
 

@@ -5,6 +5,7 @@ Neither credentials nor arbitrary filesystem paths are accepted here.
 """
 import re
 from uuid import UUID
+from .run_gates import blocking_runs
 from psycopg import sql
 from psycopg.types.json import Jsonb
 from .host_registration import legacy_anchor,identity_placement
@@ -13,8 +14,50 @@ from .source_operations import source_gate
 
 
 class Recovery:
-    def __init__(self, store):
+    def __init__(self, store, remote=None):
         self.store=store
+        self.remote=remote
+
+    def inventory(self,source,operation):
+        # Narrow Admin view for retained/orphan ownership reconciliation. Native
+        # NetBox view/guard permissions apply; absence is never deletion consent.
+        if self.remote is None:raise LifecycleError('RETIREMENT_UNAVAILABLE')
+        operation=UUID(str(operation))
+        with self.store.lock(self.store.lock_path):
+            with self.store.connect() as connection:self._row(connection,source)
+            return self.remote.call('audit',operation,source_instance=source)['result']
+
+    def records(self,source):
+        """Admin comparison of recorded identity, not a physical equality claim.
+
+        Tombstones/reservations and run history are deliberately retained. The
+        existing recovery review proves NetBox ownership separately before any
+        activation; this method neither chooses a winner nor changes a reserve.
+        """
+        with self.store.connect() as connection:
+            selected=self._row(connection,source)
+            anchor=legacy_anchor(selected['settings'])
+            rows=connection.execute(sql.SQL('SELECT s.*,t.removed_at,t.restored_at FROM {} s LEFT JOIN {} t USING(source_instance) WHERE s.source_type=%s ORDER BY s.source_instance LIMIT 10001').format(
+                self.store.table('sources'),self.store.table('source_tombstones')),(selected['source_type'],)).fetchall()
+            if len(rows)>10000:raise LifecycleError('SOURCE_RECOVERY_IDENTITY_REVIEW')
+            matching=[row for row in rows if row['source_instance']==source or anchor and legacy_anchor(row['settings'])==anchor]
+            if len(matching)>100:raise LifecycleError('SOURCE_RECOVERY_IDENTITY_REVIEW')
+            result=[]
+            for row in matching:
+                identifier=row['source_instance']
+                runs=connection.execute(sql.SQL('SELECT run_id,status,started_at,finished_at FROM {} WHERE source_instance=%s ORDER BY started_at DESC LIMIT 5').format(self.store.table('sync_runs')),(identifier,)).fetchall()
+                operations=connection.execute(sql.SQL("SELECT operation_id,operation_kind,status FROM {} WHERE source_instance=%s AND status='RUNNING' ORDER BY operation_id LIMIT 100").format(self.store.table('source_operations')),(identifier,)).fetchall()
+                unresolved=connection.execute(sql.SQL("SELECT count(*) AS count FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')").format(blocking_runs(connection,self.store.schema)),(identifier,)).fetchone()['count']
+                site,cluster=identity_placement(row['settings'])
+                result.append(dict(source_instance=identifier,name=row['name'],address=row['address'],
+                    host_uuid=legacy_anchor(row['settings']),site_id=site,cluster_id=cluster,
+                    state='REMOVED' if row['removed_at'] and not row['restored_at'] else 'REGISTERED',
+                    enabled=row['enabled'],schedule_enabled=row['sync_enabled'],unresolved_runs=unresolved,
+                    removed_at=row['removed_at'].isoformat() if row['removed_at'] else None,
+                    runs=[{**run,'run_id':str(run['run_id']),'started_at':run['started_at'].isoformat(),
+                           'finished_at':run['finished_at'].isoformat() if run['finished_at'] else None} for run in runs],
+                    operations=[{**op,'operation_id':str(op['operation_id'])} for op in operations]))
+            return dict(sources=result,comparison='RECORDED_IDENTITY_ONLY',history_retained=True)
 
     def describe(self, source, actor):
         with self.store.connect() as connection,source_gate(connection,self.store.schema,source):
@@ -29,7 +72,40 @@ class Recovery:
                 self.store.table('source_recoveries')), (source,actor)).fetchone()
             return {'source_instance':source,'name':row['name'],'revision':self.store.revision(row),
                     'pending_operation':str(pending['operation_id']) if pending else None,
-                    'host_uuid':legacy_anchor(row['settings']),'site_id':site,'cluster_id':cluster}
+                    'host_uuid':legacy_anchor(row['settings']),'site_id':site,'cluster_id':cluster,
+                    'completed_retirement':self._retired(connection,source) is not None}
+
+    def _retired(self, connection, source):
+        return connection.execute(sql.SQL("SELECT r.* FROM {} r JOIN {} t ON t.source_instance=r.source_instance WHERE r.source_instance=%s AND r.state='FINALIZED' AND t.restored_at IS NULL AND r.finished_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM {} c WHERE c.source_instance=r.source_instance AND c.state='RESTORED' AND c.finished_at>=r.finished_at) ORDER BY r.finished_at DESC LIMIT 1").format(
+            self.store.table('source_retirements'),self.store.table('source_tombstones'),self.store.table('source_recoveries')),(source,)).fetchone()
+
+    def retired_evidence(self, source, operation):
+        """Confirm an already completed retirement before restoring its namespace.
+
+        Placement is repaired separately with fresh provider evidence; absence of
+        a cluster cannot be interpreted as a new registration or new ownership.
+        """
+        from .netbox_catalog import fingerprint
+        if self.remote is None:raise LifecycleError('RETIREMENT_UNAVAILABLE')
+        with self.store.lock(self.store.lock_path):
+            with self.store.connect() as connection,source_gate(connection,self.store.schema,source):
+                row=self._row(connection,source);retired=self._retired(connection,source)
+                if retired is None:raise LifecycleError('SOURCE_RECOVERY_IDENTITY_REVIEW')
+                site,cluster=identity_placement(row['settings'])
+            receipt=self.remote.call('receipt',retired['operation_id'])
+            if (str(receipt['guard_instance'])!=str(retired['guard_instance']) or receipt['result']!=retired['receipt']
+                    or receipt['result'].get('status')!='SUCCEEDED'):
+                raise LifecycleError('SOURCE_RECOVERY_EVIDENCE_CHANGED')
+            observed=self.remote.call('audit',operation,source_instance=source)
+            if str(observed['guard_instance'])!=str(retired['guard_instance']):
+                raise LifecycleError('SOURCE_RECOVERY_EVIDENCE_CHANGED')
+            objects=observed['result']['objects']
+            result=dict(source_instance=source,host_uuid=legacy_anchor(row['settings']),site_id=site,cluster_id=cluster,
+                mode='RETIRED_EMPTY',retirement_id=str(retired['operation_id']),guard_instance=str(retired['guard_instance']),
+                owned=[],retained_manual=[],blockers=['RETIRED_OBJECTS_PRESENT'] if any(item['present'] for item in objects) else [],
+                inventory_digest=observed['result']['digest'],placement_requires_review=True)
+            result['digest']=fingerprint(result)
+            return result
 
     def _row(self, connection, source):
         row=connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s').format(
@@ -47,7 +123,7 @@ class Recovery:
                 self.store.table('source_operations')), (source,)).fetchone():
             raise LifecycleError('SOURCE_OPERATION_ACTIVE')
         if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')").format(
-                self.store.table('sync_runs')), (source,)).fetchone():
+                blocking_runs(connection,self.store.schema)), (source,)).fetchone():
             raise LifecycleError('SOURCE_APPLY_UNCONFIRMED')
         site,cluster=identity_placement(row['settings'])
         anchor=legacy_anchor(row['settings'])
@@ -57,9 +133,15 @@ class Recovery:
                 or proof.get('site_id')!=site
                 or proof.get('cluster_id')!=cluster):
             raise LifecycleError('SOURCE_RECOVERY_IDENTITY_REVIEW')
-        others=connection.execute(sql.SQL("SELECT settings FROM {} WHERE source_type='esxi' AND enabled=true AND source_instance<>%s").format(
-            self.store.table('sources')), (source,)).fetchall()
-        if any(legacy_anchor(other['settings'])==anchor for other in others):
+        if proof.get('mode')=='RETIRED_EMPTY':
+            retired=self._retired(connection,source)
+            if (retired is None or proof.get('retirement_id')!=str(retired['operation_id'])
+                    or proof.get('guard_instance')!=str(retired['guard_instance'])
+                    or proof.get('owned')!=[] or proof.get('retained_manual')!=[]):
+                raise LifecycleError('SOURCE_RECOVERY_EVIDENCE_CHANGED')
+        others=connection.execute(sql.SQL("SELECT settings FROM {} s WHERE source_type='esxi' AND source_instance<>%s AND NOT EXISTS (SELECT 1 FROM {} t WHERE t.source_instance=s.source_instance AND t.restored_at IS NULL)").format(
+            self.store.table('sources'),self.store.table('source_tombstones')), (source,)).fetchall()
+        if any(legacy_anchor(other['settings']) in (None,anchor) for other in others):
             raise LifecycleError('SOURCE_RECOVERY_IDENTITY_CONFLICT')
         return removed
 

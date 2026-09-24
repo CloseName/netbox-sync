@@ -30,6 +30,8 @@ def classify(exc):
         return ErrorCode.SOURCE_TIMEOUT
     if isinstance(exc, ssl.SSLError):
         return ErrorCode.SOURCE_TLS_FAILED
+    if isinstance(exc, PermissionError) or type(exc).__name__ in ('NoPermission', 'vim.fault.NoPermission'):
+        return ErrorCode.SOURCE_PERMISSION_DENIED
     if type(exc).__name__ in ('InvalidLogin', 'vim.fault.InvalidLogin'):
         return ErrorCode.SOURCE_AUTH_FAILED
     return ErrorCode.SOURCE_CONNECTION_FAILED
@@ -155,7 +157,7 @@ def run_connection_test(credentials, policy=None, popen=subprocess.Popen, *, chi
                 code = ErrorCode(result.get('error'))
                 if code not in (ErrorCode.SOURCE_DNS_FAILED, ErrorCode.SOURCE_TIMEOUT, ErrorCode.SOURCE_TLS_FAILED,
                                 ErrorCode.SOURCE_AUTH_FAILED, ErrorCode.SOURCE_DESTINATION_DENIED,
-                                ErrorCode.SOURCE_CONNECTION_FAILED):
+                                ErrorCode.SOURCE_CONNECTION_FAILED, ErrorCode.SOURCE_PERMISSION_DENIED, ErrorCode.HOST_IDENTITY_MISSING, ErrorCode.HOST_IDENTITY_INVALID, ErrorCode.HOST_INVENTORY_EMPTY):
                     raise ValueError('Invalid probe result')
                 raise OnboardingError(code)
     except OnboardingError:

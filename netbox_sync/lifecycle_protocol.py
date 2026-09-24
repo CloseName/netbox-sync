@@ -17,10 +17,22 @@ def handle_lifecycle(lifecycle, secrets, request, retirement=None):
     if lifecycle is None:
         raise LifecycleError('LIFECYCLE_UNAVAILABLE')
     try:
-        if request.get('action') in {'retirement_review','retirement_execute','retirement_resume','retirement_status'}:
+        if request.get('action') in {'run_reconciliation_review','run_reconciliation_confirm'}:
+            from .run_reconciliation import RunReconciliation
+            if retirement is None:raise LifecycleError('RETIREMENT_UNAVAILABLE')
+            recovery=RunReconciliation(lifecycle,retirement.remote)
+            base={'action','source_instance','operation_id'}
+            if request['action']=='run_reconciliation_review' and set(request)==base:
+                return recovery.review(source,request['operation_id'])
+            if request['action']=='run_reconciliation_confirm' and set(request)==base|{'actor_id','digest','acknowledgements'}:
+                return recovery.confirm(source,request['operation_id'],request['actor_id'],request['digest'],request['acknowledgements'])
+            raise LifecycleError('REQUEST_INVALID')
+        if request.get('action') in {'retirement_context','retirement_review','retirement_execute','retirement_resume','retirement_status'}:
             if retirement is None:raise LifecycleError('RETIREMENT_UNAVAILABLE')
             actor=request.get('actor_id')
             if not isinstance(actor,str) or not actor or len(actor)>200:raise LifecycleError('REQUEST_INVALID')
+            if request['action']=='retirement_context' and set(request)=={'action','source_instance','actor_id'}:
+                return retirement.retained_context(source)
             base={'action','source_instance','operation_id','actor_id'}
             if request['action']=='retirement_review' and set(request)==base|{'revision'}:
                 return retirement.review(source,request['operation_id'],actor,request['revision'])
@@ -37,13 +49,19 @@ def handle_lifecycle(lifecycle, secrets, request, retirement=None):
             if request['action']=='identity_confirm' and set(request)=={'action','source_instance','actor_id','revision','discovery_id','proof'}:
                 return verification.confirm(source,request['actor_id'],request['revision'],request['discovery_id'],request['proof'])
             raise LifecycleError('REQUEST_INVALID')
-        if request.get('action') in {'recovery_describe','recovery_prepare','recovery_credentials','recovery_complete','recovery_abandon','recovery_status'}:
+        if request.get('action') in {'recovery_inventory','recovery_records','recovery_retired_evidence','recovery_describe','recovery_prepare','recovery_credentials','recovery_complete','recovery_abandon','recovery_status'}:
             from .source_recovery import Recovery
-            recovery=Recovery(lifecycle)
+            recovery=Recovery(lifecycle,retirement.remote if retirement else None)
             action=request['action']
+            if action=='recovery_inventory' and set(request)=={'action','source_instance','operation_id'}:
+                return recovery.inventory(source,request['operation_id'])
+            if action=='recovery_records' and set(request)=={'action','source_instance'}:
+                return recovery.records(source)
             if action=='recovery_describe' and set(request)=={'action','source_instance','actor_id'}:
                 return recovery.describe(source,request['actor_id'])
             base={'action','source_instance','operation_id','actor_id'}
+            if action=='recovery_retired_evidence' and set(request)=={'action','source_instance','operation_id'}:
+                return recovery.retired_evidence(source,request['operation_id'])
             if action=='recovery_prepare' and set(request)==base|{'revision','proof'}:
                 return recovery.prepare(source,request['operation_id'],request['actor_id'],request['revision'],request['proof'])
             if action=='recovery_status' and set(request)==base:

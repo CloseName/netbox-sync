@@ -7,6 +7,7 @@ from enum import Enum
 from uuid import UUID, uuid4
 
 import psycopg
+from .run_gates import blocking_runs
 from psycopg import sql
 from psycopg.rows import dict_row
 
@@ -140,7 +141,17 @@ class RunRepository:
     def reconciliation_required(self, source_instance):
         """Do not infer safety from the newest run or from zero action counters."""
         with self._connect() as connection:
-            return bool(connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status IN ('OUTCOME_UNCERTAIN','PARTIALLY_APPLIED') LIMIT 1").format(self._table()), (source_instance,)).fetchone())
+            return bool(connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status IN ('OUTCOME_UNCERTAIN','PARTIALLY_APPLIED') LIMIT 1").format(blocking_runs(connection,self.schema)), (source_instance,)).fetchone())
+
+    def scheduled_reconciliation_required(self, source_instance):
+        if self.reconciliation_required(source_instance):
+            return True
+        with self._connect() as connection:
+            present = connection.execute('SELECT to_regclass(%s)', (self.schema + '.recovery_schedule_blocks',)).fetchone()
+            if not present['to_regclass']:
+                return False  # No baseline decisions exist before this migration.
+            return bool(connection.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s').format(
+                sql.Identifier(self.schema, 'recovery_schedule_blocks')), (source_instance,)).fetchone())
 
     def _table(self):
         return sql.Identifier(self.schema, 'sync_runs')

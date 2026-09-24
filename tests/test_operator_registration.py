@@ -305,3 +305,19 @@ def test_automatic_registration_cannot_adopt_appeared_cluster_without_original_r
         assert response.status_code==(409 if proof=='missing' else 503),response.text
         assert response.json()['error']['code']==('CATALOG_SELECTION_REQUIRED' if proof=='missing' else 'REGISTRATION_UNCERTAIN')
         assert not registry.records and not secrets.values
+
+
+@pytest.mark.parametrize('role',['admin','operator','viewer'])
+def test_saved_attempts_read_uses_server_actor_and_permissions(monkeypatch,role):
+    policy,_,session=configured(role)
+    class Client:
+        def call(self,action,**payload):return policy.call(dict(action=action,**payload))
+    onboarding,_,_=service();seen=[]
+    monkeypatch.setattr(onboarding,'pending_registrations',lambda actor:(seen.append(actor) or []))
+    with TestClient(create_app(settings=ApiSettings(bootstrap_socket=''),auth_client=Client(),onboarding_service=onboarding),base_url='https://localhost:8000') as http:
+        http.cookies.set(COOKIE,session)
+        result=http.get('/api/v1/registration-attempts?actor_id=forged')
+    if role=='viewer':assert result.status_code==403 and not seen
+    else:
+        assert result.status_code==200 and result.json()=={'attempts':[]}
+        assert seen==[policy.call(dict(action='authorize',session=session))['principal_id']]

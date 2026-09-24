@@ -35,7 +35,10 @@ def esxi(content):
         elif isinstance(entity, vim.Datacenter): nodes.append(entity.hostFolder)
         elif isinstance(entity, vim.ComputeResource): nodes.extend(entity.host)
         elif isinstance(entity, vim.Folder): nodes.extend(entity.childEntity)
-    if not hosts: raise ValueError('No visible hosts')
+    if not hosts:
+        from .application.onboarding import OnboardingError
+        from .application.observability import ErrorCode
+        raise OnboardingError(ErrorCode.HOST_INVENTORY_EMPTY)
     return dict(provider='esxi',name=hosts[0]['name'] if len(hosts)==1 else None,cluster=None,hosts=hosts)
 
 def _host_external_id_summary(host,summary):
@@ -45,7 +48,14 @@ def _host_external_id_summary(host,summary):
         return candidate
     # Match the hardware UUID already used by Discovery. Read once per host;
     # permission/transport errors must propagate rather than inventing identity.
-    return _validated_host_hardware_uuid(_value(host,'hardware.systemInfo.uuid')) or str(host._moId)
+    hardware = _value(host, 'hardware.systemInfo.uuid')
+    candidate = _validated_host_hardware_uuid(hardware)
+    if candidate is not None:
+        return candidate
+    from .application.onboarding import OnboardingError
+    from .application.observability import ErrorCode
+    missing = all(value is None or value == '' for value in (_value(summary, 'hardware.uuid'), hardware))
+    raise OnboardingError(ErrorCode.HOST_IDENTITY_MISSING if missing else ErrorCode.HOST_IDENTITY_INVALID)
 
 def proxmox(credentials,host,context,getter):
     headers={'Authorization':f'PVEAPIToken={credentials.username}!{credentials.token_id}={credentials.secret}'}

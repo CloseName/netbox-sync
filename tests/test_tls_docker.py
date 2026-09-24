@@ -8,6 +8,7 @@ import uuid
 import pytest
 import requests
 from netbox_sync.api.egress import pinned_dns
+from netbox_sync.prerequisites import FIELDS
 
 pytestmark=pytest.mark.skipif(os.environ.get('NETBOX_SYNC_TLS_DOCKER_TEST')!='1',reason='Opt-in disposable TLS Docker smoke')
 ROOT=Path(__file__).parents[1]
@@ -180,7 +181,8 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
         validated=request('POST','/api/v1/bootstrap/validate',headers=headers,json={'revision':1})
         assert validated.status_code==200 and validated.json()['safe_code']=='PREREQUISITES_MISSING',validated.text
         plan=request('POST','/api/v1/bootstrap/prerequisites-plan',headers=headers,json={'revision':1}).json()['preparation']
-        assert len(plan['fields'])==16 and all(f['status']=='missing' for f in plan['fields'])
+        assert [field['name'] for field in plan['fields']]==list(FIELDS)
+        assert all(field['status']=='missing' for field in plan['fields'])
         operation={'revision':1,'digest':plan['digest'],'confirm':True,'setup_token':'nbt_ABCDEFGHIJKL.SETUPSECRET'}
         from concurrent.futures import ThreadPoolExecutor
         # Two real HTTP callers, one durable execution fence.
@@ -198,7 +200,6 @@ def test_public_https_and_private_ca_bootstrap(tmp_path,ingress_mode):
         if ingress_mode!='standalone':
             assert result['status']==('CONFLICT' if ingress_mode=='corporate' else 'WAITING')
             assert result['uncertain'] is None
-            from netbox_sync.prerequisites import FIELDS
             observed=json.loads(docker('exec',netbox,'cat','/tmp/observed-posts.json'))
             assert observed==list(FIELDS)[:3],observed
             assert result['fields'][3]['status']==('conflict' if ingress_mode=='corporate' else 'provisioning')

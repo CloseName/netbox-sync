@@ -57,7 +57,7 @@ class Repository:
         assert trigger == 'scheduled'
         return self.running if status == 'RUNNING' else self.scheduled
 
-    def reconciliation_required(self, source_instance):
+    def scheduled_reconciliation_required(self, source_instance):
         return False
 
     def start_run(self, instance, source_type, trigger, created_by):

@@ -53,7 +53,7 @@ def test_clean_bootstrap_migrate_grants_and_idempotency(tmp_path):
     with psycopg.connect(deployment.connection_info('bootstrap', env)) as connection:
         with connection.cursor() as cursor:
             cursor.execute("SELECT version_num FROM netbox_sync.alembic_version")
-            assert cursor.fetchone() == ('0010_source_retirements',)
+            assert cursor.fetchone() == ('0012_run_reconciliation',)
             cursor.execute("SELECT count(*) FROM netbox_sync.sources")
             assert cursor.fetchone() == (0,)
             cursor.execute("SELECT rolname FROM pg_roles WHERE rolname = ANY(%s)",
@@ -281,3 +281,20 @@ def test_retirement_grants_and_apply_gate_are_column_limited(tmp_path):
     from netbox_sync.source_operations import source_gate
     with psycopg.connect(deployment.connection_info('apply_registry_reader',env)) as connection:
         with source_gate(connection,'netbox_sync','isolated-absent-source'): pass
+
+
+def test_baseline_audit_is_append_only_and_gate_views_do_not_expose_it(tmp_path):
+    env=_environment(tmp_path)
+    deployment.bootstrap_roles(env);deployment.migrate(env);deployment.apply_grants(env)
+    with psycopg.connect(TEST_DSN) as connection:
+        for key,role in deployment.DATABASE_ROLES.items():
+            if key=='owner':continue
+            for privilege in ('SELECT','INSERT','UPDATE','DELETE','TRUNCATE'):
+                allowed=connection.execute('SELECT has_table_privilege(%s,%s,%s)',(role,'netbox_sync.run_reconciliations',privilege)).fetchone()[0]
+                assert allowed==(key=='lifecycle_writer' and privilege in ('SELECT','INSERT'))
+            for view in ('blocking_sync_runs','recovery_schedule_blocks'):
+                allowed=connection.execute('SELECT has_table_privilege(%s,%s,%s)',(role,'netbox_sync.'+view,'SELECT')).fetchone()[0]
+                assert allowed==(key in ('lifecycle_writer','run_writer'))
+    from netbox_sync.run_history import postgres_run_repository
+    runs=postgres_run_repository(deployment.connection_info('run_writer',env),'netbox_sync')
+    assert not runs.scheduled_reconciliation_required('isolated-absent-source')

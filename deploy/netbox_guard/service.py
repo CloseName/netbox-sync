@@ -55,6 +55,10 @@ def _scope(resource, obj):
 
 def _owners(obj, source):
     records = getattr(obj, 'custom_field_data', {}).get('sync_identities', [])
+    # NetBox fills optional JSON custom fields with null on newly created
+    # physical interfaces. Absence is not provenance; the exact creation claim
+    # and parent ownership checks below remain mandatory for retirement.
+    if records is None:records=[]
     if not isinstance(records, list):
         raise DependencyGuardBlocked('OWNERSHIP_CONFLICT')
     for record in records:
@@ -250,7 +254,7 @@ def retire(user, nonce, digest):
     actor = _permission(user, 'retire_retirementintent')
     intent = RetirementIntent.objects.get(nonce=UUID(str(nonce)))
     _permission(user, 'retire_retirementintent', intent)
-    if intent.actor != actor or intent.digest != digest:
+    if intent.manifest.get('format') != 1 or intent.actor != actor or intent.digest != digest:
         raise DependencyGuardBlocked('REQUEST_CONFLICT')
     def receipt():
         found = RetirementReceipt.objects.filter(intent=intent).first()
@@ -289,3 +293,46 @@ def retire(user, nonce, digest):
             if previous:
                 return previous
         raise
+
+
+def audit_source(user, nonce, source):
+    """Journal a scope-checked audit; never modify infrastructure objects.
+
+    Reuses the existing persisted-intent permission boundary. This audit intent
+    cannot be passed to either retirement executor.
+    """
+    from django.db.models import Q
+    _source(source)
+    actor = _permission(user, 'retire_retirementintent')
+    nonce = UUID(str(nonce))
+    with transaction.atomic():
+        intent, _created = RetirementIntent.objects.get_or_create(nonce=nonce, defaults={
+            'actor':actor, 'source_instance':source, 'manifest':{'format':3,'purpose':'AUDIT_ONLY'},
+            'digest':_digest([actor,source,{'format':3,'purpose':'AUDIT_ONLY'}])})
+        _permission(user, 'retire_retirementintent', intent)
+        if (intent.actor != actor or intent.source_instance != source or intent.manifest != {'format':3,'purpose':'AUDIT_ONLY'}):
+            raise DependencyGuardBlocked('REQUEST_CONFLICT')
+    user=type(user).objects.get(pk=user.pk)
+    rows=[]
+    with transaction.atomic():
+        claims=list(CreationClaim.objects.filter(source_instance=source).order_by('resource','object_id')[:10001])
+        if len(claims)>10000:raise DependencyGuardBlocked('DEPENDENCY_LIMIT')
+        indexed={(claim.resource,claim.object_id):claim for claim in claims}
+        seen=set()
+        for kind,label in MODELS.items():
+            model=apps.get_model(label)
+            objects=model.objects.filter(Q(pk__in=[claim.object_id for claim in claims if claim.resource==kind])|Q(custom_field_data__sync_identities__contains=[{'instance':source}])).order_by('pk')
+            for obj in objects[:10001]:
+                if not user.has_perm(f'{obj._meta.app_label}.view_{obj._meta.model_name}',obj):
+                    raise DependencyGuardBlocked('PERMISSION_DENIED')
+                seen.add((kind,obj.pk));claim=indexed.get((kind,obj.pk))
+                rows.append({'kind':kind,'id':obj.pk,'present':True,'claimed':bool(claim and claim.object_created==obj.created),
+                    'fingerprint':_digest({field.attname:getattr(obj,field.attname) for field in obj._meta.concrete_fields})})
+                if len(rows)>10000:raise DependencyGuardBlocked('DEPENDENCY_LIMIT')
+        for key,claim in indexed.items():
+            if key not in seen:rows.append({'kind':key[0],'id':key[1],'present':False,'claimed':True,'fingerprint':_digest(str(claim.object_created))})
+        if len(rows)>10000:raise DependencyGuardBlocked('DEPENDENCY_LIMIT')
+    result={'source_instance':source,'objects':sorted(rows,key=lambda row:(row['kind'],row['id'])),
+            'historical_outcome':'UNPROVED','legacy_unattributed_objects':'NOT_PROVEN'}
+    result['digest']=_digest(result)
+    return result

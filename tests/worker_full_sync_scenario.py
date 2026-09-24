@@ -172,32 +172,16 @@ config=s._source(sys.argv[1]);print(json.dumps(s._child(s._payload(config,'plan'
         assert legacy_plan['status']==200 and legacy_plan['body']['apply_allowed'],legacy_plan
         assert not [i for i in legacy_plan['body']['items'] if i['action'] in ('CREATE','UPDATE')],legacy_plan
         print('PASS legacy identity: fresh Discovery matches existing NetBox provenance; same source/credentials and zero-change plan',flush=True)
-        before_restore_counts=run(['docker','exec',peer,'python','-c',"import requests; print(requests.get('https://esxi.probe.test:8443/fixture/state',verify='/fixture/server.crt',timeout=5).text)"])
+        # Production retirement is mandatory now. A legacy direct removal must
+        # not bypass guard review or mutate registry/credentials/NetBox.
         before_history=request(None,'/api/v1/runs?source_instance='+sid,'GET')['body']
         life=request(None,base+'/lifecycle','GET')['body']
         removed=request(dict(revision=life['revision'],confirmed_source=life['display_name'],remove_credentials=True),base+'/remove')
-        assert removed['status']==200 and removed['body']['credential_state']=='REMOVED',removed
-        duplicate=request(dict(source_type='esxi',address='esxi.probe.test',port=8443,verify_ssl=True,
-            username='netbox-sync',secret=secret,preview=True))
-        assert duplicate['status']==409 and duplicate['body']['error']['code']=='HOST_SOURCE_REMOVED',duplicate
-        checked_restore=request(dict(source_type='esxi',address='esxi.probe.test',port=8443,verify_ssl=True,
-            username='netbox-sync',secret=secret,preview=True,recovery_source=sid))
-        assert checked_restore['status']==200,checked_restore
-        restore_token=checked_restore['body']['onboarding_token']
-        review_restore=request(dict(onboarding_token=restore_token),base+'/recovery-review')
-        assert review_restore['status']==200 and not review_restore['body']['proof']['blockers'],review_restore
-        assert len(review_restore['body']['proof']['owned'])==2,review_restore
-        restored=request(dict(onboarding_token=restore_token,operation_id=review_restore['body']['operation_id'],
-            digest=review_restore['body']['proof']['digest'],confirmed=True),base+'/recover')
-        assert restored['status']==200 and restored['body']['status']=='RESTORED',restored
-        restored_source=request(None,base,'GET')['body']
-        assert restored_source['source_instance']==sid and not restored_source['sync_enabled'],restored_source
+        assert removed['status']==409 and removed['body']['error']['code']=='SOURCE_RETIREMENT_REVIEW_REQUIRED',removed
         assert request(None,'/api/v1/runs?source_instance='+sid,'GET')['body']==before_history
-        assert run(['docker','exec',peer,'python','-c',"import requests; print(requests.get('https://esxi.probe.test:8443/fixture/state',verify='/fixture/server.crt',timeout=5).text)"])==before_restore_counts
-        restored_plan=request({},base+'/sync-plan')
-        assert restored_plan['status']==200 and restored_plan['body']['apply_allowed'],restored_plan
-        assert not [i for i in restored_plan['body']['items'] if i['action'] in ('CREATE','UPDATE')],restored_plan
-        print('PASS production ESXi sync/remove/recover: same source, NetBox IDs/data/history retained, new credentials usable, schedule OFF, zero-change plan',flush=True)
+        assert {p.name for p in (root/'secrets/sources').iterdir()}==pending_files
+        assert request(None,base+'/lifecycle','GET')['body']['removed_at'] is None
+        print('PASS production direct removal refuses before mutation; guard retirement/recovery has its separate real NetBox gate',flush=True)
 
     counts=json.loads(run(['docker','exec',peer,'python','-c',"import requests; print(requests.get('https://esxi.probe.test:8443/fixture/state',verify='/fixture/server.crt',timeout=5).text)"]))
     assert counts['invalid_virtual_requests']==0,counts

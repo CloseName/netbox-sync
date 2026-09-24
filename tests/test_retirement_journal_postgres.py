@@ -95,18 +95,19 @@ def test_wrong_remote_receipt_does_not_finalize(coordinator):
     assert service.store.read(source)['removed_at'] is None and remote.writes==1
 
 
-def test_confirmed_refusal_is_idempotent_and_does_not_dispatch_again(coordinator):
+@pytest.mark.parametrize('code',['RETIREMENT_BLOCKED','RETIREMENT_PERMISSION_DENIED','RETIREMENT_OWNERSHIP_UNPROVEN','RETIREMENT_DEPENDENCIES_CHANGED'])
+def test_confirmed_refusal_is_idempotent_and_does_not_dispatch_again(coordinator,code):
     service,_,_,remote,_=coordinator
     source,current,review=prepare(coordinator)
     original=remote.call
     def refused(action,operation,**values):
         if action=='execute':
             remote.writes+=1
-            raise ControlError('RETIREMENT_BLOCKED')
+            raise ControlError(code)
         return original(action,operation,**values)
     remote.call=refused
     result=execute(service,source,current,review)
-    assert result['state']=='BLOCKED'
+    assert result['state']=='BLOCKED' and result['safe_code']==code
     assert execute(service,source,current,review)==result and remote.writes==1
     assert service.store.read(source)['removed_at'] is None
 
@@ -157,3 +158,21 @@ def test_not_delivered_execute_requires_explicit_same_intent_resume(coordinator,
         assert result['state']=='FINALIZED' and remote.writes==1
         assert restarted.execute(source,review['operation_id'],'admin-fixture',review['digest'],current['display_name'],False,resume=True)==result
         assert remote.writes==1
+
+
+
+def test_retained_source_can_retire_proved_objects_without_reactivation_or_second_secret_cleanup(coordinator):
+    service,registry,config,remote,cleanups=coordinator
+    source=config.source_instance;original=service.store.read(source)
+    service.store.remove(source,original['revision'],original['display_name'],False,lambda _:pytest.fail('No cleanup'))
+    tombstone=service.store.read(source)
+    assert tombstone['revision'] is None
+    context=service.retained_context(source)
+    assert context['removed_at']==tombstone['removed_at'] and context['revision']
+    review=service.review(source,uuid4(),'admin-fixture',context['revision'])
+    done=execute(service,source,context,review)
+    assert done['state']=='FINALIZED' and remote.writes==1 and not cleanups
+    assert service.store.read(source)['removed_at']==tombstone['removed_at']
+    assert service.store.read(source)['credential_state']==tombstone['credential_state']
+    assert not registry.get_by_source_instance(source).config.enabled
+    assert execute(service,source,context,review)==done and remote.writes==1

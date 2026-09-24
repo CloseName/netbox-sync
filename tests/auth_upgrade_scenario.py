@@ -45,7 +45,7 @@ state=dict(format=1,revision=2,status='READY',completed=True,url='https://netbox
 for name,value in [('bootstrap.json',json.dumps(state)),('read-token',secrets.token_urlsafe(32)),('apply-token',secrets.token_urlsafe(32))]:
     path=root/'secrets/netbox'/name;path.write_text(value);path.chmod(0o600)
 def snapshot():return {str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).digest() for d in ('config','secrets') for p in (root/d).rglob('*') if p.is_file()}
-before=snapshot();pg=run([*command,'ps','-q','postgres']);mounts=run(['docker','inspect',pg,'--format','{{json .Mounts}}'])
+before=snapshot();pg=run([*command,'ps','-q','postgres']);mounts=sorted(json.loads(run(['docker','inspect',pg,'--format','{{json .Mounts}}'])),key=lambda item:item['Destination'])
 rows=db('SELECT row_to_json(s) FROM netbox_sync.sources s');history=db('SELECT row_to_json(s) FROM netbox_sync.sync_runs s')
 run(['python3',str(root/'current/deploy/backup.py'),'--root',str(root),'--no-systemd','create'])
 bundle=next((root/'backups').glob('netbox-sync-backup-*'))
@@ -58,9 +58,10 @@ assert refused.returncode==1 and '--acknowledge-admin-enrollment' in refused.std
 assert snapshot()==before and (root/'current').resolve().name==OLD
 run([*upgrade,'--acknowledge-admin-enrollment'])
 assert (root/'current').resolve().name=='auth-upgrade'
-assert db('SELECT version_num FROM netbox_sync.alembic_version')=='0010_source_retirements'
+assert db('SELECT version_num FROM netbox_sync.alembic_version')=='0012_run_reconciliation'
 assert rows==db('SELECT row_to_json(s) FROM netbox_sync.sources s') and history==db('SELECT row_to_json(s) FROM netbox_sync.sync_runs s')
-assert run([*command,'ps','-q','postgres'])==pg and run(['docker','inspect',pg,'--format','{{json .Mounts}}'])==mounts
+assert run([*command,'ps','-q','postgres'])==pg,'PostgreSQL container identity changed'
+assert sorted(json.loads(run(['docker','inspect',pg,'--format','{{json .Mounts}}'])),key=lambda item:item['Destination'])==mounts
 for path,value in before.items():
     if path!='config/compose.env':assert hashlib.sha256((root/path).read_bytes()).digest()==value,path
 auth_environment=dict(line.split('=',1) for line in (root/'config/auth.env').read_text().splitlines() if '=' in line)

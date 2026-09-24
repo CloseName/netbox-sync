@@ -140,6 +140,22 @@ class GuardClient:
             raise GuardTransportError('GUARD_RESPONSE_INVALID', uncertain=True)
         return value
 
+    def audit_source(self, source, nonce):
+        # Kept dependency-free: the pinned transport is also loaded by the guard's
+        # isolated compatibility probe without importing the Sync application.
+        import hashlib
+        if not isinstance(source, str) or not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,127}', source):
+            raise GuardTransportError('GUARD_RESPONSE_INVALID')
+        value = self._request('POST', 'sources/' + source + '/audit/', {'nonce':self._nonce(nonce)})
+        checked = dict(value)
+        digest = checked.pop('digest', None)
+        expected = hashlib.sha256(json.dumps(checked, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        if (value.get('source_instance') != source or value.get('historical_outcome') != 'UNPROVED'
+                or not isinstance(value.get('objects'), list) or len(value['objects']) > 10000
+                or expected != digest):
+            raise GuardTransportError('GUARD_RESPONSE_INVALID')
+        return value
+
     def review_source(self, nonce, source, cluster):
         nonce = self._nonce(nonce)
         value = self._request('POST','sources/review/',{

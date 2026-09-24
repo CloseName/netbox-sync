@@ -118,7 +118,7 @@ def run_sources(sources, execute_source, clock=None, run_repository=None):
                 continue
         evidence, diagnostic_token = scheduled_failure.begin(run.run_id if run else None)
         try:
-            if run_repository and run_repository.reconciliation_required(source.source_instance):
+            if run_repository and run_repository.scheduled_reconciliation_required(source.source_instance):
                 raise SourceReconciliationRequired('Previous outcome requires reconciliation')
             execution = execute_source(source)
         except (Exception, SystemExit) as exc:  # pylint: disable=broad-exception-caught

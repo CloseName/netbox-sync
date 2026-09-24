@@ -63,9 +63,10 @@ role=DeviceRole.objects.create(name=tag,slug=tag)
 cap=ObjectPermission.objects.create(name=tag,actions=['create','retire'],constraints={'source_instance':source})
 cap.object_types.set([ContentType.objects.get_for_model(CreationReceipt),ContentType.objects.get_for_model(RetirementIntent)])
 cap.users.add(user)
-add=ObjectPermission.objects.create(name=tag+'-add',actions=['add'])
+add=ObjectPermission.objects.create(name=tag+'-add',actions=['add','view','change'])
 add.object_types.set([ContentType.objects.get_for_model(apps.get_model(label)) for label in MODELS.values()]);add.users.add(user)
 tokens=[];headers=[];clusters=[]
+fixture_fields=[];fixture_platform=None;fixture_read=None;fixture_vrfs=[]
 for enabled in (True,False):
     token=Token(user=user,write_enabled=enabled,expires=timezone.now()+timedelta(minutes=5))
     token.full_clean();token.save();tokens.append(token)
@@ -148,11 +149,55 @@ try:
     VirtualMachine.objects.filter(pk=failed_vm).update(comments='manual fixture value')
     assert client.create(failed_body['nonce'],source,'vm',cluster,failed_body['data'])['id']==failed_vm
     assert VirtualMachine.objects.get(pk=failed_vm).comments=='manual fixture value'
+    before_posts=verbs.count('POST')
+    audit_nonce=str(uuid4())
+    observed=client.audit_source(source,audit_nonce)
+    assert observed['historical_outcome']=='UNPROVED' and len(observed['objects'])>=10
+    assert any(row['kind']=='vm' and row['id']==failed_vm and row['claimed'] for row in observed['objects'])
+    VirtualMachine.objects.filter(pk=failed_vm).update(comments='changed manual baseline fixture')
+    changed=client.audit_source(source,audit_nonce)
+    assert changed['digest']!=observed['digest'] and verbs.count('POST')==before_posts+2
+    assert 'changed manual baseline fixture' not in json.dumps(changed)
+    audit_row=RetirementIntent.objects.get(nonce=audit_nonce)
+    for executor in ('retirements/execute/','sources/execute/'):
+        assert post(executor,{'nonce':audit_nonce,'digest':audit_row.digest}).status_code==409
+    assert VirtualMachine.objects.filter(pk=failed_vm).exists()
+    assert post('sources/esxi-foreign/audit/',{'nonce':str(uuid4())}).status_code==403
+    assert post('sources/'+source+'/audit/',{'nonce':str(uuid4())},headers[1]).status_code==403
     assert not User.objects.get(pk=user.pk).has_perm('virtualization.delete_virtualmachine')
     import os
     if os.environ.get('NETBOX_SYNC_GUARD_WORKER_TEST')=='1':
+        # The lost-response fixture deliberately created a second claimed cluster.
+        # Retire that exact empty fixture before testing complete source removal.
+        extra_nonce=str(uuid4())
+        extra=client.review(extra_nonce,source,recovered_cluster['id'],['cluster',recovered_cluster['id']])
+        client.execute(extra_nonce,extra['digest'])
+        # Full apply regression uses the exact fixed prerequisite contract, with
+        # read access to catalogs and object writes only in this disposable DB.
+        from types import SimpleNamespace
+        from netbox_guard.service import _owners
+        from netbox_guard.dependencies import DependencyGuardBlocked
+        _owners(SimpleNamespace(custom_field_data={'sync_identities':None}),source)
+        for malformed in ({},'',False,[{'schema':'v2','instance':'foreign','type':'esxi','kind':'host','external_id':'x'}]):
+            try:_owners(SimpleNamespace(custom_field_data={'sync_identities':malformed}),source)
+            except DependencyGuardBlocked:pass
+            else:raise AssertionError('Malformed or foreign identity accepted')
+        from extras.models import CustomField
+        from dcim.models import Platform
+        contract=runpy.run_path('/app/netbox_sync/prerequisites.py')['FIELDS']
+        for field,(field_type,models) in contract.items():
+            obj,created=CustomField.objects.get_or_create(name=field,defaults={'type':field_type})
+            assert obj.type==field_type
+            obj.object_types.set([ContentType.objects.get_for_model(apps.get_model(model)) for model in models])
+            if created:fixture_fields.append(obj)
+        from ipam.models import VRF
+        fixture_vrfs=[VRF.objects.create(name=tag+str(i),enforce_unique=True) for i in range(2)]
+        fixture_platform=Platform.objects.create(name=tag,slug=tag)
+        fixture_read=ObjectPermission.objects.create(name=tag+'-catalog',actions=['view'])
+        fixture_read.object_types.set([ContentType.objects.get_for_model(model) for model in (CustomField,Platform,ClusterType,Site,Manufacturer,DeviceType,DeviceRole,VRF)])
+        fixture_read.users.add(user)
         helper=runpy.run_path('/app/tests/netbox_worker_fixture.py')
-        helper['exercise'](context,get_wsgi_application(),certfile,source,cluster,capability['guard_instance'],headers[0]['Authorization'].split(' ',1)[1])
+        helper['exercise'](context,get_wsgi_application(),certfile,source,cluster,capability['guard_instance'],headers[0]['Authorization'].split(' ',1)[1],url.split('/api/')[0],tag,[v.pk for v in fixture_vrfs])
     elif os.environ.get('NETBOX_SYNC_GUARD_TREE')=='1':
         nonce=str(uuid4())
         intent=client.review_source(nonce,source,cluster)
@@ -187,6 +232,9 @@ try:
     print('PASS real HTTP: v2 token authentication; read-only refusal; source constraints; create/retry; VM/cluster receipts; no generic delete privilege; revoked token refusal')
 finally:
     server.shutdown();server.server_close();thread.join(3)
+    # Include only this fixture source's guarded CREATE claims, including a
+    # cluster left behind if the newly added full apply regression fails.
+    clusters.extend(CreationClaim.objects.filter(source_instance=source,resource='cluster').values_list('object_id',flat=True))
     VirtualMachine.objects.filter(cluster_id__in=clusters).delete()
     Device.objects.filter(cluster_id__in=clusters).delete()
     Cluster.objects.filter(pk__in=clusters).delete()
@@ -194,6 +242,10 @@ finally:
     RetirementIntent.objects.filter(source_instance=source).delete()
     CreationReceipt.objects.filter(source_instance=source).delete()
     CreationClaim.objects.filter(source_instance=source).delete()
+    for vrf in fixture_vrfs:vrf.delete()
+    if fixture_read:fixture_read.delete()
+    if fixture_platform:fixture_platform.delete()
+    for field in fixture_fields:field.delete()
     add.delete();cap.delete();kind.delete();user.delete()
     device_type.delete();manufacturer.delete();role.delete();site.delete()
     session.close();certdir.cleanup()

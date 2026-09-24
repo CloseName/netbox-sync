@@ -245,9 +245,13 @@ class SourceOnboardingService:
         guard=getattr(self._registry,'registration_guard',None)
         return guard(self.preview(request.onboarding_token),request.source_instance,operation_id,actor) if guard else nullcontext()
 
-    def registration_intent(self, request, operation, actor, fingerprint):
+    def registration_intent(self, request, operation, actor, fingerprint, durable_request=None):
         bind=getattr(self._registry,'registration_intent',None)
-        return bind(self.preview(request.onboarding_token),request.source_instance,operation,actor,fingerprint) if bind else None
+        return bind(self.preview(request.onboarding_token),request.source_instance,operation,actor,fingerprint,durable_request) if bind else None
+
+    def pending_registrations(self, actor):
+        lookup=getattr(self._registry,'pending_registrations',None)
+        return lookup(actor) if lookup else []
 
     def registration_outcome(self, source, operation_id, actor):
         lookup = getattr(self._registry, 'registration_outcome', None)

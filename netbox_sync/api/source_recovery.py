@@ -55,11 +55,38 @@ class IdentityConfirmation(BaseModel):
         return value
 
 
+class BaselineConfirmation(AbandonRequest):
+    digest:str=Field(pattern='^[a-f0-9]{64}$')
+    old_writes_stopped:bool=Field(strict=True)
+    outcome_stays_unknown:bool=Field(strict=True)
+    fresh_plan_required:bool=Field(strict=True)
+
+
 def routes(settings,onboarding,auth,lifecycle,sources):
     router=APIRouter(prefix='/api/v1/sources')
+    @router.post('/{source}/reconciliation-review')
+    def baseline_review(source:str,payload:AbandonRequest):
+        return lifecycle.reconciliation('review',source,operation_id=str(payload.operation_id))
+
+    @router.post('/{source}/reconciliation-confirm')
+    def baseline_confirm(source:str,payload:BaselineConfirmation,http:Request):
+        return lifecycle.reconciliation('confirm',source,operation_id=str(payload.operation_id),
+            actor_id=http.state.principal['principal_id'],digest=payload.digest,
+            acknowledgements={key:getattr(payload,key) for key in ('old_writes_stopped','outcome_stays_unknown','fresh_plan_required')})
+
     def evidence(meta):
+        if meta.get('completed_retirement'):
+            return lifecycle.recovery('retired_evidence',meta['source_instance'],operation_id=meta['evidence_operation'])
         return call(settings.bootstrap_socket,{'action':'recovery-evidence',
             **{k:meta[k] for k in ('source_instance','host_uuid','site_id','cluster_id')}})
+
+    @router.post('/{source}/inventory-review')
+    def source_inventory(source:str,payload:AbandonRequest):
+        return lifecycle.recovery('inventory',source,operation_id=str(payload.operation_id))
+
+    @router.post('/{source}/identity-records')
+    def recorded_identity(source:str):
+        return lifecycle.recovery('records',source)
 
     @router.post('/{source}/recovery-review')
     def review(source: str,payload: ReviewRequest,http: Request):
@@ -67,8 +94,9 @@ def routes(settings,onboarding,auth,lifecycle,sources):
         auth.call('receipt.check',session=http.cookies.get(COOKIE),receipt=payload.onboarding_token)
         onboarding.recovery_review(payload.onboarding_token,source)
         meta=lifecycle.recovery('describe',source,actor_id=actor)
-        proof=evidence(meta)
         identifier=meta['pending_operation'] or str(uuid4())
+        meta['evidence_operation']=identifier
+        proof=evidence(meta)
         value={'meta':meta,'proof':proof,'operation_id':identifier}
         onboarding.recovery_review(payload.onboarding_token,source,value)
         return {'source_instance':source,'name':meta['name'],'operation_id':identifier,

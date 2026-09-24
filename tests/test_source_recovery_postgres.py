@@ -8,6 +8,7 @@ import pytest
 from psycopg import sql
 from netbox_sync.source_lifecycle import LifecycleStore,LifecycleError
 from netbox_sync.source_recovery import Recovery
+from netbox_sync.source_config import SourceCredentials,SecretReference
 from netbox_sync.recovery_evidence import assess
 from tests.test_migrations_postgres import migration_database,_upgrade
 from tests.test_source_registry_postgres import _safe_test_dsn
@@ -116,3 +117,79 @@ def test_evidence_changes_after_credentials_never_activate_source(setup):
             lambda *args:pytest.fail('No credential action after evidence mismatch'))
     assert not registry.get_by_source_instance(config.source_instance).config.enabled
     assert recovery.status(config.source_instance,operation,'admin')['state']=='CREDENTIALS_PENDING'
+
+
+def test_completed_retirement_restores_namespace_when_cluster_is_gone(setup):
+    from psycopg.types.json import Jsonb
+    from netbox_sync.netbox_catalog import fingerprint
+    store,registry,config,revision,old=setup
+    source=config.source_instance;retirement=uuid4();guard=uuid4()
+    receipt={'nonce':str(retirement),'source_instance':source,'status':'SUCCEEDED','digest':'e'*64,
+        'manifest':{'format':2,'cluster_id':3,'objects':[['cluster:3','d'*64]]},'deleted':['cluster:3']}
+    with store.connect() as connection:
+        connection.execute(sql.SQL("INSERT INTO {} (operation_id,source_instance,actor_id,revision,guard_instance,plan,state,receipt,finished_at) VALUES (%s,%s,'admin',%s,%s,%s,'FINALIZED',%s,clock_timestamp()-interval '1 minute')").format(store.table('source_retirements')),
+            (retirement,source,revision,guard,Jsonb({'remote':receipt}),Jsonb(receipt)))
+    class Remote:
+        present=False
+        calls=[]
+        def call(self,action,operation,**fields):
+            self.calls.append(action)
+            if action=='receipt':return {'guard_instance':str(guard),'result':receipt}
+            assert action=='audit'
+            result={'source_instance':source,'objects':[{'kind':'cluster','id':3,'present':self.present}], 'historical_outcome':'UNPROVED'}
+            result['digest']=fingerprint(result)
+            return {'guard_instance':str(guard),'result':result}
+    remote=Remote();recovery=Recovery(store,remote);operation=uuid4()
+    assert recovery.describe(source,'admin')['completed_retirement']
+    remote.present=True
+    blocked=recovery.retired_evidence(source,operation)
+    with pytest.raises(LifecycleError):recovery.prepare(source,operation,'admin',revision,blocked)
+    remote.present=False
+    proof=recovery.retired_evidence(source,operation)
+    assert proof['mode']=='RETIRED_EMPTY' and not proof['blockers'] and proof['placement_requires_review']
+    recovery.prepare(source,operation,'admin',revision,proof)
+    recovery.begin_credentials(source,operation,'admin')
+    recovery.complete(source,operation,'admin',recovery.retired_evidence(source,operation),
+        {'username':'service','address':config.address,'verify_ssl':True,'port':443},lambda *a:True)
+    saved=registry.get_by_source_instance(source).config
+    assert saved.enabled and not saved.sync_enabled and saved.source_instance==source
+    assert saved.target==config.target  # Missing placement is explicitly repaired afterward.
+    assert remote.calls==['receipt','audit']*3
+    # A later retain-only removal must not inherit the previous retirement proof.
+    view=store.read(source)
+    store.remove(source,view['revision'],view['display_name'],False,lambda _:None)
+    assert not recovery.describe(source,'admin')['completed_retirement']
+    with pytest.raises(LifecycleError):recovery.retired_evidence(source,uuid4())
+
+
+@pytest.mark.parametrize('enabled',[True,False])
+def test_recovery_rejects_other_registered_identity_even_when_disabled(setup,enabled):
+    store,registry,config,revision,proof=setup
+    other=replace(config,id='esxi-second',source_instance='esxi-second',enabled=enabled,credentials=SourceCredentials(username='fixture',token_id=SecretReference('file','other-id'),token_secret=SecretReference('file','other-secret')))
+    registry.create_source(other)
+    with pytest.raises(LifecycleError,match='SOURCE_RECOVERY_IDENTITY_CONFLICT'):
+        Recovery(store).prepare(config.source_instance,uuid4(),'admin',revision,proof)
+    assert store.read(config.source_instance)['removed_at']
+
+
+def test_three_retained_identity_records_are_reviewable_without_releasing_reserves(setup):
+    import json
+    store,registry,config,revision,proof=setup
+    for index in range(2):
+        other=replace(config,id=f'esxi-retained-{index}',source_instance=f'esxi-retained-{index}',name=f'Retained {index}',address=f'alias{index}.example',credentials=SourceCredentials(username='fixture',token_id=SecretReference('file',f'other-id-{index}'),token_secret=SecretReference('file',f'other-secret-{index}')))
+        registry.create_source(other)
+        row=store.read(other.source_instance)
+        store.remove(other.source_instance,row['revision'],row['display_name'],False,lambda _:None)
+    records=Recovery(store).records(config.source_instance)
+    assert records['comparison']=='RECORDED_IDENTITY_ONLY'
+    assert len(records['sources'])==3 and all(row['state']=='REMOVED' for row in records['sources'])
+    assert all(row['host_uuid']==ANCHOR for row in records['sources'])
+    assert all(row['cluster_id']==3 for row in records['sources'])
+    assert 'token_secret' not in json.dumps(records) and 'credential_key' not in json.dumps(records)
+    # Explicit recovery of one namespace is possible, but no historical record is deleted.
+    operation=uuid4();Recovery(store).prepare(config.source_instance,operation,'admin',revision,proof)
+    Recovery(store).begin_credentials(config.source_instance,operation,'admin')
+    Recovery(store).complete(config.source_instance,operation,'admin',proof,{'username':'fixture','address':config.address,'verify_ssl':True,'port':443},lambda *args:True)
+    after=Recovery(store).records(config.source_instance)
+    assert [r['state'] for r in after['sources']].count('REGISTERED')==1
+    assert len(after['sources'])==3

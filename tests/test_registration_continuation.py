@@ -91,3 +91,26 @@ def test_registration_intent_normalizes_transport_but_fences_target_and_metadata
     assert first.intent_fingerprint()==same.intent_fingerprint()
     for change in ({'name':'Different source'},{'references':{'site':{'id':2}}},{'port':8443}):
         assert RegistrationRequest(**{**payload,**change}).intent_fingerprint()!=first.intent_fingerprint()
+
+
+def test_saved_request_survives_restart_is_actor_bound_and_never_contains_secrets(migration_database):
+    from dataclasses import asdict
+    from netbox_sync.api.onboarding_dto import RegistrationRequest
+    registry,engine=migration_database;_upgrade(registry,engine)
+    store=HostReservations(registry._connect,registry.schema)
+    operation=uuid4();args=('source-a',operation,'owner')
+    store.reserve(preview(),*args)
+    payload=asdict(command('x'*32,'esxi','source-a'));payload.pop('mapping')
+    payload.update(registration_id=str(operation),references={'site':{'id':1,'name':'ignored','extra_secret':'not-persisted'}},host_types={})
+    request=RegistrationRequest(**payload)
+    saved=request.durable_request()
+    assert 'onboarding_token' not in saved and saved['references']=={'site':{'id':1}}
+    store.bind_intent(preview(),*args,request.intent_fingerprint(),saved)
+    restarted=HostReservations(registry._connect,registry.schema)
+    assert restarted.pending_requests('other')==[]
+    rows=restarted.pending_requests('owner')
+    assert len(rows)==1 and rows[0]['request']==saved and rows[0]['registration_id']==str(operation)
+    for extra in ({'secret':'must-not-save'},{'username':'must-not-save'},{'onboarding_token':'must-not-save'}):
+        with pytest.raises((ValueError,HostRegistrationConflict)):
+            store.bind_intent(preview(),*args,request.intent_fingerprint(),{**saved,**extra})
+    assert restarted.pending_requests('owner')[0]['request']==saved

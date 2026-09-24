@@ -57,10 +57,13 @@ class RegistrationRegistry:
     def check_registration_resume(self, preview, source, operation_id, actor):
         self.host_reservations().check(preview,resume={'source_instance':source,'registration_id':operation_id},actor_id=actor)
 
-    def registration_intent(self, preview, source, operation_id, actor, fingerprint):
+    def registration_intent(self, preview, source, operation_id, actor, fingerprint, request=None):
         if isinstance(preview,dict) and preview.get('provider')=='esxi':
-            return self.host_reservations().bind_intent(preview,source,operation_id,actor,fingerprint)
+            return self.host_reservations().bind_intent(preview,source,operation_id,actor,fingerprint,request)
         return None
+
+    def pending_registrations(self, actor):
+        return self.host_reservations().pending_requests(actor)
 
     def registration_outcome(self, source, operation_id, actor):
         return self.host_reservations().outcome(source, operation_id, actor)

@@ -167,3 +167,10 @@ class RetireSource(GuardView):
         body=_body(request,('nonce','digest'))
         receipt=retire_source(request.user,body['nonce'],body['digest'])
         return Response(_public(receipt.intent,receipt))
+
+
+class SourceAudit(GuardView):
+    def post(self,request,source):
+        from ..service import audit_source
+        body=_body(request,('nonce',))
+        return Response(audit_source(request.user,body['nonce'],source))

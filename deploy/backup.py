@@ -31,7 +31,7 @@ RESTORE_BOOTSTRAP_FILE = 'postgres_bootstrap_password_next'
 FORMAT_VERSION = 1
 ALEMBIC_CHAIN = (
     '0001_registry_baseline', '0002_sync_run_history', '0003_netbox_sync_naming',
-    '0004_source_operations', '0005_source_tombstones', '0006_auth_policy', '0007_host_reservations', '0008_registration_intents', '0009_source_identity_proof', '0010_source_retirements')
+    '0004_source_operations', '0005_source_tombstones', '0006_auth_policy', '0007_host_reservations', '0008_registration_intents', '0009_source_identity_proof', '0010_source_retirements', '0011_registration_requests', '0012_run_reconciliation')
 ALEMBIC_HEAD = ALEMBIC_CHAIN[-1]
 PRODUCT = 'NetBox Sync'
 DATABASE_NAME = 'netbox_sync'
@@ -52,7 +52,7 @@ VALID_BROKER_XATTR_SETS = frozenset({
     frozenset(BROKER_XATTRS),
 })
 PAYLOAD_FILES = ('database.dump', 'state.tar', 'manifest.json')
-FOUNDATION_TABLES = ('alembic_version', 'auth_audit', 'auth_state', 'host_reservations', 'registration_intents', 'schema_meta', 'source_identity_verifications', 'source_operations', 'source_recoveries',
+FOUNDATION_TABLES = ('alembic_version', 'auth_audit', 'auth_state', 'host_reservations', 'registration_intents', 'run_reconciliations', 'schema_meta', 'source_identity_verifications', 'source_operations', 'source_recoveries',
                      'source_retirements', 'source_tombstones', 'sources', 'sync_runs')
 SAFE_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
 SAFE_SCHEMA = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,62}$')
@@ -513,8 +513,9 @@ class DatabaseTool:
             f'(SELECT count(*) FROM {SCHEMA_NAME}.source_recoveries), '
             f'(SELECT count(*) FROM {SCHEMA_NAME}.registration_intents), '
             f'(SELECT count(*) FROM {SCHEMA_NAME}.source_identity_verifications), '
-            f'(SELECT count(*) FROM {SCHEMA_NAME}.source_retirements)')
-        if values != ['0|0|0|0|0']:
+            f'(SELECT count(*) FROM {SCHEMA_NAME}.source_retirements), '
+            f'(SELECT count(*) FROM {SCHEMA_NAME}.run_reconciliations)')
+        if values != ['0|0|0|0|0|0']:
             raise BackupError('fresh restore target contains host reservation or recovery rows')
         auth = self.query(f"SELECT value->'principal' = 'null'::jsonb FROM {SCHEMA_NAME}.auth_state WHERE id=1")
         if auth != ['t']:
@@ -529,6 +530,8 @@ class DatabaseTool:
             raise BackupError('fresh restore target is not an exact Foundation schema')
 
     def revoke_restored_auth(self):
+        # Keep evidence but require a new review against the restored external DB.
+        self.query(f'UPDATE {SCHEMA_NAME}.run_reconciliations SET valid=false')
         # Durable identities/policy/audit survive; old capabilities do not.
         cleared = json.dumps({'sessions': {}, 'ldap_sessions': {}, 'ldap_test': {}, 'ldap_attempts': [],
                               'invitation': None, 'receipts': {}, 'attempts': [],
@@ -567,7 +570,8 @@ class DatabaseTool:
         self.validate_empty_target()
         # Older reviewed dumps cannot name objects introduced by newer revisions.
         # Delete only the exact, prevalidated Foundation allowlist; never CASCADE.
-        cleanup = '; '.join(
+        cleanup = (f'DROP VIEW IF EXISTS {SCHEMA_NAME}.recovery_schedule_blocks; '
+                   f'DROP VIEW IF EXISTS {SCHEMA_NAME}.blocking_sync_runs; ') + '; '.join(
             f'DROP TABLE IF EXISTS {SCHEMA_NAME}.{name}'
             for name in reversed(FOUNDATION_TABLES)
         ) + f'; DROP FUNCTION IF EXISTS {SCHEMA_NAME}.guard_source_credential_refs(); DROP SCHEMA {SCHEMA_NAME}'

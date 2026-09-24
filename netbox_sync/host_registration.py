@@ -224,7 +224,7 @@ class HostReservations:
                     connection.execute('SELECT pg_advisory_unlock(hashtextextended(%s,0))',(lock_key,))
 
 
-    def bind_intent(self, preview, source, operation, actor, fingerprint):
+    def bind_intent(self, preview, source, operation, actor, fingerprint, request=None):
         """Persist only a digest before side effects; never retain credentials.
 
         The caller holds registration_guard across this call and all subsequent
@@ -234,6 +234,12 @@ class HostReservations:
         import re
         if not isinstance(fingerprint,str) or not re.fullmatch('[a-f0-9]{64}',fingerprint):
             raise HostRegistrationConflict('HOST_REGISTRATION_INVALID')
+        from psycopg.types.json import Jsonb
+        if request is not None:
+            from .api.onboarding_dto import RegistrationRequest
+            validated=RegistrationRequest.model_validate({**request,'onboarding_token':'x'*32})
+            if validated.durable_request()!=request or validated.intent_fingerprint()!=fingerprint:
+                raise HostRegistrationConflict('HOST_REGISTRATION_INVALID')
         anchor=esxi_anchor(preview);operation=UUID(str(operation))
         with self.connector() as connection,connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(sql.SQL('SELECT operation_id,actor_id,anchor FROM {} WHERE source_instance=%s').format(
@@ -242,11 +248,30 @@ class HostReservations:
             if not claim or (claim['operation_id'],claim['actor_id'],claim['anchor'])!=(operation,actor,anchor):
                 raise HostRegistrationConflict('HOST_REGISTRATION_INVALID')
             table=sql.Identifier(self.schema,'registration_intents')
-            cursor.execute(sql.SQL('INSERT INTO {} (source_instance,operation_id,actor_id,anchor,fingerprint) VALUES (%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING').format(table),
-                (source,operation,actor,anchor,fingerprint))
+            cursor.execute(sql.SQL('INSERT INTO {} (source_instance,operation_id,actor_id,anchor,fingerprint,request) VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING').format(table),
+                (source,operation,actor,anchor,fingerprint,Jsonb(request) if request is not None else None))
             cursor.execute(sql.SQL('SELECT operation_id,actor_id,anchor,fingerprint FROM {} WHERE source_instance=%s').format(table),(source,))
             intent=cursor.fetchone()
             if not intent or (intent['operation_id'],intent['actor_id'],intent['anchor'],intent['fingerprint'])!=(operation,actor,anchor,fingerprint):
                 raise HostRegistrationConflict('HOST_REGISTRATION_INTENT_CHANGED')
         key=uuid5(UUID('59ecc401-7157-4694-9c10-58f30652e3ec'),actor+':'+source+':'+str(operation)).hex
         return {'credential_key':'src-registration-'+key,'broker_operation':key}
+
+
+    def pending_requests(self, actor):
+        # Actor-scoped metadata, no credentials or broker keys. Successful attempts
+        # disappear from this list but their immutable journal is retained.
+        with self.connector() as connection,connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(sql.SQL('SELECT i.source_instance,i.operation_id,i.request,i.created_at FROM {} i LEFT JOIN {} s ON s.source_instance=i.source_instance WHERE i.actor_id=%s AND s.source_instance IS NULL ORDER BY i.created_at DESC LIMIT 100').format(
+                sql.Identifier(self.schema,'registration_intents'),sql.Identifier(self.schema,'sources')),(actor,))
+            rows=cursor.fetchall()
+        from .api.onboarding_dto import RegistrationRequest
+        result=[]
+        for row in rows:
+            request=row['request']
+            if request is not None:
+                value=RegistrationRequest.model_validate({**request,'onboarding_token':'x'*32})
+                request=value.durable_request()
+            result.append(dict(source_instance=row['source_instance'],registration_id=str(row['operation_id']),
+                request=request,created_at=row['created_at'].isoformat()))
+        return result

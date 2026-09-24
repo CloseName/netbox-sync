@@ -11,7 +11,7 @@ COOKIE = '__Host-netbox-sync-session'
 PUBLIC = {('GET', '/api/v1/health'), ('GET', '/api/v1/auth/status'), ('POST', '/api/v1/auth/login'), ('POST', '/api/v1/auth/enroll')}
 ROUTES = (
     ('POST', r'/api/v1/sources/identity-audit', 'source.remove'),
-    ('POST', r'/api/v1/sources/[^/]+/(recovery-review|recover|recovery-abandon|recovery-status|identity-review|identity-confirm|retirement-review|retirement-status|retirement-resume|retire)', 'source.remove'),
+    ('POST', r'/api/v1/sources/[^/]+/(retirement-context|inventory-review|identity-records|reconciliation-review|reconciliation-confirm|recovery-review|recover|recovery-abandon|recovery-status|identity-review|identity-confirm|retirement-review|retirement-status|retirement-resume|retire)', 'source.remove'),
     ('GET', r'/api/v1/users', 'identity.manage'),
     ('POST', r'/api/v1/users/(sync|role)', 'identity.manage'),
     ('GET', r'/api/v1/settings/(ldap|roles)', 'identity.manage'),
@@ -30,6 +30,7 @@ ROUTES = (
     ('GET', r'/api/v1/runs(?:/[^/]+)?', 'run.read'),
     ('GET', r'/api/v1/sources(?:/[^/]+(?:/(schedule|operations|lifecycle))?)?', 'source.read'),
     ('POST', r'/api/v1/sources/(test-connection|check-destination)', 'source.probe'),
+    ('GET', r'/api/v1/registration-attempts', 'source.register'),
     ('POST', r'/api/v1/sources(?:/(cancel-onboarding|review-placement|registration-status|resolve-placement))?', 'source.register'),
     ('GET', r'/api/v1/sources/[^/]+/placement', 'source.configure'),
     ('PATCH', r'/api/v1/sources/[^/]+/placement', 'source.configure'),

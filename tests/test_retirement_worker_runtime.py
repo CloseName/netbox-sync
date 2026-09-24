@@ -34,7 +34,7 @@ def test_real_private_worker_transport_and_lost_response(tmp_path):
     source = 'esxi-retirement-runtime'
     secret = secrets.token_hex(24)
     calls = []
-    state = {'lose': False, 'done': False}
+    state = {'lose': False, 'done': False, 'refuse':None}
     receipt = {'nonce': operation, 'source_instance': source, 'status': 'REVIEWED',
                'digest': 'a'*64, 'manifest': {'format': 2, 'cluster_id': 5,
                'objects': [['vm:7', 'b'*64]], 'roots': [['vm', 7]]}, 'deleted': []}
@@ -51,6 +51,9 @@ def test_real_private_worker_transport_and_lost_response(tmp_path):
                           'retirement_receipts': True, 'source_tree_retirement': True}
             else:
                 assert self.headers.get('X-Netbox-Sync-Guard-Instance') == instance
+                if state['refuse']:
+                    raw=json.dumps({'code':state['refuse']}).encode()
+                    self.send_response(409);self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw);return
                 body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', '0'))) or '{}')
                 if self.path.endswith('sources/execute/'):
                     assert body == {'nonce': operation, 'digest': 'a'*64}
@@ -95,6 +98,14 @@ def test_real_private_worker_transport_and_lost_response(tmp_path):
         client = RetirementClient(str(sock))
         reviewed = client.call('review', operation, source_instance=source, cluster_id=5)
         assert reviewed == {'guard_instance': instance, 'result': receipt}
+
+        from netbox_sync.retirement_codes import REASONS
+        for internal,public in REASONS.items():
+            if internal=='GUARD_CAPABILITY_MISMATCH':continue # capability preflight, not a guard refusal response
+            state['refuse']=internal
+            with pytest.raises(ControlError,match=public):
+                client.call('review',operation,source_instance=source,cluster_id=5)
+        state['refuse']=None
         state['lose'] = True
         with pytest.raises(ControlError, match='RETIREMENT_UNCERTAIN'):
             client.call('execute', operation, digest='a'*64)

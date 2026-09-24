@@ -115,6 +115,10 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
         connection.execute("INSERT INTO netbox_sync.registration_intents(source_instance,operation_id,actor_id,anchor,fingerprint) SELECT source_instance,operation_id,actor_id,anchor,%s FROM netbox_sync.host_reservations",('b'*64,))
         connection.execute("INSERT INTO netbox_sync.source_identity_verifications(operation_id,source_instance,actor_id,revision,anchor,proof) VALUES (%s,'esxi-backup-test','admin',%s,'503c5ad7-aaaa-bbbb-cccc-0123456789ab',%s)",(uuid.uuid4(),'c'*64,Jsonb({'owned':[{'kind':'device','id':7}],'blockers':[]})))
         connection.commit()
+        connection.execute('UPDATE netbox_sync.registration_intents SET request=%s',(Jsonb({'fixture':'secret-free durable request'}),))
+        connection.execute("INSERT INTO netbox_sync.run_reconciliations(run_id,source_instance,actor_id,operation_id,run_status,run_finished_at,decision) VALUES (%s,'esxi-backup-test','admin',%s,'OUTCOME_UNCERTAIN',clock_timestamp(),%s)",(uuid.uuid4(),uuid.uuid4(),Jsonb({'digest':'f'*64,'historical_outcome':'UNPROVED'})))
+        connection.commit()
+        expected_baselines=connection.execute('SELECT * FROM netbox_sync.run_reconciliations').fetchall()
         expected_intents=connection.execute('SELECT * FROM netbox_sync.registration_intents').fetchall()
         expected_identity=connection.execute('SELECT * FROM netbox_sync.source_identity_verifications').fetchall()
         connection.execute("INSERT INTO netbox_sync.source_retirements(operation_id,source_instance,actor_id,revision,guard_instance,plan,state,remove_credentials) VALUES (%s,'esxi-backup-test','admin',%s,%s,%s,'SENDING',false)",
@@ -155,6 +159,7 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
     deployment.apply_grants(environment)
     with psycopg.connect(deployment.connection_info('bootstrap', environment)) as connection:
         assert _snapshot(connection) == expected
+        assert connection.execute('SELECT * FROM netbox_sync.run_reconciliations').fetchall()==expected_baselines
         assert connection.execute('SELECT * FROM netbox_sync.registration_intents').fetchall()==expected_intents
         assert connection.execute('SELECT * FROM netbox_sync.source_identity_verifications').fetchall()==expected_identity
         assert connection.execute('SELECT * FROM netbox_sync.source_retirements').fetchall()==expected_retirements
@@ -180,6 +185,7 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
     with pytest.raises(AuthError, match='AUTH_REQUIRED'):
         auth.call(dict(action='authorize',session=session))
     with psycopg.connect(TEST_DSN) as connection:
+        assert connection.execute('SELECT valid,decision FROM netbox_sync.run_reconciliations').fetchone()==(False,{'digest':'f'*64,'historical_outcome':'UNPROVED'})
         restored_auth=connection.execute('SELECT value FROM netbox_sync.auth_state').fetchone()[0]
         assert restored_auth['principal']==saved_auth['principal']
         assert restored_auth['allowed_hosts']==saved_auth['allowed_hosts']

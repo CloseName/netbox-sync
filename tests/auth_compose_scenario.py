@@ -301,6 +301,9 @@ refused_resume=request(dict(operation_id=str(uuid4()),digest='a'*64,confirmed=Tr
     confirmed_source=registration['name'],remove_credentials=False),'/api/v1/sources/auth-test/retirement-resume')
 assert refused_resume['status']==409 and refused_resume['body']['error']['code']=='RETIREMENT_CONFLICT',refused_resume
 print('PASS actual API/lifecycle retirement continuation transport refuses unknown intent without mutation')
+baseline=request(dict(operation_id=str(uuid4())),'/api/v1/sources/auth-test/reconciliation-review')
+assert baseline['status']==200 and baseline['body']['runs']==[] and baseline['body']['decisions']==[],baseline
+print('PASS actual API/lifecycle baseline review: empty history does not need a NetBox mutation')
 assert request(None,'/api/v1/sources','GET')['body']['sources'][0]['source_instance']=='auth-test'
 team_saved=request(dict(operation='assign',revision=teams['body']['revision'],source_instance='auth-test',team_id=team_id),'/api/v1/teams');assert team_saved['status']==200
 team_saved=team_saved['body']
@@ -333,7 +336,7 @@ if pgmode == 'bundled' and os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST') !
     bundle=next((root/'backups').glob('netbox-sync-backup-*'))
     backup_cli(root,'verify',str(bundle))
     summary=json.loads(backup_cli(root,'inspect',str(bundle)))
-    assert summary['source_count']==1 and summary['alembic_revision']=='0010_source_retirements'
+    assert summary['source_count']==1 and summary['alembic_revision']=='0012_run_reconciliation'
     assert snapshot()==protected_before and compose('ps','-q','postgres')==db_before
     assert set(compose('ps','--status','running','--services').split())==services_before
     assert request(None,'/api/v1/auth/me','GET')['status']==200

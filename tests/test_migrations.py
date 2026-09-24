@@ -140,6 +140,8 @@ def test_ui6_revisions_form_one_forward_only_chain():
 
 def test_retirement_revision_extends_identity_proof_without_forks():
     head=_revision('head')
-    assert head.revision=='0010_source_retirements'
-    assert head.down_revision=='0009_source_identity_proof'
+    assert head.revision=='0012_run_reconciliation'
+    assert head.down_revision=='0011_registration_requests'
+    assert _revision('0011_registration_requests').down_revision=='0010_source_retirements'
+    assert _revision('0010_source_retirements').down_revision=='0009_source_identity_proof'
     with pytest.raises(RuntimeError): head.downgrade('netbox_sync_test')

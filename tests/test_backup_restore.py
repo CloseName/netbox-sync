@@ -513,6 +513,8 @@ def test_fresh_database_restore_requires_live_maintenance_boundary(monkeypatch,
     assert [entry[0] for entry in observed] == ['psql', 'pg_restore']
     cleanup = observed[0][1][-1]
     assert cleanup == (
+        'DROP VIEW IF EXISTS netbox_sync.recovery_schedule_blocks; '
+        'DROP VIEW IF EXISTS netbox_sync.blocking_sync_runs; '
         'DROP TABLE IF EXISTS netbox_sync.sync_runs; '
         'DROP TABLE IF EXISTS netbox_sync.sources; '
         'DROP TABLE IF EXISTS netbox_sync.source_tombstones; '
@@ -521,6 +523,7 @@ def test_fresh_database_restore_requires_live_maintenance_boundary(monkeypatch,
         'DROP TABLE IF EXISTS netbox_sync.source_operations; '
         'DROP TABLE IF EXISTS netbox_sync.source_identity_verifications; '
         'DROP TABLE IF EXISTS netbox_sync.schema_meta; '
+        'DROP TABLE IF EXISTS netbox_sync.run_reconciliations; '
         'DROP TABLE IF EXISTS netbox_sync.registration_intents; '
         'DROP TABLE IF EXISTS netbox_sync.host_reservations; '
         'DROP TABLE IF EXISTS netbox_sync.auth_state; '

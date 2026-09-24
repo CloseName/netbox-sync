@@ -6,6 +6,7 @@ import subprocess
 import sys
 from uuid import UUID
 from .local_control import serve, ControlError, request
+from .retirement_codes import REASONS
 DIAGNOSTIC_CODES=frozenset({'GUARD_CONNECTION_FAILED','GUARD_TLS_FAILED','GUARD_TIMEOUT',
     'GUARD_CAPABILITY_MISMATCH','GUARD_RESPONSE_INVALID','GUARD_RESPONSE_UNCONFIRMED',
     'PERMISSION_DENIED','GUARD_INSTANCE_CHANGED','REQUEST_CONFLICT','REQUEST_REFUSED',
@@ -31,7 +32,9 @@ def child(payload):
         if client.capabilities().get('source_tree_retirement') is not True:
             raise ControlError('RETIREMENT_UNAVAILABLE')
         value=payload['request']
-        if value['action']=='review':
+        if value['action']=='audit':
+            result=client.audit_source(value['source_instance'],value['operation_id'])
+        elif value['action']=='review':
             result=client.review_source(value['operation_id'],value['source_instance'],value['cluster_id'])
         elif value['action']=='execute':
             result=client.execute_source(value['operation_id'],value['digest'])
@@ -45,7 +48,8 @@ def handle(value):
     from .bootstrap_state import runtime_netbox
     import re
     action=value.get('action');fields={'action','operation_id'}
-    if action=='review': fields|={'source_instance','cluster_id'}
+    if action=='audit':fields|={'source_instance'}
+    elif action=='review': fields|={'source_instance','cluster_id'}
     elif action=='execute': fields|={'digest'}
     elif action!='receipt': raise ControlError('CONTROL_REQUEST_INVALID')
     if set(value)!=fields: raise ControlError('CONTROL_REQUEST_INVALID')
@@ -53,6 +57,8 @@ def handle(value):
         UUID(value['operation_id'])
         instance=str(UUID(os.environ.get('NETBOX_SYNC_GUARD_INSTANCE','')))
     except (ValueError,TypeError): raise ControlError('RETIREMENT_UNAVAILABLE') from None
+    if action=='audit' and (not isinstance(value['source_instance'],str) or not SOURCE_INSTANCE_PATTERN.fullmatch(value['source_instance'])):
+        raise ControlError('CONTROL_REQUEST_INVALID')
     if action=='review' and (not isinstance(value['source_instance'],str)
                             or not SOURCE_INSTANCE_PATTERN.fullmatch(value['source_instance'])
                             or type(value['cluster_id']) is not int or value['cluster_id']<=0):
@@ -82,7 +88,7 @@ def handle(value):
             code=result['error'] if result['error'] in DIAGNOSTIC_CODES else 'RETIREMENT_REFUSED'
             logging.getLogger(__name__).warning('retirement_operation=%s action=%s code=%s',
                                                str(UUID(value['operation_id'])),action,code)
-            raise ControlError('RETIREMENT_UNCERTAIN' if result.get('uncertain') else 'RETIREMENT_BLOCKED')
+            raise ControlError('RETIREMENT_UNCERTAIN' if result.get('uncertain') else REASONS.get(code,'RETIREMENT_BLOCKED'))
         if set(result)!={'guard_instance','result'}:raise ValueError()
         return result
     except ControlError: raise

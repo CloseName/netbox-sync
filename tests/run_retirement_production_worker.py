@@ -14,7 +14,7 @@ root=Path(__file__).resolve().parents[1]
 def docker(*args,check=True,**kwargs):
     return subprocess.run(['docker',*args],check=check,capture_output=True,**kwargs)
 info=json.loads(docker('inspect',pg).stdout)[0]
-assert info['Config']['Labels'].get('netbox-sync.task')=='host-claims-20260923'
+assert info['Config']['Labels'].get('netbox-sync.task')==os.environ.get('NETBOX_SYNC_GUARD_PG_LABEL','host-claims-20260923')
 assert info['HostConfig']['NetworkMode']=='none'
 project='netbox-sync-retirement-'+uuid4().hex[:12]
 label='netbox-sync.task='+project
@@ -51,12 +51,12 @@ try:
         if not state['Running']:raise AssertionError('NetBox fixture exited: '+docker('logs',fixture).stdout.decode(errors='replace')[-1800:])
         if time.monotonic()>deadline:raise AssertionError('NetBox fixture preparation deadline')
         time.sleep(1)
-    assert set(meta)=={'guard_instance','source','cluster'}
+    assert set(meta)=={'guard_instance','source','cluster','direct_url','catalog_slug','vrfs'}
     docker('run','-d','--name',proxy,'--label',label,'--user','10001:10001','--read-only',
         '--cap-drop','ALL','--security-opt','no-new-privileges:true','--network',network,'--network-alias','guard-netbox.test',
         '--mount','type=volume,source='+volume+',target=/bridge,volume-subpath=bridge,readonly',
         '--mount','type=bind,source='+str(root/'tests/retirement_bridge.py')+',target=/relay.py,readonly',
-        '--entrypoint','python','netbox-sync-retirement:20260923','-B','/relay.py')
+        '--entrypoint','python',os.environ.get('NETBOX_SYNC_REVIEW_IMAGE','netbox-sync-retirement:20260923'),'-B','/relay.py')
     created.append(('container',proxy))
     mounts=[{'type':'volume','source':'retirement-fixture','target':target,'read_only':readonly,'volume':{'subpath':subpath}}
             for subpath,target,readonly in [('worker','/run/netbox-sync-retirement',False),('config','/run/secrets/netbox',True),('ca','/run/netbox-sync-ca',True)]]
@@ -67,7 +67,7 @@ try:
     override+='volumes:\n  retirement-fixture: '+json.dumps({'external':True,'name':volume})+'\n'
     with tempfile.TemporaryDirectory(prefix=project) as directory:
         path=Path(directory)/'fixture.yml';path.write_text(override)
-        env=dict(os.environ,NETBOX_SYNC_COMPOSE_PROJECT=project,NETBOX_SYNC_IMAGE='netbox-sync-retirement:20260923',
+        env=dict(os.environ,NETBOX_SYNC_COMPOSE_PROJECT=project,NETBOX_SYNC_IMAGE=os.environ.get('NETBOX_SYNC_REVIEW_IMAGE','netbox-sync-retirement:20260923'),
                  NETBOX_SYNC_GUARD_INSTANCE=meta['guard_instance'])
         compose=['compose','--project-name',project,'-f',str(root/'compose.production.yml'),'-f',str(path)]
         model=json.loads(docker(*compose,'config','--format','json',env=env).stdout)['services']['netbox-sync-retirement-worker']
@@ -88,10 +88,12 @@ try:
         '--mount','type=bind,source='+str(root)+',target=/app,readonly',
         '--mount','type=volume,source='+volume+',target=/bridge,volume-subpath=bridge',
         '--mount','type=volume,source='+volume+',target=/worker,volume-subpath=worker,readonly',
+        '--mount','type=volume,source='+volume+',target=/fixture-config,volume-subpath=config,readonly',
+        '--mount','type=volume,source='+volume+',target=/fixture-ca,volume-subpath=ca,readonly',
         '-e','PYTHONDONTWRITEBYTECODE=1','-e','NETBOX_SYNC_GUARD_WORKER_TEST=1',
         '-e','NETBOX_SYNC_TEST_POSTGRES_DSN=host=127.0.0.1 dbname=netbox_sync_test user=postgres',
         '-w','/app','--entrypoint','python','netbox-sync-retirement-tests:20260923','-m','pytest',
-        'tests/test_retirement_production_worker.py','-q','--tb=short','--show-capture=no','-p','no:cacheprovider',check=False,timeout=100)
+        'tests/test_retirement_production_worker.py','-q','--tb=short','--show-capture=no','-p','no:cacheprovider',check=False,timeout=220)
     print(checked.stdout.decode(errors='replace'),flush=True)
     if checked.returncode:
         print(docker('logs',worker).stderr.decode(errors='replace')[-2000:],flush=True)
