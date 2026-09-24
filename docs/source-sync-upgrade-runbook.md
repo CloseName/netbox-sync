@@ -44,7 +44,9 @@ Stop on dirty checkout or provenance mismatch; no automatic reset/merge/rebase. 
 
 ## 3. Update the independently installed NetBox guard first
 
-This release adds `sources/<source>/audit/` and corrects the optional-null ownership
+For the current legacy-admission/audit release, follow [the scoped audit update](legacy-admission-guard-progress.md) as well: Guard migration 0003 and explicit audit permission are now required.
+
+The earlier release added `sources/<source>/audit/` and corrected the optional-null ownership
 field. An old plugin cannot support the new recovery review. There is no NetBox
 installation entrypoint in this repository: Sync does not own its image, Compose
 project, service names, plugin mount or database backup.
@@ -77,7 +79,7 @@ sudo rsync -rlt --checksum --exclude='__pycache__/' \
   "$ROOT/repo/deploy/netbox_guard/" "$NETBOX_GUARD_DIR/"
 ```
 
-No plugin DB migration was added in this update. Preserve all existing migrations,
+Guard migration `0003_audit_permission` is now required; run it from the updated NetBox image/package as described in the scoped audit runbook. Preserve all existing migrations,
 claims, receipts, triggers and GuardIdentity. New files must retain the existing
 NetBox process's readable ownership/mode; the package contains no secrets. For a
 **baked plugin image**, do not copy into a running container: update only the guard

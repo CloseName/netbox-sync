@@ -35,7 +35,7 @@ independent receipts remain for audit.
   ordinary cluster DELETE removes that inventory. A manually provided/shared
   cluster may remain while its source-created child retires.
 - Permissions are NetBox ObjectPermissions on `CreationReceipt` action `create`
-  and `RetirementIntent` action `retire`. Constraints are checked against the
+  and `RetirementIntent` actions `audit` (inventory only) and `retire` (deletion review/execution). Constraints are checked against the
   persisted record **inside** the transaction; mere permission-name presence is
   insufficient. The test uses a non-superuser constrained to one source. No
   standard delete permission is granted to an application token by this package.
@@ -137,15 +137,18 @@ refuse this new read path and must not trigger a fallback POST.
 ## Present-inventory audit and this code update
 
 `POST sources/<source>/audit/` takes an exact nonce and preserves the pinned guard
-identity. It requires existing source-constrained `retire` permission and view
+identity. It requires source-constrained `audit` permission and view
 permissions for each returned object. A persisted format3 AUDIT_ONLY intent is
 checked with native NetBox `has_perm`; it cannot execute retirement format1/2.
 The response contains exact model/ID, present/claimed flags and fingerprints, not
 raw object/description/secret contents. It is current evidence, not proof of old
 write completion. A retry is actor/source/nonce-bound; no claim adoption exists.
 
-No plugin migration, trigger, new ObjectPermission action or identity rotation is
-needed by this update. Preserve existing GuardIdentity and all claims/receipts.
+Migration 0003 adds the native `audit_retirementintent` permission, separate from
+retirement. Grant only approved source constraints to the integration service user.
+No trigger or identity rotation is needed. Preserve GuardIdentity and all claims/receipts.
+See [the current admission/audit runbook](../../docs/legacy-admission-guard-progress.md)
+for exact permissions, token restrictions and safe refusal categories.
 The optional JSON `sync_identities=null` default is treated as absent; malformed
 values, foreign identities and missing exact creation claims remain rejected.
 Independent package installation is still owned by the NetBox operator; see the
