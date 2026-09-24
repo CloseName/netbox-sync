@@ -75,3 +75,20 @@ previous separate executions are historical, not rerun evidence for this diff.
 Actual production Compose and real NetBox combined acceptance remain open.
 Test database is uniquely labeled recovery-20260924-c472, network none, tmpfs,
 no published port or named volume. Existing test databases were not restarted.
+
+## Registration conflict explanation
+
+Admission now retains a bounded list (at most 100) of conflicting registry Source
+IDs and whether each has an unrestored tombstone. Only a server-authenticated Admin
+receives this list; Operator keeps the general refusal and Viewer cannot invoke
+the connection workflow. No credentials, actor IDs, raw provider results or
+ownership transfer are exposed. The UI uses local EN/RU labels and validated IDs.
+
+The wording now distinguishes equal recorded identifiers from proved identical
+physical servers. Identity-unavailable wording also no longer asserts that ESXi
+itself lacks a UUID. Neither change unlocks an ambiguous registration.
+
+Real PostgreSQL + actual AuthPolicy/API: 21 admission tests passed, including
+Admin/Operator/Viewer projection and no credential/source side effects. Frontend:
+75 unit tests and TypeScript passed. These reports will identify the conflicting
+records on a future operator-run attempt; the actual PAM IDs remain unknown here.

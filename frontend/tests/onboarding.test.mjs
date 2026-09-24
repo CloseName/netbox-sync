@@ -60,3 +60,8 @@ test('host duplicate errors preserve only a validated source link and local copy
  context.mock.method(globalThis,'fetch',async()=>Response.json({error:{code:'HOST_ALREADY_REGISTERED',existing_source:'source-existing',message:'untrusted remote text',source_url:'https://untrusted.invalid'}},{status:409}));
  await assert.rejects(testConnection({source_type:'esxi',address:'alias.test',verify_ssl:true,username:'fixture',secret:'fixture'}),error=>error instanceof HostRegistrationFailure&&error.source==='source-existing'&&error.message==='HOST_ALREADY_REGISTERED');
 });
+
+test('conflict details accept only bounded source IDs and closed states',async context=>{
+ context.mock.method(globalThis,'fetch',async()=>Response.json({error:{code:'HOST_IDENTITY_CONFLICT',conflicts:[{source_instance:'source-one',state:'REMOVED',secret:'discard'},{source_instance:'https://bad.invalid',state:'REGISTERED'},{source_instance:'source-two',state:'UNTRUSTED'}]}},{status:409}));
+ await assert.rejects(testConnection({}),error=>error instanceof HostRegistrationFailure&&JSON.stringify(error.conflicts)===JSON.stringify([{source_instance:'source-one',state:'REMOVED'}]));
+});

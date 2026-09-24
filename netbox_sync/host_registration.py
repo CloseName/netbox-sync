@@ -12,8 +12,10 @@ from .esxi_discovery import _validated_host_hardware_uuid
 
 
 class HostRegistrationConflict(ValueError):
-    def __init__(self, code, source_instance=None):
+    def __init__(self, code, source_instance=None, *, conflicts=(), conflicts_truncated=False):
         self.code, self.source_instance = code, source_instance
+        self.conflicts = tuple(conflicts)
+        self.conflicts_truncated = conflicts_truncated
         super().__init__(code)
 
 
@@ -73,7 +75,15 @@ class HostReservations:
         self.connector, self.schema = connector, schema
 
     def _existing(self, cursor, existing):
-        if len(existing)!=1:raise HostRegistrationConflict('HOST_IDENTITY_CONFLICT')
+        if len(existing)!=1:
+            # Recorded UUID equality is a registry conflict, not independent
+            # evidence that these source rows describe one physical machine.
+            cursor.execute(sql.SQL('SELECT source_instance FROM {} WHERE source_instance=ANY(%s) AND restored_at IS NULL').format(
+                sql.Identifier(self.schema,'source_tombstones')), (existing[:100],))
+            removed = {row['source_instance'] for row in cursor.fetchall()}
+            raise HostRegistrationConflict('HOST_IDENTITY_CONFLICT', conflicts=[
+                {'source_instance': source, 'state': 'REMOVED' if source in removed else 'REGISTERED'}
+                for source in existing[:100]], conflicts_truncated=len(existing)>100)
         cursor.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s AND restored_at IS NULL').format(
             sql.Identifier(self.schema,'source_tombstones')), (existing[0],))
         code='HOST_SOURCE_REMOVED' if cursor.fetchone() else 'HOST_ALREADY_REGISTERED'

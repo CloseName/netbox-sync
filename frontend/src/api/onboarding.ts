@@ -4,15 +4,16 @@ import type { Source } from './sources';
 export const hostRegistrationMessages:Record<string,readonly [string,string]>={
  HOST_SOURCE_REMOVED:['This host belongs to a removed source. An administrator must review recovery.','Хост связан с удалённым источником. Администратор должен проверить возможность восстановления.'],
  HOST_ALREADY_REGISTERED:['This host already belongs to a source. Open it; a removed source requires administrator recovery.','Этот хост уже связан с источником. Откройте его; удалённый источник должен восстановить администратор.'],
- HOST_IDENTITY_CONFLICT:['Several sources claim this host. Administrator reconciliation is required.','Этот хост связан с несколькими источниками. Нужна сверка администратором.'],
+ HOST_IDENTITY_CONFLICT:['Several source records contain the same host identifier. Administrator reconciliation is required.','В нескольких записях источников сохранён один идентификатор хоста. Нужна сверка администратором.'],
  HOST_REGISTRATION_RESERVED:['An earlier registration reserved this host. Reconcile that attempt before adding it again.','Хост зарезервирован предыдущей попыткой добавления. Сначала нужно проверить её результат.'],
- HOST_IDENTITY_UNAVAILABLE:['The provider did not supply a reliable hardware identity. Registration is blocked.','Провайдер не предоставил надёжный аппаратный идентификатор. Добавление заблокировано.'],
+ HOST_IDENTITY_UNAVAILABLE:['A reliable host identity could not be verified. Registration is blocked.','Не удалось подтвердить надёжную идентичность хоста. Добавление заблокировано.'],
  HOST_REGISTRY_REVIEW_REQUIRED:['An existing ESXi source lacks hardware identity. Ask an administrator to verify it before adding a host.','У существующего источника ESXi нет аппаратного идентификатора. Перед добавлением хоста администратор должен проверить его идентичность.'],
  HOST_REGISTRATION_INVALID:['Reload the registration form to obtain a request ID.','Перезагрузите форму добавления для получения идентификатора запроса.'],
 };
+export type HostConflict = {source_instance:string;state:'REGISTERED'|'REMOVED'};
 export class HostRegistrationFailure extends Error {
- readonly code:string;readonly source:string|null;
- constructor(code:string,source:string|null){super(code);this.code=code;this.source=source;}
+ readonly code:string;readonly source:string|null;readonly conflicts:HostConflict[];
+ constructor(code:string,source:string|null,conflicts:HostConflict[]=[]){super(code);this.code=code;this.source=source;this.conflicts=conflicts;}
 }
 
 export class SourceIdReservedError extends Error {
@@ -63,7 +64,8 @@ async function post(path: string, payload: ConnectionInput | RegistrationInput |
     let detail:any;try{detail=(await response.clone().json())?.error;}catch{}
     if(typeof detail?.code==='string'&&Object.hasOwn(hostRegistrationMessages,detail.code)){
       const source=typeof detail.existing_source==='string'&&/^[a-z0-9][a-z0-9._-]{1,62}$/.test(detail.existing_source)?detail.existing_source:null;
-      throw new HostRegistrationFailure(detail.code,source);
+      const conflicts:HostConflict[]=Array.isArray(detail.conflicts)?detail.conflicts.slice(0,100).filter((row:any)=>row&&typeof row.source_instance==='string'&&/^[a-z0-9][a-z0-9._-]{1,62}$/.test(row.source_instance)&&['REGISTERED','REMOVED'].includes(row.state)).map((row:any)=>({source_instance:row.source_instance,state:row.state})):[];
+      throw new HostRegistrationFailure(detail.code,source,conflicts);
     }
     if (path === '/api/v1/sources/test-connection' || path === '/api/v1/sources/check-destination') {
       let code: unknown;

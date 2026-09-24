@@ -124,16 +124,25 @@ def _install_boundaries(app, settings, auth_client):
             'HOST_REGISTRY_REVIEW_REQUIRED': 'An existing ESXi source lacks verified hardware identity. Administrator identity review is required before adding a host.',
             'HOST_REGISTRATION_INTENT_CHANGED': 'This attempt already started with different parameters. Restore the original confirmed parameters; do not create another source.',
             'HOST_REGISTRATION_INVALID': 'A stable registration request ID is required. Reload the registration form.',
-            'HOST_IDENTITY_UNAVAILABLE': 'The provider did not supply a reliable hardware identity. Registration is blocked.',
+            'HOST_IDENTITY_UNAVAILABLE': 'A reliable host identity could not be verified. Registration is blocked.',
             'HOST_SOURCE_REMOVED': 'This host belongs to a removed source. An administrator must review recovery of the original source.',
             'HOST_ALREADY_REGISTERED': 'This host already belongs to a source. Open that source; removed sources require administrator recovery.',
-            'HOST_IDENTITY_CONFLICT': 'Several sources claim this host. Administrator reconciliation is required.',
+            'HOST_IDENTITY_CONFLICT': 'Several source records contain the same host identifier. Administrator reconciliation is required.',
             'HOST_REGISTRATION_RESERVED': 'An earlier registration reserved this host. Reconcile that attempt before registering again.',
         }
         request.state.error_code = exc.code
         existing = exc.source_instance if exc.code in {'HOST_ALREADY_REGISTERED','HOST_SOURCE_REMOVED','HOST_REGISTRY_REVIEW_REQUIRED'} else None
+        details = {}
+        if getattr(request.state, 'principal', {}).get('role') == 'admin' and exc.conflicts:
+            from ..source_config import SOURCE_INSTANCE_PATTERN
+            entries = [dict(source_instance=row['source_instance'], state=row['state'])
+                       for row in exc.conflicts[:100] if isinstance(row, dict)
+                       and isinstance(row.get('source_instance'), str)
+                       and SOURCE_INSTANCE_PATTERN.fullmatch(row['source_instance'])
+                       and row.get('state') in ('REGISTERED', 'REMOVED')]
+            details = {'conflicts': entries, 'conflicts_truncated': exc.conflicts_truncated}
         return JSONResponse(status_code=409, content={'error': {
-            'code': exc.code, 'message': messages[exc.code],
+            **details, 'code': exc.code, 'message': messages[exc.code],
             'request_id': str(request.state.request_id),
             'existing_source': existing,
             'source_url': '/sources/' + existing if existing else None}})

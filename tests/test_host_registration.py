@@ -273,3 +273,47 @@ def test_same_attempt_cannot_repeat_side_effects_concurrently(migration_database
         store.reserve(preview(),'source-b',uuid4(),'actor-a')
     with pytest.raises(HostRegistrationConflict):
         with store.registration_guard(preview(),args[0],args[1],'another-actor'):pass
+
+
+@pytest.mark.parametrize('role', ['viewer', 'operator', 'admin'])
+def test_real_registration_conflict_distinguishes_tombstone_for_admin_only(migration_database, role):
+    from fastapi.testclient import TestClient
+    from netbox_sync.api.app import create_app
+    from netbox_sync.api.settings import ApiSettings
+    from netbox_sync.api.auth import COOKIE
+    from netbox_sync.application.onboarding import SourceOnboardingService, EphemeralOnboardingStore
+    from tests.test_onboarding import FakeRegistry, FakeSecrets
+    from tests.test_directory_auth import configured
+    from tests.test_operator_registration import HEADERS
+    from psycopg import sql
+    registry, engine = migration_database
+    _upgrade(registry, engine)
+    first = replace(_config(), settings={'onboarding_mapping': {'hosts':preview()['hosts']}})
+    second = replace(first, id='removed-source', source_instance='removed-source')
+    registry.create_source(first); registry.create_source(second)
+    with registry._connect() as connection:
+        connection.execute(sql.SQL('INSERT INTO {} (source_instance,display_name,credential_state) VALUES (%s,%s,%s)').format(
+            sql.Identifier(registry.schema,'source_tombstones')), (second.source_instance,second.name,'RETAINED_BY_REQUEST'))
+    store = HostReservations(registry._connect, registry.schema)
+    secrets = FakeSecrets()
+    onboarding = SourceOnboardingService({'esxi': lambda _: store.check(preview())},
+                                         EphemeralOnboardingStore(), FakeRegistry(), secrets)
+    auth, _, session = configured(role)
+    class Client:
+        def call(self, action, **payload): return auth.call(dict(action=action, **payload))
+    app = create_app(ApiSettings(bootstrap_socket='', probe_socket=''), auth_client=Client(), onboarding_service=onboarding)
+    with TestClient(app,base_url='https://localhost:8000') as http:
+        http.cookies.set(COOKIE,session)
+        response = http.post('/api/v1/sources/test-connection',headers=HEADERS,json={
+            'source_type':'esxi','address':'source.test','username':'fixture','secret':'fixture', 'verify_ssl':True})
+    assert response.status_code == (403 if role == 'viewer' else 409), response.text
+    if role != 'viewer':
+        error = response.json()['error']
+        assert error['code'] == 'HOST_IDENTITY_CONFLICT'
+        if role == 'admin':
+            assert error['conflicts'] == [
+                {'source_instance': first.source_instance, 'state':'REGISTERED'},
+                {'source_instance': second.source_instance, 'state':'REMOVED'}]
+        else: assert 'conflicts' not in error
+    assert not secrets.values
+    assert len(registry.list_sources()) == 2
