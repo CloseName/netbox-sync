@@ -1,9 +1,10 @@
-# NetBox-side guarded lifecycle (integration in progress)
+# NetBox-side guarded lifecycle
 
 This optional package is **not installed or enabled by NetBox Sync Compose**. It
 now exposes a narrow token-authenticated HTTP protocol when explicitly installed.
-Sync source removal still refuses destructive retirement. Do not install
-it on a live NetBox as a completed product workflow.
+Guard-backed source retirement and present-inventory audit are implemented.
+See [current acceptance and limitations](../../docs/backend-completion-acceptance-20260924.md).
+Legacy objects without authoritative creation proof remain protected.
 
 The locally tested target is NetBox Community 4.7.0 / Docker-5.1.1, image digest
 1685e91c61bb4050089db2bb1603718820ae3ce0b266d4d069ff7c682f5d9c58.
@@ -131,3 +132,22 @@ fields or claim a catalog match by name. The source registry is reconciled
 separately. Existing installations need the new plugin code for this route, with
 no migration or change to the certified 45-trigger schema. Old guard versions
 refuse this new read path and must not trigger a fallback POST.
+
+
+## Present-inventory audit and this code update
+
+`POST sources/<source>/audit/` takes an exact nonce and preserves the pinned guard
+identity. It requires existing source-constrained `retire` permission and view
+permissions for each returned object. A persisted format3 AUDIT_ONLY intent is
+checked with native NetBox `has_perm`; it cannot execute retirement format1/2.
+The response contains exact model/ID, present/claimed flags and fingerprints, not
+raw object/description/secret contents. It is current evidence, not proof of old
+write completion. A retry is actor/source/nonce-bound; no claim adoption exists.
+
+No plugin migration, trigger, new ObjectPermission action or identity rotation is
+needed by this update. Preserve existing GuardIdentity and all claims/receipts.
+The optional JSON `sync_identities=null` default is treated as absent; malformed
+values, foreign identities and missing exact creation claims remain rejected.
+Independent package installation is still owned by the NetBox operator; see the
+conditional upgrade instructions in the Sync upgrade runbook. No automatic NetBox
+container/image management was added to this repository.

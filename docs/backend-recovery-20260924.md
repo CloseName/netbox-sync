@@ -1,5 +1,7 @@
 # Backend recovery acceptance — 24 September 2026
 
+Current recovery delivery and remaining limitations: [24 September acceptance](backend-completion-acceptance-20260924.md). Older checkpoint counts below are historical.
+
 Base: `187056fbaf70ae1e9561d1aa6cc2c46c0b9441ff`, main, canonical origin.
 Initial working tree clean. All previous commits retained. No AGENTS.md found in
 repository or its parent chain. The previous README/container documentation is

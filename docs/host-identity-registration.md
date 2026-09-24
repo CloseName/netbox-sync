@@ -1,5 +1,7 @@
 # ESXi physical-host registration and source recovery
 
+Current recovery delivery and remaining limitations: [24 September acceptance](backend-completion-acceptance-20260924.md). Older checkpoint counts below are historical.
+
 Status: local implementation under review, not a live duplicate remediation.
 
 ## Identity and admission

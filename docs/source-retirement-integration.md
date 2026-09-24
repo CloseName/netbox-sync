@@ -1,5 +1,7 @@
 # Source retirement integration (local implementation)
 
+Current recovery delivery and remaining limitations: [24 September acceptance](backend-completion-acceptance-20260924.md). Older checkpoint counts below are historical.
+
 This is the implemented boundary for the separately approved retirement worker.
 It is not a declaration that all twelve backend-completion requirements or live
 acceptance have passed. No live NetBox objects were inspected or changed.

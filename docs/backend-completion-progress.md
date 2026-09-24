@@ -1,5 +1,7 @@
 # Backend completion / 2026-09-22
 
+Current recovery delivery and remaining limitations: [24 September acceptance](backend-completion-acceptance-20260924.md). Older checkpoint counts below are historical.
+
 Active user request: attachment 4a49ceb3-d1c9-4190-9d49-472750357d2d plus
 item 12 (duplicate physical source registration). Base 3bb567ce493486a02fc36db495d91e7c151aff48.
 Existing work preserved. User permits publication only after completion and successful
@@ -667,3 +669,73 @@ evidence while keeping Discovery FAILED and preserving UNKNOWN write blocking.
 Full Linux/PostgreSQL: 1393 passed, 47 opt-in skips; frontend 74 and TypeScript pass.
 This does not close the remaining identity, historical UNKNOWN, orphan or complete
 provider/guard/retirement/re-add gates.
+
+
+## Completion continuation in progress — 24 September
+
+Working from 1aa0a2c, preserving its five existing commits. The latest user request
+explicitly authorizes commit/push after final checks; no publication or live action
+yet. No browser checks. No VHD manipulation or global Docker cleanup.
+
+Current uncommitted implementation adds durable secret-free registration requests
+(migration0011), actor-bound resume UI, and append-only administrative baseline
+acceptance (0012) which NEVER rewrites historical UNKNOWN/PARTIAL to success. New
+manual success is required before scheduling can resume; restore invalidates the
+accepted capability while retaining its audit. Backup fresh-restore explicitly
+handles its two gate views. A source with confirmed guard retirement can recover
+its original namespace even when its old cluster is gone; placement repair remains
+explicit and scheduling off. AM/CM diagnostics now distinguish missing/invalid UUID,
+invisible host inventory and permission denial through the worker/API/UI boundary.
+
+Executed on this continuation: 1450 Linux/PG passed, 39 opt-in skips; 75 frontend
+unit tests and TS; real NetBox 4.7 HTTPS permissions/receipts/audit-only journal;
+12 real DB grants/dump/restore checks. Production retirement-worker gate initially
+failed on an incorrect finished_at/removed_at ordering; replaced with lifecycle
+restoration-generation fencing and reran successfully, including recovery after
+confirmed cluster deletion (actual worker/NetBox read, broker ownership callback
+is a test boundary). Both full provider Compose modes are still running. Last
+full suite predates that narrow generation correction; affected tests must rerun.
+
+Automatic review rejected a proposed custom permission-constraint evaluator for
+NetBox audit, because it could change authorization scope. That edit was NOT made.
+Instead audit uses the existing persisted guard-intent + native has_perm boundary;
+audit-only intents cannot execute either deletion protocol. Real HTTP regression
+confirms source-scope and write-disabled token refusal, with no infrastructure
+mutation by audit. The audit does create a guard journal record, so it must not be
+called a read-only HTTP GET.
+
+Still open: completed historical PAM reservation resolution, Proxmox provider
+identity contract and resumable registration, legacy creation-ownership proof /
+orphan resolution, and one combined provider/real-NetBox-guard/retirement/re-add
+gate. Do not describe these as complete from independent component tests. Live
+AM/CM values remain unknown. Microsoft AD and operator live acceptance remain
+external checks. Finish available implementation and final gates before release.
+
+
+## Recovery delivery: final local checks
+
+See backend-completion-acceptance-20260924.md for the superseding eleven-point
+matrix, exact skip classification and limitations. Final Python/migrations:
+1479 Linux/PG passed,40 separately classified skips; dedicated grants/restore13
+passed plus zero-source1; production full workers bundled/external2 passed;
+real NetBox4.7 guarded inventory/VRF/orphan retirement/recovery1 passed;
+both historical upgrades2 passed. Frontend84, TypeScript/Vite and production
+image build passed. Cross-UID4, clean Debian optional host runtime1, actual host
+backup/verify/inspect/fresh-restore1 passed. No browser/live/systemd reboot claim.
+
+The obsolete fixed16-field assertion in TLS smoke was replaced with the actual
+shared contract; all3 TLS modes passed after correction. A final UI-only baseline
+refresh correction has its interaction regression; production TLS is repeated on
+its rebuilt bundle. Existing commits, shared lock, broker isolation and secrets
+were retained. No global cleanup was performed at the end.
+
+Physical Proxmox identity/resumable recovery, missing old registration requests,
+legacy creation proof, actual PAM/AM/CM facts, complete independent NetBox restore
+and Microsoft AD acceptance remain explicit limits. Do not label the entire task
+closed because the scoped gates pass. User authorized publication; no deployment.
+
+
+Final rebuilt frontend image TLS rerun:3 passed in95.14s. Backend and UI commits
+are027403bc6edfc8b131982c8d6e49aa644f17752e and
+5309b37afe1ad64e25ae51c6908da7cc47d42569 respectively. Documentation/publication
+follow; no further global resource cleanup or live access was performed.
