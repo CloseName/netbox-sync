@@ -33,7 +33,7 @@ class Check(BaseModel):
 
 class AccessCheck(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    name: Literal['network','tls','read_auth','apply_auth','permissions','prerequisites']
+    name: Literal['network','tls','read_auth','apply_auth','permissions','prerequisites','guard']
     status: Literal['not_run','passed','failed','preliminary','pending']
 
 
@@ -88,7 +88,8 @@ class State(BaseModel):
     apply_token_present: StrictBool
     safe_code: Literal['NETWORK_UNREACHABLE','TLS_FAILED','AUTH_FAILED','PERMISSION_DENIED',
                        'RESPONSE_INVALID','PREREQUISITES_MISSING','DESTINATION_DENIED',
-                       'VALIDATION_UNAVAILABLE','VALIDATION_INTERRUPTED'] | None
+                       'VALIDATION_UNAVAILABLE','VALIDATION_INTERRUPTED','RETIREMENT_TOKEN_WRITE_REQUIRED',
+                       'RETIREMENT_AUDIT_PERMISSION_REQUIRED','RETIREMENT_GUARD_CHANGED'] | None
     checks: list[Check]
     validated_at: float | None
     preparation: PreparationState | None = None

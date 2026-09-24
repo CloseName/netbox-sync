@@ -271,3 +271,32 @@ test('exact AM BIOS UUID survives preview placement and final registration',asyn
  await expect(page).toHaveURL(/\/sources$/);
  expect(server.writes).toEqual(['/api/v1/sources']);
 });
+
+for(const lang of ['en','ru'])test(`legacy Admin decision continues full wizard ${lang}`,async({page})=>{
+ const server=await fixture(page,'admin','esxi','','00000000-0000-0000-0000-ac1f6be2c4da');
+ let resolved=false,decisions=0,oldProbe=0;
+ await page.route('**/api/v1/sources/test-connection',route=>resolved?route.fallback():route.fulfill({status:409,json:{error:{code:'HOST_REGISTRY_REVIEW_REQUIRED',existing_source:'legacy'}}}));
+ await page.route('**/api/v1/sources/legacy/legacy-*',async route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(path.endsWith('review'))return route.fulfill({json:{source_instance:'legacy',name:'ESXI-1L-SUP',address:'old.example.test',port:443,verify_ssl:true,revision:'a'.repeat(64),host_uuid:null,state:'REMOVED',isolated:false,site_slug:'old',cluster_name:'Old'}});
+  if(path.endsWith('probe')){oldProbe++;return route.fulfill({status:502,json:{error:{code:'SOURCE_CONNECTION_FAILED'}}});}
+  const body=route.request().postDataJSON();expect(body.decision).toBe('ISOLATE');expect(body.confirmed).toBe(true);expect(body.evidence_token).toBeNull();decisions++;resolved=true;return route.fulfill({json:{status:'RECORDED'}});
+ });
+ await connect(page);await expect(page.getByText('It is not a confirmed duplicate.',{exact:false})).toBeVisible();
+ if(lang==='ru')await setLanguage(page,'ru');
+ await page.getByRole('button',{name:lang==='ru'?'Открыть проверку старой записи':'Review this legacy record',exact:true}).click();
+ const old=page.locator('#legacy-identity');
+ const newSecret=await page.locator('.wizard-form [name=secret]').inputValue();
+ await old.locator('[name=username]').fill('old-account');await old.locator('[name=secret]').fill(randomUUID());
+ expect(await old.locator('[name=secret]').inputValue()).not.toBe(newSecret);
+ await old.getByRole('button',{name:lang==='ru'?'Проверить старый сервер':'Check old server',exact:true}).click();await expect.poll(()=>oldProbe).toBe(1);
+ await expect(page.locator('.wizard-form [name=secret]')).toHaveValue(newSecret);
+ await old.getByRole('textbox',{name:lang==='ru'?'Причина решения (без секретов)':'Decision reason (no secrets)'}).fill('Decommissioned; retained ownership is not proved');
+ await old.getByRole('checkbox').check();await old.getByRole('button',{name:lang==='ru'?'Изолировать непроверенную запись':'Isolate unverified record',exact:true}).click();
+ await expect(old.getByRole('status')).toContainText(lang==='ru'?'Решение сохранено':'Decision saved');
+ await page.screenshot({path:test.info().outputPath('legacy-decision-'+lang+'.png'),fullPage:true});
+ if(lang==='ru')await setLanguage(page,'en');
+ await page.locator('.wizard-form').getByRole('button',{name:'Continue',exact:true}).click();await expect(page).toHaveURL(/step=2/);
+ await placement(page);await page.getByRole('button',{name:'Continue',exact:true}).click();await page.getByRole('button',{name:'Add source',exact:true}).click();
+ await expect(page).toHaveURL(/\/sources$/);expect(decisions).toBe(1);expect(server.writes).toEqual(['/api/v1/sources']);
+});

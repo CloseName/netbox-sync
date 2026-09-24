@@ -1,5 +1,6 @@
 """Source onboarding policy with ephemeral credentials and guarded cross-store writes."""
 
+from contextlib import contextmanager
 import secrets
 import threading
 import time
@@ -240,10 +241,14 @@ class SourceOnboardingService:
                 raise HostRegistrationConflict('HOST_IDENTITY_UNAVAILABLE')
             reserve(preview, request.source_instance, operation_id, actor)
 
+    @contextmanager
     def registration_guard(self, request, operation_id, actor):
         from contextlib import nullcontext
         guard=getattr(self._registry,'registration_guard',None)
-        return guard(self.preview(request.onboarding_token),request.source_instance,operation_id,actor) if guard else nullcontext()
+        with guard(self.preview(request.onboarding_token),request.source_instance,operation_id,actor) if guard else nullcontext():
+            check=getattr(self._registry,'check_legacy_placement',None)
+            if check:check(request)
+            yield
 
     def registration_intent(self, request, operation, actor, fingerprint, durable_request=None):
         bind=getattr(self._registry,'registration_intent',None)

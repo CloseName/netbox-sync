@@ -53,6 +53,13 @@ class LifecycleClient:
         except ControlError as exc:raise LifecycleRequestError(exc.code) from None
         except Exception:raise LifecycleRequestError('LIFECYCLE_UNAVAILABLE') from None
 
+    def legacy(self,action,source,**payload):
+        from ..local_control import request,ControlError
+        if action not in {'describe','confirm','status'}:raise LifecycleRequestError('REQUEST_INVALID')
+        try:return request(self.path,{'action':'legacy_'+action,'source_instance':source,**payload},timeout=20)['result']
+        except ControlError as exc:raise LifecycleRequestError(exc.code) from None
+        except Exception:raise LifecycleRequestError('LIFECYCLE_UNAVAILABLE') from None
+
     def identity(self,action,source,**payload):
         from ..local_control import request,ControlError
         if action not in {'describe','confirm'}:raise LifecycleRequestError('REQUEST_INVALID')

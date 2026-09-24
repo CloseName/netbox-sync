@@ -6,7 +6,7 @@ from uuid import UUID
 from .run_gates import blocking_runs
 from psycopg import sql
 from psycopg.types.json import Jsonb
-from .host_registration import legacy_anchor,esxi_anchor,HostRegistrationConflict
+from .host_registration import legacy_anchor,registration_anchor,esxi_anchor,HostRegistrationConflict
 from .source_lifecycle import LifecycleError
 from .source_operations import source_gate
 from .placement_control import row as active_row
@@ -30,7 +30,7 @@ class IdentityVerification:
         row=active_row(self.store,connection,source)
         if row['source_type']!='esxi':raise LifecycleError('SOURCE_IDENTITY_UNSUPPORTED')
         discovery,anchor,observed_at=self._evidence(connection,source)
-        recorded=legacy_anchor(row['settings'])
+        recorded=registration_anchor(row['settings'])
         return row,{'source_instance':source,'revision':self.store.revision(row),'discovery_id':discovery,
                     'host_uuid':anchor,'recorded_uuid':recorded,'observed_at':observed_at,
                     'site_slug':row['site_slug'],'cluster_name':row['cluster_name']}
@@ -44,6 +44,8 @@ class IdentityVerification:
         if not isinstance(actor,str) or not actor or len(actor)>200:raise LifecycleError('REQUEST_INVALID')
         with self.store.lock(self.store.lock_path):
             with self.store.connect() as connection,source_gate(connection,self.store.schema,source):
+                from .legacy_admission import admission_lock
+                admission_lock(connection,self.store.schema)
                 previous=connection.execute(sql.SQL('SELECT * FROM {} WHERE operation_id=%s').format(
                     self.store.table('source_identity_verifications')),(operation,)).fetchone()
                 if previous:
@@ -66,12 +68,14 @@ class IdentityVerification:
                     or len([item for item in proof.get('owned',[]) if item.get('kind')=='device'])!=1):
                     raise LifecycleError('SOURCE_IDENTITY_UNPROVED')
                 others=connection.execute(sql.SQL("SELECT settings FROM {} WHERE source_type='esxi' AND source_instance<>%s").format(self.store.table('sources')),(source,)).fetchall()
-                if any(legacy_anchor(other['settings'])==meta['host_uuid'] for other in others):
+                if any(registration_anchor(other['settings'])==meta['host_uuid'] for other in others):
                     raise LifecycleError('SOURCE_IDENTITY_CONFLICT')
+                reserved=connection.execute(sql.SQL('SELECT source_instance FROM {} WHERE provider=%s AND anchor=%s').format(self.store.table('host_reservations')),('esxi',meta['host_uuid'])).fetchone()
+                if reserved and reserved['source_instance']!=source:raise LifecycleError('SOURCE_IDENTITY_CONFLICT')
                 identity={'version':1,'provider':'esxi','hardware_uuid':meta['host_uuid'],
                           'verification_id':str(operation),'site_id':proof['site_id'],'cluster_id':proof['cluster_id']}
                 connection.execute(sql.SQL('INSERT INTO {} (operation_id,source_instance,actor_id,revision,anchor,proof) VALUES (%s,%s,%s,%s,%s,%s)').format(self.store.table('source_identity_verifications')),
                     (operation,source,actor,revision,meta['host_uuid'],Jsonb(proof)))
-                connection.execute(sql.SQL("UPDATE {} SET settings=jsonb_set(COALESCE(settings,'{{}}'::jsonb),'{{provider_identity}}',%s) WHERE source_instance=%s").format(self.store.table('sources')),(Jsonb(identity),source))
+                connection.execute(sql.SQL("UPDATE {} SET settings=jsonb_set(COALESCE(settings,'{{}}'::jsonb)-'legacy_admission','{{provider_identity}}',%s) WHERE source_instance=%s").format(self.store.table('sources')),(Jsonb(identity),source))
                 connection.execute(sql.SQL("UPDATE {} SET status='STALE',result=NULL,safe_error_code='PLAN_STALE',updated_at=clock_timestamp() WHERE source_instance=%s AND operation_kind='PLAN' AND status='READY'").format(self.store.table('source_operations')),(source,))
                 return {'status':'VERIFIED','source_instance':source,'host_uuid':meta['host_uuid']}

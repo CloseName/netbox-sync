@@ -1,3 +1,4 @@
+import {LegacyAdmission} from '../components/LegacyAdmission';
 import {SourceInventoryAudit} from '../components/SourceInventoryAudit';
 import {RunReconciliation} from '../components/RunReconciliation';
 import {usePermission} from '../AuthGate';
@@ -30,6 +31,7 @@ export function RemovedSource({ value:initial }: { value: Lifecycle }) {
     <p>{tr(credentialText(value.credential_state))} {tr("Provider credentials were not revoked.")}{" "}</p>
     {canResolve&&value.retirement?.state!=='FINALIZED'&&<SourceRetirementPanel key={reviewGeneration} retained source={{source_instance:value.source_instance,name:value.display_name}} onRemoved={setValue}/>}
     {canResolve&&value.retirement?.state==='FINALIZED'&&<SourceInventoryAudit source={value.source_instance}/> }
+    {canResolve&&<LegacyAdmission source={value.source_instance}/>}
     {canResolve&&<RunReconciliation source={value.source_instance} onSaved={()=>setReviewGeneration(g=>g+1)}/>}
     <div className="page-actions"><Link to={'/runs?source_instance=' + encodeURIComponent(value.source_instance)}>{tr("View run history")}{" "}</Link><Link to="/sources">{tr("Back to Sources")}{" "}</Link></div>
   </main>;

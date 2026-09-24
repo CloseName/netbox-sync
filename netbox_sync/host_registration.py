@@ -59,6 +59,18 @@ def legacy_anchor(settings):
     except HostRegistrationConflict:return None
 
 
+
+def registration_anchor(settings):
+    """Conservative collision claim; an endpoint observation is NOT ownership."""
+    anchor=legacy_anchor(settings)
+    if anchor:return anchor
+    decision=settings.get('legacy_admission',{}) if isinstance(settings,Mapping) else {}
+    if not isinstance(decision,Mapping) or decision.get('state')!='OBSERVED_ENDPOINT':return None
+    try:UUID(str(decision['operation_id']))
+    except (KeyError,ValueError,TypeError):return None
+    return _validated_host_hardware_uuid(decision.get('observed_uuid'))
+
+
 def identity_placement(settings):
     """Use current reviewed mapping IDs, otherwise the verified legacy scope."""
     mapping=(settings or {}).get('onboarding_mapping',{})
@@ -93,12 +105,13 @@ class HostReservations:
         anchor = esxi_anchor(preview)
         with self.connector() as connection:
             with connection.cursor(row_factory=dict_row) as cursor:
-                cursor.execute(sql.SQL('SELECT source_instance, settings FROM {} WHERE source_type=%s').format(
+                cursor.execute(sql.SQL('SELECT source_instance, settings, enabled, sync_enabled FROM {} WHERE source_type=%s').format(
                     sql.Identifier(self.schema, 'sources')), ('esxi',))
                 rows = cursor.fetchall()
-                unknown = sorted(row['source_instance'] for row in rows if legacy_anchor(row['settings']) is None)
+                from .legacy_admission import resolved_for_admission
+                unknown = sorted(row['source_instance'] for row in rows if legacy_anchor(row['settings']) is None and not resolved_for_admission(row))
                 existing = sorted(row['source_instance'] for row in rows
-                                  if legacy_anchor(row['settings']) == anchor)
+                                  if registration_anchor(row['settings']) == anchor)
                 if existing:
                     self._existing(cursor,existing)
                 if unknown:
@@ -126,17 +139,23 @@ class HostReservations:
             raise ValueError('Invalid actor identity')
         with self.connector() as connection:
             with connection.cursor(row_factory=dict_row) as cursor:
+                from .legacy_admission import admission_lock
+                from .source_lifecycle import LifecycleError
+                try:admission_lock(connection,self.schema,shared=True)
+                except LifecycleError:
+                    raise HostRegistrationConflict('HOST_REGISTRATION_RESERVED') from None
                 cursor.execute('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0)) AS locked',
                                ('netbox-sync:' + self.schema + ':host:' + anchor,))
                 if not cursor.fetchone()['locked']:
                     raise HostRegistrationConflict('HOST_REGISTRATION_RESERVED')
                 # Includes tombstoned rows: removal does not release identity.
-                cursor.execute(sql.SQL('SELECT source_instance, settings FROM {} WHERE source_type=%s').format(
+                cursor.execute(sql.SQL('SELECT source_instance, settings, enabled, sync_enabled FROM {} WHERE source_type=%s').format(
                     sql.Identifier(self.schema, 'sources')), ('esxi',))
                 rows = cursor.fetchall()
-                unknown = sorted(row['source_instance'] for row in rows if legacy_anchor(row['settings']) is None)
+                from .legacy_admission import resolved_for_admission
+                unknown = sorted(row['source_instance'] for row in rows if legacy_anchor(row['settings']) is None and not resolved_for_admission(row))
                 existing = sorted(row['source_instance'] for row in rows
-                                  if legacy_anchor(row['settings']) == anchor)
+                                  if registration_anchor(row['settings']) == anchor)
                 if existing:
                     self._existing(cursor,existing)
                 if unknown:
@@ -200,7 +219,13 @@ class HostReservations:
         with self.connector() as connection:
             connection.autocommit=True
             acquired=False
+            global_key='netbox-sync:'+self.schema+':legacy-admission'
+            global_acquired=False
             try:
+                with connection.cursor(row_factory=dict_row) as global_cursor:
+                    global_cursor.execute('SELECT pg_try_advisory_lock_shared(hashtextextended(%s,0)) AS locked',(global_key,))
+                    global_acquired=global_cursor.fetchone()['locked']
+                    if not global_acquired:raise HostRegistrationConflict('HOST_REGISTRATION_RESERVED')
                 with connection.cursor(row_factory=dict_row) as cursor:
                     cursor.execute('SELECT pg_try_advisory_lock(hashtextextended(%s,0)) AS locked',(lock_key,))
                     acquired=cursor.fetchone()['locked']
@@ -211,15 +236,19 @@ class HostReservations:
                     reserved=cursor.fetchone()
                     if not reserved or (reserved['source_instance'],reserved['operation_id'],reserved['actor_id'])!=(source_instance,UUID(str(operation_id)),actor_id):
                         raise HostRegistrationConflict('HOST_REGISTRATION_RESERVED',source_instance)
-                    cursor.execute(sql.SQL('SELECT source_instance,settings FROM {} WHERE source_type=%s').format(
+                    cursor.execute(sql.SQL('SELECT source_instance,settings,enabled,sync_enabled FROM {} WHERE source_type=%s').format(
                         sql.Identifier(self.schema,'sources')),('esxi',))
                     rows=cursor.fetchall()
-                    existing=[row['source_instance'] for row in rows if legacy_anchor(row['settings'])==anchor]
+                    existing=[row['source_instance'] for row in rows if registration_anchor(row['settings'])==anchor]
                     if existing:self._existing(cursor,existing)
-                    if any(legacy_anchor(row['settings']) is None for row in rows):
+                    from .legacy_admission import resolved_for_admission
+                    if any(legacy_anchor(row['settings']) is None and not resolved_for_admission(row) for row in rows):
                         raise HostRegistrationConflict('HOST_REGISTRY_REVIEW_REQUIRED')
                 yield
             finally:
+                if global_acquired:
+                    with connection.cursor(row_factory=dict_row) as global_cursor:
+                        global_cursor.execute("SELECT pg_advisory_unlock_shared(hashtextextended(%s,0))",(global_key,))
                 if acquired:
                     connection.execute('SELECT pg_advisory_unlock(hashtextextended(%s,0))',(lock_key,))
 

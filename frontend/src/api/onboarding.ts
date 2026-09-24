@@ -2,12 +2,13 @@ import { isSource } from './sources.ts';
 import type { Source } from './sources';
 
 export const hostRegistrationMessages:Record<string,readonly [string,string]>={
+ HOST_LEGACY_PLACEMENT_PROTECTED:['Legacy ownership in this placement is unproved. Choose a separate placement; isolation does not authorize adoption.','Принадлежность старых объектов в этом размещении не доказана. Выберите отдельное размещение; изоляция не разрешает присвоение объектов.'],
  HOST_SOURCE_REMOVED:['This host belongs to a removed source. An administrator must review recovery.','Хост связан с удалённым источником. Администратор должен проверить возможность восстановления.'],
  HOST_ALREADY_REGISTERED:['This host already belongs to a source. Open it; a removed source requires administrator recovery.','Этот хост уже связан с источником. Откройте его; удалённый источник должен восстановить администратор.'],
  HOST_IDENTITY_CONFLICT:['Several source records contain the same host identifier. Administrator reconciliation is required.','В нескольких записях источников сохранён один идентификатор хоста. Нужна сверка администратором.'],
  HOST_REGISTRATION_RESERVED:['An earlier registration reserved this host. Reconcile that attempt before adding it again.','Хост зарезервирован предыдущей попыткой добавления. Сначала нужно проверить её результат.'],
  HOST_IDENTITY_UNAVAILABLE:['A reliable host identity could not be verified. Registration is blocked.','Не удалось подтвердить надёжную идентичность хоста. Добавление заблокировано.'],
- HOST_REGISTRY_REVIEW_REQUIRED:['An existing ESXi source lacks hardware identity. Ask an administrator to verify it before adding a host.','У существующего источника ESXi нет аппаратного идентификатора. Перед добавлением хоста администратор должен проверить его идентичность.'],
+ HOST_REGISTRY_REVIEW_REQUIRED:['A legacy ESXi record has no UUID. It is not a confirmed duplicate. An administrator can check the old server or isolate the unverified record below.','У старой записи ESXi нет UUID. Это не подтверждённый дубль. Администратор может проверить старый сервер или изолировать непроверенную запись ниже.'],
  HOST_REGISTRATION_INVALID:['Reload the registration form to obtain a request ID.','Перезагрузите форму добавления для получения идентификатора запроса.'],
 };
 export type HostConflict = {source_instance:string;state:'REGISTERED'|'REMOVED'};

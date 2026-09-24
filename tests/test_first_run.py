@@ -126,7 +126,8 @@ def test_lost_validation_callback_cannot_publish_after_recovery(store):
     assert store.validate(1,callback)['status']=='ATTENTION'
 
 
-def test_read_only_probe_returns_only_expected_field_names():
+@pytest.mark.parametrize('guard_result,expected',[(None,None),({'source_audit':True,'audit_permission':True,'token_write_enabled':True},None),({'source_audit':True,'audit_permission':False,'token_write_enabled':True},'RETIREMENT_AUDIT_PERMISSION_REQUIRED'),({'source_audit':True,'audit_permission':True,'token_write_enabled':False},'RETIREMENT_TOKEN_WRITE_REQUIRED'),({},'RETIREMENT_GUARD_CHANGED')])
+def test_read_only_probe_returns_only_expected_field_names(monkeypatch,guard_result,expected):
     from netbox_sync.bootstrap_probe import probe,FIELDS,ENDPOINTS
     class Policy:
         def resolve(self,host,port):return host,'10.0.0.8'
@@ -146,8 +147,17 @@ def test_read_only_probe_returns_only_expected_field_names():
             if method=='OPTIONS':return Response({'actions':{} if headers['Authorization'].endswith(SECRET) else {'POST':{}}})
             if '/custom-fields/' in url:return Response({'next':None,'results':[dict(name=name,type=kind,object_types=list(models)) for name,(kind,models) in FIELDS.items()]})
             return Response({'count':0,'results':[]})
-    result=probe(PAYLOAD,Session,Policy())
-    assert result['safe_code'] is None and len(result['checks'])==len(FIELDS)
+    value=dict(PAYLOAD)
+    if guard_result is not None:
+        value['guard_instance']='37818780-136b-433f-8bce-ef9a1e5cd60a'
+        def capability(client):
+            assert client is not None
+            return guard_result
+        monkeypatch.setattr('netbox_sync.retirement_transport.GuardClient.capabilities',capability)
+    result=probe(value,Session,Policy())
+    assert result['safe_code']==expected
+    if expected is None:assert len(result['checks'])==len(FIELDS)
+    else:assert next(c for c in result['access_checks'] if c['name']=='guard')['status']=='failed'
     assert set(calls)=={'GET','OPTIONS'} and SECRET not in json.dumps(result)
 
 
@@ -211,7 +221,7 @@ def test_probe_failure_classes_are_closed(failure,expected):
             return Response()
     result=probe(PAYLOAD,Session,Policy())
     assert result['safe_code']==expected and result['checks']==[]
-    assert {c['name'] for c in result['access_checks']}=={'network','tls','read_auth','apply_auth','permissions','prerequisites'}
+    assert {c['name'] for c in result['access_checks']}=={'network','tls','read_auth','apply_auth','permissions','prerequisites','guard'}
     assert next(c['status'] for c in result['access_checks'] if c['name']=='apply_auth')=='not_run'
     assert SECRET not in json.dumps(result)
 
@@ -220,3 +230,18 @@ def test_bootstrap_public_destination_still_denies_metadata():
     from netbox_sync.bootstrap_probe import probe
     result=probe({**PAYLOAD,'url':'https://169.254.169.254'})
     assert result['safe_code']=='DESTINATION_DENIED'
+
+
+@pytest.mark.parametrize('code',[None,'RETIREMENT_TOKEN_WRITE_REQUIRED','RETIREMENT_AUDIT_PERMISSION_REQUIRED','RETIREMENT_GUARD_CHANGED'])
+def test_guard_probe_result_survives_worker_api_public_projection(store,monkeypatch,code):
+    store.configure(PAYLOAD)
+    result={**success(),'safe_code':code,'access_checks':[dict(name='guard',status='failed' if code else 'preliminary')]}
+    state=store.validate(1,lambda _:result)
+    def control(path,payload,**kwargs):return {'result':state}
+    monkeypatch.setattr('netbox_sync.api.bootstrap.request',control)
+    http=TestClient(create_app(ApiSettings(bootstrap_socket='/test')))
+    response=http.get('/api/v1/bootstrap')
+    assert response.status_code==200,response.text
+    assert response.json()['safe_code']==code
+    assert response.json()['access_checks']==result['access_checks']
+    assert SECRET not in response.text

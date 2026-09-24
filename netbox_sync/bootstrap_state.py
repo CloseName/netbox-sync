@@ -160,6 +160,7 @@ class BootstrapStore:
                 return self.public(current)
             allowed = {'NETWORK_UNREACHABLE','TLS_FAILED','AUTH_FAILED','PERMISSION_DENIED',
                        'RESPONSE_INVALID','PREREQUISITES_MISSING','DESTINATION_DENIED','VALIDATION_UNAVAILABLE'}
+            allowed.update({'RETIREMENT_TOKEN_WRITE_REQUIRED','RETIREMENT_AUDIT_PERMISSION_REQUIRED','RETIREMENT_GUARD_CHANGED'})
             from .bootstrap_probe import FIELDS
             checks = result.get('checks') if isinstance(result, dict) else None
             valid_checks = (isinstance(checks, list) and len(checks) == len(FIELDS)
@@ -173,7 +174,7 @@ class BootstrapStore:
             if code is not None and code not in allowed:
                 code = 'VALIDATION_UNAVAILABLE'
             access = result.get('access_checks', []) if isinstance(result, dict) else []
-            allowed_access = {'network','tls','read_auth','apply_auth','permissions','prerequisites'}
+            allowed_access = {'network','tls','read_auth','apply_auth','permissions','prerequisites','guard'}
             current['access_checks'] = [c for c in access if isinstance(c, dict) and set(c)=={'name','status'} and c['name'] in allowed_access and c['status'] in ('passed','failed','not_run','preliminary','pending')] if isinstance(access,list) else []
             current.update(status='VALIDATED' if code is None else 'ATTENTION', safe_code=code,
                            checks=checks if valid_checks else [], validated_at=self.clock() if code is None else None)

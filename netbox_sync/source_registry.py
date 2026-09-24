@@ -334,7 +334,9 @@ class SourceRegistry:
         """
         if config.source_type != 'esxi':
             return
-        from .host_registration import legacy_anchor, HostRegistrationConflict
+        from .host_registration import registration_anchor as legacy_anchor, HostRegistrationConflict
+        if config.settings.get('legacy_admission',{}).get('state') in {'ISOLATED_UNPROVED','OBSERVED_ENDPOINT'}:
+            raise HostRegistrationConflict('HOST_REGISTRY_REVIEW_REQUIRED',config.source_instance)
         anchor = legacy_anchor(config.settings)
         if anchor is None:
             return

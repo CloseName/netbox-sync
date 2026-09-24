@@ -120,6 +120,11 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
         connection.commit()
         expected_baselines=connection.execute('SELECT * FROM netbox_sync.run_reconciliations').fetchall()
         expected_intents=connection.execute('SELECT * FROM netbox_sync.registration_intents').fetchall()
+        legacy_operation=uuid.uuid4()
+        decision=dict(purpose='LEGACY_ADMISSION',decision='ISOLATE',reason='Decommissioned fixture',anchor=None)
+        connection.execute("INSERT INTO netbox_sync.source_identity_verifications(operation_id,source_instance,actor_id,revision,anchor,proof) VALUES (%s,'esxi-backup-test','admin',%s,'UNPROVED',%s)",(legacy_operation,'c'*64,Jsonb(decision)))
+        connection.execute("UPDATE netbox_sync.sources SET settings=jsonb_set(settings,'{legacy_admission}',%s) WHERE source_instance='esxi-backup-test'",(Jsonb(dict(state='ISOLATED_UNPROVED',operation_id=str(legacy_operation),physical_identity_proved=False,object_ownership_proved=False)),))
+        connection.commit()
         expected_identity=connection.execute('SELECT * FROM netbox_sync.source_identity_verifications').fetchall()
         connection.execute("INSERT INTO netbox_sync.source_retirements(operation_id,source_instance,actor_id,revision,guard_instance,plan,state,remove_credentials) VALUES (%s,'esxi-backup-test','admin',%s,%s,%s,'SENDING',false)",
             (uuid.uuid4(),'d'*64,uuid.uuid4(),Jsonb({'remote':{'digest':'e'*64,'manifest':{'format':2,'cluster_id':7,'objects':[['vm:8','f'*64]]}},'removal_generation':None,'source_flags':{'enabled':False,'sync_enabled':False}})))

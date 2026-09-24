@@ -50,7 +50,7 @@ def fetch(session, url, token, method='GET'):
 
 def probe(value, session_factory=requests.Session, policy=None):
     checks = []
-    access = {name:'not_run' for name in ('network','tls','read_auth','apply_auth','permissions','prerequisites')}
+    access = {name:'not_run' for name in ('network','tls','read_auth','apply_auth','permissions','prerequisites','guard')}
     kind = 'read'
     def evidence():return [{'name': name, 'status': status} for name,status in access.items()]
     try:
@@ -74,6 +74,22 @@ def probe(value, session_factory=requests.Session, policy=None):
                     if (kind == 'read' and 'POST' in actions) or (kind == 'apply' and 'POST' not in actions):
                         raise ProbeError('PERMISSION_DENIED')
             access['permissions'] = 'preliminary'
+            if value.get('guard_instance'):
+                from .retirement_transport import GuardClient,GuardTransportError
+                try:
+                    guard=GuardClient(session,value['url'],authorization(value['apply_token']),value['guard_instance'])
+                    capabilities=guard.capabilities()
+                    if capabilities.get('source_audit') is not True:raise GuardTransportError('GUARD_CAPABILITY_MISMATCH')
+                    if capabilities.get('audit_permission') is not True:raise GuardTransportError('GUARD_AUDIT_PERMISSION_REQUIRED')
+                    if capabilities.get('token_write_enabled') is not True:raise GuardTransportError('TOKEN_WRITE_REQUIRED')
+                    access['guard']='preliminary' # source/object restrictions require an actual scoped audit
+                except GuardTransportError as exc:
+                    access['guard']='failed'
+                    raise ProbeError({'AUTHENTICATION_REQUIRED':'AUTH_FAILED','TOKEN_WRITE_REQUIRED':'RETIREMENT_TOKEN_WRITE_REQUIRED',
+                        'GUARD_AUDIT_PERMISSION_REQUIRED':'RETIREMENT_AUDIT_PERMISSION_REQUIRED','PERMISSION_DENIED':'PERMISSION_DENIED',
+                        'GUARD_TLS_FAILED':'TLS_FAILED','GUARD_CONNECTION_FAILED':'NETWORK_UNREACHABLE','GUARD_TIMEOUT':'NETWORK_UNREACHABLE'
+                        }.get(exc.code,'RETIREMENT_GUARD_CHANGED')) from None
+
             kind = 'read'
             result = fetch(session, value['url'] + '/api/extras/custom-fields/?limit=1000', value['read_token'])
             rows = result.get('results')

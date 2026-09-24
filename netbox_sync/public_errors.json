@@ -284,5 +284,60 @@
       "en": "Compare the stored sync_identities with the host BIOS UUID under the same account. Preserve the source and NetBox IDs; do not register another source or edit ownership to bypass this check. A reviewed identity transition is required.",
       "ru": "Сравните сохранённые sync_identities с BIOS UUID хоста под той же учётной записью. Сохраните источник и NetBox ID; не создавайте второй источник и не меняйте принадлежность для обхода проверки. Нужен проверенный переход идентичности."
     }
+  },
+  "RETIREMENT_AUTH_FAILED": {
+    "stage": "netbox",
+    "message": {
+      "en": "NetBox could not authenticate the integration token. Check expiry, revocation and token restrictions.",
+      "ru": "NetBox не подтвердил токен интеграции. Проверьте срок, отзыв и ограничения токена."
+    },
+    "action": {
+      "en": "Review the dedicated integration service account permissions in NetBox.",
+      "ru": "Проверьте права отдельной служебной записи интеграции в NetBox."
+    }
+  },
+  "RETIREMENT_TOKEN_WRITE_REQUIRED": {
+    "stage": "netbox",
+    "message": {
+      "en": "The integration token forbids writes. Source audit requires write permission only to record its AUDIT_ONLY journal entry.",
+      "ru": "Токен интеграции запрещает запись. Сверке нужно разрешение записи для журнала AUDIT_ONLY."
+    },
+    "action": {
+      "en": "Review the dedicated integration service account permissions in NetBox.",
+      "ru": "Проверьте права отдельной служебной записи интеграции в NetBox."
+    }
+  },
+  "RETIREMENT_AUDIT_PERMISSION_REQUIRED": {
+    "stage": "netbox",
+    "message": {
+      "en": "The NetBox service account lacks audit permission on Guard RetirementIntent. Grant scoped audit permission; Sync Admin is a separate role.",
+      "ru": "У служебной записи NetBox нет права audit на Guard RetirementIntent. Назначьте ограниченное право audit; роль Admin в Sync его не заменяет."
+    },
+    "action": {
+      "en": "Review the dedicated integration service account permissions in NetBox.",
+      "ru": "Проверьте права отдельной служебной записи интеграции в NetBox."
+    }
+  },
+  "RETIREMENT_SOURCE_SCOPE_DENIED": {
+    "stage": "netbox",
+    "message": {
+      "en": "Guard audit permission does not cover this Source ID. Review the ObjectPermission source_instance constraint.",
+      "ru": "Право сверки Guard не охватывает этот Source ID. Проверьте ограничение source_instance в ObjectPermission."
+    },
+    "action": {
+      "en": "Review the dedicated integration service account permissions in NetBox.",
+      "ru": "Проверьте права отдельной служебной записи интеграции в NetBox."
+    }
+  },
+  "RETIREMENT_OBJECT_VIEW_DENIED": {
+    "stage": "netbox",
+    "message": {
+      "en": "At least one source object is outside the service account view permissions. No object details were returned.",
+      "ru": "Хотя бы один объект источника недоступен служебной записи для просмотра. Сведения об объектах не возвращены."
+    },
+    "action": {
+      "en": "Review the dedicated integration service account permissions in NetBox.",
+      "ru": "Проверьте права отдельной служебной записи интеграции в NetBox."
+    }
   }
 }

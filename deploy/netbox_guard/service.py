@@ -303,13 +303,15 @@ def audit_source(user, nonce, source):
     """
     from django.db.models import Q
     _source(source)
-    actor = _permission(user, 'retire_retirementintent')
+    try:actor = _permission(user, 'audit_retirementintent')
+    except DependencyGuardBlocked:raise DependencyGuardBlocked('GUARD_AUDIT_PERMISSION_REQUIRED') from None
     nonce = UUID(str(nonce))
     with transaction.atomic():
         intent, _created = RetirementIntent.objects.get_or_create(nonce=nonce, defaults={
             'actor':actor, 'source_instance':source, 'manifest':{'format':3,'purpose':'AUDIT_ONLY'},
             'digest':_digest([actor,source,{'format':3,'purpose':'AUDIT_ONLY'}])})
-        _permission(user, 'retire_retirementintent', intent)
+        try:_permission(user, 'audit_retirementintent', intent)
+        except DependencyGuardBlocked:raise DependencyGuardBlocked('GUARD_SOURCE_SCOPE_DENIED') from None
         if (intent.actor != actor or intent.source_instance != source or intent.manifest != {'format':3,'purpose':'AUDIT_ONLY'}):
             raise DependencyGuardBlocked('REQUEST_CONFLICT')
     user=type(user).objects.get(pk=user.pk)
@@ -324,7 +326,7 @@ def audit_source(user, nonce, source):
             objects=model.objects.filter(Q(pk__in=[claim.object_id for claim in claims if claim.resource==kind])|Q(custom_field_data__sync_identities__contains=[{'instance':source}])).order_by('pk')
             for obj in objects[:10001]:
                 if not user.has_perm(f'{obj._meta.app_label}.view_{obj._meta.model_name}',obj):
-                    raise DependencyGuardBlocked('PERMISSION_DENIED')
+                    raise DependencyGuardBlocked('GUARD_OBJECT_VIEW_DENIED')
                 seen.add((kind,obj.pk));claim=indexed.get((kind,obj.pk))
                 rows.append({'kind':kind,'id':obj.pk,'present':True,'claimed':bool(claim and claim.object_created==obj.created),
                     'fingerprint':_digest({field.attname:getattr(obj,field.attname) for field in obj._meta.concrete_fields})})

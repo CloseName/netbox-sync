@@ -222,6 +222,15 @@ def test_host_reservation_grants_are_insert_only_for_registration(tmp_path):
                 assert actual == (key == 'registration_writer' and privilege in ('SELECT','INSERT'))
 
 
+    with psycopg.connect(deployment.connection_info('lifecycle_writer',env)) as connection:
+        connection.execute('SELECT provider,anchor,source_instance FROM netbox_sync.host_reservations')
+    for statement in ('SELECT actor_id FROM netbox_sync.host_reservations',
+                      'UPDATE netbox_sync.host_reservations SET anchor=anchor',
+                      'DELETE FROM netbox_sync.host_reservations'):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            with psycopg.connect(deployment.connection_info('lifecycle_writer',env)) as connection:connection.execute(statement)
+
+
 def test_recovery_journal_is_confined_to_lifecycle_writer(tmp_path):
     env=_environment(tmp_path)
     deployment.bootstrap_roles(env);deployment.migrate(env);deployment.apply_grants(env)

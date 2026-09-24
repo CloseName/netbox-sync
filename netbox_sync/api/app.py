@@ -89,6 +89,11 @@ def _install_boundaries(app, settings, auth_client):
             'RUN_RECONCILIATION_UNAVAILABLE': (409, 'Run evidence is incomplete or exceeds the bounded review; no baseline decision was recorded'),
             'SOURCE_RETIREMENT_REVIEW_REQUIRED': (409, 'Review the owned NetBox objects before confirming source removal'),
             'SOURCE_RETIREMENT_PENDING': (409, 'Source retirement is awaiting its original receipt; do not start another write'),
+            'RETIREMENT_AUTH_FAILED': (403, 'NetBox could not authenticate the integration token. Check expiry, revocation and token restrictions.'),
+            'RETIREMENT_TOKEN_WRITE_REQUIRED': (403, 'The integration token forbids writes. Source audit requires write permission only to record its AUDIT_ONLY journal entry.'),
+            'RETIREMENT_AUDIT_PERMISSION_REQUIRED': (403, 'The NetBox service account lacks audit permission on Guard RetirementIntent. Grant scoped audit permission; Sync Admin is a separate role.'),
+            'RETIREMENT_SOURCE_SCOPE_DENIED': (403, 'Guard audit permission does not cover this Source ID. Review the ObjectPermission source_instance constraint.'),
+            'RETIREMENT_OBJECT_VIEW_DENIED': (403, 'At least one source object is outside the service account view permissions. No object details were returned.'),
             'RETIREMENT_UNAVAILABLE': (503, 'The configured NetBox guard is unavailable or its installation identity is unverified'),
             'RETIREMENT_CONFLICT': (409, 'The retirement evidence changed; review the current operation'),
             'RETIREMENT_BLOCKED': (409, 'Retirement was refused; shared, manual or unproven objects must be reviewed'),
@@ -129,6 +134,7 @@ def _install_boundaries(app, settings, auth_client):
     @app.exception_handler(HostRegistrationConflict)
     async def host_registration_error(request, exc):
         messages = {
+            'HOST_LEGACY_PLACEMENT_PROTECTED': 'This placement contains unverified legacy ownership. Select a separate placement or review the old object identity; isolation does not authorize adoption.',
             'HOST_REGISTRY_REVIEW_REQUIRED': 'An existing ESXi source lacks verified hardware identity. Administrator identity review is required before adding a host.',
             'HOST_REGISTRATION_INTENT_CHANGED': 'This attempt already started with different parameters. Restore the original confirmed parameters; do not create another source.',
             'HOST_REGISTRATION_INVALID': 'A stable registration request ID is required. Reload the registration form.',
@@ -139,7 +145,7 @@ def _install_boundaries(app, settings, auth_client):
             'HOST_REGISTRATION_RESERVED': 'An earlier registration reserved this host. Reconcile that attempt before registering again.',
         }
         request.state.error_code = exc.code
-        existing = exc.source_instance if exc.code in {'HOST_ALREADY_REGISTERED','HOST_SOURCE_REMOVED','HOST_REGISTRY_REVIEW_REQUIRED'} else None
+        existing = exc.source_instance if exc.code in {'HOST_ALREADY_REGISTERED','HOST_SOURCE_REMOVED','HOST_REGISTRY_REVIEW_REQUIRED','HOST_LEGACY_PLACEMENT_PROTECTED'} else None
         details = {}
         if getattr(request.state, 'principal', {}).get('role') == 'admin' and exc.conflicts:
             from ..source_config import SOURCE_INSTANCE_PATTERN
@@ -443,6 +449,8 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
     lifecycle_client = LifecycleClient(settings.lifecycle_socket)
     from .source_retirement import routes as retirement_routes
     app.include_router(retirement_routes(lifecycle_client))
+    from .legacy_admission import routes as legacy_routes
+    app.include_router(legacy_routes(settings,auth_client,lifecycle_client))
     from .source_recovery import routes as recovery_routes
     app.include_router(recovery_routes(settings,onboarding_service,auth_client,lifecycle_client,source_service))
 

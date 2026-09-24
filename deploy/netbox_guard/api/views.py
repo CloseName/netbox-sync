@@ -39,8 +39,15 @@ def _public(intent, receipt=None):
             'manifest':intent.manifest,'deleted':receipt.deleted if receipt else []}
 
 
+class GuardTokenWritePermission(TokenWritePermission):
+    def has_permission(self,request,view):
+        if not super().has_permission(request,view):
+            raise DependencyGuardBlocked('TOKEN_WRITE_REQUIRED')
+        return True
+
+
 class GuardView(APIView):
-    permission_classes=(IsAuthenticated,TokenWritePermission)
+    permission_classes=(IsAuthenticated,GuardTokenWritePermission)
     namespace_required=True
 
     def initial(self,request,*args,**kwargs):
@@ -52,7 +59,7 @@ class GuardView(APIView):
 
     def handle_exception(self, exc):
         if isinstance(exc, DependencyGuardBlocked):
-            return Response({'code':str(exc)},status=403 if str(exc)=='PERMISSION_DENIED' else 409)
+            return Response({'code':str(exc)},status=403 if str(exc) in {'PERMISSION_DENIED','TOKEN_WRITE_REQUIRED','GUARD_AUDIT_PERMISSION_REQUIRED','GUARD_SOURCE_SCOPE_DENIED','GUARD_OBJECT_VIEW_DENIED'} else 409)
         # A serializer can fail AFTER the transaction committed. Do not label
         # arbitrary ValueError/TypeError as a definitive pre-write refusal.
         if isinstance(exc,RetirementIntent.DoesNotExist):
@@ -61,7 +68,8 @@ class GuardView(APIView):
         if isinstance(exc,APIException):
             # Keep status semantics without returning serializer/remote value text.
             response=super().handle_exception(exc)
-            response.data={'code':'AUTHENTICATION_REQUIRED' if response.status_code==401 else 'REQUEST_REFUSED'}
+            from rest_framework.exceptions import AuthenticationFailed,NotAuthenticated
+            response.data={'code':'AUTHENTICATION_REQUIRED' if isinstance(exc,(AuthenticationFailed,NotAuthenticated)) or response.status_code==401 else 'REQUEST_REFUSED'}
             return response
         event=str(uuid4())
         logging.getLogger(__name__).error('guard_event=%s exception_class=%s',event,type(exc).__name__)
@@ -73,7 +81,10 @@ class Capabilities(GuardView):
     def get(self,request):
         return Response({'protocol':1,'guard_instance':str(GuardIdentity.objects.get(pk=1).identifier),'netbox_version':'4.7.0','atomic_dependency_guard':True,
                          'creation_receipts':True,'retirement_receipts':True,
-                         'source_coordinator_required':True,'source_tree_retirement':True})
+                         'source_coordinator_required':True,'source_tree_retirement':True,'source_audit':True,
+                         'audit_permission':request.user.has_perm('netbox_guard.audit_retirementintent'),
+                         'retire_permission':request.user.has_perm('netbox_guard.retire_retirementintent'),
+                         'token_write_enabled':bool(getattr(request.auth,'write_enabled',False))})
 
 
 class CreateOwned(GuardView):

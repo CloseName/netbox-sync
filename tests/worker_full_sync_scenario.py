@@ -32,6 +32,36 @@ for service in ('netbox-sync-discovery-worker','netbox-sync-apply-worker','netbo
 overlay.write_text(json.dumps(extra))
 compose('up','-d','--no-deps','netbox-sync-discovery-worker','netbox-sync-apply-worker')
 state=json.loads(bootstrap.read_text());state['url']='https://netbox.example.test:9443';bootstrap.write_text(json.dumps(state));bootstrap.chmod(0o600)
+# Historical source fixture: no UUID, removed, no local credential material.
+fixture_db=compose('ps','-q','postgres') if pgmode=='bundled' else project+'-external-db'
+def fixture_sql(statement):
+    return run(['docker','exec','-i',fixture_db,'psql','-U','netbox_sync_bootstrap','-d','netbox_sync','--set','ON_ERROR_STOP=1','-At'],input=statement)
+fixture_sql("""INSERT INTO netbox_sync.sources (id,source_instance,name,source_type,address,enabled,sync_enabled,sync_interval_seconds,verify_ssl,site_slug,device_role_slug,platform_slug,device_type_slug,cluster_type_slug,cluster_name,username,token_id_provider,token_id_key,token_secret_provider,token_secret_key,legacy_identity_owner,settings)
+ SELECT 'legacy-sup','legacy-sup','ESXI-1L-SUP',source_type,'old.probe.test',false,false,sync_interval_seconds,verify_ssl,'historical',device_role_slug,platform_slug,device_type_slug,cluster_type_slug,'Historical SUP',username,token_id_provider,token_id_key,token_secret_provider,token_secret_key,false,'{}'::jsonb FROM netbox_sync.sources WHERE source_instance='auth-test';
+ INSERT INTO netbox_sync.source_tombstones(source_instance,display_name,credential_state) VALUES ('legacy-sup','ESXI-1L-SUP','REMOVED');""")
+new_am=dict(source_type='esxi',address='esxi.probe.test',port=8443,verify_ssl=True,username='netbox-sync',secret=secret,preview=True)
+blocked=request(new_am)
+assert blocked['status']==409 and blocked['body']['error']['existing_source']=='legacy-sup',blocked
+if os.environ.get('NETBOX_SYNC_BROWSER_FULL_SYNC_TEST')=='1':
+    browser_request=root.parent/'browser-request.json';browser_done=root.parent/'browser-done.json'
+    if browser_done.exists():browser_done.unlink()
+    fd=os.open(browser_request,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+    with os.fdopen(fd,'w') as stream:json.dump(dict(kind='legacy',api=compose('ps','-q','netbox-sync-api'),cookie=session_cookie,project=project,secret=secret),stream)
+    for _ in range(240):
+        if browser_done.exists():break
+        time.sleep(.5)
+    else:raise AssertionError('Legacy browser deadline')
+    result=json.loads(browser_done.read_text());browser_done.unlink();assert result['ok'],'Legacy production browser'
+else:
+    old=request({},'/api/v1/sources/legacy-sup/legacy-review');assert old['status']==200,old
+    decision=dict(operation=str(uuid.uuid4()),revision=old['body']['revision'],decision='ISOLATE',reason='Decommissioned fixture, ownership unproved',confirmed=True)
+    saved=request(decision,'/api/v1/sources/legacy-sup/legacy-confirm');assert saved['status']==200,saved
+    assert request(decision,'/api/v1/sources/legacy-sup/legacy-confirm')==saved
+assert fixture_sql("SELECT count(*) FROM netbox_sync.source_identity_verifications WHERE source_instance='legacy-sup' AND proof->>'decision'='ISOLATE'")=='1'
+assert fixture_sql("SELECT count(*) FROM netbox_sync.source_tombstones WHERE source_instance='legacy-sup' AND restored_at IS NULL")=='1'
+assert fixture_sql("SELECT count(*) FROM netbox_sync.sources WHERE source_instance='legacy-sup' AND NOT enabled AND NOT sync_enabled AND settings->'provider_identity' IS NULL")=='1'
+print('PASS production API legacy decision: no UUID assignment, retained tombstone, single durable decision; continue AM',flush=True)
+
 expected_devices=expected_vms=0
 for provider in (('esxi','proxmox') if pgmode=='bundled' else ('proxmox','esxi')):
     destination=request(dict(source_type=provider,address='esxi.probe.test',port=8443),'/api/v1/sources/check-destination')

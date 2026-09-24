@@ -17,6 +17,16 @@ def handle_lifecycle(lifecycle, secrets, request, retirement=None):
     if lifecycle is None:
         raise LifecycleError('LIFECYCLE_UNAVAILABLE')
     try:
+        if request.get('action') in {'legacy_describe','legacy_confirm','legacy_status'}:
+            from .legacy_admission import LegacyAdmission
+            service=LegacyAdmission(lifecycle)
+            if request['action']=='legacy_describe' and set(request)=={'action','source_instance'}:
+                return service.describe(source)
+            if request['action']=='legacy_status' and set(request)=={'action','source_instance','actor','operation'}:
+                return service.status(source,request['actor'],request['operation'])
+            if request['action']=='legacy_confirm' and set(request)=={'action','source_instance','actor','operation','revision','decision','reason','anchor'}:
+                return service.confirm(source,**{k:request[k] for k in ('actor','operation','revision','decision','reason','anchor')})
+            raise LifecycleError('REQUEST_INVALID')
         if request.get('action') in {'run_reconciliation_review','run_reconciliation_confirm'}:
             from .run_reconciliation import RunReconciliation
             if retirement is None:raise LifecycleError('RETIREMENT_UNAVAILABLE')

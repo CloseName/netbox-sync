@@ -23,7 +23,7 @@ class RetirementIntent(models.Model):
 
     class Meta:
         default_permissions = ()
-        permissions = [('retire_retirementintent', 'Execute guarded source retirement')]
+        permissions = [('retire_retirementintent', 'Execute guarded source retirement'), ('audit_retirementintent', 'Audit source ownership without retirement')]
 
 class RetirementReceipt(models.Model):
     intent = models.OneToOneField(RetirementIntent, on_delete=models.PROTECT, primary_key=True)

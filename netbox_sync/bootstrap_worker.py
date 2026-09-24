@@ -15,6 +15,7 @@ PROBE_TIMEOUT = 45
 
 
 def run_probe(value):
+    value={**value,'guard_instance':os.environ.get('NETBOX_SYNC_GUARD_INSTANCE','')}
     try:
         with child_process(subprocess.Popen, [sys.executable, '-B', '-m', 'netbox_sync.bootstrap_probe'],
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,

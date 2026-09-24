@@ -48,6 +48,18 @@ class RegistrationRegistry:
         if isinstance(preview, dict) and preview.get('provider') == 'esxi':
             self.host_reservations().reserve(preview, source, operation_id, actor)
 
+    def check_legacy_placement(self,request):
+        from ..host_registration import legacy_anchor,HostRegistrationConflict
+        from psycopg import sql
+        from psycopg.rows import dict_row
+        with self._registry()._connect() as connection:
+            with connection.cursor(row_factory=dict_row) as cursor:
+                cursor.execute(sql.SQL("SELECT source_instance,site_slug,cluster_name,settings FROM {} WHERE source_type='esxi'").format(sql.Identifier(self._schema,'sources')))
+                for row in cursor.fetchall():
+                    if (legacy_anchor(row['settings']) is None and row['site_slug']==request.site_slug
+                            and row['cluster_name']==request.cluster_name):
+                        raise HostRegistrationConflict('HOST_LEGACY_PLACEMENT_PROTECTED',row['source_instance'])
+
     def registration_guard(self, preview, source, operation_id, actor):
         from contextlib import nullcontext
         if isinstance(preview, dict) and preview.get('provider') == 'esxi':

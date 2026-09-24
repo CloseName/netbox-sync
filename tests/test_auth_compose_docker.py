@@ -44,7 +44,7 @@ def test_production_auth_policy(mode):
                         data=json.loads(ready.stdout)
                         assert data['project']==project
                         assert docker('inspect',data['api'],'--format','{{index .Config.Labels "com.docker.compose.project"}}').stdout.strip()==project
-                        browser=subprocess.run(['node',str(ROOT/('frontend/scripts/production-ldap-browser.mjs' if data.get('kind')=='ldap' else 'frontend/scripts/production-sync-browser.mjs'))],
+                        browser=subprocess.run(['node',str(ROOT/('frontend/scripts/production-ldap-browser.mjs' if data.get('kind')=='ldap' else 'frontend/scripts/production-legacy-browser.mjs' if data.get('kind')=='legacy' else 'frontend/scripts/production-sync-browser.mjs'))],
                             input=json.dumps(data),capture_output=True,text=True,encoding='utf-8',errors='replace',cwd=ROOT,timeout=240)
                         success=browser.returncode==0
                         docker('exec',host,'python3','-c',

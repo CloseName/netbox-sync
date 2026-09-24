@@ -60,13 +60,13 @@ site=Site.objects.create(name=tag,slug=tag)
 manufacturer=Manufacturer.objects.create(name=tag,slug=tag)
 device_type=DeviceType.objects.create(manufacturer=manufacturer,model=tag,slug=tag)
 role=DeviceRole.objects.create(name=tag,slug=tag)
-cap=ObjectPermission.objects.create(name=tag,actions=['create','retire'],constraints={'source_instance':source})
+cap=ObjectPermission.objects.create(name=tag,actions=['create','retire','audit'],constraints={'source_instance':source})
 cap.object_types.set([ContentType.objects.get_for_model(CreationReceipt),ContentType.objects.get_for_model(RetirementIntent)])
 cap.users.add(user)
 add=ObjectPermission.objects.create(name=tag+'-add',actions=['add','view','change'])
 add.object_types.set([ContentType.objects.get_for_model(apps.get_model(label)) for label in MODELS.values()]);add.users.add(user)
 tokens=[];headers=[];clusters=[]
-fixture_fields=[];fixture_platform=None;fixture_read=None;fixture_vrfs=[]
+fixture_fields=[];fixture_platform=None;fixture_read=None;fixture_vrfs=[];scoped_audit_views=[]
 for enabled in (True,False):
     token=Token(user=user,write_enabled=enabled,expires=timezone.now()+timedelta(minutes=5))
     token.full_clean();token.save();tokens.append(token)
@@ -81,7 +81,9 @@ try:
     assert capability['protocol']==1
     for header in headers: header['X-Netbox-Sync-Guard-Instance']=capability['guard_instance']
     client=transport.GuardClient(session,url.split('/api/')[0],headers[0]['Authorization'],capability['guard_instance'])
-    assert client.capabilities()==capability
+    assert client.capabilities()['guard_instance']==capability['guard_instance']
+    assert client.capabilities()['token_write_enabled'] is True
+    assert capability['token_write_enabled'] is False
     body={'nonce':str(uuid4()),'source_instance':source,'resource':'cluster','cluster_id':None,'data':{'name':tag,'type':kind.pk,'scope_type':'dcim.site','scope_id':site.pk}}
     assert post('objects/create/',body,headers[1]).status_code==403
     changed={**headers[0],'X-Netbox-Sync-Guard-Instance':str(uuid4())}
@@ -164,6 +166,40 @@ try:
     assert VirtualMachine.objects.filter(pk=failed_vm).exists()
     assert post('sources/esxi-foreign/audit/',{'nonce':str(uuid4())}).status_code==403
     assert post('sources/'+source+'/audit/',{'nonce':str(uuid4())},headers[1]).status_code==403
+    # Native NetBox permissions at each boundary, with no hidden object details.
+    def audit_denied(expected,auth=headers[0],scope=source):
+        reply=post('sources/'+scope+'/audit/',{'nonce':str(uuid4())},auth)
+        assert reply.status_code in (401,403),reply.status_code
+        assert reply.json()=={'code':expected},reply.json()
+        assert str(failed_vm) not in reply.text and 'manual fixture' not in reply.text
+    audit_denied('TOKEN_WRITE_REQUIRED',headers[1])
+    audit_denied('GUARD_SOURCE_SCOPE_DENIED',scope='esxi-foreign')
+    cap.actions=['create','retire'];cap.save()
+    audit_denied('GUARD_AUDIT_PERMISSION_REQUIRED')
+    cap.actions=['create','audit'];cap.save()
+    # Successful audit under view-only, exact per-model ID scopes (no add/change).
+    add.users.remove(user)
+    for resource,model_label in MODELS.items():
+        ids=list(CreationClaim.objects.filter(source_instance=source,resource=resource).values_list('object_id',flat=True))
+        permission=ObjectPermission.objects.create(name=tag+'-audit-'+resource,actions=['view'],constraints={'id__in':ids})
+        permission.object_types.add(ContentType.objects.get_for_model(apps.get_model(model_label)));permission.users.add(user)
+        scoped_audit_views.append(permission)
+    assert client.audit_source(source,str(uuid4()))['source_instance']==source
+    vm_view=next(p for p in scoped_audit_views if p.name==tag+'-audit-vm')
+    vm_view.users.remove(user);audit_denied('GUARD_OBJECT_VIEW_DENIED');vm_view.users.add(user)
+    assert client.audit_source(source,str(uuid4()))['objects']
+    add.users.add(user)
+    for permission in scoped_audit_views:permission.users.remove(user)
+
+    # Audit permission alone must not authorize retirement.
+    assert post('sources/review/',{'nonce':str(uuid4()),'source_instance':source,'cluster_id':cluster}).status_code==403
+    cap.actions=['create','retire','audit'];cap.save()
+    original_types=list(add.object_types.all())
+    add.object_types.remove(ContentType.objects.get_for_model(VirtualMachine))
+    audit_denied('GUARD_OBJECT_VIEW_DENIED')
+    add.object_types.set(original_types)
+    assert client.audit_source(source,str(uuid4()))['objects']
+    audit_denied('AUTHENTICATION_REQUIRED',{'Authorization':'Bearer nbt_not-a-valid-token'})
     assert not User.objects.get(pk=user.pk).has_perm('virtualization.delete_virtualmachine')
     import os
     if os.environ.get('NETBOX_SYNC_GUARD_WORKER_TEST')=='1':
@@ -229,6 +265,7 @@ try:
     # Revocation takes effect on a new authenticated request.
     tokens[0].enabled=False;tokens[0].save()
     assert post('objects/create/',{**body,'nonce':str(uuid4())}).status_code in (401,403)
+    audit_denied('AUTHENTICATION_REQUIRED')
     print('PASS real HTTP: v2 token authentication; read-only refusal; source constraints; create/retry; VM/cluster receipts; no generic delete privilege; revoked token refusal')
 finally:
     server.shutdown();server.server_close();thread.join(3)
@@ -246,6 +283,7 @@ finally:
     if fixture_read:fixture_read.delete()
     if fixture_platform:fixture_platform.delete()
     for field in fixture_fields:field.delete()
+    for permission in scoped_audit_views:permission.delete()
     add.delete();cap.delete();kind.delete();user.delete()
     device_type.delete();manufacturer.delete();role.delete();site.delete()
     session.close();certdir.cleanup()

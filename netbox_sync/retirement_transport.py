@@ -64,7 +64,7 @@ class GuardClient:
                              'CREATION_OWNERSHIP_UNPROVEN', 'DEPENDENCIES_CHANGED',
                              'OBJECT_GENERATION_CHANGED', 'EXTERNAL_FIELD_UPDATE',
                              'PROTECTED_DEPENDENCY', 'REQUEST_NOT_FOUND',
-                             'AUTHENTICATION_REQUIRED', 'REQUEST_REFUSED'}
+                             'AUTHENTICATION_REQUIRED', 'REQUEST_REFUSED','TOKEN_WRITE_REQUIRED','GUARD_AUDIT_PERMISSION_REQUIRED','GUARD_SOURCE_SCOPE_DENIED','GUARD_OBJECT_VIEW_DENIED'}
                     refused = response.status_code in (400, 401, 403, 404, 409) and code in known
                     raise GuardTransportError(code if refused else 'GUARD_RESPONSE_UNCONFIRMED',
                                               uncertain=mutation and not refused)

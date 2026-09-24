@@ -10,7 +10,7 @@ from .retirement_codes import REASONS
 DIAGNOSTIC_CODES=frozenset({'GUARD_CONNECTION_FAILED','GUARD_TLS_FAILED','GUARD_TIMEOUT',
     'GUARD_CAPABILITY_MISMATCH','GUARD_RESPONSE_INVALID','GUARD_RESPONSE_UNCONFIRMED',
     'PERMISSION_DENIED','GUARD_INSTANCE_CHANGED','REQUEST_CONFLICT','REQUEST_REFUSED',
-    'AUTHENTICATION_REQUIRED','CREATION_OWNERSHIP_UNPROVEN','OWNERSHIP_CONFLICT',
+    'AUTHENTICATION_REQUIRED','TOKEN_WRITE_REQUIRED','GUARD_AUDIT_PERMISSION_REQUIRED','GUARD_SOURCE_SCOPE_DENIED','GUARD_OBJECT_VIEW_DENIED','CREATION_OWNERSHIP_UNPROVEN','OWNERSHIP_CONFLICT',
     'PLACEMENT_CHANGED','DEPENDENCIES_CHANGED','OBJECT_GENERATION_CHANGED','EXTERNAL_FIELD_UPDATE',
     'PROTECTED_DEPENDENCY','REQUEST_NOT_FOUND','RETIREMENT_REFUSED'})
 MAX_RESPONSE=2*1024*1024
@@ -29,10 +29,15 @@ def child(payload):
     with pinned_dns(host,address,port),requests.Session() as session:
         configure_session(session)
         client=GuardClient(session,payload['url'],authorization(payload['token']),payload['instance'])
-        if client.capabilities().get('source_tree_retirement') is not True:
+        capabilities=client.capabilities()
+        if capabilities.get('source_tree_retirement') is not True:
             raise ControlError('RETIREMENT_UNAVAILABLE')
         value=payload['request']
         if value['action']=='audit':
+            from .retirement_transport import GuardTransportError
+            if capabilities.get('source_audit') is not True:raise GuardTransportError('GUARD_CAPABILITY_MISMATCH')
+            if capabilities.get('audit_permission') is not True:raise GuardTransportError('GUARD_AUDIT_PERMISSION_REQUIRED')
+            if capabilities.get('token_write_enabled') is not True:raise GuardTransportError('TOKEN_WRITE_REQUIRED')
             result=client.audit_source(value['source_instance'],value['operation_id'])
         elif value['action']=='review':
             result=client.review_source(value['operation_id'],value['source_instance'],value['cluster_id'])
