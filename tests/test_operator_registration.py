@@ -263,3 +263,45 @@ def test_reserved_registration_status_reads_receipt_but_does_not_claim_source_re
     assert response.status_code==200
     assert response.json()=={'identity_status':'OUTCOME_UNCERTAIN','status':'UNCERTAIN','resume_supported':True,'catalog_status':'CREATED'}
     assert len(calls)==1 and calls[0]['action']=='catalog-reconcile'
+
+@pytest.mark.parametrize('proof',['CREATED','UNCERTAIN','wrong_id','missing'])
+def test_automatic_registration_cannot_adopt_appeared_cluster_without_original_receipt(monkeypatch,proof):
+    from uuid import uuid4
+    from tests.test_netbox_catalog import row
+    from tests.test_onboarding import credentials
+    import netbox_sync.api.catalog as catalog
+    policy,_,session=configured('operator')
+    class Client:
+        def call(self,action,**payload):return policy.call(dict(action=action,**payload))
+    onboarding,registry,secrets=service()
+    token=onboarding.accept_checked_credentials(credentials('esxi'),{'hosts':[{'id':'host-a'}]})
+    policy.call(dict(action='receipt.issue',session=session,receipt=token,provider='esxi',destination='source.test',revision=0))
+    refs={kind:row(kind) for kind in ('site','platform','device_role','cluster_type')}
+    calls=[]
+    def read(path,query):
+        if query['action']=='resolve-placement':
+            return dict(issues=[],references={**refs,'cluster':row('cluster')},host_types={'host-a':row('device_type')},create_cluster=False)
+        return {'selections':[dict(kind=item['kind'],**row(item['kind'])) for item in query['selections']]}
+    def receipt(path,payload):
+        calls.append(payload)
+        assert payload['action']=='catalog-reconcile', 'No repeated cluster POST permitted'
+        if proof=='missing':raise catalog.CatalogError('SELECTION_REQUIRED')
+        return dict(status='UNCERTAIN' if proof=='UNCERTAIN' else 'CREATED',item=row('cluster',identifier=2 if proof=='wrong_id' else 1))
+    monkeypatch.setattr(catalog,'call',read)
+    monkeypatch.setattr(catalog,'create_call',receipt)
+    body=dict(onboarding_token=token,source_type='esxi',source_instance='new-source',name='Example',address='source.test',
+        verify_ssl=True,sync_interval_seconds=600,site_slug='example',cluster_name='Example',platform_slug='example',
+        device_role_slug='example',device_type_slug='example',cluster_type_slug='example',references=refs,
+        host_types={'host-a':row('device_type')},confirm_sync_disabled=True,create_cluster=True,
+        automatic_placement=True,registration_id=str(uuid4()))
+    with TestClient(create_app(settings=ApiSettings(bootstrap_socket=''),auth_client=Client(),onboarding_service=onboarding),base_url='https://localhost:8000') as http:
+        http.cookies.set(COOKIE,session)
+        response=http.post('/api/v1/sources',headers=HEADERS,json=body)
+    assert len(calls)==1
+    if proof=='CREATED':
+        assert response.status_code==201,response.text
+        assert len(registry.records)==1
+    else:
+        assert response.status_code==(409 if proof=='missing' else 503),response.text
+        assert response.json()['error']['code']==('CATALOG_SELECTION_REQUIRED' if proof=='missing' else 'REGISTRATION_UNCERTAIN')
+        assert not registry.records and not secrets.values

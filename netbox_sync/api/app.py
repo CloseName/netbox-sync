@@ -673,6 +673,20 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
                     hosts=preview['hosts'],name=request.name,site_id=(request.references.get('site') or {}).get('id'),
                     default_site_slug=settings.default_site_slug))
                 if resolved['issues']:raise CatalogError('CLUSTER_REVIEW_REQUIRED' if any(i['kind']=='cluster' for i in resolved['issues']) else 'SELECTION_REQUIRED')
+                if request.create_cluster and not resolved['create_cluster']:
+                    # A newly visible matching name is not proof of our previous
+                    # CREATE. Preserve the original intent and require its receipt
+                    # before accepting the resolved object as the target.
+                    from uuid import UUID, uuid5
+                    from .catalog import create_call
+                    bind_intent()
+                    operation_id=str(uuid5(UUID('b6c311eb-0d55-45af-80a5-b949a20bfe47'),
+                        http.state.principal['principal_id']+':'+request.source_instance+':'+str(request.registration_id)))
+                    outcome=create_call(settings.bootstrap_socket,dict(action='catalog-reconcile',operation_id=operation_id))
+                    if (outcome.get('status')!='CREATED'
+                            or not isinstance(outcome.get('item'),dict)
+                            or outcome['item'].get('id')!=(resolved['references'].get('cluster') or {}).get('id')):
+                        raise OnboardingError(ErrorCode.REGISTRATION_UNCERTAIN)
                 request=request.model_copy(update={'references':resolved['references'],'host_types':resolved['host_types'],
                     'create_cluster':resolved['create_cluster'],'cluster_name':request.name})
             if request.create_cluster:

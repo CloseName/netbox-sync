@@ -13,12 +13,12 @@ deployment or push has been performed in this continuation.
 
 | Symptom / requirement | Reproduction | Established cause | Correction | Regression / local gate | Live evidence | Remaining work |
 | --- | --- | --- | --- | --- | --- | --- |
-| PAM registration reports several owners | Supplied wizard observation; local registration code reviewed | HOST_IDENTITY_CONFLICT in admission means more than one source row has the same accepted recorded UUID; tombstones are included. Actual row IDs and UUID unknown | No arbitrary winner or reservation deletion | Prior PG admission gates; actual conflicting metadata still needed | Fails before placement, including after NetBox cleanup | Bounded record audit; explicit evidence-backed resolution and recovery |
+| PAM registration reports several owners | Supplied wizard observation; local registration code reviewed | HOST_IDENTITY_CONFLICT in admission means more than one source row has the same accepted recorded UUID; tombstones are included. Actual row IDs and UUID unknown | No arbitrary winner or reservation deletion | Prior PG admission gates; actual conflicting metadata still needed | Fails before placement, including after NetBox cleanup | Admin-only bounded conflicting record list implemented; explicit evidence-backed resolution and recovery remain open |
 | AM/CM host identity unavailable | Supplied wizard observation | Exact live rejection branch/value unproved. Preview reads summary UUID; Discovery also reads systemInfo. UUID validator rejects values with fewer than eight nonzero bytes | Do not relax validation or change identity from DNS/IP without evidence | Existing identity tests do not reproduce these hardware values | Wizard blocked, Discovery previously collected host | Obtain bounded identity evidence; compatible identity correction and collision tests |
-| CM missing cluster shown as NetBox unavailable | New local regression fails with NETBOX_UNAVAILABLE after removing only target cluster | _resolve_target raises generic EsxiAdoptionError; worker maps it to connectivity failure | Dedicated missing-placement code, EN/RU; ambiguity mapped separately; no blanket HTTP catch | 48 focused tests pass, including real local HTTP empty result versus 403, no writes | Live cause still a hypothesis; no new live check | Repair-placement workflow must work without successful comparison; UNKNOWN remains separate gate |
+| CM missing cluster shown as NetBox unavailable | New local regression fails with NETBOX_UNAVAILABLE after removing only target cluster | _resolve_target raises generic EsxiAdoptionError; worker maps it to connectivity failure | Dedicated missing-placement code, EN/RU; ambiguity mapped separately; no blanket HTTP catch | 48 focused tests pass, including real local HTTP empty result versus 403, no writes | Live cause still a hypothesis; no new live check | Repair editor now accepts bounded recent failed-comparison provider evidence; UNKNOWN remains separate gate |
 | Historical CM UNKNOWN | Supplied two run IDs; code review | Historical run digest/counters do not contain immutable full intent and cannot prove success | No reset or automatic write replay | Existing gates retained | Still blocks plan/removal | Administrative evidence journal and resolution; insufficient evidence must remain explicit |
 | Full provider → guard CREATE → retirement → re-add | Earlier components tested separately | Combined gate not yet passed; deleted cluster conflicts with old recovery placement contract | Existing isolated worker retained | Prior real NetBox transaction, receipt and worker gates, not combined acceptance | Not completed | Combined production ESXi/Proxmox tests and supported same-source re-add after confirmed deletion |
-| Lost cluster CREATE response | Existing durable UNCERTAIN journal | Current reconcile reads catalog by name, cannot establish which request created object | Exact guard creation receipt needed, no repeated POST | Prior guard CREATE idempotency is not catalog integration proof | Not tested | Read-only creation receipt verification bound to original intent/actor/source |
+| Lost cluster CREATE response | Existing durable UNCERTAIN journal | Name lookup cannot establish which request created object | Exact read-only guard creation receipt, no repeated POST | Actual NetBox 4.7 lost-response GET for cluster and VM; Linux catalog/API tests | Not tested | Full restart-resume wizard remains open |
 | Orphans / historical unclaimed objects | Code audit | Active-list absence and v2 identity are insufficient creation proof | No name/IP adoption | Existing guard refuses unclaimed dependencies | NetBox manually cleared by user, devices retained | Authoritative reconciliation and evidence-backed historical ownership workflow |
 | Duplicate ESXI-INFRA / reservations | Prior observations and PG tests | Live hardware IDs and ownership unknown; no winner established | Atomic UUID reservation and same-attempt continuation already present | Prior concurrency/restart tests; complete recovery still open | Two old records observed, not reconciled | Audit records, uncertain work, ownership and retained credentials before transition |
 | PAM VM identity / Proxmox identity | Historical conflicts, local code | Shared VM UUID cause unknown; Proxmox nodes/name not physical identity proof | No incompatible identity switch | Existing conflict tests; live causes unproved | No current full-cycle evidence | Stable compatible identity evaluation; no host alias-based adoption |
@@ -131,3 +131,27 @@ reconciliation, session expiry/revocation and backup/restore checks provided by 
 harness. This is not the complete provider -> guarded retirement -> re-add gate.
 Frontend: 75 unit tests and TypeScript passed; Dockerfile.web built successfully.
 Browser and live checks were not run, following the operator's latest instruction.
+
+
+## Appeared cluster cannot bypass original creation proof
+
+A further API regression demonstrated that automatic placement could resolve a
+cluster appearing after the original request and skip the original CREATE journal.
+Before correction all four regression variants reached registration without any
+receipt read, including missing proof, uncertain proof and a different object ID.
+The API now binds the original immutable intent and requests read-only reconciliation
+before accepting that transition. Only CREATED proof for the exact resolved cluster
+ID passes. The intent digest, actor, source and registration nonce remain unchanged.
+Missing proof refuses; uncertain/mismatching proof stays REGISTRATION_UNCERTAIN.
+No second cluster POST, credential file or source is created on these refusals.
+An independently created matching cluster must not silently satisfy the original
+request to create a new cluster.
+
+Affected Linux/PostgreSQL registration, onboarding, catalog and reservation tests:
+**136 passed**. The four new regression cases failed before correction. The real
+API permission path is used; external effects in those four tests are controlled
+fixtures. This does not establish an end-to-end resumed wizard or a live fix.
+
+The updated production web image (manifest list
+`sha256:155b33a2d3443d2eb2901410d95d332db213ec3cda770998505f37404c409627`)
+passed the same bundled/external PostgreSQL Compose gate again: **2 passed**.
