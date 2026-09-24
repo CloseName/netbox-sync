@@ -88,3 +88,18 @@ def test_wrong_nonce_is_not_terminal_result():
     with pytest.raises(GuardTransportError, match='GUARD_RESPONSE_INVALID') as error:
         guard.execute(uuid4(), 'a'*64)
     assert error.value.uncertain
+
+
+def test_creation_receipt_is_get_only_and_binds_original_wire_request():
+    import hashlib
+    def digest(value):return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':'),default=str).encode()).hexdigest()
+    nonce=str(uuid4()); data={'name':'scoped','type':1}
+    body={'nonce':nonce,'source_instance':'esxi-fixture','resource':'cluster','cluster_id':None,'data':data}
+    value={'nonce':nonce,'source_instance':'esxi-fixture','resource':'cluster',
+           'digest':digest(['esxi-fixture','cluster',{'wire':digest(body)},None]),'object':{'id':7}}
+    guard, session=client(Response(200,value))
+    assert guard.creation_receipt(nonce,'esxi-fixture','cluster',None,data)=={'id':7}
+    assert session.calls[0][0]=='GET'
+    with pytest.raises(GuardTransportError,match='GUARD_RESPONSE_INVALID'):
+        guard.creation_receipt(nonce,'esxi-fixture','cluster',None,{'name':'changed','type':1})
+    assert all(call[0]=='GET' for call in session.calls)

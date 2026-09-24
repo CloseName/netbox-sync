@@ -245,3 +245,21 @@ def test_identity_audit_is_admin_read_only_and_never_selects_owner(monkeypatch,r
             assert 'remote-sensitive-error' not in result.text
         assert http.post('/api/v1/sources/identity-audit',headers=HEADERS,json={'sources':['first','first']}).status_code==422
         assert calls==['first','second']
+
+
+def test_reserved_registration_status_reads_receipt_but_does_not_claim_source_registered(monkeypatch):
+    from uuid import uuid4
+    import netbox_sync.api.catalog as catalog
+    policy,_,session=configured('operator')
+    class Client:
+        def call(self,action,**payload):return policy.call(dict(action=action,**payload))
+    onboarding,_,_=service()
+    monkeypatch.setattr(onboarding,'registration_outcome',lambda *args:{'identity_status':'OUTCOME_UNCERTAIN'})
+    calls=[]
+    monkeypatch.setattr(catalog,'create_call',lambda path,payload:(calls.append(payload) or {'status':'CREATED','item':{'id':7}}))
+    with TestClient(create_app(settings=ApiSettings(bootstrap_socket=''),auth_client=Client(),onboarding_service=onboarding),base_url='https://localhost:8000') as http:
+        http.cookies.set(COOKIE,session)
+        response=http.post('/api/v1/sources/registration-status',headers=HEADERS,json={'source_instance':'new-source','registration_id':str(uuid4())})
+    assert response.status_code==200
+    assert response.json()=={'identity_status':'OUTCOME_UNCERTAIN','status':'UNCERTAIN','resume_supported':True,'catalog_status':'CREATED'}
+    assert len(calls)==1 and calls[0]['action']=='catalog-reconcile'

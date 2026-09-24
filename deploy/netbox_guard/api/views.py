@@ -114,6 +114,18 @@ class CreateOwned(GuardView):
         return Response(serializer_class(obj,context={'request':request}).data,status=201)
 
 
+class CreationProof(GuardView):
+    def get(self, request, nonce):
+        from importlib import import_module
+        from ..service import read_created
+        receipt, obj = read_created(request.user, nonce)
+        module, name = SERIALIZERS[receipt.resource]
+        serializer = getattr(import_module(module), name)
+        return Response({'nonce': str(receipt.pk), 'source_instance': receipt.source_instance,
+                         'resource': receipt.resource, 'digest': receipt.digest,
+                         'object': serializer(obj, context={'request': request}).data})
+
+
 class Review(GuardView):
     def post(self,request):
         body=_body(request,('nonce','source_instance','cluster_id','root'))

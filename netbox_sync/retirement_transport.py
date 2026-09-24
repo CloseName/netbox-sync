@@ -97,6 +97,23 @@ class GuardClient:
             raise GuardTransportError('GUARD_RESPONSE_INVALID', uncertain=True)
         return value
 
+    def creation_receipt(self, nonce, source, resource, cluster, data):
+        """Verify the original wire intent via GET, without a second CREATE."""
+        import hashlib
+        def digest(value):
+            return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':'), default=str).encode()).hexdigest()
+        nonce = self._nonce(nonce)
+        body = {'nonce': nonce, 'source_instance': source, 'resource': resource,
+                'cluster_id': cluster, 'data': data}
+        expected = digest([source, resource, {'wire': digest(body)}, cluster])
+        value = self._request('GET', 'objects/receipts/' + nonce + '/')
+        obj = value.get('object')
+        if (value.get('nonce') != nonce or value.get('source_instance') != source
+                or value.get('resource') != resource or value.get('digest') != expected
+                or not isinstance(obj, dict) or type(obj.get('id')) is not int or obj['id'] <= 0):
+            raise GuardTransportError('GUARD_RESPONSE_INVALID')
+        return obj
+
     def review(self, nonce, source, cluster, root):
         nonce = self._nonce(nonce)
         value = self._request('POST', 'retirements/review/', {

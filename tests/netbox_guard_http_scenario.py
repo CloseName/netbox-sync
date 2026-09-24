@@ -43,8 +43,10 @@ keyfile.touch(mode=0o600);keyfile.write_bytes(key.private_bytes(serialization.En
 session=requests.Session();session.trust_env=False;session.verify=str(certfile)
 spec=importlib.util.spec_from_file_location('guard_transport',Path('/app/netbox_sync/retirement_transport.py'))
 transport=importlib.util.module_from_spec(spec);spec.loader.exec_module(transport)
+verbs=[]
 class Quiet(WSGIRequestHandler):
     def log_message(self,*args): pass
+    def log_request(self,*args): verbs.append(self.command)
 server=make_server('127.0.0.1',0,get_wsgi_application(),handler_class=Quiet)
 context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);context.load_cert_chain(certfile,keyfile)
 server.socket=context.wrap_socket(server.socket,server_side=True)
@@ -89,6 +91,21 @@ try:
     cluster=result.json()['id'];clusters.append(cluster)
     assert post('objects/create/',body).json()['id']==cluster
     assert client.create(body['nonce'],source,'cluster',None,body['data'])['id']==cluster
+    before_posts=verbs.count('POST')
+    assert client.creation_receipt(body['nonce'],source,'cluster',None,body['data'])['id']==cluster
+    assert verbs.count('POST')==before_posts
+    assert session.get(url+'objects/receipts/'+body['nonce']+'/',headers=headers[1],timeout=10).status_code==200
+    from unittest.mock import patch
+    from virtualization.api.serializers import ClusterSerializer
+    lost_cluster_body={**body,'nonce':str(uuid4()),'data':{**body['data'],'name':tag+'-lost'}}
+    with patch.object(ClusterSerializer,'to_representation',side_effect=ValueError('private-cluster-response')):
+        lost_response=post('objects/create/',lost_cluster_body)
+    assert lost_response.status_code==503
+    before_posts=verbs.count('POST')
+    recovered_cluster=client.creation_receipt(lost_cluster_body['nonce'],source,'cluster',None,lost_cluster_body['data'])
+    clusters.append(recovered_cluster['id'])
+    assert verbs.count('POST')==before_posts
+    assert Cluster.objects.filter(name=tag+'-lost').count()==1
     wrong={**body,'nonce':str(uuid4()),'source_instance':'esxi-not-allowed','data':{'name':tag+'-foreign','type':kind.pk}}
     assert post('objects/create/',wrong).status_code==403
     assert not Cluster.objects.filter(name=tag+'-foreign').exists()
@@ -119,7 +136,11 @@ try:
         response=post('objects/create/',failed_body)
     assert response.status_code==503 and response.json()['code']=='GUARD_UNAVAILABLE'
     assert 'not-public-response' not in response.text
+    before_posts=verbs.count('POST')
+    proven=client.creation_receipt(failed_body['nonce'],source,'vm',cluster,failed_body['data'])
+    assert proven['id'] and verbs.count('POST')==before_posts
     retry=client.create(failed_body['nonce'],source,'vm',cluster,failed_body['data'])
+    assert retry['id']==proven['id']
     assert VirtualMachine.objects.filter(cluster_id=cluster,name='response-loss-vm').count()==1
     failed_vm=retry['id']
     conflict=post('objects/create/',{**failed_body,'data':{**failed_body['data'],'name':'changed-retry'}})

@@ -185,6 +185,29 @@ def create_owned(user, nonce, source, resource, values, *, cluster=None, request
         return obj
 
 
+def read_created(user, nonce):
+    """Read an existing creation proof; never create or retry a mutation."""
+    actor = _permission(user, 'create_creationreceipt')
+    with transaction.atomic():
+        receipt = CreationReceipt.objects.filter(nonce=UUID(str(nonce))).first()
+        if receipt is None:
+            raise DependencyGuardBlocked('REQUEST_NOT_FOUND')
+        _permission(user, 'create_creationreceipt', receipt)
+        if receipt.actor != actor:
+            raise DependencyGuardBlocked('PERMISSION_DENIED')
+        obj = apps.get_model(MODELS[receipt.resource]).objects.filter(pk=receipt.object_id).first()
+        claim = CreationClaim.objects.filter(resource=receipt.resource, object_id=receipt.object_id,
+                                             source_instance=receipt.source_instance).first()
+        if obj is None or claim is None or obj.created != claim.object_created:
+            raise DependencyGuardBlocked('CREATED_OBJECT_NO_LONGER_OWNED')
+        if _scope(receipt.resource, obj) != claim.cluster_id:
+            raise DependencyGuardBlocked('PLACEMENT_CHANGED')
+        _owners(obj, receipt.source_instance)
+        _parent_owner(receipt.resource, obj, receipt.source_instance)
+        _add_permission(user, obj)
+        return receipt, obj
+
+
 def _cluster_fingerprint(cluster):
     obj = apps.get_model(MODELS['cluster']).objects.filter(pk=cluster).first()
     if obj is None:

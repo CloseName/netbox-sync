@@ -113,3 +113,21 @@ and fixed against a real VM API request; retry creates no duplicate and preserve
 a later manual comment. A changed retry is refused. Experimental older HTTP digest
 records are not automatically converted; internal service receipts are unchanged.
 The complete transport/review selection passed 32 tests under Linux.
+
+## Read-only reconciliation of a lost creation response
+
+`GET /api/plugins/netbox-sync-guard/objects/receipts/<nonce>/` reads an existing
+creation receipt. It requires the same authenticated NetBox principal and current
+creation/object permissions, the pinned guard UUID, an intact creation claim and
+unchanged object generation/ownership/placement. It performs no CREATE or retry.
+The returned original intent digest allows Sync to verify the exact source,
+resource and request payload. Absence of a receipt does not establish that an
+interrupted request could not have committed elsewhere; callers retain uncertainty.
+
+The catalog worker uses this route for a protected registration-cluster journal.
+The application verifies that current cluster name/type/site still match the
+original request before marking that journal CREATED. It does not change manual
+fields or claim a catalog match by name. The source registry is reconciled
+separately. Existing installations need the new plugin code for this route, with
+no migration or change to the certified 45-trigger schema. Old guard versions
+refuse this new read path and must not trigger a fallback POST.

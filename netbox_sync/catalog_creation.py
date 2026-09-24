@@ -68,6 +68,17 @@ def query(value, session_factory=requests.Session):
         host, address = EgressPolicy(allowed_hosts=(parsed.hostname,)).resolve(parsed.hostname, port)
         with pinned_dns(host, address, port), session_factory() as session:
             configure_session(session)
+            if value['action'] == 'receipt':
+                from .retirement_transport import GuardClient
+                guard = value['guard']
+                if kind != 'cluster': raise ProbeError('SELECTION_REQUIRED')
+                client = GuardClient(session, value['url'], authorization(value['write_token']), guard['instance'])
+                row = client.creation_receipt(guard['operation_id'], guard['source_instance'], 'cluster', None, obj)
+                actual = dict(row)
+                if isinstance(actual.get('type'), dict): actual['type'] = actual['type']['id']
+                if any(actual.get(key) != expected for key, expected in obj.items()):
+                    return {'status': 'UNCERTAIN', 'item': None}
+                return {'status': 'CREATED', 'item': project(kind, row)}
             endpoint = value['url'] + '/api/' + ENDPOINTS[kind] + '/'
             found = fetch(session, endpoint + '?' + urlencode({('name' if kind=='cluster' else 'slug'):obj['name' if kind=='cluster' else 'slug'], 'limit':2}), value['read_token'])
             rows = found.get('results')
@@ -135,6 +146,20 @@ class CatalogCreation:
     def __init__(self, store, child=run_child):
         self.store, self.child = store, child
 
+    def _reconcile_guard(self, recorded, journal, url):
+        # The durable protected intent, not a caller-supplied source or token,
+        # selects the original receipt. Missing receipts are not proof of failure.
+        guard = recorded['guard']
+        if str(os.environ.get('NETBOX_SYNC_GUARD_INSTANCE', '')) != guard['instance']:
+            raise ProbeError('CATALOG_CHANGED')
+        result = self.child(dict(action='receipt', url=url, kind=recorded['kind'],
+                                 object=recorded['object'], guard=guard,
+                                 write_token=runtime_netbox(self.store.path, 'apply')[1]))
+        if result.get('status') == 'CREATED':
+            recorded.update(status='CREATED', item=result['item'])
+            journal.write(recorded)
+        return self.public(recorded)
+
     def execute(self, request, *, registration=False, source_instance=None):
         action = request.get('action')
         allowed = {'action', 'operation_id'} if action == 'catalog-reconcile' else {
@@ -159,6 +184,8 @@ class CatalogCreation:
                 if recorded is None: raise ProbeError('SELECTION_REQUIRED')
                 if recorded.get('url') != url: raise ProbeError('CATALOG_CHANGED')
                 if recorded['status'] in ('CREATED', 'REFUSED'): return self.public(recorded)
+                if recorded.get('guard'):
+                    return self._reconcile_guard(recorded, journal, url)
                 result = self.child(dict(action='read', url=url, read_token=read_token,
                                          kind=recorded['kind'], object=recorded['object']))
                 # Even an exact match after a lost response requires explicit review;
@@ -183,6 +210,8 @@ class CatalogCreation:
             digest = fingerprint(dict(url=url, kind=request['kind'], object=obj, **({'guard':guard} if guard else {})))
             if recorded is not None:
                 if recorded.get('digest') != digest: raise ProbeError('CONFLICT')
+                if recorded.get('guard') and recorded['status'] not in ('CREATED', 'REFUSED'):
+                    return self._reconcile_guard(recorded, journal, url)
                 return self.public(recorded)
             intent = BootstrapStore(self.store.root)
             intent.path = self.store.root / ('catalog-intent-' + digest + '.json')

@@ -234,3 +234,29 @@ def test_registration_cluster_uses_protected_token_and_survives_restart(store):
     with pytest.raises(ProbeError):
         reopened.execute({**request,'kind':'platform'},registration=True)
     assert calls==['create']
+
+
+@pytest.mark.parametrize('outcome', ['CREATED', 'UNCERTAIN', 'REFUSED'])
+def test_guarded_cluster_after_lost_response_reads_receipt_without_post(store, monkeypatch, outcome):
+    instance = str(uuid4()); monkeypatch.setenv('NETBOX_SYNC_GUARD_INSTANCE', instance)
+    value = store.read(); value['apply_token'] = secrets.token_urlsafe(24); store.write(value)
+    request = dict(action='catalog-create', operation_id=str(uuid4()), kind='cluster',
+                   object={'name':'Scoped cluster','type':1,'scope_type':'dcim.site','scope_id':2}, confirm=True)
+    first = creation.CatalogCreation(store, lambda _: dict(status='UNCERTAIN',item=None)).execute(
+        request, registration=True, source_instance='esxi-fixture')
+    assert first['status'] == 'UNCERTAIN'
+    calls=[]
+    def read(value):
+        calls.append(value['action'])
+        assert value['action']=='receipt' and value['guard']['operation_id']==request['operation_id']
+        return dict(status=outcome,item={'id':123,'name':'Scoped cluster'} if outcome=='CREATED' else None)
+    resumed=creation.CatalogCreation(store, read)
+    result=resumed.execute(request, registration=True, source_instance='esxi-fixture')
+    assert result['status']==('CREATED' if outcome=='CREATED' else 'UNCERTAIN')
+    assert calls==['receipt']
+    assert value['apply_token'] not in (store.root/('catalog-'+request['operation_id']+'.json')).read_text()
+    monkeypatch.setenv('NETBOX_SYNC_GUARD_INSTANCE', str(uuid4()))
+    if outcome!='CREATED':
+        with pytest.raises(ProbeError,match='CATALOG_CHANGED'):
+            resumed.execute(dict(action='catalog-reconcile',operation_id=request['operation_id']))
+    assert calls==['receipt']

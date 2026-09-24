@@ -92,3 +92,42 @@ Real PostgreSQL + actual AuthPolicy/API: 21 admission tests passed, including
 Admin/Operator/Viewer projection and no credential/source side effects. Frontend:
 75 unit tests and TypeScript passed. These reports will identify the conflicting
 records on a future operator-run attempt; the actual PAM IDs remain unknown here.
+
+## Guarded catalog CREATE reconciliation
+
+The guard now exposes an authenticated GET for an exact creation nonce. It returns
+only a receipt belonging to the same NetBox principal, rechecks creation capability,
+object permission, claim generation, source ownership and placement, and never
+creates an object. Sync verifies the original canonical wire digest, source,
+resource and nonce. A cluster's current selected name/type/site must also match
+the protected original intent before it is accepted for registration.
+
+The protected catalog journal can reconcile a lost cluster response through that
+GET. Missing, refused, changed or malformed proof leaves UNCERTAIN; no second POST
+is sent. Changing the pinned guard UUID refuses. A confirmed cluster is not a
+confirmed source: the registration status keeps identity uncertainty and reports
+catalog_status separately. The UI no longer advises starting a new Source ID.
+The existing exact same-attempt registration continuation remains required; the
+full restart-resume wizard remains an explicit integration gap.
+
+Requires upgrading the separately installed guard code as well as Sync; an older
+guard without the GET route fails closed. No guard database migration, new
+permission, Docker mount, network or trigger change is required. Full source
+retirement, historical claims, and UNKNOWN resolution are not inferred from a
+successful catalog receipt.
+
+Executed: 44 catalog/transport regressions; 64 API/transport tests; combined affected
+Linux/PostgreSQL selection 162 passed. Real NetBox 4.7/TLS/PostgreSQL gate passed
+with post-commit serializer failures for both a VM and a cluster. Subsequent GET
+returns the original ID, with unchanged POST count and exactly one created object.
+The existing retry/conflict/retirement/token-revocation checks passed in the same
+scenario. Private exception text is not returned; server diagnostic contains only
+an event UUID and exception class.
+
+Production Compose verification on this change: **2 passed**, bundled and external
+PostgreSQL, using the actual product image and Compose topology. Includes actual
+API/auth-worker RPC, guarded retirement-intent refusal, registration/catalog loss
+reconciliation, session expiry/revocation and backup/restore checks provided by the
+harness. This is not the complete provider -> guarded retirement -> re-add gate.
+Frontend: 75 unit tests and TypeScript passed; Dockerfile.web built successfully.
+Browser and live checks were not run, following the operator's latest instruction.

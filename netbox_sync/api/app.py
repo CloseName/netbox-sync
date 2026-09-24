@@ -734,15 +734,23 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
             request.registration_id, http.state.principal['principal_id'])
         if identity['identity_status'] == 'REGISTERED':
             return {**identity, 'status': 'REGISTERED'}
-        if identity['identity_status']=='OUTCOME_UNCERTAIN':
-            return {**identity,'status':'UNCERTAIN','resume_supported':True}
+        pending_identity = identity['identity_status']=='OUTCOME_UNCERTAIN'
         if identity['identity_status'] in {'RESTORE_REQUIRED', 'IDENTITY_CONFLICT'}:
             return {**identity, 'status': 'UNCERTAIN'}
         from uuid import uuid5
         from .catalog import create_call
         operation_id=str(uuid5(UUID('b6c311eb-0d55-45af-80a5-b949a20bfe47'),
             http.state.principal['principal_id']+':'+request.source_instance+':'+str(request.registration_id)))
-        result=create_call(settings.bootstrap_socket,dict(action='catalog-reconcile',operation_id=operation_id))
+        try:
+            result=create_call(settings.bootstrap_socket,dict(action='catalog-reconcile',operation_id=operation_id))
+        except CatalogError:
+            if pending_identity:
+                return {**identity,'status':'UNCERTAIN','resume_supported':True,'catalog_status':'UNCERTAIN'}
+            raise
+        if pending_identity:
+            return {**identity,'status':'UNCERTAIN','resume_supported':True,
+                    'catalog_status':result.get('status') if result.get('status') in
+                    {'CREATED','REFUSED','UNCERTAIN','EXISTS_REVIEW_REQUIRED'} else 'UNCERTAIN'}
         return {'status':result.get('status') if result.get('status') in
                 {'CREATED','REFUSED','UNCERTAIN','EXISTS_REVIEW_REQUIRED'} else 'UNCERTAIN'}
 
