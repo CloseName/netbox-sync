@@ -251,5 +251,16 @@
       "en": "Review the saved source and retained cluster before retrying.",
       "ru": "Перед повтором проверьте сохранённый источник и оставленный кластер."
     }
+  },
+  "NETBOX_PLACEMENT_MISSING": {
+    "stage": "mapping",
+    "message": {
+      "en": "The configured NetBox placement was not found in the permitted scope.",
+      "ru": "Настроенное размещение NetBox не найдено в разрешённой области."
+    },
+    "action": {
+      "en": "Ask an administrator to review the saved site and cluster and NetBox object visibility. No placement is created automatically.",
+      "ru": "Попросите администратора проверить сохранённые площадку и кластер, а также доступность объектов токену NetBox. Размещение не создаётся автоматически."
+    }
   }
 }

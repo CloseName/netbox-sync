@@ -564,3 +564,43 @@ def test_multiple_live_vms_claiming_one_legacy_vm_are_ambiguous(fake_netbox):
     with pytest.raises(EsxiAdoptionError, match='contains ambiguity'):
         apply_esxi_adoption_plan(fake_netbox, plan, confirmed=True)
     assert fake_netbox.mutations == []
+
+
+def test_missing_cluster_has_placement_diagnostic(fake_netbox):
+    from netbox_sync.worker_failure import diagnostic
+    _target(fake_netbox)
+    fake_netbox.virtualization.clusters.records.clear()
+    with pytest.raises(EsxiAdoptionError) as caught:
+        build_esxi_adoption_plan(fake_netbox, _inventory(), _config())
+    assert diagnostic(caught.value, 'netbox')['code'] == 'NETBOX_PLACEMENT_MISSING'
+    assert fake_netbox.mutations == []
+
+
+def test_ambiguous_cluster_is_mapping_error_not_network_failure(fake_netbox):
+    from netbox_sync.worker_failure import diagnostic
+    _, cluster = _target(fake_netbox)
+    data = cluster.serialize()
+    data['id'] = 999
+    fake_netbox.virtualization.clusters.add(FakeRecord(**data))
+    with pytest.raises(EsxiAdoptionError) as caught:
+        build_esxi_adoption_plan(fake_netbox, _inventory(), _config())
+    assert diagnostic(caught.value, 'netbox')['code'] == 'MAPPING_INVALID'
+
+
+@pytest.mark.parametrize('denied', [False, True])
+def test_deleted_cluster_over_http_is_distinct_from_denied_read(fake_netbox, denied):
+    from tests.fakes.netbox_http import netbox_http
+    from netbox_sync.worker_failure import failure_stage, DiagnosticFailure
+    _target(fake_netbox)
+    fake_netbox.virtualization.clusters.records.clear()
+    requests = []
+    with netbox_http(fake_netbox, requests=requests,
+                     behavior={'deny_reads': ['virtualization.clusters'] if denied else []}) as (api, _, writes):
+        with pytest.raises(DiagnosticFailure) as caught:
+            with failure_stage('netbox'):
+                build_esxi_adoption_plan(api, _inventory(), _config())
+        expected = 'NETBOX_PERMISSION_DENIED' if denied else 'NETBOX_PLACEMENT_MISSING'
+        assert caught.value.code == expected
+        assert writes == [] and all(method == 'GET' for method, _ in requests)
+        assert any('/virtualization/clusters/' in path for _, path in requests)
+        assert 'PRIVATE_REMOTE_RESPONSE' not in str(caught.value.diagnostic)

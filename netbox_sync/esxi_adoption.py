@@ -31,6 +31,16 @@ class EsxiAdoptionError(RuntimeError):
     """An adoption plan or confirmed adoption failed safely."""
 
 
+class EsxiPlacementMissing(EsxiAdoptionError):
+    """A successful catalog read found no configured placement."""
+    code = 'NETBOX_PLACEMENT_MISSING'
+
+
+class EsxiPlacementAmbiguous(EsxiAdoptionError):
+    """Catalog objects exist, but do not identify one placement."""
+    code = 'MAPPING_INVALID'
+
+
 @dataclass(frozen=True)
 class AdoptionEvidence:
     """Immutable evidence connecting one discovered and NetBox object."""
@@ -351,7 +361,7 @@ def _resolve_target(nb_api, config):
         slug=config.target.cluster_type_slug
     )
     if site is None or cluster_type is None:
-        raise EsxiAdoptionError('ESXi adoption target is incomplete')
+        raise EsxiPlacementMissing('ESXi adoption target is incomplete')
     clusters = []
     for cluster in nb_api.virtualization.clusters.filter(
             **cluster_filter(config.target),
@@ -363,8 +373,10 @@ def _resolve_target(nb_api, config):
                 and data.get('scope_id') == site.id
         ):
             clusters.append(cluster)
+    if not clusters:
+        raise EsxiPlacementMissing('Configured ESXi target cluster is absent or outside its scope')
     if len(clusters) != 1:
-        raise EsxiAdoptionError(
+        raise EsxiPlacementAmbiguous(
             f'Expected exactly one ESXi adoption target cluster; found {len(clusters)}'
         )
     return site, clusters[0]

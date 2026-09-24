@@ -10,8 +10,8 @@ ERRORS=json.loads(Path(__file__).with_name('public_errors.json').read_text(encod
 
 def classify(exc, stage):
     from .host_mapping import MappingError
-    if isinstance(exc, MappingError):return 'MAPPING_INVALID'
     if getattr(exc,'code',None) in ERRORS:return exc.code
+    if isinstance(exc, MappingError):return 'MAPPING_INVALID'
     from pynetbox.core.query import RequestError
     netbox=stage=='netbox' or isinstance(exc, RequestError)
     if isinstance(exc,socket.gaierror):return 'NETBOX_UNAVAILABLE' if netbox else 'SOURCE_DNS_FAILED'

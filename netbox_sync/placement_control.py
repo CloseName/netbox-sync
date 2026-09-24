@@ -17,8 +17,11 @@ def row(store,connection,source):
 
 
 def evidence(store,connection,source):
-    operation=connection.execute(sql.SQL("SELECT operation_id,result FROM {} WHERE source_instance=%s AND operation_kind='DISCOVERY' AND status='SUCCEEDED' AND finished_at>clock_timestamp()-interval '24 hours' ORDER BY finished_at DESC, operation_id DESC LIMIT 1").format(store.table('source_operations')),(source,)).fetchone()
+    operation=connection.execute(sql.SQL("SELECT operation_id,result,status FROM {} WHERE source_instance=%s AND operation_kind='DISCOVERY' AND (status='SUCCEEDED' OR (status='FAILED' AND safe_error_code='NETBOX_PLACEMENT_MISSING')) AND finished_at>clock_timestamp()-interval '24 hours' ORDER BY finished_at DESC, operation_id DESC LIMIT 1").format(store.table('source_operations')),(source,)).fetchone()
     try:
+        if operation is not None and operation['status'] == 'FAILED':
+            from .provider_evidence import validate
+            validate(operation['result'], source)
         hosts=[DiscoveryHostDTO.model_validate(item).model_dump() for item in operation['result']['hosts']]
         if not 1<=len(hosts)<=16 or len({h['id'] for h in hosts})!=len(hosts):raise ValueError()
         return str(operation['operation_id']),hosts

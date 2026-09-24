@@ -35,9 +35,10 @@ MAX_SECRET = 4096
 
 class WorkerError(RuntimeError):
     """One stable, secret-free worker failure."""
-    def __init__(self, code, diagnostic=None):
+    def __init__(self, code, diagnostic=None, evidence=None):
         self.code = code
         self.diagnostic = diagnostic
+        self.evidence = evidence
         super().__init__(code)
 
 
@@ -143,14 +144,19 @@ class DiscoverySupervisor:
             result = json.loads(output)
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise WorkerError('DISCOVERY_FAILED', dict(phase='child_response', termination='invalid_response', returncode=process.returncode, duration_ms=int((time.monotonic()-started)*1000))) from None
-        if not isinstance(result, dict) or set(result) - {'result', 'error', 'diagnostic'}:
+        if not isinstance(result, dict) or set(result) - {'result', 'error', 'diagnostic', 'evidence'}:
             raise WorkerError('DISCOVERY_FAILED')
         if result.get('error'):
             from .worker_failure import ERRORS, safe_diagnostic
             code=result['error'] if result['error'] in ERRORS or result['error']=='CREDENTIAL_UNAVAILABLE' else 'DISCOVERY_FAILED'
             detail = dict(result['diagnostic']) if isinstance(result.get('diagnostic'), dict) else {}
             detail['phases'] = getattr(process, '_phases', [])
-            raise WorkerError(code, safe_diagnostic(detail,code))
+            evidence = None
+            if code == 'NETBOX_PLACEMENT_MISSING' and operation == 'discover' and result.get('evidence') is not None:
+                from .provider_evidence import validate
+                try: evidence = validate(result['evidence'], instance)
+                except ValueError: raise WorkerError('DISCOVERY_FAILED') from None
+            raise WorkerError(code, safe_diagnostic(detail,code), evidence=evidence)
         return result.get('result')
 
 
@@ -196,8 +202,7 @@ def execute_child(payload):
                                   token_value=credentials['token_secret'], verify_ssl=config.verify_ssl, port=config.api_port)
             hosts = discover_proxmox(provider, config)
         if payload.get('operation') != 'plan':
-            with failure_stage('netbox'):
-                review = build_proxmox_review(nb_api, hosts, config)
+            review = _comparison(lambda: build_proxmox_review(nb_api, hosts, config), hosts, config)
     elif config.source_type == 'esxi':
         class Resolved:
             """Ephemeral already-resolved ESXi password adapter."""
@@ -208,14 +213,19 @@ def execute_child(payload):
             with EsxiClient(resolver=Resolved()).session(config) as service:
                 hosts = discover_esxi(service, config)
         if payload.get('operation') != 'plan':
-            with failure_stage('netbox'):
-                review = build_esxi_review(build_esxi_adoption_plan(nb_api, hosts, config), config)
+            review = _comparison(lambda: build_esxi_review(build_esxi_adoption_plan(nb_api, hosts, config), config), hosts, config)
     else:
         raise WorkerError('DISCOVERY_FAILED')
     if payload.get('operation') == 'plan':
         with failure_stage('planning'):
             plan = build_runtime_plan(nb_api, hosts, config)
         return {**plan.canonical_dict(), 'digest': plan.digest}
+    evidence = _host_evidence(hosts)
+    from .application.discovery_review import enrich_review
+    return {**asdict(enrich_review(review, hosts)), 'hosts': evidence}
+
+
+def _host_evidence(hosts):
     from .source_preview import text, MAX_HOSTS
     evidence = []
     if 1 <= len(hosts) <= MAX_HOSTS:
@@ -223,8 +233,23 @@ def execute_child(payload):
             manufacturer=text(host.manufacturer), model=text(host.model),
             version=text(host.hypervisor_version), cpu=text(host.cpu.model),
             memory_bytes=max(0,host.memory_bytes)) for host in hosts]
-    from .application.discovery_review import enrich_review
-    return {**asdict(enrich_review(review, hosts)), 'hosts': evidence}
+    return evidence
+
+
+def _comparison(callback, hosts, config):
+    from .worker_failure import failure_stage, DiagnosticFailure
+    try:
+        with failure_stage('netbox'):
+            return callback()
+    except DiagnosticFailure as exc:
+        if exc.code == 'NETBOX_PLACEMENT_MISSING':
+            from .provider_evidence import validate
+            try:
+                exc.evidence = validate({'source_instance': config.source_instance,
+                                         'hosts': _host_evidence(hosts)}, config.source_instance)
+            except ValueError:
+                pass  # Missing/ambiguous host evidence never permits placement repair.
+        raise
 
 
 def child_main():
@@ -240,6 +265,8 @@ def child_main():
         result = {'result': value}
     except DiagnosticFailure as exc:
         result = {'error':exc.code,'diagnostic':exc.diagnostic}
+        if getattr(exc, 'evidence', None) is not None:
+            result['evidence'] = exc.evidence
     except WorkerError as exc:
         result = {'error': exc.code}
     except Exception as exc:  # No exception text or stderr passthrough.
@@ -285,6 +312,9 @@ def _authorize_peer(connection, allowed_uid):
 
 
 def _operation_public(row):
+    row = dict(row)
+    if row.get('status') == 'FAILED':
+        row['result'] = None  # Provider evidence is private placement input, not a successful review.
     return {key: (str(value) if key == 'operation_id' else value.isoformat()
                   if hasattr(value, 'isoformat') else value) for key, value in row.items()}
 

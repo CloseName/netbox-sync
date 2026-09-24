@@ -183,6 +183,12 @@ class OperationStore:
                         'REGISTRY_UNAVAILABLE', 'DISCOVERY_TIMEOUT', 'PROVIDER_UNAVAILABLE',
                         'NETBOX_UNAVAILABLE', 'DISCOVERY_FAILED', 'RESULT_TOO_LARGE',
                         'RESULT_INVALID'} else 'OPERATION_FAILED'
+                    if operation['operation_kind'] == 'DISCOVERY' and code == 'NETBOX_PLACEMENT_MISSING':
+                        from .provider_evidence import validate
+                        try:
+                            result = validate(getattr(exc, 'evidence', None), operation['source_instance'])
+                        except ValueError:
+                            result = None
                     event=safe_diagnostic(getattr(exc,'diagnostic',None) or diagnostic(exc,'planning'),code)
                     event.update(duration_ms=int((time.monotonic()-started)*1000), phase=event.get('phase',phase))
                     event.update(event_id=str(operation['operation_id']),source_instance=operation['source_instance'],

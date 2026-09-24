@@ -655,3 +655,15 @@ Implementation commit: `30dd019c946d3359ae3eb6556906371f9f114416`.
 Both final runtime modes passed after the API allowlist fix. Documentation-only edits
 follow it. Remaining foreign working-tree entries are README.md and docs/containers.md;
 these are intentionally not included. No push or live changes were made.
+
+## 24 September recovery continuation
+
+Current requirement/evidence matrix: [backend-recovery-20260924.md](backend-recovery-20260924.md).
+Base 187056f is clean and includes the prior container documentation. Browser
+verification is now explicitly excluded by the user. No live cause is inferred
+from local tests. The first correction distinguishes missing placement from
+network failure and permits explicit mapping repair from bounded completed-provider
+evidence while keeping Discovery FAILED and preserving UNKNOWN write blocking.
+Full Linux/PostgreSQL: 1393 passed, 47 opt-in skips; frontend 74 and TypeScript pass.
+This does not close the remaining identity, historical UNKNOWN, orphan or complete
+provider/guard/retirement/re-add gates.

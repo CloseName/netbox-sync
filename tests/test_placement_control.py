@@ -91,3 +91,51 @@ def test_network_scope_rules_persist_and_older_clients_cannot_erase_them(lifecyc
     mapping['network_scope_rules'] = []
     control.save(store, source.source_instance, fresh['revision'], fresh['discovery_id'], mapping)
     assert control.read(store, source.source_instance)['network_scope_rules'] == []
+
+
+def test_missing_placement_keeps_failed_status_but_allows_explicit_mapping_repair(lifecycle):
+    from netbox_sync.discovery_worker import WorkerError, _operation_public
+    from netbox_sync.source_operations import OperationStore
+    store, registry, source = lifecycle
+    view, mapping = seed(store, source.source_instance)
+    operations = OperationStore('fixture', store.schema, connector=lambda *_args, **_kwargs: store.connect())
+    operation, _ = operations.start(source.source_instance, 'DISCOVERY')
+    def failed_comparison():
+        raise WorkerError('NETBOX_PLACEMENT_MISSING', evidence={
+            'source_instance': source.source_instance, 'hosts': view['preview']['hosts']})
+    operations.execute(operation, failed_comparison)
+    saved = operations.latest(source.source_instance)[0]
+    assert saved['status'] == 'FAILED'
+    assert saved['safe_error_code'] == 'NETBOX_PLACEMENT_MISSING'
+    assert _operation_public(saved)['result'] is None
+    fresh = control.read(store, source.source_instance)
+    assert fresh['discovery_id'] == str(operation['operation_id'])
+    control.save(store, source.source_instance, fresh['revision'], fresh['discovery_id'], mapping)
+    assert registry.get_by_source_instance(source.source_instance).config.source_instance == source.source_instance
+
+
+@pytest.mark.parametrize('code', ['NETBOX_PERMISSION_DENIED', 'NETBOX_UNAVAILABLE', 'SOURCE_TIMEOUT'])
+def test_other_failed_discovery_never_supplies_placement_evidence(lifecycle, code):
+    store, _, source = lifecycle
+    seed(store, source.source_instance)
+    with store.connect() as connection:
+        connection.execute(sql.SQL("UPDATE {} SET status='FAILED',safe_error_code=%s").format(store.table('source_operations')), (code,))
+    with pytest.raises(LifecycleError, match='SOURCE_DISCOVERY_REQUIRED'):
+        control.read(store, source.source_instance)
+
+
+@pytest.mark.parametrize('status', ['OUTCOME_UNCERTAIN', 'PARTIALLY_APPLIED'])
+def test_provider_evidence_never_clears_unconfirmed_apply(lifecycle, status):
+    store, _, source = lifecycle
+    view, mapping = seed(store, source.source_instance)
+    with store.connect() as connection:
+        connection.execute(sql.SQL("UPDATE {} SET status='FAILED',safe_error_code='NETBOX_PLACEMENT_MISSING',result=%s").format(store.table('source_operations')),
+                           (Jsonb({'source_instance':source.source_instance,'hosts':view['preview']['hosts']}),))
+    from netbox_sync.run_history import postgres_run_repository, RunTrigger, RunStatus
+    from tests.test_source_registry_postgres import _safe_test_dsn
+    repository = postgres_run_repository(_safe_test_dsn(), store.schema)
+    run = repository.start_run(source.source_instance, 'proxmox', RunTrigger.MANUAL, 'test')
+    repository.finish_run(run.run_id, RunStatus(status))
+    fresh = control.read(store, source.source_instance)
+    with pytest.raises(LifecycleError, match='SOURCE_APPLY_UNCONFIRMED'):
+        control.save(store, source.source_instance, fresh['revision'], fresh['discovery_id'], mapping)

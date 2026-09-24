@@ -1,5 +1,5 @@
 """Safe, provider-neutral Web projection of read-only discovery results."""
-from ..host_mapping import cluster_filter
+from ..host_mapping import cluster_filter, MappingError, PlacementMissing
 # pylint: disable=too-many-instance-attributes
 
 import ipaddress
@@ -136,14 +136,16 @@ def build_proxmox_review(nb_api, hosts, config):
     site = nb_api.dcim.sites.get(slug=config.target.site_slug)
     cluster_type = nb_api.virtualization.cluster_types.get(slug=config.target.cluster_type_slug)
     if site is None or cluster_type is None:
-        raise ValueError('Proxmox review target is incomplete')
+        raise PlacementMissing('Proxmox review target is incomplete')
     clusters = [cluster for cluster in nb_api.virtualization.clusters.filter(
         **cluster_filter(config.target)) if (
             _object_id(_record(cluster).get('type')) == cluster_type.id
             and _record(cluster).get('scope_type') == 'dcim.site'
             and _record(cluster).get('scope_id') == site.id)]
+    if not clusters:
+        raise PlacementMissing('Proxmox review target cluster is not visible in scope')
     if len(clusters) != 1:
-        raise ValueError('Proxmox review target cluster is ambiguous')
+        raise MappingError('Proxmox review target cluster is ambiguous')
     cluster = clusters[0]
     devices = tuple(nb_api.dcim.devices.all())
     vms = tuple(nb_api.virtualization.virtual_machines.all())

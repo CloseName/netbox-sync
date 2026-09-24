@@ -3,6 +3,12 @@ from .netbox_catalog import ENDPOINTS
 
 class MappingError(ValueError):
     """A selected catalog identity or host mapping must be reviewed."""
+    code = "MAPPING_INVALID"
+
+
+class PlacementMissing(MappingError):
+    """A successful read did not find the selected object in visible scope."""
+    code = "NETBOX_PLACEMENT_MISSING"
 
 
 def endpoint(api,kind):
@@ -10,7 +16,8 @@ def endpoint(api,kind):
     return getattr(getattr(api,group),name.replace('-','_'))
 
 def check_record(record,choice,kind):
-    if record is None or record.id!=choice['id']: raise MappingError('Selected NetBox object no longer exists')
+    if record is None: raise PlacementMissing('Selected NetBox object is not visible')
+    if record.id!=choice['id']: raise MappingError('Selected NetBox object identity changed')
     name=getattr(record,'model' if kind=='device_type' else 'name',None)
     if name!=choice['name'] or (kind!='cluster' and getattr(record,'slug',None)!=choice['slug']):
         raise MappingError('Selected NetBox object changed; review source mapping')

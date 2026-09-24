@@ -189,3 +189,19 @@ def test_timeout_kills_reaps_and_next_request_can_succeed(tmp_path, monkeypatch)
     for argv, kwargs in captured:
         assert secret not in json.dumps(argv) + json.dumps(kwargs['env'])
         assert 'NETBOX_SYNC_REGISTRATION_DSN' not in kwargs['env']
+
+
+def test_provider_only_evidence_is_not_in_public_diagnostic(monkeypatch):
+    from netbox_sync.discovery_worker import _comparison
+    from netbox_sync.esxi_adoption import EsxiPlacementMissing
+    from tests.test_esxi_adoption import _inventory, _config
+    def execute(_):
+        def compare(): raise EsxiPlacementMissing('private response')
+        return _comparison(compare, _inventory(), _config())
+    output, _ = _run_child(monkeypatch, {}, execute)
+    value = json.loads(output)
+    assert value['error'] == 'NETBOX_PLACEMENT_MISSING'
+    assert value['evidence']['hosts']
+    assert 'evidence' not in value['diagnostic']
+    assert 'private response' not in output
+    assert 'description' not in json.dumps(value['evidence'])

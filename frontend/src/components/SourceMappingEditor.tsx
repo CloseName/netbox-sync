@@ -23,7 +23,7 @@ export function SourceMappingEditor({source,onSaved}:{source:string;onSaved:()=>
   if(!response.ok)throw new Error();setState(null);onSaved();setMessage(t('Placement saved. Build and review a new plan before synchronization.','Сопоставления сохранены. Создайте и проверьте новый план перед синхронизацией.'));
  }catch{setState(null);setMessage(t('Result requires review. Reopen current placement before another save.','Проверьте результат: откройте текущие сопоставления перед повторным сохранением.'));}finally{setBusy(false);}}
  return <section className="source-panel"><h2>{t('Source placement','Сопоставления источника')}</h2>
- <p>{t('Use a successful Discovery from the last 24 hours. Saving invalidates old plans; synchronization does not start automatically.','Используется успешный Discovery за последние 24 часа. Сохранение отменяет старые планы; синхронизация автоматически не запускается.')}</p>
+ <p>{t('Use complete provider data from Discovery within the last 24 hours, including when comparison found missing placement. Saving invalidates old plans; synchronization does not start automatically.','Используются полные данные хостов из Discovery за последние 24 часа, в том числе при отсутствии размещения. Сохранение отменяет старые планы; синхронизация автоматически не запускается.')}</p>
  {message&&<p role="status">{message}</p>}
  {!state?<button type="button" disabled={busy} onClick={open}>{t('Edit placement','Изменить сопоставления')}</button>:<fieldset disabled={busy}>
  <label><input type="checkbox" checked={ipPolicy==='observe'} disabled={review} onChange={event=>setIpPolicy(event.target.checked?'observe':'strict')}/>{t('Save ambiguous IPs as NetBox observations','Сохранять неоднозначные IP как наблюдения в NetBox')}</label>
