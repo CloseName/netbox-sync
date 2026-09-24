@@ -26,6 +26,10 @@ export class RegistrationFailure extends Error {
 }
 
 export const connectionMessages = {
+  SOURCE_PERMISSION_DENIED: ['Inventory access was denied. Verify host-root read permissions, inheritance and account access under lockdown.', 'Источник запретил чтение инвентаря. Проверьте права чтения корневого объекта хоста, наследование и допуск учётной записи в lockdown.'],
+  HOST_IDENTITY_MISSING: ['ESXi returned no hardware UUID in summary or hardware data. Verify SMBIOS system UUID and inventory visibility on ESXi; names and IP addresses cannot replace it.', 'ESXi не вернул аппаратный UUID ни в сводке, ни в данных оборудования. Проверьте SMBIOS UUID системы и доступность инвентаря на ESXi; имя и IP не заменяют идентичность.'],
+  HOST_IDENTITY_INVALID: ['ESXi returned an invalid or placeholder hardware UUID. Verify SMBIOS system identity on the host before retrying.', 'ESXi вернул некорректный или шаблонный аппаратный UUID. Проверьте SMBIOS-идентичность системы на хосте перед повтором.'],
+  HOST_INVENTORY_EMPTY: ['No ESXi host is visible. Verify host-root read permissions and account access under lockdown.', 'Не виден ни один хост ESXi. Проверьте права чтения корневого объекта и допуск учётной записи в lockdown.'],
   SOURCE_ADDRESS_INVALID: ['Use a bare hostname or IPv4 address, without a scheme, path or port.', 'Введите имя узла или IPv4 без схемы, пути и порта.'],
   SOURCE_DNS_FAILED: ['The source hostname could not be resolved. Check its spelling and ask the deployment operator to verify DNS.', 'Не удалось разрешить имя источника. Проверьте написание; оператор установки должен проверить DNS.'],
   SOURCE_CONNECTION_FAILED: ['Could not reach the source. Check hostname, DNS, routing and HTTPS service.', 'Не удалось подключиться к источнику. Проверьте имя, DNS, маршрутизацию и службу HTTPS.'],
@@ -42,6 +46,7 @@ export class SourceConnectionError extends Error {
 export interface ConnectionInput {
   source_type: 'proxmox' | 'esxi'; address: string; verify_ssl: boolean; port?: number;
   username: string; secret: string; token_id?: string; preview?: boolean; recovery_source?:string;
+  registration_resume?:{source_instance:string;registration_id:string};
 }
 
 export interface RegistrationInput {

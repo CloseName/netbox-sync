@@ -1,3 +1,4 @@
+import {RunReconciliation} from '../components/RunReconciliation';
 import {TeamEditor} from '../components/SourceTeams';
 import {usePermission} from '../AuthGate';
 import {SourceMappingEditor} from '../components/SourceMappingEditor';
@@ -84,6 +85,7 @@ export function SourcesPage() {
   useEffect(()=>{diagnostics.refresh();},[tab]);
   const detail = source.data;
   const [removed, setRemoved] = useState<SourceLifecycle | null>(null);
+  const [reviewGeneration,setReviewGeneration]=useState(0);
   const evidence = diagnosticIndex(diagnostics.data).get(sourceInstance);
   const [blockedPlan, setBlockedPlan] = useState(false);
   useEffect(()=>setBlockedPlan(false),[sourceInstance]);
@@ -446,7 +448,8 @@ export function SourcesPage() {
               scheduleLink={base + "/schedule"}
             />
             {canConfigure && <SourceMappingEditor key={detail.source_instance} source={detail.source_instance} onSaved={source.refresh}/>}
-          {canRemove && <SourceLifecyclePanel source={detail} onRemoved={setRemoved} />}
+          {canRemove && <RunReconciliation source={detail.source_instance} onSaved={()=>{source.refresh();schedule.refresh();diagnostics.refresh();setReviewGeneration(g=>g+1);}}/>}
+          {canRemove && <SourceLifecyclePanel key={detail.source_instance+":"+reviewGeneration} source={detail} onRemoved={setRemoved} />}
           </details>)}
         </>
       )}

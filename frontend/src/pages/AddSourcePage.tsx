@@ -1,3 +1,5 @@
+import {SourceIdentityRecords} from '../components/SourceIdentityRecords';
+import {RegistrationContinuation} from '../components/RegistrationContinuation';
 import {SourceRecovery} from '../components/SourceRecovery';
 import {useFormValidation} from '../ui/formValidation';
 import {CredentialField} from '../components/CredentialField';
@@ -210,10 +212,12 @@ export function AddSourcePage() {
         <h2>{t('Your entered data will be lost','Введённые данные будут потеряны')}</h2>
         <div className="page-actions"><button autoFocus type="button" onClick={()=>{if(blocker.state==='blocked')blocker.reset();}}>{t('Stay','Остаться')}</button><button type="button" onClick={()=>{remembered=null;if(token)void cancelOnboarding(token).catch(()=>{});if(blocker.state==='blocked')blocker.proceed();}}>{t('Leave','Выйти')}</button></div>
       </dialog>
+      <RegistrationContinuation key={String(uncertain)} language={language} done={setCreated}/>
       {validation.summary}
+      {error&&canRecover&&hostConflicts.length>0&&<SourceIdentityRecords key={hostConflicts[0].source_instance} source={hostConflicts[0].source_instance}/>}
       {error&&hostConflicts.length>0&&<section aria-label={t('Conflicting source records','Конфликтующие записи источников')}>
         <p>{t('Recorded identity matches do not prove that the physical servers are identical. Review ownership and history before recovery.','Совпадение сохранённого идентификатора не доказывает тождество физических серверов. Перед восстановлением проверьте принадлежность и историю.')}</p>
-        <ul>{hostConflicts.map(row=><li key={row.source_instance}><code>{row.source_instance}</code> — {row.state==='REMOVED'?t('Removed; history retained','Удалён; история сохранена'):<Link to={sourcePath(row.source_instance)}>{t('Registered source','Зарегистрированный источник')}</Link>}</li>)}</ul>
+        <ul>{hostConflicts.map(row=><li key={row.source_instance}><code>{row.source_instance}</code> — {row.state==='REMOVED'?t('Removed; history retained','Удалён; история сохранена'):<Link to={sourcePath(row.source_instance)}>{t('Registered source','Зарегистрированный источник')}</Link>} {canRecover&&row.state==='REMOVED'&&<button type="button" disabled={busy} onClick={()=>{setExistingSource(row.source_instance);setRemovedSource(true);setRecoveryGeneration(v=>v+1);}}>{t('Review recovery of this record','Проверить восстановление этой записи')}</button>}</li>)}</ul>
       </section>}
       {error&&existingSource&&!removedSource&&<p><Link to={sourcePath(existingSource)}>{t('Open existing source','Открыть существующий источник')}</Link></p>}
       {uncertain&&<section className="source-panel"><p>{t('No registration request will be retried automatically.','Запрос регистрации не будет повторён автоматически.')}</p><button type="button" disabled={busy} onClick={async()=>{

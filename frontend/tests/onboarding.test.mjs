@@ -31,7 +31,7 @@ test('reserved identity has a typed safe error while unknown conflict text stays
   await assert.rejects(registerSource({confirm_sync_disabled:true}),error=>!(error instanceof SourceIdReservedError) && !error.message.includes('SENTINEL'));
 });
 
-for (const code of ['SOURCE_CONNECTION_FAILED', 'SOURCE_TIMEOUT', 'SOURCE_TLS_FAILED', 'SOURCE_AUTH_FAILED', 'SOURCE_DESTINATION_DENIED']) {
+for (const code of ['HOST_IDENTITY_MISSING', 'HOST_IDENTITY_INVALID', 'HOST_INVENTORY_EMPTY', 'SOURCE_PERMISSION_DENIED', 'SOURCE_CONNECTION_FAILED', 'SOURCE_TIMEOUT', 'SOURCE_TLS_FAILED', 'SOURCE_AUTH_FAILED', 'SOURCE_DESTINATION_DENIED']) {
  test(`connection error ${code} is typed and redacted`, async (context) => {
   context.mock.method(globalThis, 'fetch', async () => Response.json({error: {code, message: 'REMOTE_SECRET'}}, {status: 422}));
   await assert.rejects(testConnection({}), error => error instanceof SourceConnectionError && error.code === code && !error.message.includes('REMOTE_SECRET'));

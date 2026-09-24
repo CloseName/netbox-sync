@@ -1,7 +1,7 @@
 export type RetirementState = 'READY' | 'SENDING' | 'UNCERTAIN' | 'SUCCEEDED' | 'FINALIZED' | 'BLOCKED';
 export interface Retirement {
   source_instance: string; operation_id: string; state: RetirementState; digest: string;
-  revision: string; guard_instance: string; remove_credentials?: boolean | null;
+  revision: string; guard_instance: string; safe_code?: string | null; remove_credentials?: boolean | null;
   manifest: {format: 2; cluster_id: number; objects: [string,string][]; retained_cluster?: boolean};
 }
 export class RetirementError extends Error {
@@ -9,7 +9,9 @@ export class RetirementError extends Error {
 }
 const codes = new Set(['AUTH_DENIED','AUTH_REQUIRED','SOURCE_OPERATION_ACTIVE','SOURCE_APPLY_ACTIVE',
   'SOURCE_APPLY_UNCONFIRMED','SOURCE_LIFECYCLE_CONFLICT','SOURCE_RETIREMENT_PENDING',
-  'RETIREMENT_UNAVAILABLE','RETIREMENT_CONFLICT','RETIREMENT_BLOCKED','RETIREMENT_UNCERTAIN']);
+  'RETIREMENT_UNAVAILABLE','RETIREMENT_CONFLICT','RETIREMENT_BLOCKED','RETIREMENT_UNCERTAIN',
+  'RETIREMENT_PERMISSION_DENIED','RETIREMENT_OWNERSHIP_UNPROVEN','RETIREMENT_OWNERSHIP_CONFLICT',
+  'RETIREMENT_DEPENDENCIES_CHANGED','RETIREMENT_MANUAL_CHANGE','RETIREMENT_PROTECTED_DEPENDENCY','RETIREMENT_GUARD_CHANGED']);
 export async function retirement(source: string, action: 'retirement-review'|'retire'|'retirement-status'|'retirement-resume',
   payload: {operation_id:string; revision?:string; digest?:string; confirmed?:true; confirmed_source?:string; remove_credentials?:boolean},
   signal: AbortSignal): Promise<Retirement> {
@@ -23,6 +25,7 @@ export async function retirement(source: string, action: 'retirement-review'|'re
     const body=await response.json();
     if (!response.ok) throw new RetirementError(codes.has(body?.error?.code)?body.error.code:'RETIREMENT_UNAVAILABLE');
     value=body;
+    if (value.safe_code && !codes.has(value.safe_code)) throw new Error();
     if (value.source_instance!==source || value.operation_id!==payload.operation_id
       || !['READY','SENDING','UNCERTAIN','SUCCEEDED','FINALIZED','BLOCKED'].includes(value.state)
       || !/^[a-f0-9]{64}$/.test(value.digest) || !/^[a-f0-9]{64}$/.test(value.revision)
@@ -33,4 +36,12 @@ export async function retirement(source: string, action: 'retirement-review'|'re
       || new Set(value.manifest.objects.map(row=>row[0])).size!==value.manifest.objects.length) throw new Error();
   } catch (error) {if(error instanceof RetirementError) throw error; throw new RetirementError('RETIREMENT_UNAVAILABLE');}
   return value;
+}
+
+
+export async function retainedContext(source:string,signal:AbortSignal):Promise<import('./lifecycle').SourceLifecycle>{
+ const response=await fetch(`/api/v1/sources/${encodeURIComponent(source)}/retirement-context`,{method:'POST',signal,credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-NetBox-Sync-CSRF':'same-origin'},body:'{}'});
+ const value=await response.json();
+ if(!response.ok||value.source_instance!==source||typeof value.display_name!=='string'||!value.removed_at||!Number.isFinite(Date.parse(value.removed_at))||!/^[a-f0-9]{64}$/.test(value.revision))throw new RetirementError('RETIREMENT_UNAVAILABLE');
+ return value;
 }

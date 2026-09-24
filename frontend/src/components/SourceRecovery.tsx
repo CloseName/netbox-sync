@@ -5,7 +5,7 @@ import {fetchSource} from '../api/sources';
 import type {Source} from '../api/sources';
 import {useLanguage} from '../ui/language';
 
-type Proof={digest:string;host_uuid:string;site_id:number;cluster_id:number;blockers:string[];
+type Proof={mode?:string;placement_requires_review?:boolean;digest:string;host_uuid:string;site_id:number;cluster_id:number;blockers:string[];
   owned:{kind:string;id:number}[];retained_manual:{kind:string;id:number}[]};
 type Review={operation_id:string;name:string;proof:Proof};
 const messages:Record<string,[string,string]>={
@@ -18,6 +18,7 @@ const messages:Record<string,[string,string]>={
  HOST_IDENTITY_UNAVAILABLE:['This host does not match the recorded hardware identity.','Хост не соответствует сохранённой аппаратной идентичности.'],
 };
 const blockers:Record<string,[string,string]>={
+ RETIRED_OBJECTS_PRESENT:['Objects linked to the retired source are present again. Review them before restoring the source.','Объекты удалённого источника снова существуют. Проверьте их до восстановления источника.'],
  OBJECT_IDENTITY_CONFLICT:['Object provenance does not identify exactly one compatible object','Принадлежность объекта не задаёт единственную совместимую идентичность'],
  DUPLICATE_OBJECT_IDENTITY:['Several objects claim the same provider identity','Несколько объектов имеют одну идентичность провайдера'],
  PLACEMENT_CHANGED:['NetBox placement changed','Изменилось размещение NetBox'],
@@ -88,6 +89,7 @@ export function SourceRecovery({source,readCredentials,clearSecret,busyChanged,d
   <p>Source ID: <code>{source}</code></p>
   {error&&<p role="alert">{error}</p>}
   <button type="button" disabled={busy} onClick={()=>void check()}>{t('Check recovery','Проверить восстановление')}</button>
+  {review?.proof.placement_requires_review&&<p role="status">{review.proof.mode==='RETIRED_EMPTY'?t('Retirement is confirmed. Restore the same Source ID, run Discovery, then select or create placement in the source mapping editor. Scheduling stays off.','Удаление подтверждено. Восстановите прежний Source ID, выполните Discovery, затем выберите или создайте размещение в редакторе сопоставлений источника. Расписание останется выключенным.'):t('The previous cluster is missing or not visible to the NetBox account. Restoring the same source will not change NetBox objects. Verify NetBox read permissions, run Discovery and explicitly repair placement before synchronizing.','Прежний кластер отсутствует или не виден учётной записи NetBox. Восстановление прежнего источника не изменит объекты NetBox. Проверьте права чтения NetBox, выполните Discovery и явно восстановите размещение перед синхронизацией.')}</p>}
   {review&&<><h3>{review.name}</h3><p>UUID: <code>{review.proof.host_uuid}</code></p>
    <p>{t('NetBox site','Площадка NetBox')} #{review.proof.site_id}; {t('cluster','кластер')} #{review.proof.cluster_id}</p>
    <p>{t('Previously owned objects','Ранее управляемые объекты')}: {review.proof.owned.length}. {t('Manual objects retained','Ручные объекты сохраняются')}: {review.proof.retained_manual.length}.</p>

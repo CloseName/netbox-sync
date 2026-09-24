@@ -1,0 +1,23 @@
+import {useState,useRef} from 'react';
+import {useLanguage} from '../ui/language';
+type Row={kind:string;id:number;present:boolean;claimed:boolean};
+const kinds:Record<string,[string,string]>={device:['Host','Хост'],vm:['VM','ВМ'],cluster:['Cluster','Кластер'],interface:['Host interface','Интерфейс хоста'],vminterface:['VM interface','Интерфейс ВМ'],disk:['Disk','Диск'],ip:['IP address','IP-адрес'],mac:['MAC address','MAC-адрес']};
+export function SourceInventoryAudit({source}:{source:string}) {
+ const [language]=useLanguage(),index=language==='ru'?1:0,t=(en:string,ru:string)=>index?ru:en;
+ const [rows,setRows]=useState<Row[]|null>(null),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);const running=useRef(false);
+ async function check(){if(running.current)return;running.current=true;setBusy(true);setRows(null);setMessage('');
+ try{
+ const response=await fetch(`/api/v1/sources/${encodeURIComponent(source)}/inventory-review`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-NetBox-Sync-CSRF':'same-origin'},body:JSON.stringify({operation_id:crypto.randomUUID()}),signal:AbortSignal.timeout(65000)});
+ const value=await response.json();
+ if(!response.ok){setMessage(value?.error?.code==='RETIREMENT_PERMISSION_DENIED'?t('NetBox denied the service account. Check source-scoped guard and object view permissions.','NetBox отказал служебной учётной записи. Проверьте её права guard на источник и чтение объектов.'):t('Inventory could not be verified. Check NetBox availability, TLS and the pinned guard installation, then retry.','Инвентарь не проверен. Проверьте доступность NetBox, TLS и привязку guard, затем повторите запрос.'));return;}
+ if(value.source_instance!==source||!Array.isArray(value.objects)||value.objects.length>10000||value.objects.some((r:Row)=>!r||!kinds[r.kind]||!Number.isSafeInteger(r.id)||r.id<=0||typeof r.present!=='boolean'||typeof r.claimed!=='boolean'))throw new Error();
+ setRows(value.objects);
+ }catch{setMessage(t('The review response was not confirmed. No infrastructure deletion was requested.','Ответ проверки не подтверждён. Удаление инфраструктуры не запрашивалось.'));}finally{running.current=false;setBusy(false);}}
+ return <section className="source-panel"><h3>{t('Ownership reconciliation','Сверка принадлежности')}</h3><p>{t('Compare current objects with this source’s creation claims and recorded provenance. The check writes an audit record, but does not adopt or delete objects.','Сравните текущие объекты с квитанциями создания и записанной принадлежностью источнику. Проверка сохраняет запись аудита, но не присваивает и не удаляет объекты.')}</p>
+ <button type="button" disabled={busy} onClick={()=>void check()}>{busy?t('Checking…','Проверяем…'):t('Inspect source objects','Проверить объекты источника')}</button>
+ {message&&<p role="alert">{message}</p>}
+ {rows&&<><p>{t('Objects with evidence','Объектов со свидетельствами')}: {rows.length}. {t('Unattributed legacy objects cannot be found from names alone. No claim is inferred from an absent source.','Неатрибутированные старые объекты нельзя найти по одним именам. Отсутствие источника не доказывает принадлежность.')}</p>
+ <details open={rows.some(r=>r.present&&!r.claimed)}><summary>{t('Review exact references','Просмотреть точные ссылки')}</summary><ul>{rows.map(row=><li key={row.kind+':'+row.id}>{kinds[row.kind][index]} #{row.id}: {row.present?t('present','существует'):t('missing','отсутствует')}; {row.claimed?t('exact creation claim','есть квитанция создания'):t('creation ownership unproved — retain','создание не доказано — сохранить')}</li>)}</ul></details>
+ <p>{t('Use source removal only after a separate dependency review. If creation proof is missing, retain the objects and obtain the original creation receipt or independently verified NetBox audit evidence; administrator confirmation alone cannot replace it.','Для удаления источника нужна отдельная проверка зависимостей. Если создание не доказано, сохраните объекты и найдите исходную квитанцию или независимо подтверждённые записи аудита NetBox; согласие администратора не заменяет доказательство.')}</p></>}
+ </section>;
+}
