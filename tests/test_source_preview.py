@@ -51,3 +51,45 @@ def test_esxi_host_summary_never_reads_vm_or_full_hardware(monkeypatch,manufactu
 
 def test_vcenter_is_not_silently_walked():
     with pytest.raises(ValueError):esxi(N(about=N(apiType='VirtualCenter')))
+
+@pytest.mark.parametrize('summary_uuid',[None,'','00000000-0000-0000-0000-000000000000','invalid'])
+def test_preview_uses_discovery_hardware_uuid_when_summary_omits_identity(summary_uuid):
+    from netbox_sync.source_preview import _host_external_id_summary
+    from netbox_sync.esxi_discovery import _host_external_id
+    hardware_uuid='12345678-1234-4321-8765-123456789abc'
+    host=N(_moId='ha-host',hardware=N(systemInfo=N(uuid=hardware_uuid)),summary=N(hardware=N(uuid=summary_uuid)))
+    assert _host_external_id_summary(host,host.summary)==_host_external_id(host)==hardware_uuid
+
+
+def test_preview_does_not_suppress_hardware_identity_access_error():
+    from netbox_sync.source_preview import _host_external_id_summary
+    class Host:
+        _moId='ha-host'
+        @property
+        def hardware(self):raise PermissionError('fixture access refusal')
+    with pytest.raises(PermissionError):
+        _host_external_id_summary(Host(),N(hardware=N(uuid=None)))
+
+@pytest.mark.parametrize('hardware_uuid',[None,'','bad','00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000001'])
+def test_preview_missing_usable_hardware_still_fails_admission(hardware_uuid):
+    from netbox_sync.source_preview import _host_external_id_summary
+    from netbox_sync.host_registration import esxi_anchor,HostRegistrationConflict
+    host=N(_moId='ha-host',hardware=N(systemInfo=N(uuid=hardware_uuid)))
+    identifier=_host_external_id_summary(host,N(hardware=N(uuid=None)))
+    with pytest.raises(HostRegistrationConflict,match='HOST_IDENTITY_UNAVAILABLE'):
+        esxi_anchor({'provider':'esxi','hosts':[{'id':identifier}]})
+
+
+def test_preview_fallback_is_single_host_read_and_normalized():
+    from netbox_sync.source_preview import _host_external_id_summary
+    from netbox_sync.host_registration import esxi_anchor
+    calls=[]
+    class Host:
+        _moId='ha-host'
+        @property
+        def hardware(self):
+            calls.append('hardware')
+            return N(systemInfo=N(uuid='{12345678-1234-4321-ABCD-123456789ABC}'))
+    identifier=_host_external_id_summary(Host(),N(hardware=N(uuid=None)))
+    assert esxi_anchor({'provider':'esxi','hosts':[{'id':identifier}]})=='12345678-1234-4321-abcd-123456789abc'
+    assert calls==['hardware']

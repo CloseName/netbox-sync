@@ -155,3 +155,33 @@ fixtures. This does not establish an end-to-end resumed wizard or a live fix.
 The updated production web image (manifest list
 `sha256:155b33a2d3443d2eb2901410d95d332db213ec3cda770998505f37404c409627`)
 passed the same bundled/external PostgreSQL Compose gate again: **2 passed**.
+
+## ESXi preview hardware UUID fallback
+
+A controlled reproduction now confirms a collection mismatch (not the live AM/CM
+cause): with a missing/invalid summary UUID and a valid hardware.systemInfo.uuid,
+Discovery selected the hardware UUID, while onboarding selected ha-host and rejected
+admission. Four identity cases failed before correction. A fifth regression proves
+that a hardware read refusal must propagate rather than appear as missing identity.
+
+Preview now preserves its existing valid summary UUID fast path. Only if that UUID
+is unusable does it read HostSystem.hardware once and use the same strict hardware
+UUID validator as Discovery. No VM inventory or guest properties are read. Empty,
+malformed, all-zero and low-information UUIDs remain rejected at admission; no DNS,
+IP, display name or managed-object reference is accepted as host identity.
+Existing source identities are not rewritten. Conflicting valid UUID fields still
+need investigation; this change deliberately does not change the established
+summary fast-path priority or select an owner for conflicting records.
+
+Real local TLS/SOAP with pyVmomi verifies the selected UUID and request paths: six
+requests including login/service reads on the usual path, seven with fallback,
+and no VM/guest/config reads, with a 147-VM fixture behind the endpoint. This is a
+local protocol regression, not evidence of the actual fields returned by AM/CM.
+
+Final affected Linux/PostgreSQL/pyVmomi/probe selection: **101 passed, no skips**,
+including the four explicitly enabled cross-UID bounded-worker cases that were
+initially skipped without NETBOX_SYNC_TIMEOUT_TEST. Existing timeout/reaping,
+147-VM batch completeness and duplicate-conflict regressions passed. No changes
+to capabilities, schedules, TLS settings, egress or production Compose were made.
+The last Compose image gate predates this isolated preview fallback; the fallback
+itself was verified by the current real TLS/SOAP test, not claimed as live acceptance.

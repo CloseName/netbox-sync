@@ -20,13 +20,15 @@ from netbox_sync.esxi_discovery import discover_hosts, _walk_hosts, _convert_hos
 
 
 @contextmanager
-def endpoint(tmp_path, monkeypatch, count=147, delay=0, incomplete=False, identity_conflict=False):
+def endpoint(tmp_path, monkeypatch, count=147, delay=0, incomplete=False, identity_conflict=False, missing_summary_uuid=False, property_calls=None):
     cert=tmp_path/'cert.pem';key=tmp_path/'key.pem'
     subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1',
         '-keyout',str(key),'-out',str(cert),'-subj','/CN=localhost','-addext','subjectAltName=IP:127.0.0.1'],
         check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     monkeypatch.setenv('SSL_CERT_FILE',str(cert))
     rows=deepcopy(properties)
+    if missing_summary_uuid:
+        rows[('ha-host','summary')]='<val xsi:type="HostListSummary"><hardware><vendor>Dell Inc.</vendor><model>PowerEdge R650</model></hardware></val>'
     refs=[]
     for i in range(count):
         ident='vm-'+str(1000+i);refs.append('<ManagedObjectReference type="VirtualMachine">'+ident+'</ManagedObjectReference>')
@@ -43,6 +45,8 @@ def endpoint(tmp_path, monkeypatch, count=147, delay=0, incomplete=False, identi
             body=self.rfile.read(int(self.headers.get('Content-Length','0')))
             method=next(iter(next(e for e in ET.fromstring(body) if e.tag.endswith('Body'))))
             name=method.tag.split('}')[-1];calls.append(name)
+            if property_calls is not None:
+                property_calls.extend(e.text for e in method.iter() if e.tag.split('}')[-1] in ('prop','pathSet'))
             if name=='RetrievePropertiesEx':
                 time.sleep(delay)
                 if incomplete:
@@ -175,3 +179,18 @@ def test_actual_worker_plan_or_bounded_provider_hang(tmp_path,monkeypatch,hang):
                         assert any(item['object_kind']=='virtualization.virtual_machines' and item['action']=='CREATE' for item in plan['items'])
                 assert writes==[]
                 with pytest.raises(ChildProcessError):os.waitpid(processes[0].pid,os.WNOHANG)
+
+
+@pytest.mark.parametrize('missing_summary_uuid',[False,True])
+def test_real_soap_preview_reads_only_needed_host_identity(tmp_path,monkeypatch,missing_summary_uuid):
+    from netbox_sync.source_preview import esxi
+    from netbox_sync.host_registration import esxi_anchor
+    reads=[]
+    with endpoint(tmp_path,monkeypatch,count=147,missing_summary_uuid=missing_summary_uuid,property_calls=reads) as (config,calls):
+        with EsxiClient(resolver=FakeResolver()).session(config) as service:
+            preview=esxi(service.RetrieveContent())
+            assert esxi_anchor(preview)=='12345678-1234-4321-8765-123456789abc'
+            assert reads.count('summary')==1
+            assert reads.count('hardware')==(1 if missing_summary_uuid else 0)
+            assert not set(reads)&{'vm','guest','config'}
+            assert len(preview['hosts'])==1 and len(calls)==6+int(missing_summary_uuid)

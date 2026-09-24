@@ -12,7 +12,8 @@ def text(value):
 
 def esxi(content):
     # A standalone HostAgent exposes rootFolder -> Datacenter -> hostFolder ->
-    # ComputeResource -> host. No vm, hardware inventory or guest property reads.
+    # ComputeResource -> host. No VM or guest property reads; hardware identity
+    # is read only when the summary omits a usable UUID.
     if getattr(content.about, 'apiType', None) != 'HostAgent':
         raise ValueError('Standalone ESXi required')
     nodes=[content.rootFolder]; hosts=[]; seen=set(); visited=0
@@ -39,7 +40,12 @@ def esxi(content):
 
 def _host_external_id_summary(host,summary):
     from .esxi_discovery import _validated_host_hardware_uuid
-    return _validated_host_hardware_uuid(_value(summary,'hardware.uuid')) or str(host._moId)
+    candidate = _validated_host_hardware_uuid(_value(summary,'hardware.uuid'))
+    if candidate is not None:
+        return candidate
+    # Match the hardware UUID already used by Discovery. Read once per host;
+    # permission/transport errors must propagate rather than inventing identity.
+    return _validated_host_hardware_uuid(_value(host,'hardware.systemInfo.uuid')) or str(host._moId)
 
 def proxmox(credentials,host,context,getter):
     headers={'Authorization':f'PVEAPIToken={credentials.username}!{credentials.token_id}={credentials.secret}'}
