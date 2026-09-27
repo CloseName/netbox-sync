@@ -45,8 +45,13 @@ def exercise(meta):
         if provider=='esxi':
             hosts[0].source_id='00000000-0000-0000-0000-ac1f6be2c4da'
             other=deepcopy(hosts[0].virtual_machines[0]);other.external_id=str(uuid4());other.vmid=other.external_id;other.source_id='esxi:'+other.external_id;other.provider_object_id='vm-other';other.original_name+='-other';other.normalized_name+='-other';other.interfaces[0].mac_address='00:50:56:AA:BB:CD';hosts[0].virtual_machines.append(other)
+        if cycle==0:
+            from tests.fakes.am_conflicts import guests as am_guests
+            hosts[0].virtual_machines=am_guests(hosts[0].virtual_machines[0])
+            hosts[0].virtual_machines[1].interfaces[0].mac_address=hosts[0].virtual_machines[0].interfaces[0].mac_address
         guests=[*hosts[0].virtual_machines,*hosts[0].containers]
-        for guest in guests:guest.interfaces[0].ip_addresses=['192.0.2.60/24','192.0.2.60/32']
+        if cycle!=0:
+            for guest in guests:guest.interfaces[0].ip_addresses=['192.0.2.60/24','192.0.2.60/32']
         def raw(record):
             response=api.http_session.get(record.endpoint.url+'/'+str(record.id)+'/',headers=guard.headers,timeout=15);response.raise_for_status();return response.json()
         refs={kind:project(kind,raw(value)) for kind,value in catalogs.items() if kind!='device_type'}
@@ -66,10 +71,30 @@ def exercise(meta):
         for nic in nics:
             observed=nic.custom_fields['sync_network_observations'][source]
             assert observed['status']=='REVIEW_REQUIRED' and not observed['ipam_complete']
-            assert observed['addresses']==['192.0.2.60/24','192.0.2.60/32']
+            if cycle==0:
+                from tests.fakes.am_conflicts import CASES
+                vm_name=next(vm.name for vm in vms if vm.id==nic.virtual_machine.id)
+                assert observed['addresses']==dict(CASES)[vm_name]
+            else:assert observed['addresses']==['192.0.2.60/24','192.0.2.60/32']
         assert not list(api.ipam.ip_addresses.filter(address='192.0.2.60/24'))
         repeat=build_runtime_plan(api,hosts,config)
         assert repeat.apply_allowed and not any(i.action.value in ('CREATE','UPDATE') for i in repeat.items)
+        if cycle==0:
+            assert sum(i.reason_code=='IP_OBSERVATION_ONLY' for i in repeat.items)==4
+            assert sum(i.reason_code=='MAC_OBSERVATION_ONLY' for i in repeat.items)==1
+            assert len(vms)==7 and len(nics)==7
+            for vm in vms:
+                assert vm.vcpus and vm.memory and vm.disk
+            nic_ids={nic.id for nic in nics}
+            assert not any(ip.serialize().get('assigned_object_type')=='virtualization.vminterface' and ip.serialize().get('assigned_object_id') in nic_ids for ip in api.ipam.ip_addresses.all())
+            assert len([nic for nic in nics if nic.primary_mac_address])==5
+            nonce=uuid4();review=guard.review_source(nonce,source,cluster['id'])
+            receipt=guard.execute_source(nonce,review['digest'])
+            assert receipt['status']=='SUCCEEDED' and receipt['generation_closed']
+            assert api.virtualization.clusters.get(cluster['id']) is None
+            assert all(api.virtualization.virtual_machines.get(vm.id) is None for vm in vms)
+            print('PASS real NetBox 4.7 AM: seven VMs, four ambiguous IPs, clone MAC observations, no-op replan, exact closure')
+            continue
         # Explicit operator-selected existing VRFs disambiguate the same IP.
         # No VRF/Prefix/VLAN creation is performed by Sync.
         scope_rules=[]

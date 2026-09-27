@@ -760,6 +760,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
                         'cluster_type_slug':refs['cluster_type']['slug'],'device_type_slug':next(iter(types.values()))['slug']})
                 elif not onboarding_injected:
                     raise CatalogError('SELECTION_REQUIRED')
+                mapping['ip_conflict_policy']='observe'
                 registration=bind_intent()
                 auth_client.call('receipt.consume', session=http.cookies.get(COOKIE),
                                  receipt=request.onboarding_token, destination=request.address, provider=request.source_type)

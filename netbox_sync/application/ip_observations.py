@@ -28,11 +28,12 @@ def assignment_inventory(hosts, policy='strict'):
     conflicts = inventory_conflicts(result)
     if policy == 'strict':
         return result, conflicts, ()
-    blockers = tuple(c for c in conflicts if c.kind != 'IP_ASSIGNMENT')
-    observations = tuple(c for c in conflicts if c.kind == 'IP_ASSIGNMENT')
+    blockers = tuple(c for c in conflicts if c.kind not in ('IP_ASSIGNMENT', 'MAC_ASSIGNMENT'))
+    observations = tuple(c for c in conflicts if c.kind in ('IP_ASSIGNMENT', 'MAC_ASSIGNMENT'))
     if blockers:
         return result, conflicts, ()
-    excluded = {c.value for c in observations}
+    excluded = {c.value for c in observations if c.kind == 'IP_ASSIGNMENT'}
+    excluded_macs = {c.value for c in observations if c.kind == 'MAC_ASSIGNMENT'}
     for host in result:
         for vm in [*host.virtual_machines, *host.containers]:
             for nic in vm.interfaces:
@@ -48,10 +49,16 @@ def assignment_inventory(hosts, policy='strict'):
                     else:
                         kept.append(raw)
                 nic.ip_addresses = kept
+                mac = str(nic.mac_address or '').strip().upper()
+                observed_macs = [mac] if mac in excluded_macs else []
+                if observed_macs:
+                    nic.mac_address = None  # Preserve evidence, never choose a clone/foreign owner.
                 nic.network_observations = {
-                    'version': 1, 'status': 'REVIEW_REQUIRED' if observed else 'NO_DISPUTED_ADDRESSES',
+                    'version': 1, 'status': 'REVIEW_REQUIRED' if observed or observed_macs else 'NO_DISPUTED_ADDRESSES',
                     'addresses': observed, 'bridge': nic.bridge, 'vlan_id': nic.vlan_id,
                     'ipam_complete': not bool(observed),
+                    'mac_addresses': observed_macs, 'mac_assignment_complete': not bool(observed_macs),
+                    **({'mac_conflicts':nic.mac_scope_conflicts} if nic.mac_scope_conflicts else {}),
                     **({'vrf_id':nic.ip_vrf_id} if nic.ip_vrf_id is not None else {}),
                     **({'scope_conflicts':nic.ip_scope_conflicts} if nic.ip_scope_conflicts else {}),
                 }

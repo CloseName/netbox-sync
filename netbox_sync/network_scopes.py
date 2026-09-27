@@ -62,6 +62,11 @@ def scoped_inventory(api,hosts,config):
         from ipaddress import ip_interface
         from .netbox_vm_interface_metadata import find_nic_sync_identity_matches
         interfaces=list(api.virtualization.interfaces.all())
+        mac_index={}
+        for record in api.dcim.mac_addresses.all():
+            value=record.serialize()
+            mac=str(value.get('mac_address') or '').strip().upper()
+            if mac:mac_index.setdefault(mac,[]).append(value)
         assigned={}
         indexed={}
         for record in api.ipam.ip_addresses.all():
@@ -78,6 +83,14 @@ def scoped_inventory(api,hosts,config):
                     matches=find_nic_sync_identity_matches(interfaces,vm,nic)
                     if len(matches)>1:continue  # Executor blocks ambiguous NIC identity.
                     owned_id=matches[0].id if matches else None
+                    nic.mac_scope_conflicts=[]
+                    mac=str(nic.mac_address or '').strip().upper()
+                    existing_macs=mac_index.get(mac,[])
+                    for value in existing_macs:
+                        same=(owned_id is not None and value.get('assigned_object_type')=='virtualization.vminterface'
+                              and value.get('assigned_object_id')==owned_id)
+                        if not same or len(existing_macs)>1:
+                            nic.mac_scope_conflicts.append({'netbox_id':value['id']})
                     wanted={}
                     for address in nic.ip_addresses:
                         try:

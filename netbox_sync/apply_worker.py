@@ -123,6 +123,7 @@ def execute_child(payload):
     except Exception as exc:
         raise ApplyWorkerError('OUTCOME_UNCERTAIN', diagnostic=_failure(exc, 'apply')) from exc
     return {'status': 'SUCCEEDED', 'plan_digest': plan.digest,
+            'network_complete': not any(item.reason_code in ('IP_OBSERVATION_ONLY','MAC_OBSERVATION_ONLY') for item in plan.items),
             'ipam_complete': not any(item.reason_code == 'IP_OBSERVATION_ONLY' for item in plan.items),
             'planner_version': plan.planner_version,
             'action_counts': ActionCounts.from_items(plan.items).__dict__}

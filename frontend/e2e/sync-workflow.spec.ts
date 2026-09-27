@@ -631,7 +631,7 @@ for(const language of ['en','ru'])for(const theme of ['light','dark'])test(`IP o
   const {openUserMenu}=await import('./menu-helper');
   await openUserMenu(page);await page.getByRole('combobox',{name:'Language / Язык',exact:true}).selectOption(language);await page.keyboard.press('Escape');
   await openUserMenu(page);await page.getByRole('combobox',{name:language==='ru'?'Тема':'Theme',exact:true}).selectOption(theme);await page.keyboard.press('Escape');
-  const panel=page.getByRole('region',{name:language==='ru'?'Неполная синхронизация IPAM':'Incomplete IPAM'});
+  const panel=page.getByRole('region',{name:language==='ru'?'Неполные сетевые назначения':'Incomplete network assignments'});
   await expect(panel).toBeVisible();
   await panel.locator('summary').click();
   await expect(panel).toContainText('Example VM · Network adapter 1 · 192.0.2.60/24');
@@ -640,7 +640,7 @@ for(const language of ['en','ru'])for(const theme of ['light','dark'])test(`IP o
   await page.screenshot({path:info.outputPath('ip-observations-plan.png'),fullPage:true});
   await page.getByRole('button',{name:language==='ru'?'Проверить и подтвердить синхронизацию':'Review and confirm sync',exact:true}).click();
   await page.getByRole('button',{name:language==='ru'?'Синхронизировать с NetBox':'Sync to NetBox',exact:true}).click();
-  await expect(page.getByText(language==='ru'?'Инвентарь синхронизирован с наблюдениями адресов. Спорные назначения IPAM не выполнены; проверьте интерфейсы NetBox.':'Inventory synchronized with address observations. Disputed IPAM assignments remain incomplete; review the NetBox interfaces.',{exact:true})).toBeVisible();
+  await expect(page.getByText(language==='ru'?'Инвентарь синхронизирован с сетевыми наблюдениями. Спорные назначения адресов или MAC не выполнены; проверьте интерфейсы NetBox.':'Inventory synchronized with network observations. Disputed address or MAC assignments remain incomplete; review the NetBox interfaces.',{exact:true})).toBeVisible();
   await page.screenshot({path:info.outputPath('ip-observations-result.png'),fullPage:true});
 });
 
@@ -662,6 +662,6 @@ test('lost response reconciles exact accepted run without resubmission', async (
   status='SUCCEEDED';
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   await expect(page.getByRole('heading',{name:'Sync completed',exact:true})).toBeVisible({timeout:12000});
-  await expect(page.getByText('Inventory synchronized with address observations. Disputed IPAM assignments remain incomplete; review the NetBox interfaces.',{exact:true})).toBeVisible();
+  await expect(page.getByText('Inventory synchronized with network observations. Disputed address or MAC assignments remain incomplete; review the NetBox interfaces.',{exact:true})).toBeVisible();
   expect(submissions).toBe(1);
 });

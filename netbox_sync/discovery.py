@@ -95,6 +95,7 @@ class DiscoveredInterface:
     network_observations: dict | None = None
     ip_vrf_id: int | None = None
     ip_scope_conflicts: list[dict] = field(default_factory=list)
+    mac_scope_conflicts: list[dict] = field(default_factory=list)
 
 
 @dataclass

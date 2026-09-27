@@ -20,7 +20,7 @@ export interface SyncPlanItem {
   after: [string, unknown][];
 }
 export interface InventoryConflict {
-  kind: 'VM_IDENTITY' | 'IP_ASSIGNMENT';
+  kind: 'VM_IDENTITY' | 'IP_ASSIGNMENT' | 'MAC_ASSIGNMENT';
   value: string;
   participants: {name: string; external_id: string; provider_object_id: string | null;
     vrf_id?:number|null; netbox_id?:number|null; host_id: string; interface: string | null; interface_id: string | null; address: string | null}[];
@@ -46,6 +46,7 @@ export type ApplyStatus =
   | "OUTCOME_UNCERTAIN";
 export interface ApplyResult {
   ipam_complete?: boolean;
+  network_complete?: boolean;
   status: ApplyStatus;
   plan_digest: string;
   run_id?: string | null;
@@ -154,7 +155,7 @@ export const validPlan = (value: unknown, instance: string): value is SyncPlan =
   Number.isSafeInteger(value.schema_version) &&
   typeof value.apply_allowed === "boolean" &&
   (value.conflicts === undefined || (Array.isArray(value.conflicts) && value.conflicts.every(c =>
-    record(c) && ['VM_IDENTITY','IP_ASSIGNMENT'].includes(String(c.kind)) && typeof c.value === 'string' &&
+    record(c) && ['VM_IDENTITY','IP_ASSIGNMENT','MAC_ASSIGNMENT'].includes(String(c.kind)) && typeof c.value === 'string' &&
     Array.isArray(c.participants) && c.participants.every(p => record(p) &&
       ['name','external_id','host_id'].every(k => typeof p[k] === 'string') &&
       ['provider_object_id','interface','interface_id','address'].every(k => p[k] === null || typeof p[k] === 'string'))))) &&
@@ -271,6 +272,8 @@ export async function applySync(
     ].includes(String(value.status)) ||
     typeof value.status !== "string" ||
     !digest(value.plan_digest) ||
+    (value.ipam_complete !== undefined && typeof value.ipam_complete !== 'boolean') ||
+    (value.network_complete !== undefined && typeof value.network_complete !== 'boolean') ||
     (value.run_id !== undefined &&
       value.run_id !== null &&
       (typeof value.run_id !== "string" ||

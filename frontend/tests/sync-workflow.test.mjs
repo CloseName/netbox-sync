@@ -179,7 +179,13 @@ test('transport loss follows only the exact durable run and digest without retry
  const running=reconcileTransportOutcome(lost,run,'accepted',digest);
  assert.equal(running.state,'RUNNING');
  const complete=reconcileTransportOutcome(running,{...run,status:'SUCCEEDED'},'accepted',digest,true);
- assert.equal(complete.state,'SUCCEEDED');assert.match(complete.message,/IPAM assignments remain incomplete/);
+ assert.equal(complete.state,'SUCCEEDED');assert.match(complete.message,/assignments remain incomplete/);
  const uncertain=failedOutcome(new ManualSyncRequestError('safe','OUTCOME_UNCERTAIN'),'applying');
  assert.equal(reconcileTransportOutcome(uncertain,run,'accepted',digest),uncertain);
+});
+
+
+test('MAC observations remain explicitly incomplete even when IPAM is complete', () => {
+  const result = applyOutcome({status:'SUCCEEDED',plan_digest:'a'.repeat(64),ipam_complete:true,network_complete:false},'a'.repeat(64));
+  assert.match(result.message,/MAC assignments remain incomplete/);
 });

@@ -1,4 +1,7 @@
 export const ru: Record<string,string> = {
+  "Inventory synchronized with network observations. Disputed address or MAC assignments remain incomplete; review the NetBox interfaces.": "Инвентарь синхронизирован с сетевыми наблюдениями. Спорные назначения адресов или MAC не выполнены; проверьте интерфейсы NetBox.",
+  "Conflicting MAC assignment": "Неоднозначное назначение MAC",
+  "Stored on NetBox interfaces for review; disputed MAC assignments are not synchronized.": "Сохраняется на интерфейсах NetBox для проверки; спорные назначения MAC не синхронизируются.",
   "Selected network scope changed or no longer exists. Review the source VRF mapping.": "Выбранная сетевая область изменилась или больше не существует. Проверьте сопоставление VRF источника.",
   "Review inventory limitations": "Проверьте ограничения синхронизации",
   "The server has recorded this run as running. Waiting for its result; do not resubmit.": "Сервер зарегистрировал выполняющийся запуск. Ожидаем результат; не отправляйте запрос повторно.",

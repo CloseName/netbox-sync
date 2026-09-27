@@ -161,3 +161,78 @@ def test_http_observations_persist_on_interfaces_and_replan_without_duplicates(p
         assert not any(i.action.value in ('CREATE','UPDATE') for i in repeated.items)
         assert any(i.reason_code=='IP_OBSERVATION_ONLY' for i in repeated.items)
         assert writes == []
+
+
+@pytest.mark.parametrize('provider', ['esxi', 'proxmox'])
+@pytest.mark.parametrize('existing', [False, True])
+def test_clone_or_foreign_mac_is_observed_without_stealing_or_blocking_inventory(provider, existing):
+    from tests.test_network_scopes import fixture, apply
+    from tests.fakes import FakeRecord
+    from tests.fakes.netbox_http import netbox_http
+    from netbox_sync.application.runtime_plan import build_runtime_plan
+    seed, config, hosts = fixture(provider)
+    members = [*hosts[0].virtual_machines, *hosts[0].containers]
+    mac = '00:50:56:AA:BB:EE'
+    for vm in members:
+        vm.interfaces[0].mac_address = mac
+    if existing:
+        seed.dcim.mac_addresses.add(FakeRecord(id=999, mac_address=mac,
+            assigned_object_type='virtualization.vminterface', assigned_object_id=999,
+            description='Operator managed'))
+    with netbox_http(seed) as (api, rows, writes):
+        before = deepcopy(rows['dcim.mac_addresses'])
+        plan = build_runtime_plan(api, hosts, config)
+        assert plan.apply_allowed
+        assert any(i.reason_code == 'MAC_OBSERVATION_ONLY' for i in plan.items)
+        assert not writes
+        apply(api, hosts, config)
+        assert len(rows['virtualization.virtual_machines']) == 2
+        assert len(rows['virtualization.interfaces']) == 2
+        assert rows['dcim.mac_addresses'] == before
+        for nic in rows['virtualization.interfaces'].values():
+            evidence = nic['custom_fields']['sync_network_observations'][config.source_instance]
+            assert evidence['mac_addresses'] == [mac]
+            assert evidence['mac_assignment_complete'] is False
+            assert evidence['ipam_complete'] is True
+            assert not nic.get('primary_mac_address')
+        repeated = build_runtime_plan(api, hosts, config)
+        assert repeated.apply_allowed
+        assert not any(i.action.value in ('CREATE', 'UPDATE') for i in repeated.items)
+
+
+def test_am_conflicts_preserve_all_vm_facts_through_http_apply_and_replan():
+    from uuid import UUID
+    from dataclasses import replace
+    from tests.test_network_scopes import fixture, apply
+    from tests.fakes.netbox_http import netbox_http
+    from netbox_sync.application.runtime_plan import build_runtime_plan
+    seed, config, hosts = fixture('esxi')
+    mapping = deepcopy(config.settings['onboarding_mapping'])
+    mapping['network_scope_rules'] = []
+    config = replace(config, settings={'onboarding_mapping': mapping})
+    template = hosts[0].virtual_machines[0]
+    from tests.fakes.am_conflicts import CASES as cases, guests
+    hosts[0].virtual_machines = guests(template)
+    with netbox_http(seed) as (api, rows, writes):
+        plan = build_runtime_plan(api, hosts, config)
+        assert plan.apply_allowed and not writes
+        assert sum(i.reason_code == 'IP_OBSERVATION_ONLY' for i in plan.items) == 4
+        apply(api, hosts, config)
+        assert len(rows['virtualization.virtual_machines']) == 7
+        assert len(rows['virtualization.interfaces']) == 7
+        assert len(rows['dcim.mac_addresses']) == 7
+        # Current product synchronizes aggregate VM disk size, not VirtualDisk records.
+        assert all(vm['disk'] == sum(d.size_bytes for d in template.disks) // (1024 * 1024) for vm in rows['virtualization.virtual_machines'].values())
+        assert not rows['ipam.ip_addresses']
+        names = {vm['id']: vm['name'] for vm in rows['virtualization.virtual_machines'].values()}
+        for nic in rows['virtualization.interfaces'].values():
+            vm_id = nic['virtual_machine']
+            if isinstance(vm_id, dict): vm_id = vm_id['id']
+            observation = nic['custom_fields']['sync_network_observations'][config.source_instance]
+            assert observation['addresses'] == dict(cases)[names[vm_id]]
+        for vm in rows['virtualization.virtual_machines'].values():
+            assert vm['vcpus'] == template.vcpus and vm['memory'] > 0
+        repeated = build_runtime_plan(api, hosts, config)
+        assert repeated.apply_allowed
+        assert not any(i.action.value in ('CREATE', 'UPDATE') for i in repeated.items)
+        assert sum(i.reason_code == 'IP_OBSERVATION_ONLY' for i in repeated.items) == 4

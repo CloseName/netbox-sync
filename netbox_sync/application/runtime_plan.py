@@ -66,10 +66,10 @@ def build_runtime_plan(nb_api, hosts, config):
     plan = plan_from_mutations(review, config, planning_api.mutations)
     if observations:
         from dataclasses import replace, asdict
-        rows = tuple(SyncPlanItem(object_kind='ip_observation',
+        rows = tuple(SyncPlanItem(object_kind='mac_observation' if c.kind=='MAC_ASSIGNMENT' else 'ip_observation',
             external_id=c.value, name=c.value, action=SyncAction.UNSUPPORTED,
-            reason_code='IP_OBSERVATION_ONLY',
-            reason='Stored on NetBox interfaces for review; disputed IPAM assignments are not synchronized.',
+            reason_code='MAC_OBSERVATION_ONLY' if c.kind=='MAC_ASSIGNMENT' else 'IP_OBSERVATION_ONLY',
+            reason=('Stored on NetBox interfaces for review; disputed MAC assignments are not synchronized.' if c.kind=='MAC_ASSIGNMENT' else 'Stored on NetBox interfaces for review; disputed IPAM assignments are not synchronized.'),
             after=(('participants', [asdict(p) for p in c.participants]),)) for c in observations)
         plan = replace(plan, items=(*plan.items, *rows))
     return plan

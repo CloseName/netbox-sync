@@ -86,10 +86,10 @@ export function PlanReview({
       <p className="muted">
         {tr("Plan received")}{" "}<Timestamp value={received} />{tr(". The plan is checked again before sync.")}{" "}</p>
       <PlanSummary plan={plan} />
-      {plan.items.some(item=>item.reason_code==='IP_OBSERVATION_ONLY')&&<section className="sync-attention" aria-label={t('Incomplete IPAM','Неполная синхронизация IPAM')}>
-        <h4>{t('Some addresses require review','Часть адресов требует проверки')}</h4>
-        <p>{t('The plan saves these addresses and masks on NetBox interfaces as observations. It does not create disputed IPAM assignments. Existing assignments are retained.','План сохраняет эти адреса и маски на интерфейсах NetBox как наблюдения. Спорные назначения IPAM не создаются. Существующие назначения сохраняются.')}</p>
-        <details><summary>{t('Show observations','Показать наблюдения')}</summary><ul>{plan.items.filter(item=>item.reason_code==='IP_OBSERVATION_ONLY').map(item=><li key={item.external_id}>{item.name}<ul>{observationLines(item,t('global table','глобальная таблица')).map((line,index)=><li key={index}>{line}</li>)}</ul></li>)}</ul></details>
+      {plan.items.some(item=>['IP_OBSERVATION_ONLY','MAC_OBSERVATION_ONLY'].includes(item.reason_code))&&<section className="sync-attention" aria-label={t('Incomplete network assignments','Неполные сетевые назначения')}>
+        <h4>{t('Some network assignments require review','Часть сетевых назначений требует проверки')}</h4>
+        <p>{t('The plan saves disputed addresses, masks and MACs on NetBox interfaces as observations. It does not assign them. Existing assignments are retained.','План сохраняет спорные адреса, маски и MAC на интерфейсах NetBox как наблюдения, без назначения. Существующие назначения сохраняются.')}</p>
+        <details><summary>{t('Show observations','Показать наблюдения')}</summary><ul>{plan.items.filter(item=>['IP_OBSERVATION_ONLY','MAC_OBSERVATION_ONLY'].includes(item.reason_code)).map(item=><li key={item.reason_code+item.external_id}>{item.name}<ul>{observationLines(item,t('global table','глобальная таблица')).map((line,index)=><li key={index}>{line}</li>)}</ul></li>)}</ul></details>
       </section>}
       {!!planCounts(plan.items).UNSUPPORTED&&<button onClick={()=>{setView('Attention');setAction('UNSUPPORTED');setKind('');setSearch('');setLimit(50);}}>{tr('Show unsupported categories')}</button>}
       {!plan.conflicts?.length&&<p className="muted">
@@ -113,8 +113,8 @@ export function PlanReview({
         {plan.conflicts.map((conflict,index)=>{
           const identities=new Set(conflict.participants.map(p=>[p.host_id,p.provider_object_id||p.external_id,p.interface_id||p.interface].join(':')));
           const masks=conflict.kind==='IP_ASSIGNMENT'&&identities.size===1&&new Set(conflict.participants.map(p=>p.address)).size>1;
-          return <article key={index} className="conflict-summary"><h4>{conflict.kind==='VM_IDENTITY'?`${conflict.participants.length} VM`:conflict.value}: {masks?t('Different masks for one IP','Разные маски одного IP'):conflict.kind==='VM_IDENTITY'?tr('Shared VM identifier'):t('Ambiguous IP mapping','Неоднозначное сопоставление IP')}</h4>
-          <ul>{Array.from(new Set(conflict.participants.map(p=>[p.name,p.interface,p.address,conflict.kind==='IP_ASSIGNMENT'?(p.vrf_id?`VRF #${p.vrf_id}`:t('global table','глобальная таблица')):null,p.netbox_id?`NetBox IP #${p.netbox_id}`:null].filter(Boolean).join(' · ')))).map(value=><li key={value}>{value}</li>)}</ul>
+          return <article key={index} className="conflict-summary"><h4>{conflict.kind==='VM_IDENTITY'?`${conflict.participants.length} VM`:conflict.value}: {masks?t('Different masks for one IP','Разные маски одного IP'):conflict.kind==='VM_IDENTITY'?tr('Shared VM identifier'):conflict.kind==='MAC_ASSIGNMENT'?t('Ambiguous MAC assignment','Неоднозначное назначение MAC'):t('Ambiguous IP mapping','Неоднозначное сопоставление IP')}</h4>
+          <ul>{Array.from(new Set(conflict.participants.map(p=>[p.name,p.interface,p.address,conflict.kind==='IP_ASSIGNMENT'?(p.vrf_id?`VRF #${p.vrf_id}`:t('global table','глобальная таблица')):null,p.netbox_id?`NetBox ${conflict.kind==='MAC_ASSIGNMENT'?'MAC':'IP'} #${p.netbox_id}`:null].filter(Boolean).join(' · ')))).map(value=><li key={value}>{value}</li>)}</ul>
           <details><summary>{tr('Technical details')}</summary><p>{tr('Source')}: {plan.source_instance}</p><p>{conflict.value}</p><ul>{conflict.participants.map((p,i)=><li key={i}>{p.host_id} · {p.external_id} · {p.provider_object_id} · {p.interface_id}</li>)}</ul></details></article>;
         })}
       </section>}

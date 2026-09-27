@@ -29,6 +29,7 @@ def inventory_conflicts(hosts):
     """Preserve ambiguities; bridge/VLAN labels do not establish separate IP realms."""
     identities = defaultdict(list)
     addresses = defaultdict(list)
+    macs = defaultdict(list)
     for host in hosts:
         for kind, members in (('vm', host.virtual_machines), ('lxc', host.containers)):
             for vm in members:
@@ -38,6 +39,13 @@ def inventory_conflicts(hosts):
                             host_id=host.source_id)
                 identities[(kind, external_id)].append(ConflictParticipant(**base))
                 for nic in vm.interfaces:
+                    if nic.mac_address:
+                        mac = str(nic.mac_address).strip().upper()
+                        macs[mac].append(ConflictParticipant(**base, interface=nic.name,
+                            interface_id=nic.external_id, address=mac))
+                        for previous in nic.mac_scope_conflicts:
+                            macs[mac].append(ConflictParticipant(**base, interface=nic.name,
+                                interface_id=nic.external_id, address=mac, netbox_id=previous['netbox_id']))
                     seen = set()
                     for raw in nic.ip_addresses:
                         try:
@@ -65,4 +73,7 @@ def inventory_conflicts(hosts):
     for value, members in sorted(addresses.items()):
         if len(members) > 1:
             result.append(InventoryConflict('IP_ASSIGNMENT', value, tuple(members)))
+    for value, members in sorted(macs.items()):
+        if len(members) > 1:
+            result.append(InventoryConflict('MAC_ASSIGNMENT', value, tuple(members)))
     return tuple(result)

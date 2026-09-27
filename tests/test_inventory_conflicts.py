@@ -51,8 +51,8 @@ def test_same_interface_fact_deduplicated_but_other_interface_blocks():
     other.vlan_id = 999
     hosts[0].virtual_machines[0].interfaces.append(other)
     conflicts = inventory_conflicts(hosts)
-    assert len(conflicts) == 1
-    assert len(conflicts[0].participants) == 2
+    assert {c.kind for c in conflicts} == {'IP_ASSIGNMENT', 'MAC_ASSIGNMENT'}
+    assert all(len(c.participants) == 2 for c in conflicts)
 
 
 def test_different_prefixes_do_not_hide_same_address_conflict():
@@ -103,7 +103,7 @@ def test_different_vm_identity_same_ip_is_network_conflict_only():
     other.external_id = 'different-id'
     other.provider_object_id = 'vm-123'
     hosts[0].virtual_machines.append(other)
-    assert [c.kind for c in inventory_conflicts(hosts)] == ['IP_ASSIGNMENT']
+    assert [c.kind for c in inventory_conflicts(hosts)] == ['IP_ASSIGNMENT', 'MAC_ASSIGNMENT']
 
 
 import pytest

@@ -359,7 +359,7 @@ class ConflictParticipantDTO(PublicModel):
 
 
 class InventoryConflictDTO(PublicModel):
-    kind: Literal['VM_IDENTITY', 'IP_ASSIGNMENT']
+    kind: Literal['VM_IDENTITY', 'IP_ASSIGNMENT', 'MAC_ASSIGNMENT']
     value: str
     participants: list[ConflictParticipantDTO]
 
@@ -416,6 +416,7 @@ class ApplyRequestDTO(PublicModel):
 
 
 class ApplyResultDTO(PublicModel):
+    network_complete: bool = True
     ipam_complete: bool = True
     """Explicit non-transactional synchronization result."""
 

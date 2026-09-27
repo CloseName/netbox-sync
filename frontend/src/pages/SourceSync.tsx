@@ -91,7 +91,7 @@ export function SourceSync({
     void read();const timer=setInterval(read,5000);return()=>{stopped=true;controller.abort();clearInterval(timer);};
   },[selected,active,refreshOperations,operations]);
   const acceptedRun=runs.find(r=>r.run_id===runId)??runs.find(r=>r.trigger==='manual'&&r.plan_digest===plan?.value.digest&&Date.parse(r.started_at)>=Date.parse(plan?.received??''));
-  useEffect(()=>{setResult(current=>reconcileTransportOutcome(current,acceptedRun,runId,plan?.value.digest,plan?.value.items.some(item=>item.reason_code==='IP_OBSERVATION_ONLY')));},[acceptedRun?.run_id,acceptedRun?.status,acceptedRun?.plan_digest,runId,plan?.value.digest,result?.code]);
+  useEffect(()=>{setResult(current=>reconcileTransportOutcome(current,acceptedRun,runId,plan?.value.digest,plan?.value.items.some(item=>['IP_OBSERVATION_ONLY','MAC_OBSERVATION_ONLY'].includes(item.reason_code))));},[acceptedRun?.run_id,acceptedRun?.status,acceptedRun?.plan_digest,runId,plan?.value.digest,result?.code]);
   const planOperation = operations.find(item => item.operation_kind === 'PLAN');
   const consumed=!!planOperation?.used_run_id||runs.some(r=>r.trigger==='manual'&&r.plan_digest===plan?.value.digest&&Date.parse(r.started_at)>=Date.parse(plan?.received??''));
   const historicalPlan=!!latestRunFinishedAt&&!!planOperation?.finished_at&&Date.parse(latestRunFinishedAt)>Date.parse(planOperation.finished_at);

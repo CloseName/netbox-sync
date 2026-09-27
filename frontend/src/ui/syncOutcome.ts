@@ -82,7 +82,7 @@ export function applyOutcome(
     );
   return outcome(
     result.status,
-    result.status==='SUCCEEDED' && result.ipam_complete===false ? 'Inventory synchronized with address observations. Disputed IPAM assignments remain incomplete; review the NetBox interfaces.' : undefined,
+    result.status==='SUCCEEDED' && (result.network_complete===false || result.ipam_complete===false) ? 'Inventory synchronized with network observations. Disputed address or MAC assignments remain incomplete; review the NetBox interfaces.' : undefined,
     undefined,
     result.run_id ?? undefined,
   );
@@ -140,5 +140,5 @@ export function reconcileTransportOutcome(current:SyncOutcome|null, run:{run_id:
   if(!['NETWORK_LOST','UNKNOWN','APPLY_UNAVAILABLE','APPLY_RESPONSE_INVALID','DURABLE_RUN_STATUS'].includes(current.code??''))return current;
   if(!['RUNNING','SUCCEEDED','FAILED','FAILED_BEFORE_WRITE','BLOCKED','LOCKED','PARTIALLY_APPLIED','OUTCOME_UNCERTAIN'].includes(run.status))return current;
   if(current.code==='DURABLE_RUN_STATUS' && current.state===run.status)return current;
-  return outcome(run.status,run.status==='SUCCEEDED' && ipamIncomplete?'Inventory synchronized with address observations. Disputed IPAM assignments remain incomplete; review the NetBox interfaces.':undefined,run.status==='RUNNING'?'DURABLE_RUN_STATUS':undefined,run.run_id);
+  return outcome(run.status,run.status==='SUCCEEDED' && ipamIncomplete?'Inventory synchronized with network observations. Disputed address or MAC assignments remain incomplete; review the NetBox interfaces.':undefined,run.status==='RUNNING'?'DURABLE_RUN_STATUS':undefined,run.run_id);
 }
