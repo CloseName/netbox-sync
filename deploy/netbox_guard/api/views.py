@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from netbox.api.authentication import TokenWritePermission
 from ..dependencies import MODELS, DependencyGuardBlocked, _digest
-from ..models import RetirementIntent, RetirementReceipt, GuardIdentity, CreationReceipt
+from ..models import RetirementIntent, RetirementReceipt, GuardIdentity, CreationReceipt, SourceClosure
 from ..service import create_owned, review, retire, _permission
 
 SERIALIZERS = {
@@ -36,7 +36,8 @@ def _body(request, fields):
 def _public(intent, receipt=None):
     return {'nonce':str(intent.pk),'source_instance':intent.source_instance,
             'digest':intent.digest,'status':'SUCCEEDED' if receipt else 'REVIEWED',
-            'manifest':intent.manifest,'deleted':receipt.deleted if receipt else []}
+            'manifest':intent.manifest,'deleted':receipt.deleted if receipt else [],
+            'generation_closed':bool(receipt and SourceClosure.objects.filter(source_instance=intent.source_instance,intent=intent).exists())}
 
 
 class GuardTokenWritePermission(TokenWritePermission):
@@ -81,7 +82,7 @@ class Capabilities(GuardView):
     def get(self,request):
         return Response({'protocol':1,'guard_instance':str(GuardIdentity.objects.get(pk=1).identifier),'netbox_version':'4.7.0','atomic_dependency_guard':True,
                          'creation_receipts':True,'retirement_receipts':True,
-                         'source_coordinator_required':True,'source_tree_retirement':True,'source_audit':True,
+                         'source_coordinator_required':True,'source_tree_retirement':True,'source_audit':True,'source_generation_closure':True,
                          'audit_permission':request.user.has_perm('netbox_guard.audit_retirementintent'),
                          'retire_permission':request.user.has_perm('netbox_guard.retire_retirementintent'),
                          'token_write_enabled':bool(getattr(request.auth,'write_enabled',False))})
@@ -185,3 +186,18 @@ class SourceAudit(GuardView):
         from ..service import audit_source
         body=_body(request,('nonce',))
         return Response(audit_source(request.user,body['nonce'],source))
+
+
+class ArchiveReview(GuardView):
+    def post(self,request):
+        from ..source_closure import review_archive
+        body=_body(request,('nonce','source_instance'))
+        intent=review_archive(request.user,body['nonce'],body['source_instance'])
+        return Response(_public(intent,RetirementReceipt.objects.filter(intent=intent).first()))
+
+class ArchiveExecute(GuardView):
+    def post(self,request):
+        from ..source_closure import archive_source
+        body=_body(request,('nonce','digest'))
+        receipt=archive_source(request.user,body['nonce'],body['digest'])
+        return Response(_public(receipt.intent,receipt))

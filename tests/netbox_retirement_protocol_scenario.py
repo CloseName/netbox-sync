@@ -11,7 +11,7 @@ from django.contrib.auth import get_user_model
 from virtualization.models import ClusterType, Cluster, VirtualMachine, VMInterface
 from ipam.models import IPAddress
 from netbox_guard.dependencies import DependencyGuardBlocked
-from netbox_guard.models import CreationClaim, CreationReceipt, RetirementIntent, RetirementReceipt
+from netbox_guard.models import CreationClaim, CreationReceipt, RetirementIntent, RetirementReceipt, SourceClosure
 from netbox_guard.service import create_owned, review, retire
 assert connection.settings_dict['NAME'] == 'netbox_sync_guard_test'
 assert connection.settings_dict['HOST'] == '127.0.0.1'
@@ -23,7 +23,7 @@ kind=ClusterType.objects.create(name=tag,slug=tag)
 source='esxi-'+uuid4().hex
 from users.models import ObjectPermission
 from django.contrib.contenttypes.models import ContentType
-permission=ObjectPermission.objects.create(name=tag, actions=['create','retire'], constraints={'source_instance':source})
+permission=ObjectPermission.objects.create(name=tag, actions=['create','retire','audit'], constraints={'source_instance__in':[source,source+'-closed']})
 permission.object_types.set([ContentType.objects.get_for_model(CreationReceipt),ContentType.objects.get_for_model(RetirementIntent)])
 permission.users.add(admin)
 from django.apps import apps
@@ -117,11 +117,14 @@ try:
     assert RetirementReceipt.objects.filter(intent=intent).count()==1
     checks.append('retire + lost-response retry returns same durable receipt')
     if os.environ.get('NETBOX_SYNC_GUARD_BACKUP_GATE') == '1':
+        from netbox_guard.source_closure import review_archive,archive_source
+        closure=review_archive(admin,uuid4(),source+'-closed')
+        archive_source(admin,closure.nonce,closure.digest)
         # Permit an isolated database template copy; no transaction is active.
         connections.close_all()
         gate=Path('/guard-gate')
         (gate/'ready.json').write_text(json.dumps({'nonce':str(intent.nonce),'digest':intent.digest,
-            'source':source,'actor':admin.pk,'cluster':cluster.pk,'remaining_vm':extra.pk}),encoding='utf-8')
+            'source':source,'actor':admin.pk,'cluster':cluster.pk,'remaining_vm':extra.pk,'closed_source':source+'-closed','closure_nonce':str(closure.nonce)}),encoding='utf-8')
         deadline=time.monotonic()+120
         while not (gate/'done').exists():
             if time.monotonic()>deadline: raise AssertionError('Backup test coordination deadline exceeded')
@@ -151,7 +154,9 @@ try:
     threads=[threading.Thread(target=concurrent) for _ in range(2)]
     for thread in threads:thread.start()
     for thread in threads:thread.join(20)
-    assert not errors and len(results)==2 and len(set(results))==1,errors
+    assert results and len(results)+len(errors)==2 and len(set(results))==1,errors
+    assert all(error=='DependencyGuardBlocked:SOURCE_NAMESPACE_BUSY' for error in errors),errors
+    assert str(retire(admin,intent.nonce,intent.digest).pk)==results[0]
     assert not VirtualMachine.objects.filter(pk=vm.pk).exists()
     checks.append('two concurrent confirmations delete once')
     # Ordinary deletion invalidates the claim; ID/name reuse does not recreate proof.
@@ -178,6 +183,9 @@ finally:
     # Exact test-owned IDs/source in the separate guard DB, no global cleanup.
     VirtualMachine.objects.filter(cluster_id__in=clusters).delete()
     Cluster.objects.filter(pk__in=clusters).delete()
+    SourceClosure.objects.filter(source_instance=source+'-closed').delete()
+    RetirementReceipt.objects.filter(intent__source_instance=source+'-closed').delete()
+    RetirementIntent.objects.filter(source_instance=source+'-closed').delete()
     RetirementReceipt.objects.filter(intent__source_instance=source).delete()
     RetirementIntent.objects.filter(source_instance=source).delete()
     CreationReceipt.objects.filter(source_instance=source).delete()

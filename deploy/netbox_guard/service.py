@@ -159,6 +159,9 @@ def create_owned(user, nonce, source, resource, values, *, cluster=None, request
             cursor.execute("SET LOCAL lock_timeout = '2000ms'")
             cursor.execute("SET LOCAL statement_timeout = '10000ms'")
             cursor.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', ['netbox-sync-create:' + str(nonce)])
+            cursor.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', ['netbox-sync-generation:' + source])
+        from .source_closure import assert_open
+        assert_open(source)
         receipt = CreationReceipt.objects.filter(nonce=nonce).first()
         if receipt:
             _permission(user, 'create_creationreceipt', receipt)
@@ -269,23 +272,26 @@ def retire(user, nonce, digest):
         raise DependencyGuardBlocked('MANIFEST_CORRUPT')
     snapshot = DependencySnapshot(tuple(map(tuple, manifest['objects'])),
                                   tuple(map(tuple, manifest['field_updates'])), manifest['fingerprint'])
+    from .source_closure import namespace_fence,assert_open
     try:
-        with _locked_closure(manifest['roots'], expected=snapshot) as (current, collector):
-            _permission(user, 'retire_retirementintent', intent)
-            if _cluster_fingerprint(manifest['cluster_id']) != manifest['cluster_fingerprint']:
-                raise DependencyGuardBlocked('PLACEMENT_CHANGED')
-            _claims(current, intent.source_instance, manifest['cluster_id'])
-            expected_counts = {}
-            for key, _ in current.objects:
-                resource = key.split(':')[0]
-                label = MODELS[resource]
-                expected_counts[label] = expected_counts.get(label, 0) + 1
-            count, actual = collector.delete()
-            if actual != expected_counts or count != len(current.objects):
-                raise DependencyGuardBlocked('DELETE_EFFECT_MISMATCH')
-            # Receipt and deletion commit together, including claim invalidation.
-            return RetirementReceipt.objects.create(intent=intent, digest=digest,
-                                                     deleted=[key for key, _ in current.objects])
+        with namespace_fence(intent.source_instance):
+            assert_open(intent.source_instance)
+            with _locked_closure(manifest['roots'], expected=snapshot) as (current, collector):
+                _permission(user, 'retire_retirementintent', intent)
+                if _cluster_fingerprint(manifest['cluster_id']) != manifest['cluster_fingerprint']:
+                    raise DependencyGuardBlocked('PLACEMENT_CHANGED')
+                _claims(current, intent.source_instance, manifest['cluster_id'])
+                expected_counts = {}
+                for key, _ in current.objects:
+                    resource = key.split(':')[0]
+                    label = MODELS[resource]
+                    expected_counts[label] = expected_counts.get(label, 0) + 1
+                count, actual = collector.delete()
+                if actual != expected_counts or count != len(current.objects):
+                    raise DependencyGuardBlocked('DELETE_EFFECT_MISMATCH')
+                # Receipt and deletion commit together, including claim invalidation.
+                return RetirementReceipt.objects.create(intent=intent, digest=digest,
+                                                         deleted=[key for key, _ in current.objects])
     except DependencyGuardBlocked as exc:
         # Another identical request may have completed before our table locks.
         if str(exc) == 'OBJECT_MISSING':
@@ -333,8 +339,25 @@ def audit_source(user, nonce, source):
                 if len(rows)>10000:raise DependencyGuardBlocked('DEPENDENCY_LIMIT')
         for key,claim in indexed.items():
             if key not in seen:rows.append({'kind':key[0],'id':key[1],'present':False,'claimed':True,'fingerprint':_digest(str(claim.object_created))})
+        # NetBox's deletion signal invalidates active claims, but immutable
+        # CREATE receipts remain historical evidence. Missing objects are a
+        # current observation, not proof that an old retirement succeeded.
+        historical=list(CreationReceipt.objects.filter(source_instance=source).values_list('resource','object_id').distinct()[:10001])
+        if len(historical)>10000:raise DependencyGuardBlocked('DEPENDENCY_LIMIT')
+        recorded={(row['kind'],row['id']) for row in rows}
+        for kind,identifier in historical:
+            if (kind,identifier) in recorded:continue
+            model=apps.get_model(MODELS[kind])
+            obj=model.objects.filter(pk=identifier).first()
+            if obj is not None and not user.has_perm(f'{obj._meta.app_label}.view_{obj._meta.model_name}',obj):
+                raise DependencyGuardBlocked('GUARD_OBJECT_VIEW_DENIED')
+            rows.append({'kind':kind,'id':identifier,'present':obj is not None,'claimed':False,
+                         'historical_creation':True,
+                         'fingerprint':_digest({field.attname:getattr(obj,field.attname) for field in obj._meta.concrete_fields}) if obj else _digest(['absent',kind,identifier])})
         if len(rows)>10000:raise DependencyGuardBlocked('DEPENDENCY_LIMIT')
-    result={'source_instance':source,'objects':sorted(rows,key=lambda row:(row['kind'],row['id'])),
+    from .dependencies import visible_dependency_blockers
+    dependencies=visible_dependency_blockers(user,[(r['kind'],r['id']) for r in rows if r['present']])
+    result={'source_instance':source,'dependencies':dependencies,'objects':sorted(rows,key=lambda row:(row['kind'],row['id'])),
             'historical_outcome':'UNPROVED','legacy_unattributed_objects':'NOT_PROVEN'}
     result['digest']=_digest(result)
     return result

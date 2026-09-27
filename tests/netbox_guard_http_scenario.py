@@ -16,7 +16,7 @@ from django.apps import apps
 from users.models import ObjectPermission,Token
 from virtualization.models import ClusterType,Cluster,VirtualMachine
 from dcim.models import Site,Manufacturer,DeviceType,DeviceRole,Device
-from netbox_guard.models import CreationReceipt,CreationClaim,RetirementIntent,RetirementReceipt
+from netbox_guard.models import CreationReceipt,CreationClaim,RetirementIntent,RetirementReceipt,SourceClosure
 from netbox_guard.dependencies import MODELS
 from django.core.wsgi import get_wsgi_application
 from wsgiref.simple_server import make_server,WSGIRequestHandler
@@ -128,7 +128,7 @@ try:
     physical=child('interface',{'device':host,'name':'vmk0','type':'virtual'})
     child('ip',{'address':'192.0.2.187/24','assigned_object_type':'dcim.interface','assigned_object_id':physical})
     nic=child('vminterface',{'virtual_machine':vm,'name':'eth0'})
-    child('ip',{'address':'192.0.2.188/24','assigned_object_type':'virtualization.vminterface','assigned_object_id':nic})
+    vm_ip=child('ip',{'address':'192.0.2.188/24','assigned_object_type':'virtualization.vminterface','assigned_object_id':nic})
     child('mac',{'mac_address':'02:00:00:00:42:11','assigned_object_type':'virtualization.vminterface','assigned_object_id':nic})
     child('disk',{'virtual_machine':vm,'name':'disk0','size':20480})
     # A representation failure after commit is uncertain, not a failed CREATE.
@@ -186,6 +186,18 @@ try:
         scoped_audit_views.append(permission)
     assert client.audit_source(source,str(uuid4()))['source_instance']==source
     vm_view=next(p for p in scoped_audit_views if p.name==tag+'-audit-vm')
+    external=VirtualMachine.objects.create(name=tag+'-protected-external',primary_ip4_id=vm_ip)
+    try:
+        external.refresh_from_db();assert external.primary_ip4_id==vm_ip
+        audit_denied('GUARD_OBJECT_VIEW_DENIED')
+        prior_scope=dict(vm_view.constraints)
+        vm_view.constraints={'id__in':[*prior_scope['id__in'],external.pk]};vm_view.save()
+        blocked=client.audit_source(source,str(uuid4()))
+        assert {'reason':'EXTERNAL_FIELD_UPDATE','model':'virtualization.virtualmachine','id':external.pk,'field':'primary_ip4'} in blocked['dependencies']
+        assert external.name not in json.dumps(blocked)
+        external.refresh_from_db();assert external.primary_ip4_id==vm_ip
+        vm_view.constraints=prior_scope;vm_view.save()
+    finally:external.delete() # exact local fixture only
     vm_view.users.remove(user);audit_denied('GUARD_OBJECT_VIEW_DENIED');vm_view.users.add(user)
     assert client.audit_source(source,str(uuid4()))['objects']
     add.users.add(user)
@@ -232,6 +244,7 @@ try:
         fixture_read=ObjectPermission.objects.create(name=tag+'-catalog',actions=['view'])
         fixture_read.object_types.set([ContentType.objects.get_for_model(model) for model in (CustomField,Platform,ClusterType,Site,Manufacturer,DeviceType,DeviceRole,VRF)])
         fixture_read.users.add(user)
+        cap.constraints={'source_instance__in':[source,source+'-esxi-0',source+'-esxi-1',source+'-esxi-2',source+'-proxmox-3']};cap.save()
         helper=runpy.run_path('/app/tests/netbox_worker_fixture.py')
         helper['exercise'](context,get_wsgi_application(),certfile,source,cluster,capability['guard_instance'],headers[0]['Authorization'].split(' ',1)[1],url.split('/api/')[0],tag,[v.pk for v in fixture_vrfs])
     elif os.environ.get('NETBOX_SYNC_GUARD_TREE')=='1':
@@ -262,6 +275,51 @@ try:
     assert not Cluster.objects.filter(pk=cluster).exists()
     assert not VirtualMachine.objects.filter(pk=vm).exists()
     assert ClusterType.objects.filter(pk=kind.pk).exists()
+    # Separate historical generation: cluster/VM manually gone, unclaimed host remains.
+    legacy_source=source+'-legacy'
+    cap.constraints={'source_instance__in':[source,legacy_source]};cap.save()
+    legacy_cluster=client.create(uuid4(),legacy_source,'cluster',None,{'name':tag+'-legacy','type':kind.pk})
+    legacy_vm=client.create(uuid4(),legacy_source,'vm',legacy_cluster['id'],{'name':tag+'-legacy-vm','cluster':legacy_cluster['id']})
+    legacy_host=Device.objects.create(name=tag+'-legacy-host',site=site,role=role,device_type=device_type,cluster_id=legacy_cluster['id'],comments='manual retained fixture',custom_field_data={'sync_identities':[{'schema':'v2','instance':legacy_source,'type':'esxi','kind':'host','external_id':'ha-host'}]})
+    pending_retire=client.review(uuid4(),legacy_source,legacy_cluster['id'],['vm',legacy_vm['id']])
+    VirtualMachine.objects.filter(pk=legacy_vm['id']).delete()
+    Cluster.objects.filter(pk=legacy_cluster['id']).delete()
+    legacy_host.refresh_from_db();assert legacy_host.cluster_id is None
+    archive_nonce=str(uuid4())
+    archive=client.archive_review(archive_nonce,legacy_source)
+    assert archive['manifest']['format']==4 and archive['manifest']['historical_outcome']=='UNPROVED'
+    assert any(r['kind']=='device' and r['id']==legacy_host.pk and r['present'] and not r['claimed'] for r in archive['manifest']['retained'])
+    assert any(r['kind']=='cluster' and r['id']==legacy_cluster['id'] and not r['present'] for r in archive['manifest']['retained'])
+    assert post('sources/archive-execute/',{'nonce':archive_nonce,'digest':archive['digest']},headers[1]).status_code==403
+    legacy_host.comments='updated manual fixture';legacy_host.save()
+    stale=post('sources/archive-execute/',{'nonce':archive_nonce,'digest':archive['digest']})
+    assert stale.status_code==409 and stale.json()['code']=='DEPENDENCIES_CHANGED'
+    archive_nonce=str(uuid4());archive=client.archive_review(archive_nonce,legacy_source)
+    import netbox_guard.api.views as guard_views
+    original_public=guard_views._public
+    def lost_archive_public(intent,receipt=None):
+        if receipt and intent.pk==UUID(archive_nonce):raise RuntimeError('controlled lost archive response')
+        return original_public(intent,receipt)
+    from uuid import UUID
+    with patch.object(guard_views,'_public',side_effect=lost_archive_public):
+        lost=post('sources/archive-execute/',{'nonce':archive_nonce,'digest':archive['digest']})
+    assert lost.status_code==503
+    proof=client.receipt(archive_nonce)
+    assert proof['generation_closed'] and proof['status']=='SUCCEEDED' and proof['deleted']==[]
+    assert client.archive_execute(archive_nonce,archive['digest'])==proof
+    legacy_host.refresh_from_db();assert legacy_host.comments=='updated manual fixture' and legacy_host.cluster_id is None
+    late=post('objects/create/',{'nonce':str(uuid4()),'source_instance':legacy_source,'resource':'cluster','cluster_id':None,'data':{'name':tag+'-forbidden-late','type':kind.pk}})
+    assert late.status_code==409 and late.json()['code']=='SOURCE_NAMESPACE_CLOSED'
+    assert not Cluster.objects.filter(name=tag+'-forbidden-late').exists()
+    late_delete=post('retirements/execute/',{'nonce':pending_retire['nonce'],'digest':pending_retire['digest']})
+    assert late_delete.status_code==409 and late_delete.json()['code']=='SOURCE_NAMESPACE_CLOSED'
+    SourceClosure.objects.filter(source_instance=legacy_source).delete()
+    RetirementReceipt.objects.filter(intent__source_instance=legacy_source).delete()
+    RetirementIntent.objects.filter(source_instance=legacy_source).delete()
+    CreationReceipt.objects.filter(source_instance=legacy_source).delete()
+    CreationClaim.objects.filter(source_instance=legacy_source).delete()
+    legacy_host.delete()
+    print('PASS actual NetBox legacy archive: manual missing cluster/VM, unclaimed retained host, native token rights, changed evidence refusal, lost response receipt and late CREATE fence')
     # Revocation takes effect on a new authenticated request.
     tokens[0].enabled=False;tokens[0].save()
     assert post('objects/create/',{**body,'nonce':str(uuid4())}).status_code in (401,403)
@@ -269,12 +327,34 @@ try:
     print('PASS real HTTP: v2 token authentication; read-only refusal; source constraints; create/retry; VM/cluster receipts; no generic delete privilege; revoked token refusal')
 finally:
     server.shutdown();server.server_close();thread.join(3)
+    # Exact fixture generation only, including a failure before archive cleanup.
+    legacy=source+'-legacy'
+    legacy_clusters=list(CreationClaim.objects.filter(source_instance=legacy,resource='cluster').values_list('object_id',flat=True))
+    VirtualMachine.objects.filter(cluster_id__in=legacy_clusters).delete()
+    Device.objects.filter(name=tag+'-legacy-host',site=site,device_type=device_type).delete()
+    Cluster.objects.filter(pk__in=legacy_clusters).delete()
+    SourceClosure.objects.filter(source_instance=legacy).delete()
+    RetirementReceipt.objects.filter(intent__source_instance=legacy).delete()
+    RetirementIntent.objects.filter(source_instance=legacy).delete()
+    CreationReceipt.objects.filter(source_instance=legacy).delete()
+    CreationClaim.objects.filter(source_instance=legacy).delete()
     # Include only this fixture source's guarded CREATE claims, including a
     # cluster left behind if the newly added full apply regression fails.
     clusters.extend(CreationClaim.objects.filter(source_instance=source,resource='cluster').values_list('object_id',flat=True))
     VirtualMachine.objects.filter(cluster_id__in=clusters).delete()
     Device.objects.filter(cluster_id__in=clusters).delete()
     Cluster.objects.filter(pk__in=clusters).delete()
+    for generation in [source+'-esxi-0',source+'-esxi-1',source+'-esxi-2',source+'-proxmox-3']:
+        owned_clusters=list(CreationClaim.objects.filter(source_instance=generation,resource='cluster').values_list('object_id',flat=True))
+        VirtualMachine.objects.filter(cluster_id__in=owned_clusters).delete()
+        Device.objects.filter(cluster_id__in=owned_clusters).delete()
+        Cluster.objects.filter(pk__in=owned_clusters).delete()
+        SourceClosure.objects.filter(source_instance=generation).delete()
+        RetirementReceipt.objects.filter(intent__source_instance=generation).delete()
+        RetirementIntent.objects.filter(source_instance=generation).delete()
+        CreationReceipt.objects.filter(source_instance=generation).delete()
+        CreationClaim.objects.filter(source_instance=generation).delete()
+    SourceClosure.objects.filter(source_instance=source).delete()
     RetirementReceipt.objects.filter(intent__source_instance=source).delete()
     RetirementIntent.objects.filter(source_instance=source).delete()
     CreationReceipt.objects.filter(source_instance=source).delete()

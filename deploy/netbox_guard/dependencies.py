@@ -161,3 +161,42 @@ def locked_dependencies(roots, *, expected=None):
     """Read-only public primitive; deletion is confined to the guarded service."""
     with _locked_closure(roots, expected=expected) as (snapshot, _collector):
         yield snapshot
+
+
+def visible_dependency_blockers(user, roots):
+    """Read-only hints, never an authorization or a deletion preview.
+
+    Expose model/PK/field only after native object-view permission checks.
+    Deletion still recomputes the complete closure under its database fence.
+    """
+    from django.apps import apps
+    from django.db import connection
+    from django.db.models import QuerySet
+    from django.db.models.deletion import Collector, ProtectedError, RestrictedError
+    if not roots:return []
+    collector=Collector(using=connection.alias)
+    blockers=set()
+    def add(obj,reason,field=''):
+        if not user.has_perm(f'{obj._meta.app_label}.view_{obj._meta.model_name}',obj):
+            raise DependencyGuardBlocked('GUARD_OBJECT_VIEW_DENIED')
+        blockers.add((reason,obj._meta.label_lower,obj.pk,field))
+        if len(blockers)>MAX_OBJECTS:raise DependencyGuardBlocked('DEPENDENCY_LIMIT')
+    reviewed={(MODELS[kind].lower(),identifier) for kind,identifier in _checked_roots(roots)}
+    for kind,identifier in _checked_roots(roots):
+        obj=apps.get_model(MODELS[kind]).objects.filter(pk=identifier).first()
+        try:
+            if obj is not None:collector.collect([obj])
+        except (ProtectedError,RestrictedError) as exc:
+            for dependent in getattr(exc,'protected_objects',getattr(exc,'restricted_objects',())):
+                # Reviewed children are removed before their protected parent.
+                if (dependent._meta.label_lower,dependent.pk) not in reviewed:
+                    add(dependent,'PROTECTED_DEPENDENCY')
+    collected={(obj._meta.label_lower,obj.pk) for group in collector.data.values() for obj in group}
+    for query in collector.fast_deletes:
+        collected.update((obj._meta.label_lower,obj.pk) for obj in query[:MAX_OBJECTS+1])
+    if len(collected)>MAX_OBJECTS:raise DependencyGuardBlocked('DEPENDENCY_LIMIT')
+    for (field,_value),groups in collector.field_updates.items():
+        for group in groups:
+            for obj in (group[:MAX_OBJECTS+1] if isinstance(group,QuerySet) else group):
+                if (obj._meta.label_lower,obj.pk) not in collected:add(obj,'EXTERNAL_FIELD_UPDATE',field.name)
+    return [dict(reason=reason,model=model,id=pk,field=field) for reason,model,pk,field in sorted(blockers)]

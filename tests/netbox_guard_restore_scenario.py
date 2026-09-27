@@ -11,7 +11,7 @@ from django.conf import settings
 settings.CACHES={'default':{'BACKEND':'django.core.cache.backends.locmem.LocMemCache'}}
 from django.contrib.auth import get_user_model
 from virtualization.models import VirtualMachine,Cluster
-from netbox_guard.models import CreationClaim,RetirementReceipt
+from netbox_guard.models import CreationClaim,RetirementReceipt,SourceClosure
 from netbox_guard.service import retire
 row=json.loads(Path('/guard-gate/ready.json').read_text())
 user=get_user_model().objects.get(pk=row['actor'])
@@ -24,3 +24,11 @@ assert list(CreationClaim.objects.filter(source_instance=row['source']).values_l
 assert RetirementReceipt.objects.filter(intent_id=row['nonce']).count()==1
 assert VirtualMachine.objects.filter(pk=row['remaining_vm']).exists()
 print('PASS restored guarded receipt retry; claims and remaining owned inventory unchanged')
+
+assert SourceClosure.objects.filter(source_instance=row['closed_source'],intent_id=row['closure_nonce']).exists()
+from netbox_guard.source_closure import assert_open
+from netbox_guard.dependencies import DependencyGuardBlocked
+try:assert_open(row['closed_source'])
+except DependencyGuardBlocked as exc:assert str(exc)=='SOURCE_NAMESPACE_CLOSED'
+else:raise AssertionError('Restored namespace reopened')
+print('PASS restored namespace remains closed; Guard identity preserved by isolated template')

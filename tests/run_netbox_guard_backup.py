@@ -7,7 +7,7 @@ root=Path(__file__).resolve().parents[1]
 def run(args,**kwargs):
     return subprocess.run(['docker',*args],capture_output=True,check=True,**kwargs)
 info=json.loads(run(['inspect',pg]).stdout)[0]
-assert info['Config']['Labels'].get('netbox-sync.task')=='host-claims-20260923'
+assert info['Config']['Labels'].get('netbox-sync.task')==os.environ.get('NETBOX_SYNC_GUARD_PG_LABEL','host-claims-20260923')
 assert info['HostConfig']['NetworkMode']=='none'
 assert not any(m['Type']=='volume' for m in info['Mounts'])
 name='netbox-sync-guard-protocol-'+uuid.uuid4().hex
@@ -25,7 +25,8 @@ with tempfile.TemporaryDirectory(prefix='netbox-sync-guard-gate-') as directory:
     process=subprocess.Popen(['docker',*base,'--name',name,'-e','NETBOX_SYNC_GUARD_BACKUP_GATE=1',
         'netboxcommunity/netbox:v4.7.0','/app/tests/netbox_retirement_protocol_scenario.py'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     try:
-        deadline=time.monotonic()+180
+        # Match the bounded cold-migration preparation budget; runtime limits stay unchanged.
+        deadline=time.monotonic()+960
         while not (gate/'ready.json').exists():
             if process.poll() is not None:
                 stdout,stderr=process.communicate()
@@ -38,9 +39,9 @@ with tempfile.TemporaryDirectory(prefix='netbox-sync-guard-gate-') as directory:
         # This gate restores the NEW guard journals against preserved NetBox state.
         # Full vanilla 4.7 schema pg_restore has an independently reproduced ltree
         # trigger search_path refusal; do not silently weaken that schema/security.
-        dump=run(['exec',pg,'pg_dump','-U','postgres','-d','netbox_sync_guard_test','-Fc','-t','public.netbox_guard_creation*','-t','public.netbox_guard_retirement*']).stdout
+        dump=run(['exec',pg,'pg_dump','-U','postgres','-d','netbox_sync_guard_test','-Fc','-t','public.netbox_guard_creation*','-t','public.netbox_guard_retirement*','-t','public.netbox_guard_sourceclosure']).stdout
         run(['exec',pg,'psql','-U','postgres','-d','netbox_sync_guard_restore_test','-v','ON_ERROR_STOP=1','-c',
-             'TRUNCATE netbox_guard_creationclaim,netbox_guard_creationreceipt,netbox_guard_retirementreceipt,netbox_guard_retirementintent RESTART IDENTITY'])
+             'TRUNCATE netbox_guard_sourceclosure,netbox_guard_creationclaim,netbox_guard_creationreceipt,netbox_guard_retirementreceipt,netbox_guard_retirementintent RESTART IDENTITY'])
         try:
             run(['exec','-i',pg,'pg_restore','-U','postgres','-d','netbox_sync_guard_restore_test','--data-only','--exit-on-error'],input=dump)
         except subprocess.CalledProcessError as exc:

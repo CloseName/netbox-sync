@@ -102,12 +102,14 @@ def retire_source(user, nonce, digest):
             or _digest([actor,intent.source_instance,manifest])!=digest):
         raise DependencyGuardBlocked('REQUEST_CONFLICT')
     deadline=time.monotonic()+BUDGET_SECONDS
-    with _database_fence():
+    from .source_closure import namespace_fence,assert_open,seal
+    with namespace_fence(intent.source_instance),_database_fence():
         _permission(user,'retire_retirementintent',intent)
         previous=RetirementReceipt.objects.filter(intent=intent).first()
         if previous:
             if previous.digest!=digest: raise DependencyGuardBlocked('RECEIPT_CONFLICT')
             return previous
+        assert_open(intent.source_instance)
         snapshot,roots=_inventory(intent.source_instance,manifest['cluster_id'],deadline)
         if (list(map(list,snapshot.objects))!=manifest['objects'] or roots!=manifest['roots']
                 or snapshot.fingerprint!=manifest['fingerprint']):
@@ -137,4 +139,5 @@ def retire_source(user, nonce, digest):
         if remaining: raise DependencyGuardBlocked('DELETE_EFFECT_MISMATCH')
         # All phases and the final receipt commit together. Mid-phase failure or
         # process/DB rollback cannot leave a committed partial source retirement.
+        seal(intent)
         return RetirementReceipt.objects.create(intent=intent,digest=digest,deleted=sorted(deleted))

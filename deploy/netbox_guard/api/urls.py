@@ -1,6 +1,8 @@
 from django.urls import path
-from .views import Capabilities, CreateOwned, Review, Retire, Receipt, ReviewSource, RetireSource, CreationProof, SourceAudit
+from .views import Capabilities, CreateOwned, Review, Retire, Receipt, ReviewSource, RetireSource, CreationProof, SourceAudit, ArchiveReview, ArchiveExecute
 urlpatterns = [
+    path('sources/archive-review/', ArchiveReview.as_view()),
+    path('sources/archive-execute/', ArchiveExecute.as_view()),
     path('sources/<str:source>/audit/', SourceAudit.as_view()),
     path('sources/review/', ReviewSource.as_view()),
     path('sources/execute/', RetireSource.as_view()),

@@ -1,0 +1,7 @@
+# Independently built by the NetBox operator; Sync never manages NetBox.
+ARG NETBOX_BASE_IMAGE=netboxcommunity/netbox:v4.7.0
+FROM ${NETBOX_BASE_IMAGE}
+# Explicit read/traverse permissions survive restrictive checkout umasks.
+COPY --chmod=0755 deploy/netbox_guard /opt/netbox-sync-guard/netbox_guard
+# Preserve other operator plugin search paths and the base runtime user.
+ENV PYTHONPATH=/opt/netbox-sync-guard${PYTHONPATH:+:${PYTHONPATH}}

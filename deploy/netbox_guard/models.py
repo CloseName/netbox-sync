@@ -53,3 +53,10 @@ class GuardIdentity(models.Model):
     class Meta:
         default_permissions = ()
         constraints = [models.CheckConstraint(condition=models.Q(id=1), name='guard_single_identity')]
+
+class SourceClosure(models.Model):
+    source_instance = models.CharField(max_length=128, primary_key=True)
+    intent = models.OneToOneField(RetirementIntent, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        default_permissions = ()
