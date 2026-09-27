@@ -95,6 +95,13 @@ with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as sock:
             env=child_environment('bootstrap_worker', os.environ),
             preexec_fn=identity, timeout=3, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if result.returncode:
+            # The serial apply socket is occupied during its bounded operation.
+            # A root-owned current-process marker expires after the existing
+            # child/cleanup budget. Never treat a dead or indefinitely hung
+            # member as healthy, and never use this as apply authorization.
+            from .worker_activity import bounded_busy
+            if bundle == 'sync' and path == '/run/netbox-sync-apply/worker.sock' and bounded_busy():
+                continue
             return 1
     return 0
 

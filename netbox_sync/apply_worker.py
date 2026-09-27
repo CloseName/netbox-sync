@@ -468,7 +468,10 @@ def serve(socket_path, supervisor, allowed_uid):
                 try:
                     _authorize(connection, allowed_uid)
                     request = _receive(connection)
-                    result = _handle_request(supervisor, request)
+                    from .worker_activity import activity
+                    # Health itself must not create busy evidence.
+                    with activity() if request.get('operation') != 'health' else nullcontext():
+                        result = _handle_request(supervisor, request)
                     response = {'ok': True, 'result': result}
                 except ApplyWorkerError as exc:
                     response = {'ok': False, 'error': exc.code, 'reason': exc.reason, 'categories': exc.categories, 'event_id': str(uuid4()), 'run_id': exc.run_id}

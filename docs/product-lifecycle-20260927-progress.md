@@ -231,13 +231,19 @@ Precise next implementation work (not an authorization blocker):
 3. Upgrade/fresh reinstall and complete production API/manual/scheduled/browser
    gates for both providers, with actual consolidated service topology. Do not run
    the default auth Compose harness backup/restore branch for this task.
-4. Busy apply socket health: current serial apply interface can time out while
-   handling a bounded long operation. Supervision is verified, but the final
-   health policy must distinguish bounded busy from a dead member without hiding
-   a hung process or changing apply execution semantics.
+4. Rebuild/rerun bundled runtime after the bounded-busy health correction below.
 5. Final product UX/old administrative paths review and then ordinary push.
 
 External deployment prerequisite: the NetBox operator must independently install
 matching Guard code supporting source_namespace_state. No NetBox update is
 performed or authorized here. This is separate from the unfinished local gates.
 
+
+Bounded-busy health correction: the serial apply socket can be occupied during
+its existing 300-second child budget. Root-owned ephemeral PID/start-generation/
+monotonic-time evidence permits only this known busy case, for at most 330 seconds
+including DB/cleanup overhead. Missing, expired, malformed, linked, foreign-mode,
+wrong-generation or exited-process evidence fails health. The execution timeout,
+shared apply lock, confirmation store and network/capability boundaries are
+unchanged. No credentials/source contents enter this marker. Source process
+supervision still terminates the whole bundle immediately when a member exits.
