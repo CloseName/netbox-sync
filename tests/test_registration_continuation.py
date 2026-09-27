@@ -119,3 +119,52 @@ def test_saved_request_survives_restart_is_actor_bound_and_never_contains_secret
         with pytest.raises((ValueError,HostRegistrationConflict)):
             store.bind_intent(preview(),*args,request.intent_fingerprint(),{**saved,**extra})
     assert restarted.pending_requests('owner')[0]['request']==saved
+
+
+def test_legacy_placement_refusal_leaves_no_orphan_claim(migration_database,monkeypatch):
+    from psycopg import sql
+    from tests.test_esxi_runtime import _config
+    registry,engine=migration_database;_upgrade(registry,engine)
+    old=replace(_config(),enabled=False,settings={})
+    registry.create_source(old)
+    writer=RegistrationRegistry('unused',registry.schema)
+    monkeypatch.setattr(writer,'_registry',lambda:registry)
+    attempt=SourceOnboardingService({},EphemeralOnboardingStore(),writer,None)
+    token=attempt.accept_checked_credentials(credentials('esxi'),preview())
+    request=replace(command(token,'esxi','new-source'),site_slug=old.target.site_slug,cluster_name=old.target.cluster_name)
+    operation=uuid4()
+    with pytest.raises(HostRegistrationConflict,match='HOST_LEGACY_PLACEMENT_PROTECTED'):
+        attempt.reserve_provider_identity(request,operation,'owner')
+        with attempt.registration_guard(request,operation,'owner'):pass
+    with registry._connect() as connection:
+        count=connection.execute(sql.SQL('SELECT count(*) FROM {} WHERE source_instance=%s').format(sql.Identifier(registry.schema,'host_reservations')),('new-source',)).fetchone()['count']
+    assert count==0, 'Placement refusal must not leave a claim without a recoverable intent'
+
+
+def test_reservation_and_intent_commit_together_and_failure_rolls_back(migration_database,monkeypatch):
+    from dataclasses import asdict
+    from psycopg import sql
+    from netbox_sync.api.onboarding_dto import RegistrationRequest
+    registry,engine=migration_database;_upgrade(registry,engine)
+    store=HostReservations(registry._connect,registry.schema)
+    operation=uuid4()
+    payload=asdict(command('x'*32,'esxi','atomic-source'));payload.pop('mapping')
+    request=RegistrationRequest(**payload,registration_id=operation)
+    intent={'fingerprint':request.intent_fingerprint(),'request':request.durable_request()}
+    actual=store.bind_intent
+    def failed(*a,**kw):
+        actual(*a,**kw)
+        raise RuntimeError('simulated interruption before commit')
+    monkeypatch.setattr(store,'bind_intent',failed)
+    with pytest.raises(RuntimeError):store.reserve(preview(),'atomic-source',operation,'owner',intent=intent)
+    with registry._connect() as connection:
+        for table in ('host_reservations','registration_intents'):
+            assert connection.execute(sql.SQL('SELECT count(*) FROM {}').format(sql.Identifier(registry.schema,table))).fetchone()['count']==0
+    monkeypatch.setattr(store,'bind_intent',actual)
+    store.reserve(preview(),'atomic-source',operation,'owner',intent=intent)
+    assert len(store.pending_requests('owner'))==1
+    store.reserve(preview(),'atomic-source',operation,'owner',intent=intent)
+    assert len(store.pending_requests('owner'))==1
+    with pytest.raises(HostRegistrationConflict,match='INTENT_CHANGED'):
+        store.reserve(preview(),'atomic-source',operation,'owner',intent={'fingerprint':'f'*64,'request':None})
+    assert store.pending_requests('owner')[0]['request']==request.durable_request()

@@ -3,7 +3,7 @@
 A pending reservation is deliberately never expired automatically: the caller may
 have lost a response after a remote cluster write. Recovery must reconcile it.
 """
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from collections.abc import Mapping
 from uuid import UUID, uuid5
 from psycopg import sql
@@ -137,7 +137,7 @@ class HostReservations:
                 if resume is not None:
                     raise HostRegistrationConflict('HOST_REGISTRATION_INVALID')
 
-    def reserve(self, preview, source_instance, operation_id, actor_id):
+    def reserve(self, preview, source_instance, operation_id, actor_id, *, intent=None):
         anchor = esxi_anchor(preview)
         from .source_config import SOURCE_INSTANCE_PATTERN
         if not isinstance(source_instance, str) or not SOURCE_INSTANCE_PATTERN.fullmatch(source_instance):
@@ -175,9 +175,14 @@ class HostReservations:
                 if current:
                     if (current['source_instance'], current['operation_id'], current['actor_id']) != (source_instance, operation_id, actor_id):
                         raise HostRegistrationConflict('HOST_REGISTRATION_RESERVED', current['source_instance'])
-                    return anchor
-                cursor.execute(sql.SQL('INSERT INTO {} (provider,anchor,source_instance,operation_id,actor_id) VALUES (%s,%s,%s,%s,%s)').format(table),
-                               ('esxi', anchor, source_instance, operation_id, actor_id))
+                else:
+                    cursor.execute(sql.SQL('INSERT INTO {} (provider,anchor,source_instance,operation_id,actor_id) VALUES (%s,%s,%s,%s,%s)').format(table),
+                                   ('esxi', anchor, source_instance, operation_id, actor_id))
+                if intent is not None:
+                    # One transaction: failure to validate/persist the replayable
+                    # intent rolls back a newly inserted hardware reservation.
+                    self.bind_intent(preview,source_instance,operation_id,actor_id,
+                                     intent['fingerprint'],intent['request'],_connection=connection)
         return anchor
 
 
@@ -262,7 +267,7 @@ class HostReservations:
                     connection.execute('SELECT pg_advisory_unlock(hashtextextended(%s,0))',(lock_key,))
 
 
-    def bind_intent(self, preview, source, operation, actor, fingerprint, request=None):
+    def bind_intent(self, preview, source, operation, actor, fingerprint, request=None, *, _connection=None):
         """Persist only a digest before side effects; never retain credentials.
 
         The caller holds registration_guard across this call and all subsequent
@@ -279,7 +284,7 @@ class HostReservations:
             if validated.durable_request()!=request or validated.intent_fingerprint()!=fingerprint:
                 raise HostRegistrationConflict('HOST_REGISTRATION_INVALID')
         anchor=esxi_anchor(preview);operation=UUID(str(operation))
-        with self.connector() as connection,connection.cursor(row_factory=dict_row) as cursor:
+        with (nullcontext(_connection) if _connection is not None else self.connector()) as connection,connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(sql.SQL('SELECT operation_id,actor_id,anchor FROM {} WHERE source_instance=%s').format(
                 sql.Identifier(self.schema,'host_reservations')),(source,))
             claim=cursor.fetchone()

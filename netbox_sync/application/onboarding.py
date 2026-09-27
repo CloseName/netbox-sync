@@ -228,8 +228,9 @@ class SourceOnboardingService:
         if self._registry.find(request.source_instance) is not None:
             raise OnboardingError(ErrorCode.SOURCE_ALREADY_EXISTS)
 
-    def reserve_provider_identity(self, request, operation_id, actor):
+    def reserve_provider_identity(self, request, operation_id, actor, *, intent=None):
         self.check_registration(request)
+        self.check_placement(request.site_slug,request.cluster_name)
         reserve = getattr(self._registry, 'reserve_provider_identity', None)
         if reserve is not None:
             preview = self.preview(request.onboarding_token)
@@ -239,7 +240,12 @@ class SourceOnboardingService:
             if request.source_type == 'esxi' and (not preview or preview.get('provider') != 'esxi'):
                 from ..host_registration import HostRegistrationConflict
                 raise HostRegistrationConflict('HOST_IDENTITY_UNAVAILABLE')
-            reserve(preview, request.source_instance, operation_id, actor)
+            reserve(preview, request.source_instance, operation_id, actor, **({"intent":intent} if intent is not None else {}))
+
+    def check_placement(self, site_slug, cluster_name):
+        from types import SimpleNamespace
+        check=getattr(self._registry,'check_legacy_placement',None)
+        if check:check(SimpleNamespace(site_slug=site_slug,cluster_name=cluster_name))
 
     @contextmanager
     def registration_guard(self, request, operation_id, actor):

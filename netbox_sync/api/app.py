@@ -671,8 +671,11 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         auth_client.call('receipt.check',session=http.cookies.get(COOKIE),receipt=payload.onboarding_token)
         preview=onboarding_service.preview(payload.onboarding_token)
         if not preview:raise CatalogError('SELECTION_REQUIRED')
-        return call(settings.bootstrap_socket,dict(action='resolve-placement',provider=preview['provider'],
+        resolved=call(settings.bootstrap_socket,dict(action='resolve-placement',provider=preview['provider'],
             hosts=preview['hosts'],name=payload.name,site_id=payload.site_id,default_site_slug=settings.default_site_slug))
+        site=resolved.get('references',{}).get('site',{})
+        if site.get('slug'):onboarding_service.check_placement(site['slug'],payload.name)
+        return resolved
 
     @router.post('/sources', response_model=SourceDTO, status_code=201)
     def register_source(request: RegistrationRequest, http: Request):
@@ -687,7 +690,8 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         # binding survives response loss and cannot be claimed by another request.
         auth_client.call('receipt.check', session=http.cookies.get(COOKIE), receipt=request.onboarding_token)
         onboarding_service.reserve_provider_identity(request.command(), request.registration_id,
-                                                      http.state.principal['principal_id'])
+                                                      http.state.principal['principal_id'],
+                                                      intent={'fingerprint':fingerprint,'request':durable_request})
         with onboarding_service.registration_guard(request.command(), request.registration_id,
                                                     http.state.principal['principal_id']):
             bind_intent()
@@ -700,6 +704,8 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
                 resolved=call(settings.bootstrap_socket,dict(action='resolve-placement',provider=request.source_type,
                     hosts=preview['hosts'],name=request.name,site_id=(request.references.get('site') or {}).get('id'),
                     default_site_slug=settings.default_site_slug))
+                selected_site=resolved.get('references',{}).get('site',{})
+                if selected_site.get('slug'):onboarding_service.check_placement(selected_site['slug'],request.name)
                 if resolved['issues']:raise CatalogError('CLUSTER_REVIEW_REQUIRED' if any(i['kind']=='cluster' for i in resolved['issues']) else 'SELECTION_REQUIRED')
                 if request.create_cluster and not resolved['create_cluster']:
                     # A newly visible matching name is not proof of our previous

@@ -44,9 +44,9 @@ class RegistrationRegistry:
         if isinstance(preview, dict) and preview.get('provider') == 'esxi':
             self.host_reservations().check(preview)
 
-    def reserve_provider_identity(self, preview, source, operation_id, actor):
+    def reserve_provider_identity(self, preview, source, operation_id, actor, *, intent=None):
         if isinstance(preview, dict) and preview.get('provider') == 'esxi':
-            self.host_reservations().reserve(preview, source, operation_id, actor)
+            self.host_reservations().reserve(preview, source, operation_id, actor, intent=intent)
 
     def check_legacy_placement(self,request):
         from ..host_registration import legacy_anchor,HostRegistrationConflict

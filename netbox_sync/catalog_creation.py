@@ -116,6 +116,13 @@ def query(value, session_factory=requests.Session):
                     return {'status': 'UNCERTAIN', 'item': None}
                 return {'status': 'CREATED', 'item': project(kind, row)}
     except Exception as error:
+        from .retirement_transport import GuardTransportError
+        if isinstance(error,GuardTransportError) and not error.uncertain:
+            code={'AUTHENTICATION_REQUIRED':'AUTH_FAILED','TOKEN_WRITE_REQUIRED':'PERMISSION_DENIED',
+                  'GUARD_SOURCE_SCOPE_DENIED':'PERMISSION_DENIED','GUARD_AUDIT_PERMISSION_REQUIRED':'PERMISSION_DENIED',
+                  'GUARD_OBJECT_VIEW_DENIED':'PERMISSION_DENIED','PERMISSION_DENIED':'PERMISSION_DENIED',
+                  'REQUEST_CONFLICT':'CONFLICT'}.get(error.code,'SELECTION_REQUIRED')
+            return {'status':'REFUSED','error':code,'item':None}
         if write_started: return {'status':'UNCERTAIN','item':None}
         code = error.code if isinstance(error,ProbeError) else ('TLS_FAILED' if isinstance(error,requests.exceptions.SSLError) else 'NETWORK_UNREACHABLE')
         return {'status':'REFUSED','error':code,'item':None}
@@ -212,7 +219,10 @@ class CatalogCreation:
                 if recorded.get('digest') != digest: raise ProbeError('CONFLICT')
                 if recorded.get('guard') and recorded['status'] not in ('CREATED', 'REFUSED'):
                     return self._reconcile_guard(recorded, journal, url)
-                return self.public(recorded)
+                if not (registration and recorded['status']=='REFUSED'):
+                    return self.public(recorded)
+                # An explicit identical registration retry may correct a proven
+                # denial. Unknown outcomes still take the receipt-only path above.
             intent = BootstrapStore(self.store.root)
             intent.path = self.store.root / ('catalog-intent-' + digest + '.json')
             try: prior = read_journal(intent.path)

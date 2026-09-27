@@ -260,3 +260,35 @@ def test_guarded_cluster_after_lost_response_reads_receipt_without_post(store, m
         with pytest.raises(ProbeError,match='CATALOG_CHANGED'):
             resumed.execute(dict(action='catalog-reconcile',operation_id=request['operation_id']))
     assert calls==['receipt']
+
+
+@pytest.mark.parametrize('uncertain',[False,True])
+def test_guard_create_denial_is_not_a_lost_response(monkeypatch,uncertain):
+    from netbox_sync.retirement_transport import GuardTransportError
+    value,session,calls=session_fixture(monkeypatch)
+    value.update(kind='cluster',object={'name':'Host','type':1,'scope_type':'dcim.site','scope_id':2},
+        guard={'instance':str(uuid4()),'operation_id':str(uuid4()),'source_instance':'source-test'})
+    class Guard:
+        def __init__(self,*args):pass
+        def capabilities(self):pass
+        def create(self,*args):raise GuardTransportError('PERMISSION_DENIED' if not uncertain else 'GUARD_TIMEOUT',uncertain=uncertain)
+    monkeypatch.setattr('netbox_sync.retirement_transport.GuardClient',Guard)
+    result=creation.query(value,session)
+    assert result==({'status':'UNCERTAIN','item':None} if uncertain else {'status':'REFUSED','error':'PERMISSION_DENIED','item':None})
+
+
+def test_registration_can_retry_definitive_guard_denial_with_same_intent(store,monkeypatch):
+    monkeypatch.setenv('NETBOX_SYNC_GUARD_INSTANCE',str(uuid4()))
+    state=store.read();state['apply_token']=secrets.token_urlsafe(24);store.write(state)
+    calls=[]
+    def child(value):
+        calls.append(value['guard']['operation_id'])
+        return {'status':'REFUSED','error':'PERMISSION_DENIED','item':None} if len(calls)==1 else {'status':'CREATED','item':{'id':7}}
+    request={'action':'catalog-create','operation_id':str(uuid4()),'kind':'cluster',
+             'object':{'name':'Host','type':1,'scope_type':'dcim.site','scope_id':2},'confirm':True}
+    first=creation.CatalogCreation(store,child).execute(request,registration=True,source_instance='source-test')
+    assert first['status']=='REFUSED'
+    second=creation.CatalogCreation(store,child).execute(request,registration=True,source_instance='source-test')
+    assert second['status']=='CREATED'
+    assert calls==[request['operation_id']]*2
+    assert creation.CatalogCreation(store,lambda _:pytest.fail('already created')).execute(request,registration=True,source_instance='source-test')==second
