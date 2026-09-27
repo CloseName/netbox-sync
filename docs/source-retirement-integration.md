@@ -1,5 +1,10 @@
 # Source retirement integration (local implementation)
 
+Current lifecycle model: [immutable generations](source-lifecycle-20260927.md).
+Current operator procedure: [lifecycle upgrade](source-lifecycle-upgrade-runbook.md).
+Older checkpoint instructions below are historical where they differ.
+
+
 Current recovery delivery and remaining limitations: [24 September acceptance](backend-completion-acceptance-20260924.md). Older checkpoint counts below are historical.
 
 This is the implemented boundary for the separately approved retirement worker.

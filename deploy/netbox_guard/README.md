@@ -2,7 +2,8 @@
 
 This optional package is **not installed or enabled by NetBox Sync Compose**. It
 now exposes a narrow token-authenticated HTTP protocol when explicitly installed.
-Guard-backed source retirement and present-inventory audit are implemented.
+Guard-backed source retirement, permanent source closure (migration 0004) and present-inventory audit are implemented.
+See [current lifecycle and restore contract](../../docs/source-lifecycle-20260927.md) and [operator upgrade](../../docs/source-lifecycle-upgrade-runbook.md).
 See [current acceptance and limitations](../../docs/backend-completion-acceptance-20260924.md).
 Legacy objects without authoritative creation proof remain protected.
 
@@ -45,10 +46,10 @@ plus source-constrained guard permissions, and a durable installation UUID on ev
 request. Read-only/revoked tokens cannot mutate; no generic delete endpoint exists.
 The private Sync client requires verified HTTPS, forbids redirects and never retries
 a write automatically. It is now connected to a separately isolated production retirement worker; see
-`docs/source-retirement-integration.md`. Remaining
-product work includes trustworthy legacy claims,
-orphan reconciliation, complete provider/re-registration/upgrade gates and historical
-claim migration. Sync Admin confirmation, revision/generation fencing, shared lock,
+`docs/source-retirement-integration.md`. Central historical reconciliation and
+new-generation registration are covered by the current lifecycle gates. Historical
+objects without independent creation evidence are deliberately not converted into
+claims; their ownership remains an operator evidence requirement. Sync Admin confirmation, revision/generation fencing, shared lock,
 source/run checks and durable receipts are integrated. Only the new retirement worker
 has the approved NetBox mount/egress; lifecycle remains DB-only and broker networkless.
 Whole-source retirement has a 30-second budget, 10-second statements, 2-second lock
@@ -66,7 +67,7 @@ trigger refusal. `netbox_guard_generate_migration.py`: no missing migrations.
 
 `run_netbox_guard_backup.py` is an opt-in operator harness against the verified
 isolated networkless PostgreSQL fixture. It creates a separate template copy,
-clears ONLY its four guard tables, then uses real pg_dump/pg_restore for those
+clears ONLY its five journal/closure tables, then uses real pg_dump/pg_restore for those
 journals. The restored receipt returns without another mutation; remaining owned
 inventory and claims are unchanged. This is **journal recovery against preserved
 NetBox state**, not a passing full-NetBox backup/restore test.
@@ -102,7 +103,7 @@ redirect refusal, bounded response, TLS and wrong namespace/nonce.
 Protocol regression also passed same-cluster IP reassignment to a manual NIC and
 malformed parent identity refusal. Matching placement alone does not grant ownership.
 The guard journal backup test passed again after 0002, as did migration completeness.
-The journal-only dump deliberately includes the four creation/retirement tables;
+The journal-only dump deliberately includes creation/retirement and source-closure tables;
 the preserved template DB retains its namespace. This still does not establish the
 full vanilla NetBox schema restore gate described above.
 
