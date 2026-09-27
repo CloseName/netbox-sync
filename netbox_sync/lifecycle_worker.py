@@ -29,8 +29,10 @@ def main():
     from .retirement_coordinator import RetirementCoordinator
     from .retirement_worker import RetirementClient
     retirement=RetirementCoordinator(store,RetirementClient('/run/netbox-sync-retirement/worker.sock'),broker.remove_owned)
+    from .retirement_continuation import RetirementContinuation
     serve(os.environ.get('NETBOX_SYNC_LIFECYCLE_SOCKET', '/run/netbox-sync-lifecycle/worker.sock'),
-          lambda payload: handle_lifecycle(store, broker, payload, retirement=retirement))
+          lambda payload: handle_lifecycle(store, broker, payload, retirement=retirement),
+          maintenance=RetirementContinuation(retirement))
 
 
 if __name__ == '__main__':

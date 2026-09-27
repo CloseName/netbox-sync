@@ -82,7 +82,7 @@ class Capabilities(GuardView):
     def get(self,request):
         return Response({'protocol':1,'guard_instance':str(GuardIdentity.objects.get(pk=1).identifier),'netbox_version':'4.7.0','atomic_dependency_guard':True,
                          'creation_receipts':True,'retirement_receipts':True,
-                         'source_coordinator_required':True,'source_tree_retirement':True,'source_audit':True,'source_generation_closure':True,
+                         'source_coordinator_required':True,'source_tree_retirement':True,'source_audit':True,'source_generation_closure':True,'source_namespace_state':True,
                          'audit_permission':request.user.has_perm('netbox_guard.audit_retirementintent'),
                          'retire_permission':request.user.has_perm('netbox_guard.retire_retirementintent'),
                          'token_write_enabled':bool(getattr(request.auth,'write_enabled',False))})
@@ -201,3 +201,13 @@ class ArchiveExecute(GuardView):
         body=_body(request,('nonce','digest'))
         receipt=archive_source(request.user,body['nonce'],body['digest'])
         return Response(_public(receipt.intent,receipt))
+
+
+class SourceNamespaceState(GuardView):
+    def get(self, request, source):
+        from ..service import _source
+        _permission(request.user, 'create_creationreceipt')
+        source = _source(source)
+        # Only a non-secret boolean. No claims, names or infrastructure returned.
+        return Response({'source_instance': source,
+                         'closed': SourceClosure.objects.filter(source_instance=source).exists()})

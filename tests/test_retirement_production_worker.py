@@ -23,12 +23,24 @@ def test_real_netbox_receipt_before_tombstone(migration_database,tmp_path):
     registry,engine=migration_database;_upgrade(registry,engine)
     source=replace(sample_source_config(),id=meta['source'],source_instance=meta['source'],source_type='esxi',legacy_identity_owner=False,
         settings={'onboarding_mapping':{'hosts':[{'id':'00000000-0000-0000-0000-ac1f6be2c4da','name':'fixture'}],'references':{'site':{'id':1},'cluster':{'id':meta['cluster']}}}})
+    from netbox_sync.source_config import SourceCredentials,SecretReference
+    from netbox_sync.lifecycle_worker import BrokerCleanup
+    import subprocess,sys
+    key='src-fixture-'+uuid4().hex
+    source=replace(source,credentials=SourceCredentials('fixture',SecretReference('file',key),SecretReference('file',key)))
+    # Real API-UID broker CREATE, generated ephemeral bytes; never argv/env/logs.
+    def api_uid():os.setgroups([]);os.setgid(10001);os.setuid(10001)
+    subprocess.run([sys.executable,'-c',
+        "import secrets,sys;from netbox_sync.api.onboarding_adapters import BrokerSecretStore;BrokerSecretStore('/broker/broker.sock').create(sys.argv[1],secrets.token_urlsafe(32))",key],
+        preexec_fn=api_uid,check=True,capture_output=True,env=dict(os.environ,PYTHONPATH='/app'))
+    assert (Path('/fixture-sources')/key).is_file()
+    cleanup=BrokerCleanup('/broker/broker.sock').remove_owned
     registry.create_source(source)
     store=LifecycleStore(_safe_test_dsn(),registry.schema,str(tmp_path/'apply.lock'))
     history=postgres_run_repository(_safe_test_dsn(),registry.schema)
     run=history.start_run(source.source_instance,'esxi',RunTrigger.MANUAL,'isolated-admin')
     history.finish_run(run.run_id,RunStatus.SUCCEEDED)
-    service=RetirementCoordinator(store,RetirementClient('/worker/worker.sock'),lambda _:pytest.fail('no credential removal requested'))
+    service=RetirementCoordinator(store,RetirementClient('/worker/worker.sock'),cleanup)
     original=store.read(source.source_instance)
     store.remove(source.source_instance,original['revision'],original['display_name'],False,lambda _:pytest.fail('No repeated cleanup'))
     retained_at=store.read(source.source_instance)['removed_at']
@@ -46,26 +58,27 @@ def test_real_netbox_receipt_before_tombstone(migration_database,tmp_path):
     # An ordinary retry reads the REAL NetBox REVIEWED receipt, never deletes.
     assert service.execute(source.source_instance,review['operation_id'],'isolated-admin',review['digest'],original['display_name'],True)['state']=='UNCERTAIN'
     assert store.read(source.source_instance)['removed_at']==retained_at
-    restarted=RetirementCoordinator(store,RetirementClient('/worker/worker.sock'),lambda _:pytest.fail('no credential removal requested'))
+    restarted=RetirementCoordinator(store,RetirementClient('/worker/worker.sock'),cleanup)
     result=restarted.execute(source.source_instance,review['operation_id'],'isolated-admin',review['digest'],original['display_name'],True,resume=True)
     assert result['state']=='FINALIZED'
-    assert store.read(source.source_instance)['retirement']['state']=='FINALIZED'
-    assert not registry.get_by_source_instance(source.source_instance).config.enabled
+    assert result['purged'] is True
+    assert not (Path('/fixture-sources')/key).exists()
+    assert registry.get_by_source_instance(source.source_instance) is None
     assert service.execute(source.source_instance,review['operation_id'],'isolated-admin',review['digest'],original['display_name'],True)==result
-    assert history.get_run(run.run_id).status==RunStatus.SUCCEEDED
+    assert history.get_run(run.run_id) is None
     # A completed archive cannot reopen its namespace. The same hardware may
-    # instead reserve a NEW immutable source ID, retaining old run history.
+    # instead reserve a NEW immutable source ID, with no old run history.
     from netbox_sync.source_recovery import Recovery
     from netbox_sync.source_operations import OperationError
     from netbox_sync.host_registration import HostReservations
     recovery=Recovery(store,RetirementClient('/worker/worker.sock'))
-    with pytest.raises(OperationError,match='SOURCE_ARCHIVED'):
+    with pytest.raises(Exception,match='SOURCE_NOT_FOUND'):
         recovery.describe(source.source_instance,'isolated-admin')
     reservations=HostReservations(registry._connect,registry.schema)
     preview={'provider':'esxi','hosts':[{'id':'00000000-0000-0000-0000-ac1f6be2c4da'}]}
     reservations.check(preview)
     reservations.reserve(preview,source.source_instance+'-new',uuid4(),'isolated-admin')
-    assert history.get_run(run.run_id).status==RunStatus.SUCCEEDED
+    assert history.get_run(run.run_id) is None
     from tests.real_guard_inventory import exercise
     exercise(meta)
     Path('/bridge/done.json').write_text(json.dumps({'passed':True}))

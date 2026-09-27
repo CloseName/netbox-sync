@@ -18,6 +18,12 @@ class AuthStore:
         try:
             with connect(self.dsn, connect_timeout=5) as connection:
                 connection.execute("SET LOCAL lock_timeout='5s'")
+                if payload.get('action') == 'teams.assign':
+                    source = payload.get('source_instance')
+                    if not isinstance(source, str) or not connection.execute(
+                        sql.SQL('SELECT {}(%s)').format(sql.Identifier(self.schema,'source_assignment_allowed')),
+                        (source,)).fetchone()[0]:
+                        raise AuthError('TEAM_INVALID')
                 table = sql.Identifier(self.schema, 'auth_state')
                 row = connection.execute(sql.SQL('SELECT value FROM {} WHERE id=1 FOR UPDATE').format(table)).fetchone()
                 if row is None:

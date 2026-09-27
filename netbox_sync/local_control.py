@@ -48,9 +48,11 @@ def receive(connection, deadline, max_bytes=32768):
     return raw
 
 
-def serve(path, handler, allowed_uid=10001, concurrent=False, additional_uids=()):
+def serve(path, handler, allowed_uid=10001, concurrent=False, additional_uids=(), maintenance=None, maintenance_interval=5):
     import fcntl
     import signal
+    if maintenance is not None and (concurrent or maintenance_interval <= 0):
+        raise ValueError('Maintenance requires a serial server and positive interval')
     if concurrent:
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
     path = Path(path)
@@ -70,6 +72,21 @@ def serve(path, handler, allowed_uid=10001, concurrent=False, additional_uids=()
         os.chown(path, 0, allowed_uid)
         os.chmod(path, 0o660)
         server.listen(16)
+        if maintenance is not None:
+            # Only serial services use this hook. Never fork a multi-threaded
+            # server. Each maintenance operation owns its own DB connections and
+            # the existing cross-process apply lock; HTTP latency must not block
+            # the local status socket.
+            import threading
+            def maintain():
+                while True:
+                    try:
+                        maintenance()
+                    except Exception:
+                        import logging
+                        logging.getLogger(__name__).error('maintenance=deferred code=CONTROL_UNAVAILABLE')
+                    time.sleep(maintenance_interval)
+            threading.Thread(target=maintain, name='control-maintenance', daemon=True).start()
         while True:
             connection, _ = server.accept()
             with connection:

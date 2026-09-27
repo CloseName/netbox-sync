@@ -137,6 +137,9 @@ def _install_boundaries(app, settings, auth_client):
     @app.exception_handler(HostRegistrationConflict)
     async def host_registration_error(request, exc):
         messages = {
+            'HOST_SOURCE_CLOSED':'This source was fully removed. Start a new registration with a new Source ID.',
+            'HOST_INTEGRATION_UPGRADE_REQUIRED':'NetBox Guard must support the source namespace check before registration. Ask the NetBox operator to update the integration.',
+            'HOST_INTEGRATION_UNAVAILABLE':'The NetBox integration check is unavailable. No source registration was started.',
             'HOST_ARCHIVE_RECHECK_REQUIRED':'An archived generation was restored. An administrator must recheck its original Guard receipt before registration.',
             'HOST_SOURCE_ARCHIVE_REQUIRED':'This previous generation requires closure, not identity recovery. Review its retained objects and archive it before a new registration.',
             'HOST_LEGACY_PLACEMENT_PROTECTED': 'This placement contains unverified legacy ownership. Select a separate placement or review the old object identity; isolation does not authorize adoption.',
@@ -654,7 +657,8 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         except AuthError:
             onboarding_service.cancel(token)
             raise
-        return ConnectionResult(onboarding_token=token,preview=preview,suggested_source_instance=request.registration_resume.source_instance if request.registration_resume else request.source_type+'-'+uuid4().hex[:20])
+        from ..registration_namespace import new_source
+        return ConnectionResult(onboarding_token=token,preview=preview,suggested_source_instance=request.registration_resume.source_instance if request.registration_resume else new_source(request.source_type,settings.source_namespace))
 
     from .onboarding_dto import PlacementReviewRequest
 
@@ -679,101 +683,120 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
 
     @router.post('/sources', response_model=SourceDTO, status_code=201)
     def register_source(request: RegistrationRequest, http: Request):
-        from dataclasses import replace
-        mapping={}
-        fingerprint=request.intent_fingerprint()
-        durable_request=request.durable_request()
-        def bind_intent():
-            return onboarding_service.registration_intent(request.command(),request.registration_id,
-                http.state.principal['principal_id'],fingerprint,durable_request)
-        # Reserve before catalog POSTs or filesystem credentials. The actor/nonce
-        # binding survives response loss and cannot be claimed by another request.
-        auth_client.call('receipt.check', session=http.cookies.get(COOKIE), receipt=request.onboarding_token)
-        onboarding_service.reserve_provider_identity(request.command(), request.registration_id,
-                                                      http.state.principal['principal_id'],
-                                                      intent={'fingerprint':fingerprint,'request':durable_request})
-        with onboarding_service.registration_guard(request.command(), request.registration_id,
-                                                    http.state.principal['principal_id']):
-            bind_intent()
-            if request.automatic_placement:
-                from .catalog import call
-                auth_client.call('receipt.check',session=http.cookies.get(COOKIE),receipt=request.onboarding_token)
-                onboarding_service.check_registration(request.command())
-                preview=onboarding_service.preview(request.onboarding_token)
-                if not preview or not request.registration_id:raise CatalogError('SELECTION_REQUIRED')
-                resolved=call(settings.bootstrap_socket,dict(action='resolve-placement',provider=request.source_type,
-                    hosts=preview['hosts'],name=request.name,site_id=(request.references.get('site') or {}).get('id'),
-                    default_site_slug=settings.default_site_slug))
-                selected_site=resolved.get('references',{}).get('site',{})
-                if selected_site.get('slug'):onboarding_service.check_placement(selected_site['slug'],request.name)
-                if resolved['issues']:raise CatalogError('CLUSTER_REVIEW_REQUIRED' if any(i['kind']=='cluster' for i in resolved['issues']) else 'SELECTION_REQUIRED')
-                if request.create_cluster and not resolved['create_cluster']:
-                    # A newly visible matching name is not proof of our previous
-                    # CREATE. Preserve the original intent and require its receipt
-                    # before accepting the resolved object as the target.
+        with onboarding_service.registration_admission():
+            if not onboarding_injected:
+                from ..local_control import request as control_request, ControlError
+                try:
+                    state=control_request(settings.bootstrap_socket,dict(action='namespace-check',source_instance=request.source_instance),timeout=50)['result']
+                except ControlError as exc:
+                    raise HostRegistrationConflict('HOST_INTEGRATION_UPGRADE_REQUIRED' if exc.code=='RETIREMENT_GUARD_CHANGED' else 'HOST_INTEGRATION_UNAVAILABLE') from None
+                if state.get('source_instance')!=request.source_instance or type(state.get('closed')) is not bool:
+                    raise HostRegistrationConflict('HOST_REGISTRATION_INVALID')
+                if state['closed']:raise HostRegistrationConflict('HOST_SOURCE_CLOSED')
+            from dataclasses import replace
+            mapping={}
+            if settings.source_namespace:
+                from ..registration_namespace import belongs
+                if not belongs(request.source_instance, settings.source_namespace):
+                    # Only a persisted actor-bound historical attempt may retain its
+                    # old namespace. New caller-chosen namespaces are not admitted.
+                    outcome=onboarding_service.registration_outcome(request.source_instance,
+                        request.registration_id,http.state.principal['principal_id'])
+                    if outcome.get('identity_status') != 'OUTCOME_UNCERTAIN':
+                        raise HostRegistrationConflict('HOST_REGISTRATION_INVALID')
+            fingerprint=request.intent_fingerprint()
+            durable_request=request.durable_request()
+            def bind_intent():
+                return onboarding_service.registration_intent(request.command(),request.registration_id,
+                    http.state.principal['principal_id'],fingerprint,durable_request)
+            # Reserve before catalog POSTs or filesystem credentials. The actor/nonce
+            # binding survives response loss and cannot be claimed by another request.
+            auth_client.call('receipt.check', session=http.cookies.get(COOKIE), receipt=request.onboarding_token)
+            onboarding_service.reserve_provider_identity(request.command(), request.registration_id,
+                                                          http.state.principal['principal_id'],
+                                                          intent={'fingerprint':fingerprint,'request':durable_request})
+            with onboarding_service.registration_guard(request.command(), request.registration_id,
+                                                        http.state.principal['principal_id']):
+                bind_intent()
+                if request.automatic_placement:
+                    from .catalog import call
+                    auth_client.call('receipt.check',session=http.cookies.get(COOKIE),receipt=request.onboarding_token)
+                    onboarding_service.check_registration(request.command())
+                    preview=onboarding_service.preview(request.onboarding_token)
+                    if not preview or not request.registration_id:raise CatalogError('SELECTION_REQUIRED')
+                    resolved=call(settings.bootstrap_socket,dict(action='resolve-placement',provider=request.source_type,
+                        hosts=preview['hosts'],name=request.name,site_id=(request.references.get('site') or {}).get('id'),
+                        default_site_slug=settings.default_site_slug))
+                    selected_site=resolved.get('references',{}).get('site',{})
+                    if selected_site.get('slug'):onboarding_service.check_placement(selected_site['slug'],request.name)
+                    if resolved['issues']:raise CatalogError('CLUSTER_REVIEW_REQUIRED' if any(i['kind']=='cluster' for i in resolved['issues']) else 'SELECTION_REQUIRED')
+                    if request.create_cluster and not resolved['create_cluster']:
+                        # A newly visible matching name is not proof of our previous
+                        # CREATE. Preserve the original intent and require its receipt
+                        # before accepting the resolved object as the target.
+                        from uuid import UUID, uuid5
+                        from .catalog import create_call
+                        bind_intent()
+                        operation_id=str(uuid5(UUID('b6c311eb-0d55-45af-80a5-b949a20bfe47'),
+                            http.state.principal['principal_id']+':'+request.source_instance+':'+str(request.registration_id)))
+                        outcome=create_call(settings.bootstrap_socket,dict(action='catalog-reconcile',operation_id=operation_id))
+                        if (outcome.get('status')!='CREATED'
+                                or not isinstance(outcome.get('item'),dict)
+                                or outcome['item'].get('id')!=(resolved['references'].get('cluster') or {}).get('id')):
+                            raise OnboardingError(ErrorCode.REGISTRATION_UNCERTAIN)
+                    request=request.model_copy(update={'references':resolved['references'],'host_types':resolved['host_types'],
+                        'create_cluster':resolved['create_cluster'],'cluster_name':request.name})
+                if request.create_cluster:
+                    # Authorize the exact receipt before starting any optional remote write.
                     from uuid import UUID, uuid5
                     from .catalog import create_call
-                    bind_intent()
+                    auth_client.call('receipt.check', session=http.cookies.get(COOKIE), receipt=request.onboarding_token)
+                    onboarding_service.check_registration(request.command())
+                    pending=catalog_validate(settings.bootstrap_socket, request.references, request.host_types,
+                        onboarding_service.preview(request.onboarding_token), pending_cluster=True)
                     operation_id=str(uuid5(UUID('b6c311eb-0d55-45af-80a5-b949a20bfe47'),
                         http.state.principal['principal_id']+':'+request.source_instance+':'+str(request.registration_id)))
-                    outcome=create_call(settings.bootstrap_socket,dict(action='catalog-reconcile',operation_id=operation_id))
-                    if (outcome.get('status')!='CREATED'
-                            or not isinstance(outcome.get('item'),dict)
-                            or outcome['item'].get('id')!=(resolved['references'].get('cluster') or {}).get('id')):
+                    bind_intent()
+                    try:
+                        outcome=create_call(settings.bootstrap_socket, dict(action='registration-cluster',
+                            operation_id=operation_id, name=request.name, source_instance=request.source_instance,
+                            site_id=pending['references']['site']['id'],
+                            cluster_type_id=pending['references']['cluster_type']['id']))
+                    except CatalogError as exc:
+                        if exc.code=='UNAVAILABLE':
+                            raise OnboardingError(ErrorCode.REGISTRATION_UNCERTAIN) from None
+                        raise
+                    if outcome.get('status')=='UNCERTAIN':
                         raise OnboardingError(ErrorCode.REGISTRATION_UNCERTAIN)
-                request=request.model_copy(update={'references':resolved['references'],'host_types':resolved['host_types'],
-                    'create_cluster':resolved['create_cluster'],'cluster_name':request.name})
-            if request.create_cluster:
-                # Authorize the exact receipt before starting any optional remote write.
-                from uuid import UUID, uuid5
-                from .catalog import create_call
-                auth_client.call('receipt.check', session=http.cookies.get(COOKIE), receipt=request.onboarding_token)
-                onboarding_service.check_registration(request.command())
-                pending=catalog_validate(settings.bootstrap_socket, request.references, request.host_types,
-                    onboarding_service.preview(request.onboarding_token), pending_cluster=True)
-                operation_id=str(uuid5(UUID('b6c311eb-0d55-45af-80a5-b949a20bfe47'),
-                    http.state.principal['principal_id']+':'+request.source_instance+':'+str(request.registration_id)))
-                bind_intent()
+                    if outcome.get('status')=='REFUSED':
+                        raise CatalogError(outcome.get('error','SELECTION_REQUIRED'))
+                    if outcome.get('status')!='CREATED' or not outcome.get('item'):
+                        raise CatalogError('CLUSTER_REVIEW_REQUIRED')
+                    request=request.model_copy(update={'references':{**pending['references'],'cluster':outcome['item']}})
                 try:
-                    outcome=create_call(settings.bootstrap_socket, dict(action='registration-cluster',
-                        operation_id=operation_id, name=request.name, source_instance=request.source_instance,
-                        site_id=pending['references']['site']['id'],
-                        cluster_type_id=pending['references']['cluster_type']['id']))
-                except CatalogError as exc:
-                    if exc.code=='UNAVAILABLE':
-                        raise OnboardingError(ErrorCode.REGISTRATION_UNCERTAIN) from None
+                    if request.references or request.host_types or onboarding_service.preview(request.onboarding_token):
+                        mapping=catalog_validate(settings.bootstrap_socket,request.references,request.host_types,onboarding_service.preview(request.onboarding_token),require_empty_cluster=True)
+                        refs=mapping['references'];types=mapping['host_types']
+                        if refs['cluster']['name']!=request.name:raise CatalogError('CLUSTER_REVIEW_REQUIRED')
+                        request=request.model_copy(update={'site_slug':refs['site']['slug'],'cluster_name':refs['cluster']['name'],
+                            'platform_slug':refs['platform']['slug'],'device_role_slug':refs['device_role']['slug'],
+                            'cluster_type_slug':refs['cluster_type']['slug'],'device_type_slug':next(iter(types.values()))['slug']})
+                    elif not onboarding_injected:
+                        raise CatalogError('SELECTION_REQUIRED')
+                    mapping['ip_conflict_policy']='observe'
+                    registration=bind_intent()
+                    auth_client.call('receipt.consume', session=http.cookies.get(COOKIE),
+                                     receipt=request.onboarding_token, destination=request.address, provider=request.source_type)
+                    onboarding_service.register(replace(request.command(),mapping=mapping),registration=registration)
+                    return SourceDTO.from_view(source_view({
+                        **request.model_dump(), 'enabled': True, 'sync_enabled': False, 'legacy_identity_owner': False,
+                    }))
+                except Exception:
+                    if request.create_cluster:
+                        # The durable catalog journal records the created cluster. Never
+                        # delete it on registry/secret/receipt failure or claim no writes.
+                        raise OnboardingError(ErrorCode.REGISTRATION_CLUSTER_RETAINED) from None
                     raise
-                if outcome.get('status')=='UNCERTAIN':
-                    raise OnboardingError(ErrorCode.REGISTRATION_UNCERTAIN)
-                if outcome.get('status')=='REFUSED':
-                    raise CatalogError(outcome.get('error','SELECTION_REQUIRED'))
-                if outcome.get('status')!='CREATED' or not outcome.get('item'):
-                    raise CatalogError('CLUSTER_REVIEW_REQUIRED')
-                request=request.model_copy(update={'references':{**pending['references'],'cluster':outcome['item']}})
-            try:
-                if request.references or request.host_types or onboarding_service.preview(request.onboarding_token):
-                    mapping=catalog_validate(settings.bootstrap_socket,request.references,request.host_types,onboarding_service.preview(request.onboarding_token),require_empty_cluster=True)
-                    refs=mapping['references'];types=mapping['host_types']
-                    if refs['cluster']['name']!=request.name:raise CatalogError('CLUSTER_REVIEW_REQUIRED')
-                    request=request.model_copy(update={'site_slug':refs['site']['slug'],'cluster_name':refs['cluster']['name'],
-                        'platform_slug':refs['platform']['slug'],'device_role_slug':refs['device_role']['slug'],
-                        'cluster_type_slug':refs['cluster_type']['slug'],'device_type_slug':next(iter(types.values()))['slug']})
-                elif not onboarding_injected:
-                    raise CatalogError('SELECTION_REQUIRED')
-                mapping['ip_conflict_policy']='observe'
-                registration=bind_intent()
-                auth_client.call('receipt.consume', session=http.cookies.get(COOKIE),
-                                 receipt=request.onboarding_token, destination=request.address, provider=request.source_type)
-                onboarding_service.register(replace(request.command(),mapping=mapping),registration=registration)
-                return SourceDTO.from_view(source_view({
-                    **request.model_dump(), 'enabled': True, 'sync_enabled': False, 'legacy_identity_owner': False,
-                }))
-            except Exception:
-                if request.create_cluster:
-                    # The durable catalog journal records the created cluster. Never
-                    # delete it on registry/secret/receipt failure or claim no writes.
-                    raise OnboardingError(ErrorCode.REGISTRATION_CLUSTER_RETAINED) from None
-                raise
 
     @router.get('/registration-attempts')
     def pending_registrations(http: Request):

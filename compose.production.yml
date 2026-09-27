@@ -169,7 +169,9 @@ services:
       - ${NETBOX_SYNC_APPLY_LOCK_DIR:-/run/netbox-sync}:/run/netbox-sync-lock
     restart: unless-stopped
 
+  # Compatibility entrypoint for isolated protocol checks; not a permanent service.
   netbox-sync-retirement-worker:
+    profiles: [legacy-workers]
     container_name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}-retirement-worker
     <<: *app
     user: "0:0"
@@ -190,18 +192,28 @@ services:
     <<: *app
     environment:
       NETBOX_SYNC_GUARD_INSTANCE: ${NETBOX_SYNC_GUARD_INSTANCE:-}
+      NETBOX_SYNC_NETBOX_CONFIG_FILE: /var/lib/netbox-sync/netbox/bootstrap.json
     user: "0:0"
-    command: [python, -m, netbox_sync.bootstrap_worker]
+    command: [python, -m, netbox_sync.worker_supervisor, netbox]
     networks: [netbox-sync-egress]
     cap_add: [SETUID, SETGID, CHOWN, KILL]
     volumes:
       - ${NETBOX_SYNC_CA_DIR:-./deploy/example-secrets/ca}:/run/netbox-sync-ca:ro
       - netbox-sync-bootstrap-socket:/run/netbox-sync-bootstrap
+      - netbox-sync-retirement-socket:/run/netbox-sync-retirement
       - ${NETBOX_SYNC_APPLY_LOCK_DIR:-/run/netbox-sync}:/run/netbox-sync-lock
       - ${NETBOX_SYNC_NETBOX_SECRET_DIR:-./deploy/example-secrets/netbox}:/var/lib/netbox-sync/netbox
+    init: true
+    stop_grace_period: 10s
+    healthcheck:
+      test: [CMD, python, -m, netbox_sync.worker_supervisor, netbox, --health]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   netbox-sync-discovery-worker:
+    profiles: [legacy-workers]
     container_name: ${NETBOX_SYNC_COMPOSE_PROJECT:-netbox-sync}-discovery-worker
     <<: *app
     user: "0:0"
@@ -222,16 +234,26 @@ services:
     environment:
       NETBOX_SYNC_GUARD_INSTANCE: ${NETBOX_SYNC_GUARD_INSTANCE:-}
     user: "0:0"
-    command: [python, -m, netbox_sync.apply_worker, --socket, /run/netbox-sync-apply/worker.sock, --secret-root, /run/secrets/netbox-sync, --source-secret-root, /run/secrets/netbox-sync-sources, --netbox-token-file, /run/secrets/netbox/apply-token, --lock-path, /run/netbox-sync-lock/apply.lock, --api-uid, "10001", --child-uid, "10001", --child-gid, "10001"]
-    env_file: ${NETBOX_SYNC_CONFIG_DIR:-./deploy/examples}/apply.env
+    command: [python, -m, netbox_sync.worker_supervisor, sync]
+    env_file:
+      - ${NETBOX_SYNC_CONFIG_DIR:-./deploy/examples}/discovery.env
+      - ${NETBOX_SYNC_CONFIG_DIR:-./deploy/examples}/apply.env
     volumes:
       - ${NETBOX_SYNC_CA_DIR:-./deploy/example-secrets/ca}:/run/netbox-sync-ca:ro
       - netbox-sync-apply-socket:/run/netbox-sync-apply
+      - netbox-sync-discovery-socket:/run/netbox-sync-discovery
       - ${NETBOX_SYNC_APPLY_LOCK_DIR:-/run/netbox-sync}:/run/netbox-sync-lock
       - ${NETBOX_SYNC_SOURCE_SECRET_DIR:-./deploy/example-secrets/sources}:/run/secrets/netbox-sync-sources:ro
       - ${NETBOX_SYNC_NETBOX_SECRET_DIR:-./deploy/example-secrets/netbox}:/run/secrets/netbox:ro
     networks: [netbox-sync-db, netbox-sync-egress]
     cap_add: [SETUID, SETGID, CHOWN, KILL]
+    init: true
+    stop_grace_period: 10s
+    healthcheck:
+      test: [CMD, python, -m, netbox_sync.worker_supervisor, sync, --health]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   netbox-sync-schedule-worker:

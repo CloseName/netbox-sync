@@ -59,7 +59,7 @@ def test_existing_populated_registry_is_preserved(migration_database):
         marker = sa.Table('alembic_version', sa.MetaData(), schema=registry.schema,
                           autoload_with=connection)
         assert connection.execute(sa.select(marker.c.version_num)).scalar_one() == (
-            '0013_source_archives')
+            '0014_source_purge')
         inspector = sa.inspect(connection)
         assert inspector.has_table('sync_runs', schema=registry.schema)
         assert inspector.get_foreign_keys('sync_runs', schema=registry.schema) == []
@@ -138,7 +138,7 @@ def test_0012_history_upgrade_never_invents_archive_proof(migration_database):
         tombstone=c.execute(sql.SQL('SELECT * FROM {}').format(table('source_tombstones'))).fetchall()
     _upgrade(registry,engine);_upgrade(registry,engine)
     with registry._connect() as c:
-        assert c.execute(sql.SQL('SELECT * FROM {}').format(table('source_retirements'))).fetchall()==[{**r,'superseded_by':None} for r in previous]
+        assert c.execute(sql.SQL('SELECT * FROM {}').format(table('source_retirements'))).fetchall()==[{**r,'superseded_by':None,'local_cleanup_verified':False} for r in previous]
         assert c.execute(sql.SQL('SELECT * FROM {}').format(table('source_tombstones'))).fetchall()==tombstone
         assert c.execute(sql.SQL('SELECT count(*) FROM {}').format(table('source_archives'))).fetchone()['count']==0
         assert c.execute(sql.SQL('SELECT released_at FROM {}').format(table('host_reservations'))).fetchone()['released_at'] is None

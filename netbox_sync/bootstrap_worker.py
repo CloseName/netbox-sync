@@ -39,7 +39,12 @@ class BootstrapControl:
         self.store, self.lock_path, self.probe = store, lock_path, probe
 
     def __call__(self, payload):
+        if payload == {'action':'health'}:return {'status':'ok'}
         action = payload.get('action')
+        if action == 'namespace-check' and set(payload)=={'action','source_instance'}:
+            from .retirement_worker import handle
+            from uuid import uuid4
+            return handle(dict(action='namespace',operation_id=str(uuid4()),source_instance=payload['source_instance']))['result']
         if action == 'registration-cluster':
             from .catalog_creation import CatalogCreation
             from .bootstrap_probe import ProbeError

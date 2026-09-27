@@ -244,7 +244,12 @@ try:
         fixture_read=ObjectPermission.objects.create(name=tag+'-catalog',actions=['view'])
         fixture_read.object_types.set([ContentType.objects.get_for_model(model) for model in (CustomField,Platform,ClusterType,Site,Manufacturer,DeviceType,DeviceRole,VRF)])
         fixture_read.users.add(user)
-        cap.constraints={'source_instance__in':[source,source+'-esxi-0',source+'-esxi-1',source+'-esxi-2',source+'-proxmox-3']};cap.save()
+        cap.constraints={'source_instance__startswith':source};cap.save()
+        # One bounded fixture installation prefix admits future source IDs.
+        # A different namespace still cannot create a claim or infrastructure.
+        denied=post('objects/create/',{'nonce':str(uuid4()),'source_instance':'outside-'+source,'resource':'cluster','cluster_id':None,'data':{'name':tag+'-denied','type':kind.pk}})
+        assert denied.status_code==403
+        assert not Cluster.objects.filter(name=tag+'-denied').exists()
         helper=runpy.run_path('/app/tests/netbox_worker_fixture.py')
         helper['exercise'](context,get_wsgi_application(),certfile,source,cluster,capability['guard_instance'],headers[0]['Authorization'].split(' ',1)[1],url.split('/api/')[0],tag,[v.pk for v in fixture_vrfs])
     elif os.environ.get('NETBOX_SYNC_GUARD_TREE')=='1':

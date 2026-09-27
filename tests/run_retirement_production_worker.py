@@ -19,7 +19,7 @@ assert info['HostConfig']['NetworkMode']=='none'
 project='netbox-sync-retirement-'+uuid4().hex[:12]
 label='netbox-sync.task='+project
 network=project+'-network';volume=project+'-fixture'
-fixture=project+'-netbox';proxy=project+'-relay';worker=project+'-retirement-worker'
+fixture=project+'-netbox';proxy=project+'-relay';worker=project+'-bootstrap-worker'
 created=[];fixture_ready=False
 
 def owned_remove(kind,name):
@@ -59,10 +59,14 @@ try:
         '--entrypoint','python',os.environ.get('NETBOX_SYNC_REVIEW_IMAGE','netbox-sync-retirement:20260923'),'-B','/relay.py')
     created.append(('container',proxy))
     mounts=[{'type':'volume','source':'retirement-fixture','target':target,'read_only':readonly,'volume':{'subpath':subpath}}
-            for subpath,target,readonly in [('worker','/run/netbox-sync-retirement',False),('config','/run/secrets/netbox',True),('ca','/run/netbox-sync-ca',True)]]
+            for subpath,target,readonly in [('worker','/run/netbox-sync-retirement',False),('bootstrap','/run/netbox-sync-bootstrap',False),('lock','/run/netbox-sync-lock',False),('config','/var/lib/netbox-sync/netbox',False),('ca','/run/netbox-sync-ca',True)]]
     # JSON is valid YAML; the explicit !override is necessary to replace only
     # fixture paths, while retaining the actual production security/command.
-    override='services:\n  netbox-sync-retirement-worker:\n    labels: '+json.dumps({'netbox-sync.task':project})+'\n    volumes: !override '+json.dumps(mounts)+'\n'
+    override='services:\n  netbox-sync-bootstrap-worker:\n    labels: '+json.dumps({'netbox-sync.task':project})+'\n    volumes: !override '+json.dumps(mounts)+'\n'
+    broker_mounts=[{'type':'volume','source':'retirement-fixture','target':target,'volume':{'subpath':subpath}}
+        for subpath,target in [('broker','/run/netbox-sync-broker'),('auth-socket','/run/netbox-sync-auth-secrets'),
+                              ('source-secrets','/var/lib/netbox-sync/source-secrets'),('auth-secrets','/var/lib/netbox-sync/auth-secrets')]]
+    override+='  netbox-sync-secret-broker:\n    labels: '+json.dumps({'netbox-sync.task':project})+'\n    volumes: !override '+json.dumps(broker_mounts)+'\n'
     override+='networks:\n  netbox-sync-egress: '+json.dumps({'external':True,'name':network})+'\n'
     override+='volumes:\n  retirement-fixture: '+json.dumps({'external':True,'name':volume})+'\n'
     with tempfile.TemporaryDirectory(prefix=project) as directory:
@@ -70,14 +74,17 @@ try:
         env=dict(os.environ,NETBOX_SYNC_COMPOSE_PROJECT=project,NETBOX_SYNC_IMAGE=os.environ.get('NETBOX_SYNC_REVIEW_IMAGE','netbox-sync-retirement:20260923'),
                  NETBOX_SYNC_GUARD_INSTANCE=meta['guard_instance'])
         compose=['compose','--project-name',project,'-f',str(root/'compose.production.yml'),'-f',str(path)]
-        model=json.loads(docker(*compose,'config','--format','json',env=env).stdout)['services']['netbox-sync-retirement-worker']
-        assert model['command']==['python','-m','netbox_sync.retirement_worker']
-        assert model['read_only'] and model['cap_drop']==['ALL'] and model['cap_add']==['CHOWN']
+        model=json.loads(docker(*compose,'config','--format','json',env=env).stdout)['services']['netbox-sync-bootstrap-worker']
+        assert model['command']==['python','-m','netbox_sync.worker_supervisor','netbox']
+        assert model['read_only'] and model['cap_drop']==['ALL'] and set(model['cap_add'])=={'CHOWN','SETUID','SETGID','KILL'}
         assert not model.get('ports') and set(model['networks'])=={'netbox-sync-egress'}
         created.append(('container',worker))
-        docker(*compose,'up','-d','--no-deps','netbox-sync-retirement-worker',env=env)
+        created.append(('container',project+'-secret-broker'))
+        docker(*compose,'up','-d','--no-deps','netbox-sync-bootstrap-worker','netbox-sync-secret-broker',env=env)
+        broker_info=json.loads(docker('inspect',project+'-secret-broker').stdout)[0]
+        assert broker_info['HostConfig']['NetworkMode']=='none' and not broker_info['HostConfig']['PortBindings']
     deadline=time.monotonic()+15
-    while docker('exec',fixture,'test','-S','/fixture/worker/worker.sock',check=False).returncode:
+    while (docker('exec',fixture,'test','-S','/fixture/worker/worker.sock',check=False).returncode or docker('exec',fixture,'test','-S','/fixture/broker/broker.sock',check=False).returncode):
         if time.monotonic()>deadline:raise AssertionError('Worker socket unavailable')
         time.sleep(.1)
     actual=json.loads(docker('inspect',worker).stdout)[0]
@@ -88,6 +95,8 @@ try:
         '--mount','type=bind,source='+str(root)+',target=/app,readonly',
         '--mount','type=volume,source='+volume+',target=/bridge,volume-subpath=bridge',
         '--mount','type=volume,source='+volume+',target=/worker,volume-subpath=worker,readonly',
+        '--mount','type=volume,source='+volume+',target=/broker,volume-subpath=broker,readonly',
+        '--mount','type=volume,source='+volume+',target=/fixture-sources,volume-subpath=source-secrets,readonly',
         '--mount','type=volume,source='+volume+',target=/fixture-config,volume-subpath=config,readonly',
         '--mount','type=volume,source='+volume+',target=/fixture-ca,volume-subpath=ca,readonly',
         '-e','PYTHONDONTWRITEBYTECODE=1','-e','NETBOX_SYNC_GUARD_WORKER_TEST=1',
@@ -100,7 +109,7 @@ try:
     assert checked.returncode==0,'Real production worker gate failed'
     result=docker('wait',fixture,timeout=20)
     assert result.stdout.strip()==b'0','NetBox ownership verification failed'
-    print('PASS actual production Compose worker + real NetBox TLS + PostgreSQL lifecycle + retained Run History',flush=True)
+    print('PASS actual production Compose worker + real NetBox TLS + PostgreSQL lifecycle + complete source purge',flush=True)
 finally:
     if fixture_ready:
         docker('exec',fixture,'/opt/netbox/venv/bin/python','-c',

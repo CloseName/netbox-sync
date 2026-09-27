@@ -11,6 +11,7 @@ from ..application.scheduling import stale_threshold
 class ApiSettings:
     """Reuse registry conventions; no source or NetBox credential resolution."""
 
+    source_namespace: str = ''
     default_site_slug: str = ''
     auth_socket: str = '/run/netbox-sync-auth/worker.sock'
     public_url: str = ''
@@ -39,7 +40,12 @@ class ApiSettings:
         if public_url:
             from ..tls_config import public_authority
             public_authority(public_url)
+        namespace=env.get('NETBOX_SYNC_SOURCE_NAMESPACE','')
+        if namespace:
+            from ..registration_namespace import prefix
+            prefix(namespace)
         return cls(
+            source_namespace=namespace,
             public_url=public_url,
             default_site_slug=env.get('NETBOX_SYNC_DEFAULT_SITE_SLUG','').strip(),
             registry_dsn=env.get('NETBOX_SYNC_REGISTRY_DSN', '').strip(),

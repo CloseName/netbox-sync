@@ -247,6 +247,11 @@ class SourceOnboardingService:
         check=getattr(self._registry,'check_legacy_placement',None)
         if check:check(SimpleNamespace(site_slug=site_slug,cluster_name=cluster_name))
 
+    def registration_admission(self):
+        from contextlib import nullcontext
+        guard=getattr(self._registry,'registration_admission',None)
+        return guard() if guard else nullcontext()
+
     @contextmanager
     def registration_guard(self, request, operation_id, actor):
         from contextlib import nullcontext

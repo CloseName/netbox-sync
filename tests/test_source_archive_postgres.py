@@ -30,9 +30,9 @@ def test_closed_generation_releases_only_active_claim_and_fences_old_work(coordi
     reservations.check(preview);reservations.reserve(preview,'new-generation',uuid4(),'operator')
     with service.store.connect() as c:
         rows=c.execute(sql.SQL('SELECT source_instance,released_at FROM {} ORDER BY source_instance').format(service.store.table('host_reservations'))).fetchall()
-        assert len(rows)==2 and sum(r['released_at'] is None for r in rows)==1
-    with pytest.raises(OperationError,match='SOURCE_ARCHIVED'):OperationStore(service.store.dsn,registry.schema).start(source,'PLAN')
-    with pytest.raises(HostRegistrationConflict,match='SOURCE_ARCHIVED'):registry.assert_exclusive_host(registry.get_by_source_instance(source).config)
+        assert rows==[{'source_instance':'new-generation','released_at':None}]
+    with pytest.raises(OperationError,match='SOURCE_NOT_FOUND'):OperationStore(service.store.dsn,registry.schema).start(source,'PLAN')
+    assert registry.get_by_source_instance(source) is None
     with pytest.raises(HostRegistrationConflict):reservations.reserve(preview,'third-generation',uuid4(),'operator')
     assert execute(service,source,current,review)==done and remote.writes==1
 
@@ -123,7 +123,10 @@ def test_released_claim_does_not_authorize_old_attempt_against_new_generation(co
 def test_restored_archive_requires_exact_external_receipt_before_admission(coordinator):
     from netbox_sync.source_archive import recheck
     service,registry,config,remote,_=coordinator;source=config.source_instance;claim(service,source)
-    source,current,review=prepare(coordinator);execute(service,source,current,review)
+    remote=service.remote=ArchiveRemote(source)
+    current=service.store.read(source)
+    review=service.review(source,uuid4(),'admin-fixture',current['revision'],archive=True)
+    execute(service,source,current,review)
     with service.store.connect() as c:
         c.execute(sql.SQL('UPDATE {} SET verified_at=NULL').format(service.store.table('source_archives')))
     reservations=HostReservations(registry._connect,registry.schema);preview={'provider':'esxi','hosts':[{'id':AM}]}
@@ -196,7 +199,8 @@ def test_close_cancels_only_recovery_without_credential_dispatch(coordinator,rec
         assert execute(service,source,current,review)['state']=='FINALIZED'
     with service.store.connect() as c:
         saved=c.execute(sql.SQL('SELECT state FROM {} WHERE source_instance=%s').format(service.store.table('source_recoveries')),(source,)).fetchone()
-        assert saved['state']==('ABANDONED' if recovery_state=='PREPARED' else recovery_state)
+        if recovery_state=='PREPARED':assert saved is None
+        else:assert saved['state']==recovery_state
 
 
 def test_old_retention_does_not_silently_authorize_credential_cleanup(coordinator):

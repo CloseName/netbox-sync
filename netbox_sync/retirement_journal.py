@@ -155,6 +155,11 @@ class RetirementJournal:
             from .source_archive import close_generation
             from .legacy_admission import admission_lock
             admission_lock(connection,self.store.schema)
+            if record['plan']['remote']['manifest'].get('format')==2:
+                if record.get('local_cleanup_verified') is not True:raise LifecycleError('SOURCE_CREDENTIAL_CLEANUP_PENDING')
+                connection.execute(sql.SQL('SELECT {}(%s,%s,%s)').format(self.store.table('purge_retired_source')),
+                    (source,record['operation_id'],actor))
+                return
             close_generation(self.store,connection,record)
             connection.execute(sql.SQL("UPDATE {} SET state='FINALIZED',safe_code=NULL WHERE operation_id=%s").format(
                 self.store.table('source_retirements')),(record['operation_id'],))

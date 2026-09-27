@@ -381,6 +381,21 @@ def _merged_config(path, defaults, replacements=None):
     return ''.join(output)
 
 
+def installation_namespace(root):
+    """Non-secret identity survives upgrades; a clean Sync install gets a new one."""
+    directory = root / 'state'
+    ensure_directory(directory, 0o700)
+    path = directory / 'installation-id'
+    if path.is_symlink():
+        raise InstallError('installation identity must be a regular file')
+    if not path.exists():
+        _atomic_write(path, secrets.token_hex(16) + '\n')
+    value = path.read_text(encoding='ascii').strip()
+    if not re.fullmatch('[a-f0-9]{32}', value):
+        raise InstallError('invalid installation identity')
+    return value
+
+
 def _configuration_values(root, image):
     """Return generated defaults without treating operator settings as secrets."""
     secret_root = root / 'secrets' / 'infrastructure'
@@ -403,6 +418,7 @@ def _configuration_values(root, image):
         },
         'api.env': {
             **common, 'NETBOX_SYNC_REGISTRY_DSN': dsns['web_reader'],
+            'NETBOX_SYNC_SOURCE_NAMESPACE': installation_namespace(root),
             'NETBOX_SYNC_REGISTRATION_DSN': dsns['registration_writer'],
             'NETBOX_SYNC_BROKER_SOCKET': '/run/netbox-sync-broker/broker.sock',
             'NETBOX_SYNC_LIFECYCLE_SOCKET': '/run/netbox-sync-lifecycle/worker.sock',
@@ -558,7 +574,7 @@ def prepare_stack(prepared):
 
 
 def _runtime_services():
-    return ('netbox-sync-auth-worker', 'netbox-sync-probe-worker', 'netbox-sync-proxy', 'netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-lifecycle-worker', 'netbox-sync-retirement-worker', 'netbox-sync-bootstrap-worker', 'netbox-sync-discovery-worker',
+    return ('netbox-sync-auth-worker', 'netbox-sync-probe-worker', 'netbox-sync-proxy', 'netbox-sync-api', 'netbox-sync-secret-broker', 'netbox-sync-lifecycle-worker', 'netbox-sync-bootstrap-worker',
             'netbox-sync-apply-worker', 'netbox-sync-schedule-worker')
 
 
@@ -566,6 +582,11 @@ def start_runtime(prepared, *, overrides=()):
     """Start the prepared application and require every long-running service."""
     run(compose_command(prepared.root, '--profile', 'tools', 'run', '--rm', '--no-deps',
         'netbox-sync-http-init', release=prepared.release, config=prepared.root/'config', overrides=overrides))
+    # Old singleton workers share the same sockets with the new supervised
+    # bundles. Remove only these Compose-owned services before starting bundles.
+    run(compose_command(prepared.root, '--profile', 'legacy-workers', 'rm', '-s', '-f',
+        'netbox-sync-discovery-worker', 'netbox-sync-retirement-worker',
+        release=prepared.release, config=prepared.root/'config', overrides=overrides))
     command = compose_command(prepared.root, 'up', '-d', *_runtime_services(),
                               release=prepared.release, config=prepared.root / 'config',
                               overrides=overrides)

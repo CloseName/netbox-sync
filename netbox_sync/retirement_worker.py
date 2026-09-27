@@ -33,10 +33,15 @@ def child(payload):
         if capabilities.get('source_tree_retirement') is not True:
             raise ControlError('RETIREMENT_UNAVAILABLE')
         value=payload['request']
-        if value['action'] in ('review','execute','archive_review','archive_execute') and capabilities.get('source_generation_closure') is not True:
+        if value['action'] in ('review','execute','archive_review','archive_execute','purge_local') and capabilities.get('source_generation_closure') is not True:
             from .retirement_transport import GuardTransportError
             raise GuardTransportError('GUARD_CAPABILITY_MISMATCH')
-        if value['action']=='audit':
+        if value['action']=='purge_local' and capabilities.get('source_namespace_state') is not True:
+            from .retirement_transport import GuardTransportError
+            raise GuardTransportError('GUARD_CAPABILITY_MISMATCH')
+        if value['action']=='namespace':
+            result=client.namespace_state(value['source_instance'])
+        elif value['action']=='audit':
             from .retirement_transport import GuardTransportError
             if capabilities.get('source_audit') is not True:raise GuardTransportError('GUARD_CAPABILITY_MISMATCH')
             if capabilities.get('audit_permission') is not True:raise GuardTransportError('GUARD_AUDIT_PERMISSION_REQUIRED')
@@ -59,8 +64,10 @@ def handle(value):
     from .source_config import SOURCE_INSTANCE_PATTERN
     from .bootstrap_state import runtime_netbox
     import re
+    if value == {'action':'health'}:return {'status':'ok'}
     action=value.get('action');fields={'action','operation_id'}
-    if action in ('audit','archive_review'):fields|={'source_instance'}
+    if action=='purge_local':fields|={'source_instance','digest'}
+    elif action in ('audit','archive_review','namespace'):fields|={'source_instance'}
     elif action=='review': fields|={'source_instance','cluster_id'}
     elif action in ('execute','archive_execute'): fields|={'digest'}
     elif action!='receipt': raise ControlError('CONTROL_REQUEST_INVALID')
@@ -69,13 +76,13 @@ def handle(value):
         UUID(value['operation_id'])
         instance=str(UUID(os.environ.get('NETBOX_SYNC_GUARD_INSTANCE','')))
     except (ValueError,TypeError): raise ControlError('RETIREMENT_UNAVAILABLE') from None
-    if action in ('audit','archive_review') and (not isinstance(value['source_instance'],str) or not SOURCE_INSTANCE_PATTERN.fullmatch(value['source_instance'])):
+    if action in ('audit','archive_review','namespace','purge_local') and (not isinstance(value['source_instance'],str) or not SOURCE_INSTANCE_PATTERN.fullmatch(value['source_instance'])):
         raise ControlError('CONTROL_REQUEST_INVALID')
     if action=='review' and (not isinstance(value['source_instance'],str)
                             or not SOURCE_INSTANCE_PATTERN.fullmatch(value['source_instance'])
                             or type(value['cluster_id']) is not int or value['cluster_id']<=0):
         raise ControlError('CONTROL_REQUEST_INVALID')
-    if action in ('execute','archive_execute') and (not isinstance(value['digest'],str) or not re.fullmatch('[a-f0-9]{64}',value['digest'])):
+    if action in ('execute','archive_execute','purge_local') and (not isinstance(value['digest'],str) or not re.fullmatch('[a-f0-9]{64}',value['digest'])):
         raise ControlError('CONTROL_REQUEST_INVALID')
     url,token=runtime_netbox(os.environ.get('NETBOX_SYNC_NETBOX_CONFIG_FILE','/run/secrets/netbox/bootstrap.json'),'apply')
     payload={'url':url,'token':token,'instance':instance,'request':value}
@@ -102,6 +109,16 @@ def handle(value):
                                                str(UUID(value['operation_id'])),action,code)
             raise ControlError('RETIREMENT_UNCERTAIN' if result.get('uncertain') else REASONS.get(code,'RETIREMENT_BLOCKED'))
         if set(result)!={'guard_instance','result'}:raise ValueError()
+        if action=='purge_local':
+            receipt=result['result']
+            if (receipt.get('source_instance')!=value['source_instance'] or receipt.get('nonce')!=value['operation_id']
+                    or receipt.get('digest')!=value['digest'] or receipt.get('status')!='SUCCEEDED'
+                    or receipt.get('generation_closed') is not True or receipt.get('manifest',{}).get('format')!=2):
+                raise ControlError('RETIREMENT_CONFLICT')
+            from pathlib import Path
+            from .source_file_purge import purge_source_files
+            root=Path(os.environ.get('NETBOX_SYNC_NETBOX_CONFIG_FILE','/run/secrets/netbox/bootstrap.json')).parent
+            result['result']=purge_source_files(root,value['source_instance'])
         return result
     except ControlError: raise
     except Exception: raise ControlError('RETIREMENT_UNCERTAIN' if action in ('execute','archive_execute') else 'RETIREMENT_UNAVAILABLE') from None

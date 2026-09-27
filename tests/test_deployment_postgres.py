@@ -53,7 +53,7 @@ def test_clean_bootstrap_migrate_grants_and_idempotency(tmp_path):
     with psycopg.connect(deployment.connection_info('bootstrap', env)) as connection:
         with connection.cursor() as cursor:
             cursor.execute("SELECT version_num FROM netbox_sync.alembic_version")
-            assert cursor.fetchone() == ('0013_source_archives',)
+            assert cursor.fetchone() == ('0014_source_purge',)
             cursor.execute("SELECT count(*) FROM netbox_sync.sources")
             assert cursor.fetchone() == (0,)
             cursor.execute("SELECT rolname FROM pg_roles WHERE rolname = ANY(%s)",
@@ -336,3 +336,16 @@ def test_central_lifecycle_review_runs_with_real_lifecycle_role(tmp_path):
     deployment.bootstrap_roles(env);deployment.migrate(env);deployment.apply_grants(env)
     store=LifecycleStore(deployment.connection_info('lifecycle_writer',env),'netbox_sync',str(tmp_path/'apply.lock'))
     assert isinstance(generations(store)['sources'],list)
+
+
+def test_purge_execute_is_exclusive_to_lifecycle_role(tmp_path):
+    env=_environment(tmp_path)
+    deployment.bootstrap_roles(env);deployment.migrate(env);deployment.apply_grants(env)
+    with psycopg.connect(deployment.connection_info('bootstrap',env)) as connection:
+        for key,role in deployment.DATABASE_ROLES.items():
+            permitted=connection.execute('SELECT has_function_privilege(%s,%s,%s)',
+                (role,'netbox_sync.purge_retired_source(text,uuid,text)','EXECUTE')).fetchone()[0]
+            assert permitted == (key in ('owner','lifecycle_writer')), key
+            if key!='owner':
+                assert not connection.execute('SELECT has_table_privilege(%s,%s,%s)',
+                    (role,'netbox_sync.sources','DELETE')).fetchone()[0]

@@ -12,7 +12,7 @@ from wsgiref.simple_server import WSGIServer, WSGIRequestHandler
 def exercise(context,application,certfile,source,cluster,instance,token,direct_url,catalog_slug,vrfs):
     assert Path('/.dockerenv').is_file() and os.environ.get('NETBOX_SYNC_GUARD_WORKER_TEST')=='1'
     root=Path('/fixture')
-    for name,mode in (('bridge',0o755),('worker',0o755),('config',0o700),('ca',0o755)):
+    for name,mode in (('bridge',0o755),('worker',0o755),('bootstrap',0o755),('lock',0o700),('config',0o700),('ca',0o755),('broker',0o755),('auth-socket',0o755),('source-secrets',0o700),('auth-secrets',0o700)):
         (root/name).mkdir(mode=mode)
     ca=root/'ca/netbox-ca.pem';ca.write_bytes(certfile.read_bytes());ca.chmod(0o644)
     config=root/'config/bootstrap.json';config.touch(mode=0o600)

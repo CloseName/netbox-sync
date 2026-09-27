@@ -33,9 +33,47 @@ class RetirementCoordinator:
             return {**current,'revision':self.store.revision(row),
                     'retirement':self.store._retirement_hint(connection,source) or current.get('retirement')}
 
+    def _finish_exclusive_credentials(self,source):
+        """A shared pair must not hide an exclusive sibling left on disk."""
+        import re
+        with self.store.connect() as connection:
+            connection.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
+                ('netbox-sync:'+self.store.schema+':credential-refs',))
+            row=self.journal._row(connection,source)
+            removed=connection.execute(sql.SQL('SELECT credential_state FROM {} WHERE source_instance=%s AND restored_at IS NULL').format(self.store.table('source_tombstones')),(source,)).fetchone()
+            if not removed:raise LifecycleError('RETIREMENT_CONFLICT')
+            if removed['credential_state']=='REMOVED':return
+            others=connection.execute(sql.SQL('SELECT token_id_provider,token_id_key,token_secret_provider,token_secret_key FROM {} WHERE source_instance<>%s').format(self.store.table('sources')),(source,)).fetchall()
+            refs={(item[provider],item[key]) for item in others for provider,key in
+                (('token_id_provider','token_id_key'),('token_secret_provider','token_secret_key'))}
+            exclusive={row[key] for provider,key in (('token_id_provider','token_id_key'),('token_secret_provider','token_secret_key'))
+                if row[provider]=='file' and (row[provider],row[key]) not in refs}
+            if any(not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{15,127}',key or '') for key in exclusive):
+                raise LifecycleError('SOURCE_CREDENTIAL_CLEANUP_PENDING')
+            if exclusive and self.cleanup(sorted(exclusive)) is False:
+                raise LifecycleError('SOURCE_CREDENTIAL_CLEANUP_PENDING')
+
+    def _completed(self,source,operation):
+        # No local tombstone is retained after purge. Exact external generation
+        # proof, never a missing row alone, resolves a lost final response.
+        with self.store.connect() as connection:
+            if connection.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s').format(self.store.table('sources')),(source,)).fetchone():
+                raise LifecycleError('RETIREMENT_CONFLICT')
+        result=self.remote.call('receipt',operation)
+        receipt=result['result']
+        if (receipt.get('nonce')!=str(operation) or receipt.get('source_instance')!=source
+                or receipt.get('status')!='SUCCEEDED' or receipt.get('generation_closed') is not True
+                or receipt.get('manifest',{}).get('format')!=2):
+            raise LifecycleError('RETIREMENT_CONFLICT')
+        return dict(operation_id=str(operation),source_instance=source,state='FINALIZED',
+            digest=receipt['digest'],revision='',guard_instance=str(result['guard_instance']),
+            manifest=receipt['manifest'],mode='FULL_DELETE',safe_code=None,remove_credentials=True,purged=True)
+
     def status(self,source,operation,actor):
         with self.store.connect() as connection:
-            return self.public(self.journal._record(connection,source,operation,actor))
+            exists=connection.execute(sql.SQL('SELECT 1 FROM {} WHERE operation_id=%s').format(self.store.table('source_retirements')),(UUID(str(operation)),)).fetchone()
+            if exists:return self.public(self.journal._record(connection,source,operation,actor))
+        return self._completed(source,operation)
 
     def review(self,source,operation,actor,revision,*,archive=False):
         operation=UUID(str(operation))
@@ -54,6 +92,12 @@ class RetirementCoordinator:
         if type(resume) is not bool:raise LifecycleError('REQUEST_INVALID')
         operation=UUID(str(operation))
         with self.store.lock(self.store.lock_path):
+            with self.store.connect() as connection:
+                exists=connection.execute(sql.SQL('SELECT 1 FROM {} WHERE operation_id=%s').format(self.store.table('source_retirements')),(operation,)).fetchone()
+            if not exists:
+                done=self._completed(source,operation)
+                if done['digest']!=digest or remove_credentials is not True:raise LifecycleError('RETIREMENT_CONFLICT')
+                return done
             with self.store.connect() as connection:
                 prior=self.journal._record(connection,source,operation,actor)
                 if prior['state']=='FINALIZED':
@@ -76,7 +120,7 @@ class RetirementCoordinator:
                     # Do not issue another POST merely because the client retried.
                     result=self.remote.call('archive_execute' if record['plan']['remote']['manifest'].get('format')==4 else 'execute',operation,digest=digest) if dispatch else self.remote.call('receipt',operation)
                     if resume and not dispatch and result['result'].get('status')=='REVIEWED':
-                        # Explicit Admin continuation only. Reuse the original
+                        # Continuation of persisted Admin consent. Reuse the original
                         # immutable intent. NetBox rechecks its complete closure
                         # under the dependency fence and serializes this nonce.
                         expected=record['plan']['remote']
@@ -84,7 +128,7 @@ class RetirementCoordinator:
                                 or result['result']!=expected):
                             raise LifecycleError('RETIREMENT_CONFLICT')
                         logging.getLogger(__name__).info(
-                            'retirement_operation=%s action=explicit_resume',operation)
+                            'retirement_operation=%s action=verified_intent_resume',operation)
                         dispatch=True
                         result=self.remote.call('archive_execute' if record['plan']['remote']['manifest'].get('format')==4 else 'execute',operation,digest=digest)
                     if result['result'].get('status')!='SUCCEEDED':
@@ -95,6 +139,8 @@ class RetirementCoordinator:
                     if dispatch and exc.code in DEFINITE_REFUSALS:self.journal.blocked(source,operation,actor,exc.code)
                     else:self.journal.uncertain(source,operation,actor)
                     return self.status(source,operation,actor)
+            if record['receipt'].get('generation_closed') is not True:
+                raise LifecycleError('RETIREMENT_CONFLICT')
             with self.store.connect() as connection,source_gate(connection,self.store.schema,source,allow_retirement=True):
                 row,_,generation=self.journal._guard(connection,source,record['revision'],record['plan']['source_flags'],archive=record['plan']['remote']['manifest'].get('format')==4)
                 if generation!=record['plan']['removal_generation']:
@@ -115,7 +161,22 @@ class RetirementCoordinator:
                 with self.store.connect() as connection:
                     connection.execute(sql.SQL("UPDATE {} SET safe_code='SOURCE_CREDENTIAL_CLEANUP_PENDING' WHERE operation_id=%s").format(self.store.table('source_retirements')),(operation,))
                 return self.status(source,operation,actor)
-            self.store.cleanup_credentials(source,self.cleanup)
+            credential_state=self.store.cleanup_credentials(source,self.cleanup)
+            if credential_state=='CLEANUP_FAILED':
+                with self.store.connect() as connection:
+                    connection.execute(sql.SQL("UPDATE {} SET safe_code='SOURCE_CREDENTIAL_CLEANUP_PENDING' WHERE operation_id=%s").format(self.store.table('source_retirements')),(operation,))
+                return self.status(source,operation,actor)
+            if record['plan']['remote']['manifest'].get('format')==2:
+                try:self._finish_exclusive_credentials(source)
+                except Exception:
+                    with self.store.connect() as connection:
+                        connection.execute(sql.SQL("UPDATE {} SET safe_code='SOURCE_CREDENTIAL_CLEANUP_PENDING' WHERE operation_id=%s").format(self.store.table('source_retirements')),(operation,))
+                    return self.status(source,operation,actor)
+                cleanup=self.remote.call('purge_local',operation,source_instance=source,digest=digest)
+                if str(cleanup.get('guard_instance'))!=str(record['guard_instance']) or cleanup.get('result')!={'local_cleanup_verified':True}:
+                    raise LifecycleError('RETIREMENT_CONFLICT')
+                with self.store.connect() as connection:
+                    connection.execute(sql.SQL('UPDATE {} SET local_cleanup_verified=true WHERE operation_id=%s').format(self.store.table('source_retirements')),(operation,))
             try:self.journal.finalized(source,operation,actor)
             except LifecycleError as exc:
                 if exc.code!='SOURCE_CREDENTIAL_CLEANUP_PENDING':raise

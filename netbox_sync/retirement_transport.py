@@ -156,6 +156,16 @@ class GuardClient:
             raise GuardTransportError('GUARD_RESPONSE_INVALID')
         return value
 
+    def namespace_state(self, source):
+        if not isinstance(source,str) or not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,127}',source):
+            raise GuardTransportError('GUARD_RESPONSE_INVALID')
+        if self.capabilities().get('source_namespace_state') is not True:
+            raise GuardTransportError('GUARD_CAPABILITY_MISMATCH')
+        value=self._request('GET','sources/'+source+'/state/')
+        if set(value)!={'source_instance','closed'} or value['source_instance']!=source or type(value['closed']) is not bool:
+            raise GuardTransportError('GUARD_RESPONSE_INVALID')
+        return value
+
     def review_source(self, nonce, source, cluster):
         nonce = self._nonce(nonce)
         value = self._request('POST','sources/review/',{

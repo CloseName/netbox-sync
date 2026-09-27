@@ -60,6 +60,21 @@ class RegistrationRegistry:
                             and row['cluster_name']==request.cluster_name):
                         raise HostRegistrationConflict('HOST_LEGACY_PLACEMENT_PROTECTED',row['source_instance'])
 
+    def registration_admission(self):
+        from contextlib import contextmanager
+        from ..host_registration import HostRegistrationConflict
+        @contextmanager
+        def guard():
+            with self._registry()._connect() as connection:
+                connection.autocommit=True
+                key='netbox-sync:'+self._schema+':legacy-admission'
+                acquired=connection.execute('SELECT pg_try_advisory_lock_shared(hashtextextended(%s,0)) AS acquired',(key,)).fetchone()
+                if not (acquired['acquired'] if isinstance(acquired,dict) else acquired[0]):
+                    raise HostRegistrationConflict('HOST_REGISTRATION_RESERVED')
+                try: yield
+                finally: connection.execute('SELECT pg_advisory_unlock_shared(hashtextextended(%s,0))',(key,))
+        return guard()
+
     def registration_guard(self, preview, source, operation_id, actor):
         from contextlib import nullcontext
         if isinstance(preview, dict) and preview.get('provider') == 'esxi':

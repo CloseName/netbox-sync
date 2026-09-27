@@ -113,3 +113,25 @@ def test_inventory_audit_keeps_supported_source_id_length(source):
     guard,session=client(Response(200,value))
     assert guard.audit_source(source,uuid4())==value
     assert session.calls[0][0]=='POST'
+
+
+@pytest.mark.parametrize('closed',[False,True])
+def test_namespace_state_is_read_only_exact_and_capability_gated(monkeypatch,closed):
+    guard,session=client(Response(200,dict(source_instance='source-test',closed=closed)))
+    monkeypatch.setattr(guard,'capabilities',lambda:{'source_namespace_state':True})
+    assert guard.namespace_state('source-test')=={'source_instance':'source-test','closed':closed}
+    assert len(session.calls)==1 and session.calls[0][0]=='GET'
+    monkeypatch.setattr(guard,'capabilities',lambda:{})
+    with pytest.raises(GuardTransportError,match='GUARD_CAPABILITY_MISMATCH'):
+        guard.namespace_state('source-test')
+    assert len(session.calls)==1
+
+
+@pytest.mark.parametrize('value',[{'source_instance':'other','closed':False},
+    {'source_instance':'source-test','closed':'false'}, {'closed':False},
+    {'source_instance':'source-test','closed':False,'extra':'untrusted'}])
+def test_namespace_state_malformed_response_never_admits(monkeypatch,value):
+    guard,_=client(Response(200,value))
+    monkeypatch.setattr(guard,'capabilities',lambda:{'source_namespace_state':True})
+    with pytest.raises(GuardTransportError,match='GUARD_RESPONSE_INVALID'):
+        guard.namespace_state('source-test')

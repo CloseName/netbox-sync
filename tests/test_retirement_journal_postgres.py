@@ -10,12 +10,17 @@ from netbox_sync.retirement_coordinator import RetirementCoordinator
 from netbox_sync.source_operations import OperationStore,OperationError
 from netbox_sync.source_lifecycle import LifecycleError
 from netbox_sync.local_control import ControlError
+from netbox_sync.source_config import SecretReference, SourceCredentials
 
 class Remote:
     def __init__(self,source,cluster=2):
         self.instance=str(uuid4());self.source=source;self.cluster=cluster
         self.writes=0;self.result=None;self.lose=False
     def call(self,action,operation,**values):
+        if action=='purge_local':
+            assert self.result['status']=='SUCCEEDED' and self.result.get('generation_closed') is True
+            assert values=={'source_instance':self.source,'digest':self.result['digest']}
+            return {'guard_instance':self.instance,'result':{'local_cleanup_verified':True}}
         if action=='review':
             self.result={'nonce':str(operation),'source_instance':self.source,'status':'REVIEWED','digest':'a'*64,
                 'manifest':{'format':2,'cluster_id':self.cluster,'objects':[['vm:4','b'*64]],'roots':[['vm',4]]},'deleted':[]}
@@ -28,6 +33,8 @@ class Remote:
 @pytest.fixture
 def coordinator(lifecycle):
     store,registry,source=lifecycle
+    source=replace(source,credentials=SourceCredentials("operator",SecretReference("file","src-id-"+"a"*24),SecretReference("file","src-secret-"+"b"*24)))
+    registry.update_source(source.id,credentials=source.credentials)
     with store.connect() as connection:
         connection.execute(sql.SQL('UPDATE {} SET settings=%s WHERE source_instance=%s').format(store.table('sources')),
             (Jsonb({'onboarding_mapping':{'references':{'site':{'id':1},'cluster':{'id':2}}}}),source.source_instance))
@@ -50,9 +57,9 @@ def test_receipt_before_tombstone_and_idempotent_completion(coordinator):
     assert service.store.read(source)['removed_at'] is None
     done=execute(service,source,current,review)
     assert done['state']=='FINALIZED' and remote.writes==1
-    assert service.store.read(source)['removed_at'] is not None and not cleanups
+    assert registry.get_by_source_instance(source) is None and len(cleanups)==1
     assert execute(service,source,current,review)==done and remote.writes==1
-    assert registry.get_by_source_instance(source) is not None
+    assert registry.get_by_source_instance(source) is None
 
 def test_loss_blocks_other_operations_and_recovers_by_get_after_restart(coordinator):
     service,registry,config,remote,_=coordinator
@@ -171,9 +178,6 @@ def test_retained_source_can_retire_proved_objects_without_reactivation_or_secon
     assert context['removed_at']==tombstone['removed_at'] and context['revision']
     review=service.review(source,uuid4(),'admin-fixture',context['revision'])
     done=execute(service,source,context,review)
-    assert done['state']=='FINALIZED' and remote.writes==1 and not cleanups
-    assert service.store.read(source)['removed_at']==tombstone['removed_at']
-    assert service.store.read(source)['credential_state']=='RETAINED_SHARED_OR_LEGACY'
-    assert service.store.read(source)['archive_mode']=='FULL_DELETE'
-    assert not registry.get_by_source_instance(source).config.enabled
+    assert done['state']=='FINALIZED' and remote.writes==1 and len(cleanups)==1
+    assert registry.get_by_source_instance(source) is None and done['purged']
     assert execute(service,source,context,review)==done and remote.writes==1

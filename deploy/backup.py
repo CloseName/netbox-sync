@@ -31,7 +31,7 @@ RESTORE_BOOTSTRAP_FILE = 'postgres_bootstrap_password_next'
 FORMAT_VERSION = 1
 ALEMBIC_CHAIN = (
     '0001_registry_baseline', '0002_sync_run_history', '0003_netbox_sync_naming',
-    '0004_source_operations', '0005_source_tombstones', '0006_auth_policy', '0007_host_reservations', '0008_registration_intents', '0009_source_identity_proof', '0010_source_retirements', '0011_registration_requests', '0012_run_reconciliation', '0013_source_archives')
+    '0004_source_operations', '0005_source_tombstones', '0006_auth_policy', '0007_host_reservations', '0008_registration_intents', '0009_source_identity_proof', '0010_source_retirements', '0011_registration_requests', '0012_run_reconciliation', '0013_source_archives', '0014_source_purge')
 ALEMBIC_HEAD = ALEMBIC_CHAIN[-1]
 PRODUCT = 'NetBox Sync'
 DATABASE_NAME = 'netbox_sync'

@@ -438,6 +438,12 @@ def apply_grants(environ=None):
                            DATABASE_ROLES['lifecycle_writer'])
             recovery_table=sql.Identifier(schema, 'source_recoveries')
             lifecycle_role=sql.Identifier(DATABASE_ROLES['lifecycle_writer'])
+            cursor.execute(sql.SQL('GRANT EXECUTE ON FUNCTION {}(text,uuid,text) TO {}').format(
+                sql.Identifier(schema,'purge_retired_source'), lifecycle_role))
+            cursor.execute(sql.SQL('GRANT EXECUTE ON FUNCTION {}(text) TO {}').format(
+                sql.Identifier(schema,'source_assignment_allowed'), auth_role))
+            _grant_columns(cursor,'UPDATE',sql.Identifier(schema,'source_retirements'),
+                           ('local_cleanup_verified',),DATABASE_ROLES['lifecycle_writer'])
             _grant_columns(cursor,'SELECT',sql.Identifier(schema,'host_reservations'),('provider','anchor','source_instance'),DATABASE_ROLES['lifecycle_writer'])
             cursor.execute(sql.SQL('GRANT SELECT, INSERT ON {} TO {}').format(recovery_table,lifecycle_role))
             _grant_columns(cursor, 'UPDATE', recovery_table, ('state','finished_at'), DATABASE_ROLES['lifecycle_writer'])
