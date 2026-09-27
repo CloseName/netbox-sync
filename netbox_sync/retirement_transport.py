@@ -58,7 +58,7 @@ class GuardClient:
                     # Remote text is never a diagnostic. Only known, bounded protocol
                     # refusals prove no mutation; 5xx/redirects/connection loss do not.
                     code = value.get('code')
-                    known = {'PERMISSION_DENIED', 'GUARD_INSTANCE_CHANGED', 'REQUEST_CONFLICT',
+                    known = {'SOURCE_NAMESPACE_CLOSED','SOURCE_NAMESPACE_BUSY','PERMISSION_DENIED', 'GUARD_INSTANCE_CHANGED', 'REQUEST_CONFLICT',
                              'OBJECT_INVALID', 'OBJECT_FIELDS_UNSUPPORTED', 'REQUEST_INVALID',
                              'REQUEST_TOO_LARGE', 'OWNERSHIP_CONFLICT', 'PLACEMENT_CHANGED',
                              'CREATION_OWNERSHIP_UNPROVEN', 'DEPENDENCIES_CHANGED',
@@ -173,6 +173,23 @@ class GuardClient:
         value=self._request('POST','sources/execute/',{'nonce':nonce,'digest':digest})
         self._receipt(value,nonce,uncertain=True)
         if value['digest']!=digest or value['status']!='SUCCEEDED' or value['manifest'].get('format')!=2:
+            raise GuardTransportError('GUARD_RESPONSE_INVALID',uncertain=True)
+        return value
+
+    def archive_review(self,nonce,source):
+        nonce=self._nonce(nonce)
+        value=self._request('POST','sources/archive-review/',{'nonce':nonce,'source_instance':source})
+        self._receipt(value,nonce)
+        if value.get('source_instance')!=source or value['manifest'].get('format')!=4:
+            raise GuardTransportError('GUARD_RESPONSE_INVALID')
+        return value
+
+    def archive_execute(self,nonce,digest):
+        nonce=self._nonce(nonce)
+        if not isinstance(digest,str) or not re.fullmatch('[a-f0-9]{64}',digest):raise GuardTransportError('GUARD_DIGEST_INVALID')
+        value=self._request('POST','sources/archive-execute/',{'nonce':nonce,'digest':digest})
+        self._receipt(value,nonce,uncertain=True)
+        if value['digest']!=digest or value['status']!='SUCCEEDED' or value['manifest'].get('format')!=4 or value['deleted']:
             raise GuardTransportError('GUARD_RESPONSE_INVALID',uncertain=True)
         return value
 

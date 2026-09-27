@@ -1,5 +1,6 @@
 """Disposable Linux host scenario: real production API -> isolated probe -> HTTPS/SOAP."""
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -55,8 +56,16 @@ run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
 (fixture / 'server.crt').chmod(0o644)
 (root/'secrets/ca/netbox-ca.pem').write_bytes((fixture/'server.crt').read_bytes())
 (root/'secrets/ca/netbox-ca.pem').chmod(0o644)
+# Choose an unused public-looking fixture range without touching existing networks.
+# The real probe policy intentionally distinguishes this endpoint from private IPs.
+networks = run(['docker','network','ls','-q']).split()
+used = [ipaddress.ip_network(c['Subnet']) for n in json.loads(run(['docker','network','inspect',*networks]))
+        for c in (n.get('IPAM',{}).get('Config') or []) if c.get('Subnet')]
+candidates = [ipaddress.ip_network(f'93.184.{octet}.0/24') for octet in range(216,256)]
+probe_subnet = next((str(n) for n in candidates if not any(n.version==u.version and n.overlaps(u) for u in used)),None)
+if probe_subnet is None: raise RuntimeError('No unused isolated probe fixture subnet')
 overlay = root / 'state/fixture.yml'
-overlay.write_text(json.dumps({'networks':{'netbox-sync-probe-egress':{'ipam':{'config':[{'subnet':'93.184.216.0/24'}]}}},'services': {'netbox-sync-probe-worker': {'volumes': [
+overlay.write_text(json.dumps({'networks':{'netbox-sync-probe-egress':{'ipam':{'config':[{'subnet':probe_subnet}]}}},'services': {'netbox-sync-probe-worker': {'volumes': [
     {'type':'bind','source':str(fixture / 'server.crt'),'target':'/etc/ssl/certs/ca-certificates.crt','read_only':True}]}}}))
 overrides = [root / 'current/compose.external-postgres.yml'] if pgmode == 'external' else []
 command = install.compose_command(root, overrides=(*overrides, overlay))
@@ -336,7 +345,7 @@ if pgmode == 'bundled' and os.environ.get('NETBOX_SYNC_WORKER_FULL_SYNC_TEST') !
     bundle=next((root/'backups').glob('netbox-sync-backup-*'))
     backup_cli(root,'verify',str(bundle))
     summary=json.loads(backup_cli(root,'inspect',str(bundle)))
-    assert summary['source_count']==1 and summary['alembic_revision']=='0012_run_reconciliation'
+    assert summary['source_count']==1 and summary['alembic_revision']=='0013_source_archives'
     assert snapshot()==protected_before and compose('ps','-q','postgres')==db_before
     assert set(compose('ps','--status','running','--services').split())==services_before
     assert request(None,'/api/v1/auth/me','GET')['status']==200

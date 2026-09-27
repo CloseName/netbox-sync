@@ -116,3 +116,19 @@ def test_confirmation_rechecks_generation_and_identity_under_lock(identity_fixtu
         IdentityVerification(store).confirm(config.source_instance,'admin',meta['revision'],meta['discovery_id'],proof)
     with store.connect() as connection:
         assert connection.execute(sql.SQL('SELECT count(*) AS total FROM {}').format(store.table('source_identity_verifications'))).fetchone()['total']==0
+
+
+@pytest.mark.parametrize('verified',[True,False])
+def test_archived_generation_collision_requires_verified_closure(identity_fixture,verified):
+    store,registry,config,meta,proof=identity_fixture
+    other=replace(config,id='closed-source',source_instance='closed-source',enabled=False,
+                  settings={'onboarding_mapping':{'hosts':preview()['hosts']}})
+    registry.create_source(other)
+    with store.connect() as connection:
+        connection.execute(sql.SQL("INSERT INTO {} (source_instance,operation_id,actor_id,mode,guard_instance,receipt,verified_at) VALUES (%s,%s,'admin','FULL_DELETE',%s,'{{}}',CASE WHEN %s THEN clock_timestamp() ELSE NULL END)").format(store.table('source_archives')),
+                           (other.source_instance,uuid4(),uuid4(),verified))
+    if verified:
+        assert IdentityVerification(store).confirm(config.source_instance,'admin',meta['revision'],meta['discovery_id'],proof)['status']=='VERIFIED'
+    else:
+        with pytest.raises(LifecycleError,match='SOURCE_IDENTITY_CONFLICT'):
+            IdentityVerification(store).confirm(config.source_instance,'admin',meta['revision'],meta['discovery_id'],proof)

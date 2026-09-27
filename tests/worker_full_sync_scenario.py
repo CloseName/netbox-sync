@@ -41,7 +41,7 @@ fixture_sql("""INSERT INTO netbox_sync.sources (id,source_instance,name,source_t
  INSERT INTO netbox_sync.source_tombstones(source_instance,display_name,credential_state) VALUES ('legacy-sup','ESXI-1L-SUP','REMOVED');""")
 new_am=dict(source_type='esxi',address='esxi.probe.test',port=8443,verify_ssl=True,username='netbox-sync',secret=secret,preview=True)
 blocked=request(new_am)
-assert blocked['status']==409 and blocked['body']['error']['existing_source']=='legacy-sup',blocked
+assert blocked['status']==200,blocked  # Unknown removed host is not a global admission veto.
 if os.environ.get('NETBOX_SYNC_BROWSER_FULL_SYNC_TEST')=='1':
     browser_request=root.parent/'browser-request.json';browser_done=root.parent/'browser-done.json'
     if browser_done.exists():browser_done.unlink()
@@ -52,15 +52,10 @@ if os.environ.get('NETBOX_SYNC_BROWSER_FULL_SYNC_TEST')=='1':
         time.sleep(.5)
     else:raise AssertionError('Legacy browser deadline')
     result=json.loads(browser_done.read_text());browser_done.unlink();assert result['ok'],'Legacy production browser'
-else:
-    old=request({},'/api/v1/sources/legacy-sup/legacy-review');assert old['status']==200,old
-    decision=dict(operation=str(uuid.uuid4()),revision=old['body']['revision'],decision='ISOLATE',reason='Decommissioned fixture, ownership unproved',confirmed=True)
-    saved=request(decision,'/api/v1/sources/legacy-sup/legacy-confirm');assert saved['status']==200,saved
-    assert request(decision,'/api/v1/sources/legacy-sup/legacy-confirm')==saved
-assert fixture_sql("SELECT count(*) FROM netbox_sync.source_identity_verifications WHERE source_instance='legacy-sup' AND proof->>'decision'='ISOLATE'")=='1'
+assert fixture_sql("SELECT count(*) FROM netbox_sync.source_identity_verifications WHERE source_instance='legacy-sup' AND proof->>'decision'='ISOLATE'")=='0'
 assert fixture_sql("SELECT count(*) FROM netbox_sync.source_tombstones WHERE source_instance='legacy-sup' AND restored_at IS NULL")=='1'
 assert fixture_sql("SELECT count(*) FROM netbox_sync.sources WHERE source_instance='legacy-sup' AND NOT enabled AND NOT sync_enabled AND settings->'provider_identity' IS NULL")=='1'
-print('PASS production API legacy decision: no UUID assignment, retained tombstone, single durable decision; continue AM',flush=True)
+print('PASS production API unknown retained history is protected without a global admission veto; no fabricated UUID or isolation decision',flush=True)
 
 expected_devices=expected_vms=0
 for provider in (('esxi','proxmox') if pgmode=='bundled' else ('proxmox','esxi')):

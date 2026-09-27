@@ -8,7 +8,7 @@ from netbox_sync.api.auth import COOKIE
 from tests.test_directory_auth import configured
 
 @pytest.mark.parametrize('role', ['viewer','operator','admin'])
-@pytest.mark.parametrize('route', ['retirement-context','retirement-review','retirement-status','retire','retirement-resume'])
+@pytest.mark.parametrize('route', ['archive-check','archive-review','retirement-context','retirement-review','retirement-status','retire','retirement-resume'])
 def test_retirement_is_admin_only(monkeypatch,role,route):
     service,_,session=configured(role)
     class Auth:
@@ -16,15 +16,15 @@ def test_retirement_is_admin_only(monkeypatch,role,route):
     calls=[]
     def control(_path,payload,**options):
         calls.append(payload)
-        expected={'retirement-context':'context','retire':'execute','retirement-resume':'resume','retirement-review':'review','retirement-status':'status'}
+        expected={'archive-check':'archive_check','archive-review':'archive_review','retirement-context':'context','retire':'execute','retirement-resume':'resume','retirement-review':'review','retirement-status':'status'}
         assert payload['action']=='retirement_'+expected[route]
         assert options=={'timeout':60,'response_limit':2*1024*1024}
         return {'result':{'source_instance':payload['source_instance'],'state':'READY'}}
     # Keep the real API -> LifecycleClient validation, including action allowlist.
     monkeypatch.setattr('netbox_sync.local_control.request',control)
     app=create_app(ApiSettings(bootstrap_socket=''),auth_client=Auth())
-    payload={} if route=='retirement-context' else {'operation_id':str(uuid4())}
-    if route=='retirement-review':payload['revision']='a'*64
+    payload={} if route in ('retirement-context','archive-check') else {'operation_id':str(uuid4())}
+    if route in ('retirement-review','archive-review'):payload['revision']='a'*64
     if route in {'retire','retirement-resume'}:payload.update(digest='b'*64,confirmed=True,confirmed_source='fixture',remove_credentials=False)
     with TestClient(app,base_url='https://localhost:8000') as http:
         http.cookies.set(COOKIE,session)

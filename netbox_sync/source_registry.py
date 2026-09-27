@@ -332,6 +332,10 @@ class SourceRegistry:
         Historical rows without hardware evidence still need explicit review;
         absence of evidence is not used to merge or assign ownership.
         """
+        from .source_archive import archived
+        from .host_registration import HostRegistrationConflict
+        with self._connect() as connection:
+            if archived(connection,self.schema,config.source_instance):raise HostRegistrationConflict('SOURCE_ARCHIVED',config.source_instance)
         if config.source_type != 'esxi':
             return
         from .host_registration import registration_anchor as legacy_anchor, HostRegistrationConflict

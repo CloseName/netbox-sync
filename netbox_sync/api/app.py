@@ -87,6 +87,9 @@ def _install_boundaries(app, settings, auth_client):
     async def lifecycle_error(request, exc):
         messages = {
             'RUN_RECONCILIATION_UNAVAILABLE': (409, 'Run evidence is incomplete or exceeds the bounded review; no baseline decision was recorded'),
+            'SOURCE_ARCHIVED': (409, 'This registration generation is permanently archived. Start a new registration; old operations cannot be reused.'),
+            'SOURCE_ARCHIVE_REVIEW_REQUIRED': (409, 'Review and close the historical generation before a new registration.'),
+            'SOURCE_CREDENTIAL_CLEANUP_PENDING': (409, 'NetBox outcome is confirmed; local credential cleanup is pending. Continue the original operation.'),
             'SOURCE_RETIREMENT_REVIEW_REQUIRED': (409, 'Review the owned NetBox objects before confirming source removal'),
             'SOURCE_RETIREMENT_PENDING': (409, 'Source retirement is awaiting its original receipt; do not start another write'),
             'RETIREMENT_AUTH_FAILED': (403, 'NetBox could not authenticate the integration token. Check expiry, revocation and token restrictions.'),
@@ -134,6 +137,8 @@ def _install_boundaries(app, settings, auth_client):
     @app.exception_handler(HostRegistrationConflict)
     async def host_registration_error(request, exc):
         messages = {
+            'HOST_ARCHIVE_RECHECK_REQUIRED':'An archived generation was restored. An administrator must recheck its original Guard receipt before registration.',
+            'HOST_SOURCE_ARCHIVE_REQUIRED':'This previous generation requires closure, not identity recovery. Review its retained objects and archive it before a new registration.',
             'HOST_LEGACY_PLACEMENT_PROTECTED': 'This placement contains unverified legacy ownership. Select a separate placement or review the old object identity; isolation does not authorize adoption.',
             'HOST_REGISTRY_REVIEW_REQUIRED': 'An existing ESXi source lacks verified hardware identity. Administrator identity review is required before adding a host.',
             'HOST_REGISTRATION_INTENT_CHANGED': 'This attempt already started with different parameters. Restore the original confirmed parameters; do not create another source.',
@@ -145,7 +150,7 @@ def _install_boundaries(app, settings, auth_client):
             'HOST_REGISTRATION_RESERVED': 'An earlier registration reserved this host. Reconcile that attempt before registering again.',
         }
         request.state.error_code = exc.code
-        existing = exc.source_instance if exc.code in {'HOST_ALREADY_REGISTERED','HOST_SOURCE_REMOVED','HOST_REGISTRY_REVIEW_REQUIRED','HOST_LEGACY_PLACEMENT_PROTECTED'} else None
+        existing = exc.source_instance if exc.code in {'HOST_ALREADY_REGISTERED','HOST_SOURCE_REMOVED','HOST_REGISTRY_REVIEW_REQUIRED','HOST_LEGACY_PLACEMENT_PROTECTED','HOST_ARCHIVE_RECHECK_REQUIRED','HOST_SOURCE_ARCHIVE_REQUIRED'} else None
         details = {}
         if getattr(request.state, 'principal', {}).get('role') == 'admin' and exc.conflicts:
             from ..source_config import SOURCE_INSTANCE_PATTERN

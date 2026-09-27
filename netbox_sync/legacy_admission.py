@@ -86,9 +86,9 @@ class LegacyAdmission:
                         raise LifecycleError('SOURCE_RECOVERY_ACTIVE')
                     settings=dict(row['settings'] or {})
                     if decision=='OBSERVE':
-                        others=connection.execute(sql.SQL("SELECT source_instance,settings FROM {} WHERE source_type='esxi' AND source_instance<>%s").format(self.store.table('sources')),(source,)).fetchall()
+                        others=connection.execute(sql.SQL("SELECT s.source_instance,s.settings FROM {} s WHERE s.source_type='esxi' AND s.source_instance<>%s AND NOT EXISTS (SELECT 1 FROM {} a WHERE a.source_instance=s.source_instance AND a.verified_at IS NOT NULL)").format(self.store.table('sources'),self.store.table('source_archives')),(source,)).fetchall()
                         if any(registration_anchor(other['settings'])==anchor for other in others):raise LifecycleError('SOURCE_IDENTITY_CONFLICT')
-                        reserved=connection.execute(sql.SQL('SELECT source_instance FROM {} WHERE provider=%s AND anchor=%s').format(self.store.table('host_reservations')),('esxi',anchor)).fetchone()
+                        reserved=connection.execute(sql.SQL('SELECT source_instance FROM {} WHERE provider=%s AND anchor=%s AND released_at IS NULL').format(self.store.table('host_reservations')),('esxi',anchor)).fetchone()
                         if reserved and reserved['source_instance']!=source:raise LifecycleError('SOURCE_IDENTITY_CONFLICT')
                     settings['legacy_admission']=dict(state='ISOLATED_UNPROVED' if decision=='ISOLATE' else 'OBSERVED_ENDPOINT',operation_id=str(operation),observed_uuid=anchor,physical_identity_proved=False,object_ownership_proved=False)
                     connection.execute(sql.SQL('INSERT INTO {} (operation_id,source_instance,actor_id,revision,anchor,proof) VALUES (%s,%s,%s,%s,%s,%s)').format(self.store.table('source_identity_verifications')),(operation,source,actor,revision,anchor or 'UNPROVED',Jsonb(proof)))

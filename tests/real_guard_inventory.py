@@ -34,7 +34,8 @@ def exercise(meta):
         'site':api.dcim.sites,'cluster_type':api.virtualization.cluster_types,
         'platform':api.dcim.platforms,'device_role':api.dcim.device_roles,'device_type':api.dcim.device_types}.items()}
     assert all(catalogs.values())
-    for provider in ('esxi','proxmox'):
+    for cycle,provider in enumerate(('esxi','esxi','esxi','proxmox')):
+        source=meta['source']+'-'+provider+'-'+str(cycle)
         cluster=guard.create(uuid4(),source,'cluster',None,{'name':slug+'-'+provider,'type':catalogs['cluster_type'].id,'scope_type':'dcim.site','scope_id':catalogs['site'].id})
         base=replace(sample_source_config(),id=source,source_instance=source,source_type=provider,legacy_identity_owner=False,
             target=NetBoxTargetConfig(site_slug=slug,device_role_slug=slug,platform_slug=slug,device_type_slug=slug,cluster_type_slug=slug,cluster_name=cluster['name']))
@@ -96,7 +97,7 @@ def exercise(meta):
         else:apply_full_sync(writer,hosts,config.target,confirmed=True)
         assert {a.id for a in api.ipam.ip_addresses.filter(address='192.0.2.60/24')}==ids
         nonce=uuid4();review=guard.review_source(nonce,source,cluster['id']);receipt=guard.execute_source(nonce,review['digest'])
-        assert receipt['status']=='SUCCEEDED'
+        assert receipt['status']=='SUCCEEDED' and receipt['generation_closed']
         assert api.virtualization.clusters.get(cluster['id']) is None
         assert all(api.virtualization.virtual_machines.get(vm.id) is None for vm in vms)
         assert guard.receipt(nonce)==receipt

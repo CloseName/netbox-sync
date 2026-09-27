@@ -522,6 +522,7 @@ def test_fresh_database_restore_requires_live_maintenance_boundary(monkeypatch,
         'DROP TABLE IF EXISTS netbox_sync.source_recoveries; '
         'DROP TABLE IF EXISTS netbox_sync.source_operations; '
         'DROP TABLE IF EXISTS netbox_sync.source_identity_verifications; '
+        'DROP TABLE IF EXISTS netbox_sync.source_archives; '
         'DROP TABLE IF EXISTS netbox_sync.schema_meta; '
         'DROP TABLE IF EXISTS netbox_sync.run_reconciliations; '
         'DROP TABLE IF EXISTS netbox_sync.registration_intents; '

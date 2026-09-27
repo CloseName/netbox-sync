@@ -339,5 +339,49 @@
       "en": "Review the dedicated integration service account permissions in NetBox.",
       "ru": "Проверьте права отдельной служебной записи интеграции в NetBox."
     }
+  },
+  "SOURCE_ARCHIVED": {
+    "stage": "lifecycle",
+    "message": {
+      "en": "This registration generation is closed.",
+      "ru": "Это поколение регистрации закрыто."
+    },
+    "action": {
+      "en": "Add the server as a new source. Its old history remains available.",
+      "ru": "Добавьте сервер как новый источник. Старая история остаётся доступна."
+    }
+  },
+  "SOURCE_ARCHIVE_REVIEW_REQUIRED": {
+    "stage": "lifecycle",
+    "message": {
+      "en": "The historical registration needs a current inventory review.",
+      "ru": "Для старой регистрации нужна сверка текущего инвентаря."
+    },
+    "action": {
+      "en": "Open the registration lifecycle review as an administrator.",
+      "ru": "Откройте сверку жизненного цикла регистраций под администратором."
+    }
+  },
+  "SOURCE_CREDENTIAL_CLEANUP_PENDING": {
+    "stage": "lifecycle",
+    "message": {
+      "en": "NetBox confirmed the outcome; local credential cleanup is incomplete.",
+      "ru": "NetBox подтвердил результат; очистка локальных данных доступа не завершена."
+    },
+    "action": {
+      "en": "Continue the same removal operation. The host identity is still reserved.",
+      "ru": "Продолжите ту же операцию удаления. Идентичность хоста пока зарезервирована."
+    }
+  },
+  "SOURCE_LIFECYCLE_REVIEW_LIMIT": {
+    "stage": "lifecycle",
+    "message": {
+      "en": "The registration inventory exceeds the supported review limit.",
+      "ru": "Число регистраций превышает поддерживаемый предел сверки."
+    },
+    "action": {
+      "en": "No registration was changed. Review the inventory size with the administrator.",
+      "ru": "Регистрации не изменены. Проверьте размер инвентаря с администратором."
+    }
   }
 }

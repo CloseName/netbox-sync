@@ -37,6 +37,19 @@ def admin(http):
 
 def routes(lifecycle):
     router=APIRouter(prefix='/api/v1/sources')
+    @router.post('/lifecycle-review')
+    def generations(http:Request):
+        admin(http)
+        return lifecycle.generations()
+
+    @router.post('/{source}/archive-check')
+    def archive_check(source:str,http:Request):
+        return lifecycle.retirement('archive_check',source,actor_id=admin(http))
+
+    @router.post('/{source}/archive-review')
+    def archive_review(source:str,payload:Review,http:Request):
+        return lifecycle.retirement('archive_review',source,operation_id=str(payload.operation_id),actor_id=admin(http),revision=payload.revision)
+
     @router.post('/{source}/retirement-context')
     def retained_context(source:str,http:Request):
         return lifecycle.retirement('context',source,actor_id=admin(http))

@@ -17,6 +17,9 @@ def handle_lifecycle(lifecycle, secrets, request, retirement=None):
     if lifecycle is None:
         raise LifecycleError('LIFECYCLE_UNAVAILABLE')
     try:
+        if request.get('action')=='source_generations' and set(request)=={'action','source_instance'}:
+            from .source_archive import generations
+            return generations(lifecycle)
         if request.get('action') in {'legacy_describe','legacy_confirm','legacy_status'}:
             from .legacy_admission import LegacyAdmission
             service=LegacyAdmission(lifecycle)
@@ -37,15 +40,18 @@ def handle_lifecycle(lifecycle, secrets, request, retirement=None):
             if request['action']=='run_reconciliation_confirm' and set(request)==base|{'actor_id','digest','acknowledgements'}:
                 return recovery.confirm(source,request['operation_id'],request['actor_id'],request['digest'],request['acknowledgements'])
             raise LifecycleError('REQUEST_INVALID')
-        if request.get('action') in {'retirement_context','retirement_review','retirement_execute','retirement_resume','retirement_status'}:
+        if request.get('action') in {'retirement_archive_check','retirement_context','retirement_archive_review','retirement_review','retirement_execute','retirement_resume','retirement_status'}:
             if retirement is None:raise LifecycleError('RETIREMENT_UNAVAILABLE')
             actor=request.get('actor_id')
             if not isinstance(actor,str) or not actor or len(actor)>200:raise LifecycleError('REQUEST_INVALID')
+            if request['action']=='retirement_archive_check' and set(request)=={'action','source_instance','actor_id'}:
+                from .source_archive import recheck
+                return recheck(lifecycle,retirement.remote,source)
             if request['action']=='retirement_context' and set(request)=={'action','source_instance','actor_id'}:
                 return retirement.retained_context(source)
             base={'action','source_instance','operation_id','actor_id'}
-            if request['action']=='retirement_review' and set(request)==base|{'revision'}:
-                return retirement.review(source,request['operation_id'],actor,request['revision'])
+            if request['action'] in ('retirement_review','retirement_archive_review') and set(request)==base|{'revision'}:
+                return retirement.review(source,request['operation_id'],actor,request['revision'],archive=request['action']=='retirement_archive_review')
             if request['action']=='retirement_status' and set(request)==base:
                 return retirement.status(source,request['operation_id'],actor)
             if request['action'] in {'retirement_execute','retirement_resume'} and set(request)==base|{'digest','confirmed_source','remove_credentials'}:

@@ -35,9 +35,14 @@ class LifecycleClient:
             after=value['next']
         raise LifecycleRequestError('LIFECYCLE_UNAVAILABLE')
 
+    def generations(self):
+        from ..local_control import request,ControlError
+        try:return request(self.path,{'action':'source_generations','source_instance':'lifecycle'},timeout=15,response_limit=2*1024*1024)['result']
+        except ControlError as exc:raise LifecycleRequestError(exc.code) from None
+
     def retirement(self,action,source,**payload):
         from ..local_control import request,ControlError
-        if action not in {'context','review','execute','resume','status'}:raise LifecycleRequestError('REQUEST_INVALID')
+        if action not in {'context','archive_check','review','archive_review','execute','resume','status'}:raise LifecycleRequestError('REQUEST_INVALID')
         try:
             value=request(self.path,{'action':'retirement_'+action,'source_instance':source,**payload},
                           timeout=60,response_limit=2*1024*1024)['result']

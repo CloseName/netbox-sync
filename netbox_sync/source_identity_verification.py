@@ -67,10 +67,10 @@ class IdentityVerification:
                     or any(type(proof.get(k)) is not int or proof[k]<=0 for k in ('site_id','cluster_id'))
                     or len([item for item in proof.get('owned',[]) if item.get('kind')=='device'])!=1):
                     raise LifecycleError('SOURCE_IDENTITY_UNPROVED')
-                others=connection.execute(sql.SQL("SELECT settings FROM {} WHERE source_type='esxi' AND source_instance<>%s").format(self.store.table('sources')),(source,)).fetchall()
+                others=connection.execute(sql.SQL("SELECT s.settings FROM {} s WHERE s.source_type='esxi' AND s.source_instance<>%s AND NOT EXISTS (SELECT 1 FROM {} a WHERE a.source_instance=s.source_instance AND a.verified_at IS NOT NULL)").format(self.store.table('sources'),self.store.table('source_archives')),(source,)).fetchall()
                 if any(registration_anchor(other['settings'])==meta['host_uuid'] for other in others):
                     raise LifecycleError('SOURCE_IDENTITY_CONFLICT')
-                reserved=connection.execute(sql.SQL('SELECT source_instance FROM {} WHERE provider=%s AND anchor=%s').format(self.store.table('host_reservations')),('esxi',meta['host_uuid'])).fetchone()
+                reserved=connection.execute(sql.SQL('SELECT source_instance FROM {} WHERE provider=%s AND anchor=%s AND released_at IS NULL').format(self.store.table('host_reservations')),('esxi',meta['host_uuid'])).fetchone()
                 if reserved and reserved['source_instance']!=source:raise LifecycleError('SOURCE_IDENTITY_CONFLICT')
                 identity={'version':1,'provider':'esxi','hardware_uuid':meta['host_uuid'],
                           'verification_id':str(operation),'site_id':proof['site_id'],'cluster_id':proof['cluster_id']}

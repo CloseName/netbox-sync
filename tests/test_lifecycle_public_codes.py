@@ -7,6 +7,7 @@ import pytest
 
 @pytest.mark.skipif(os.name!='posix' or not Path('/.dockerenv').is_file(),reason='isolated Linux socket owner fixture')
 @pytest.mark.parametrize('code',[
+    'SOURCE_ARCHIVED','SOURCE_ARCHIVE_REVIEW_REQUIRED','SOURCE_CREDENTIAL_CLEANUP_PENDING','SOURCE_LIFECYCLE_REVIEW_LIMIT',
     'SOURCE_RECOVERY_IDENTITY_REVIEW','SOURCE_RECOVERY_EVIDENCE_CHANGED',
     'SOURCE_IDENTITY_UNPROVED','RUN_RECONCILIATION_UNAVAILABLE',
     'RETIREMENT_PERMISSION_DENIED','RETIREMENT_OWNERSHIP_UNPROVEN','untrusted secret text'])

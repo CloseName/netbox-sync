@@ -30,7 +30,9 @@ def test_am_after_explicit_isolation_of_unrelated_unknown_record(state,state_nam
     registry,store,service,reservations=state;old=add(registry,enabled=state_name=='active')
     if state_name=='removed':
         view=store.read(old.source_instance);store.remove(old.source_instance,view['revision'],view['display_name'],False,lambda _:None)
-    with pytest.raises(HostRegistrationConflict,match='HOST_REGISTRY_REVIEW_REQUIRED'):reservations.check({'provider':'esxi','hosts':[{'id':AM}]})
+    if state_name=='active':
+        with pytest.raises(HostRegistrationConflict,match='HOST_REGISTRY_REVIEW_REQUIRED'):reservations.check({'provider':'esxi','hosts':[{'id':AM}]})
+    else:reservations.check({'provider':'esxi','hosts':[{'id':AM}]})
     request,result=isolate(service,old.source_instance)
     assert service.confirm(old.source_instance,**request)==result
     current=registry.get_by_source_instance(old.source_instance).config
@@ -213,3 +215,19 @@ def test_row_change_after_probe_refuses_without_audit(state):
         service.confirm('legacy','admin',uuid4(),old_revision,'OBSERVE','Old endpoint changed',OLD)
     assert service.describe('legacy')['host_uuid'] is None
     with store.connect() as connection:assert connection.execute(sql.SQL('SELECT count(*) AS total FROM {}').format(store.table('source_identity_verifications'))).fetchone()['total']==0
+
+
+@pytest.mark.parametrize('verified',[True,False])
+def test_observation_ignores_only_verified_closed_generation(state,verified):
+    from psycopg import sql
+    registry,store,service,_=state
+    add(registry,'historical')
+    service.confirm('historical','admin',uuid4(),service.describe('historical')['revision'],'OBSERVE','Original observation',OLD)
+    with store.connect() as connection:
+        connection.execute(sql.SQL("INSERT INTO {} (source_instance,operation_id,actor_id,mode,guard_instance,receipt,verified_at) VALUES ('historical',%s,'admin','LEGACY_RETAIN',%s,'{{}}',CASE WHEN %s THEN clock_timestamp() ELSE NULL END)").format(store.table('source_archives')),(uuid4(),uuid4(),verified))
+    add(registry,'current')
+    args=('current','admin',uuid4(),service.describe('current')['revision'],'OBSERVE','Fresh observation',OLD)
+    if verified:
+        assert service.confirm(*args)['status']=='RECORDED'
+    else:
+        with pytest.raises(LifecycleError,match='SOURCE_IDENTITY_CONFLICT'):service.confirm(*args)

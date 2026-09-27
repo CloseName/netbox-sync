@@ -49,12 +49,14 @@ class OperationDTO(BaseModel):
 
 
 class RetirementHintDTO(BaseModel):
+    archive_required: bool = False
     model_config = ConfigDict(extra='forbid')
     operation_id: UUID
-    state: Literal['SENDING','UNCERTAIN','SUCCEEDED','FINALIZED']
+    state: Literal['SENDING','UNCERTAIN','SUCCEEDED','FINALIZED','BLOCKED']
 
 
 class LifecycleDTO(BaseModel):
+    archive_mode: Literal['FULL_DELETE','LEGACY_RETAIN'] | None = None
     retirement: RetirementHintDTO | None = None
     removal_blocker: Literal["SOURCE_APPLY_UNCONFIRMED","SOURCE_OPERATION_ACTIVE","SOURCE_RETIREMENT_PENDING"] | None = None
     model_config = ConfigDict(extra='forbid')

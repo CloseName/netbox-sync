@@ -77,7 +77,7 @@ upgrade=['python3','/review/deploy/install.py','--root',str(root),'--source','/n
     '--release-id','ldap-upgrade','--image',os.environ.get('NETBOX_SYNC_REVIEW_IMAGE','netbox-sync-auth:review'),'--no-systemd']
 run(upgrade)
 assert (root/'current').resolve().name=='ldap-upgrade'
-assert db('SELECT version_num FROM netbox_sync.alembic_version')=='0012_run_reconciliation'
+assert db('SELECT version_num FROM netbox_sync.alembic_version')=='0013_source_archives'
 assert db('SELECT row_to_json(s) FROM netbox_sync.sources s')==rows
 assert db('SELECT row_to_json(s) FROM netbox_sync.sync_runs s')==history
 assert run([*command,'ps','-q','postgres'])==pg

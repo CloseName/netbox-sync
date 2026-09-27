@@ -48,7 +48,7 @@ def test_real_private_worker_transport_and_lost_response(tmp_path):
             if self.path.endswith('capabilities/'):
                 result = {'protocol': 1, 'guard_instance': instance, 'netbox_version': '4.7.0',
                           'atomic_dependency_guard': True, 'creation_receipts': True,
-                          'retirement_receipts': True, 'source_tree_retirement': True}
+                          'retirement_receipts': True, 'source_tree_retirement': True, 'source_generation_closure':True}
             else:
                 assert self.headers.get('X-Netbox-Sync-Guard-Instance') == instance
                 if state['refuse']:

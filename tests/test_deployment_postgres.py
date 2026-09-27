@@ -53,7 +53,7 @@ def test_clean_bootstrap_migrate_grants_and_idempotency(tmp_path):
     with psycopg.connect(deployment.connection_info('bootstrap', env)) as connection:
         with connection.cursor() as cursor:
             cursor.execute("SELECT version_num FROM netbox_sync.alembic_version")
-            assert cursor.fetchone() == ('0012_run_reconciliation',)
+            assert cursor.fetchone() == ('0013_source_archives',)
             cursor.execute("SELECT count(*) FROM netbox_sync.sources")
             assert cursor.fetchone() == (0,)
             cursor.execute("SELECT rolname FROM pg_roles WHERE rolname = ANY(%s)",
@@ -307,3 +307,32 @@ def test_baseline_audit_is_append_only_and_gate_views_do_not_expose_it(tmp_path)
     from netbox_sync.run_history import postgres_run_repository
     runs=postgres_run_repository(deployment.connection_info('run_writer',env),'netbox_sync')
     assert not runs.scheduled_reconciliation_required('isolated-absent-source')
+
+
+def test_archives_are_immutable_except_lifecycle_receipt_recheck(tmp_path):
+    env=_environment(tmp_path)
+    deployment.bootstrap_roles(env);deployment.migrate(env);deployment.apply_grants(env)
+    with psycopg.connect(TEST_DSN) as connection:
+        for key,role in deployment.DATABASE_ROLES.items():
+            if key=='owner':continue
+            for column in ('receipt','source_instance','operation_id','guard_instance','mode','verified_at'):
+                allowed=connection.execute('SELECT has_column_privilege(%s,%s,%s,%s)',(role,'netbox_sync.source_archives',column,'UPDATE')).fetchone()[0]
+                assert allowed==(key=='lifecycle_writer' and column=='verified_at')
+            for privilege in ('DELETE','TRUNCATE'):
+                assert not connection.execute('SELECT has_table_privilege(%s,%s,%s)',(role,'netbox_sync.source_archives',privilege)).fetchone()[0]
+    # Registration really executes the new archive gate with its constrained role.
+    from netbox_sync.host_registration import HostReservations
+    connection_factory=lambda:psycopg.connect(deployment.connection_info('registration_writer',env))
+    with connection_factory() as connection:
+        from psycopg.rows import dict_row
+        with connection.cursor(row_factory=dict_row) as cursor:
+            HostReservations(connection_factory,'netbox_sync')._live_rows(cursor)
+
+
+def test_central_lifecycle_review_runs_with_real_lifecycle_role(tmp_path):
+    from netbox_sync.source_archive import generations
+    from netbox_sync.source_lifecycle import LifecycleStore
+    env=_environment(tmp_path)
+    deployment.bootstrap_roles(env);deployment.migrate(env);deployment.apply_grants(env)
+    store=LifecycleStore(deployment.connection_info('lifecycle_writer',env),'netbox_sync',str(tmp_path/'apply.lock'))
+    assert isinstance(generations(store)['sources'],list)

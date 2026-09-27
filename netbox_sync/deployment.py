@@ -445,9 +445,16 @@ def apply_grants(environ=None):
             cursor.execute(sql.SQL('GRANT SELECT, INSERT ON {} TO {}').format(sql.Identifier(schema,'run_reconciliations'),lifecycle_role))
             for key in ('lifecycle_writer','run_writer'):
                 cursor.execute(sql.SQL('GRANT SELECT ON {}, {} TO {}').format(sql.Identifier(schema,'blocking_sync_runs'),sql.Identifier(schema,'recovery_schedule_blocks'),sql.Identifier(DATABASE_ROLES[key])))
+            archives=sql.Identifier(schema,'source_archives')
+            _grant_columns(cursor,'UPDATE',archives,('verified_at',),DATABASE_ROLES['lifecycle_writer'])
+            cursor.execute(sql.SQL('GRANT SELECT, INSERT ON {} TO {}').format(archives,lifecycle_role))
+            _grant_columns(cursor,'UPDATE',sql.Identifier(schema,'host_reservations'),('released_at',),DATABASE_ROLES['lifecycle_writer'])
+            _grant_columns(cursor,'SELECT',sql.Identifier(schema,'host_reservations'),('released_at',),DATABASE_ROLES['lifecycle_writer'])
+            for key in ('web_reader','registration_writer','schedule_writer','operation_writer','run_writer','apply_registry_reader','registry_reader','discovery_reader'):
+                _grant_columns(cursor,'SELECT',archives,('source_instance','verified_at'),DATABASE_ROLES[key])
             retirements=sql.Identifier(schema,'source_retirements')
             cursor.execute(sql.SQL('GRANT SELECT, INSERT ON {} TO {}').format(retirements,lifecycle_role))
-            _grant_columns(cursor,'UPDATE',retirements,('state','receipt','safe_code','remove_credentials','finished_at'),DATABASE_ROLES['lifecycle_writer'])
+            _grant_columns(cursor,'UPDATE',retirements,('state','receipt','safe_code','remove_credentials','finished_at','superseded_by'),DATABASE_ROLES['lifecycle_writer'])
             for role in ('web_reader','registration_writer','schedule_writer','operation_writer','run_writer','apply_registry_reader'):
                 _grant_columns(cursor,'SELECT',retirements,('source_instance','state'),DATABASE_ROLES[role])
             _grant_columns(cursor, 'INSERT', tombstones,

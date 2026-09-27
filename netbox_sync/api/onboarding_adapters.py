@@ -54,7 +54,7 @@ class RegistrationRegistry:
         from psycopg.rows import dict_row
         with self._registry()._connect() as connection:
             with connection.cursor(row_factory=dict_row) as cursor:
-                cursor.execute(sql.SQL("SELECT source_instance,site_slug,cluster_name,settings FROM {} WHERE source_type='esxi'").format(sql.Identifier(self._schema,'sources')))
+                cursor.execute(sql.SQL("SELECT source_instance,site_slug,cluster_name,settings FROM {} WHERE source_type='esxi' AND NOT EXISTS (SELECT 1 FROM {} a WHERE a.source_instance=sources.source_instance)").format(sql.Identifier(self._schema,'sources'),sql.Identifier(self._schema,'source_archives')))
                 for row in cursor.fetchall():
                     if (legacy_anchor(row['settings']) is None and row['site_slug']==request.site_slug
                             and row['cluster_name']==request.cluster_name):

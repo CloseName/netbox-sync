@@ -37,6 +37,8 @@ def source_gate(connection, schema, source, *, allow_retirement=False):
     connection.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))',
                        (f'netbox-sync:{schema}:source:{source}',))
     if not allow_retirement:
+        from .source_archive import archived
+        if archived(connection,schema,source):raise OperationError('SOURCE_ARCHIVED')
         # Compatibility with pre-retirement schemas is read-only. A failed query
         # is never treated as an empty journal or a permission to write.
         exists=connection.execute('SELECT to_regclass(%s)',(schema+'.source_retirements',)).fetchone()

@@ -41,32 +41,30 @@ def test_real_netbox_receipt_before_tombstone(migration_database,tmp_path):
         if action=='execute':raise ControlError('RETIREMENT_UNCERTAIN')
         return original_call(action,operation,**values)
     service.remote.call=undelivered
-    assert service.execute(source.source_instance,review['operation_id'],'isolated-admin',review['digest'],original['display_name'],False)['state']=='UNCERTAIN'
+    assert service.execute(source.source_instance,review['operation_id'],'isolated-admin',review['digest'],original['display_name'],True)['state']=='UNCERTAIN'
     service.remote.call=original_call
     # An ordinary retry reads the REAL NetBox REVIEWED receipt, never deletes.
-    assert service.execute(source.source_instance,review['operation_id'],'isolated-admin',review['digest'],original['display_name'],False)['state']=='UNCERTAIN'
+    assert service.execute(source.source_instance,review['operation_id'],'isolated-admin',review['digest'],original['display_name'],True)['state']=='UNCERTAIN'
     assert store.read(source.source_instance)['removed_at']==retained_at
     restarted=RetirementCoordinator(store,RetirementClient('/worker/worker.sock'),lambda _:pytest.fail('no credential removal requested'))
-    result=restarted.execute(source.source_instance,review['operation_id'],'isolated-admin',review['digest'],original['display_name'],False,resume=True)
+    result=restarted.execute(source.source_instance,review['operation_id'],'isolated-admin',review['digest'],original['display_name'],True,resume=True)
     assert result['state']=='FINALIZED'
     assert store.read(source.source_instance)['retirement']['state']=='FINALIZED'
     assert not registry.get_by_source_instance(source.source_instance).config.enabled
-    assert service.execute(source.source_instance,review['operation_id'],'isolated-admin',review['digest'],original['display_name'],False)==result
+    assert service.execute(source.source_instance,review['operation_id'],'isolated-admin',review['digest'],original['display_name'],True)==result
     assert history.get_run(run.run_id).status==RunStatus.SUCCEEDED
-    # Actual production worker reads the same NetBox receipt and current inventory.
-    # The cluster no longer exists; restore the original namespace, not a new ID.
+    # A completed archive cannot reopen its namespace. The same hardware may
+    # instead reserve a NEW immutable source ID, retaining old run history.
     from netbox_sync.source_recovery import Recovery
-    recovery=Recovery(store,RetirementClient('/worker/worker.sock'));operation=uuid4()
-    recovery_meta=recovery.describe(source.source_instance,'isolated-admin')
-    proof=recovery.retired_evidence(source.source_instance,operation)
-    assert proof['mode']=='RETIRED_EMPTY' and not proof['blockers'],proof
-    recovery.prepare(source.source_instance,operation,'isolated-admin',recovery_meta['revision'],proof)
-    recovery.begin_credentials(source.source_instance,operation,'isolated-admin')
-    recovery.complete(source.source_instance,operation,'isolated-admin',
-        recovery.retired_evidence(source.source_instance,operation),
-        {'username':'isolated-service','address':source.address,'verify_ssl':True,'port':443},lambda *args:True)
-    assert registry.get_by_source_instance(source.source_instance).config.enabled
-    assert not registry.get_by_source_instance(source.source_instance).config.sync_enabled
+    from netbox_sync.source_operations import OperationError
+    from netbox_sync.host_registration import HostReservations
+    recovery=Recovery(store,RetirementClient('/worker/worker.sock'))
+    with pytest.raises(OperationError,match='SOURCE_ARCHIVED'):
+        recovery.describe(source.source_instance,'isolated-admin')
+    reservations=HostReservations(registry._connect,registry.schema)
+    preview={'provider':'esxi','hosts':[{'id':'00000000-0000-0000-0000-ac1f6be2c4da'}]}
+    reservations.check(preview)
+    reservations.reserve(preview,source.source_instance+'-new',uuid4(),'isolated-admin')
     assert history.get_run(run.run_id).status==RunStatus.SUCCEEDED
     from tests.real_guard_inventory import exercise
     exercise(meta)

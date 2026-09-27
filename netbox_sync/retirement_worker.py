@@ -9,7 +9,7 @@ from .local_control import serve, ControlError, request
 from .retirement_codes import REASONS
 DIAGNOSTIC_CODES=frozenset({'GUARD_CONNECTION_FAILED','GUARD_TLS_FAILED','GUARD_TIMEOUT',
     'GUARD_CAPABILITY_MISMATCH','GUARD_RESPONSE_INVALID','GUARD_RESPONSE_UNCONFIRMED',
-    'PERMISSION_DENIED','GUARD_INSTANCE_CHANGED','REQUEST_CONFLICT','REQUEST_REFUSED',
+    'SOURCE_NAMESPACE_CLOSED','SOURCE_NAMESPACE_BUSY','PERMISSION_DENIED','GUARD_INSTANCE_CHANGED','REQUEST_CONFLICT','REQUEST_REFUSED',
     'AUTHENTICATION_REQUIRED','TOKEN_WRITE_REQUIRED','GUARD_AUDIT_PERMISSION_REQUIRED','GUARD_SOURCE_SCOPE_DENIED','GUARD_OBJECT_VIEW_DENIED','CREATION_OWNERSHIP_UNPROVEN','OWNERSHIP_CONFLICT',
     'PLACEMENT_CHANGED','DEPENDENCIES_CHANGED','OBJECT_GENERATION_CHANGED','EXTERNAL_FIELD_UPDATE',
     'PROTECTED_DEPENDENCY','REQUEST_NOT_FOUND','RETIREMENT_REFUSED'})
@@ -33,12 +33,19 @@ def child(payload):
         if capabilities.get('source_tree_retirement') is not True:
             raise ControlError('RETIREMENT_UNAVAILABLE')
         value=payload['request']
+        if value['action'] in ('review','execute','archive_review','archive_execute') and capabilities.get('source_generation_closure') is not True:
+            from .retirement_transport import GuardTransportError
+            raise GuardTransportError('GUARD_CAPABILITY_MISMATCH')
         if value['action']=='audit':
             from .retirement_transport import GuardTransportError
             if capabilities.get('source_audit') is not True:raise GuardTransportError('GUARD_CAPABILITY_MISMATCH')
             if capabilities.get('audit_permission') is not True:raise GuardTransportError('GUARD_AUDIT_PERMISSION_REQUIRED')
             if capabilities.get('token_write_enabled') is not True:raise GuardTransportError('TOKEN_WRITE_REQUIRED')
             result=client.audit_source(value['source_instance'],value['operation_id'])
+        elif value['action']=='archive_review':
+            result=client.archive_review(value['operation_id'],value['source_instance'])
+        elif value['action']=='archive_execute':
+            result=client.archive_execute(value['operation_id'],value['digest'])
         elif value['action']=='review':
             result=client.review_source(value['operation_id'],value['source_instance'],value['cluster_id'])
         elif value['action']=='execute':
@@ -53,22 +60,22 @@ def handle(value):
     from .bootstrap_state import runtime_netbox
     import re
     action=value.get('action');fields={'action','operation_id'}
-    if action=='audit':fields|={'source_instance'}
+    if action in ('audit','archive_review'):fields|={'source_instance'}
     elif action=='review': fields|={'source_instance','cluster_id'}
-    elif action=='execute': fields|={'digest'}
+    elif action in ('execute','archive_execute'): fields|={'digest'}
     elif action!='receipt': raise ControlError('CONTROL_REQUEST_INVALID')
     if set(value)!=fields: raise ControlError('CONTROL_REQUEST_INVALID')
     try:
         UUID(value['operation_id'])
         instance=str(UUID(os.environ.get('NETBOX_SYNC_GUARD_INSTANCE','')))
     except (ValueError,TypeError): raise ControlError('RETIREMENT_UNAVAILABLE') from None
-    if action=='audit' and (not isinstance(value['source_instance'],str) or not SOURCE_INSTANCE_PATTERN.fullmatch(value['source_instance'])):
+    if action in ('audit','archive_review') and (not isinstance(value['source_instance'],str) or not SOURCE_INSTANCE_PATTERN.fullmatch(value['source_instance'])):
         raise ControlError('CONTROL_REQUEST_INVALID')
     if action=='review' and (not isinstance(value['source_instance'],str)
                             or not SOURCE_INSTANCE_PATTERN.fullmatch(value['source_instance'])
                             or type(value['cluster_id']) is not int or value['cluster_id']<=0):
         raise ControlError('CONTROL_REQUEST_INVALID')
-    if action=='execute' and (not isinstance(value['digest'],str) or not re.fullmatch('[a-f0-9]{64}',value['digest'])):
+    if action in ('execute','archive_execute') and (not isinstance(value['digest'],str) or not re.fullmatch('[a-f0-9]{64}',value['digest'])):
         raise ControlError('CONTROL_REQUEST_INVALID')
     url,token=runtime_netbox(os.environ.get('NETBOX_SYNC_NETBOX_CONFIG_FILE','/run/secrets/netbox/bootstrap.json'),'apply')
     payload={'url':url,'token':token,'instance':instance,'request':value}
@@ -86,7 +93,7 @@ def handle(value):
                 output,_=process.communicate(json.dumps(payload).encode(),timeout=CHILD_TIMEOUT)
             except subprocess.TimeoutExpired:
                 stop_child(process)
-                raise ControlError('RETIREMENT_UNCERTAIN' if action=='execute' else 'RETIREMENT_UNAVAILABLE') from None
+                raise ControlError('RETIREMENT_UNCERTAIN' if action in ('execute','archive_execute') else 'RETIREMENT_UNAVAILABLE') from None
             if process.returncode or len(output)>MAX_RESPONSE:raise ValueError()
         result=json.loads(output)
         if result.get('error'):
@@ -97,7 +104,7 @@ def handle(value):
         if set(result)!={'guard_instance','result'}:raise ValueError()
         return result
     except ControlError: raise
-    except Exception: raise ControlError('RETIREMENT_UNCERTAIN' if action=='execute' else 'RETIREMENT_UNAVAILABLE') from None
+    except Exception: raise ControlError('RETIREMENT_UNCERTAIN' if action in ('execute','archive_execute') else 'RETIREMENT_UNAVAILABLE') from None
 
 
 class RetirementClient:

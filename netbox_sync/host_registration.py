@@ -86,6 +86,14 @@ class HostReservations:
     def __init__(self, connector, schema):
         self.connector, self.schema = connector, schema
 
+    def _live_rows(self,cursor):
+        cursor.execute(sql.SQL('SELECT source_instance FROM {} WHERE verified_at IS NULL ORDER BY source_instance LIMIT 1').format(sql.Identifier(self.schema,'source_archives')))
+        pending=cursor.fetchone()
+        if pending:raise HostRegistrationConflict('HOST_ARCHIVE_RECHECK_REQUIRED',pending['source_instance'])
+        cursor.execute(sql.SQL('SELECT source_instance,settings,enabled,sync_enabled FROM {} WHERE source_type=%s AND NOT EXISTS (SELECT 1 FROM {} a WHERE a.source_instance=sources.source_instance)').format(
+            sql.Identifier(self.schema,'sources'),sql.Identifier(self.schema,'source_archives')),('esxi',))
+        return cursor.fetchall()
+
     def _existing(self, cursor, existing):
         if len(existing)!=1:
             # Recorded UUID equality is a registry conflict, not independent
@@ -99,24 +107,27 @@ class HostReservations:
         cursor.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s AND restored_at IS NULL').format(
             sql.Identifier(self.schema,'source_tombstones')), (existing[0],))
         code='HOST_SOURCE_REMOVED' if cursor.fetchone() else 'HOST_ALREADY_REGISTERED'
+        if code=='HOST_SOURCE_REMOVED':
+            cursor.execute(sql.SQL('SELECT settings FROM {} WHERE source_instance=%s').format(sql.Identifier(self.schema,'sources')),(existing[0],))
+            row=cursor.fetchone()
+            cursor.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND state='FINALIZED'").format(sql.Identifier(self.schema,'source_retirements')),(existing[0],))
+            if legacy_anchor(row['settings']) is None or cursor.fetchone():code='HOST_SOURCE_ARCHIVE_REQUIRED'
         raise HostRegistrationConflict(code,existing[0])
 
     def check(self, preview, *, resume=None, actor_id=None):
         anchor = esxi_anchor(preview)
         with self.connector() as connection:
             with connection.cursor(row_factory=dict_row) as cursor:
-                cursor.execute(sql.SQL('SELECT source_instance, settings, enabled, sync_enabled FROM {} WHERE source_type=%s').format(
-                    sql.Identifier(self.schema, 'sources')), ('esxi',))
-                rows = cursor.fetchall()
+                rows = self._live_rows(cursor)
                 from .legacy_admission import resolved_for_admission
-                unknown = sorted(row['source_instance'] for row in rows if legacy_anchor(row['settings']) is None and not resolved_for_admission(row))
+                unknown = sorted(row['source_instance'] for row in rows if row['enabled'] and legacy_anchor(row['settings']) is None and not resolved_for_admission(row))
                 existing = sorted(row['source_instance'] for row in rows
                                   if registration_anchor(row['settings']) == anchor)
                 if existing:
                     self._existing(cursor,existing)
                 if unknown:
                     raise HostRegistrationConflict('HOST_REGISTRY_REVIEW_REQUIRED', unknown[0])
-                cursor.execute(sql.SQL('SELECT source_instance,operation_id,actor_id FROM {} WHERE provider=%s AND anchor=%s').format(
+                cursor.execute(sql.SQL('SELECT source_instance,operation_id,actor_id FROM {} WHERE provider=%s AND anchor=%s AND released_at IS NULL').format(
                     sql.Identifier(self.schema, 'host_reservations')), ('esxi', anchor))
                 reserved = cursor.fetchone()
                 if reserved:
@@ -148,12 +159,10 @@ class HostReservations:
                                ('netbox-sync:' + self.schema + ':host:' + anchor,))
                 if not cursor.fetchone()['locked']:
                     raise HostRegistrationConflict('HOST_REGISTRATION_RESERVED')
-                # Includes tombstoned rows: removal does not release identity.
-                cursor.execute(sql.SQL('SELECT source_instance, settings, enabled, sync_enabled FROM {} WHERE source_type=%s').format(
-                    sql.Identifier(self.schema, 'sources')), ('esxi',))
-                rows = cursor.fetchall()
+                # Retain-only tombstones still reserve identity; verified final archives do not.
+                rows = self._live_rows(cursor)
                 from .legacy_admission import resolved_for_admission
-                unknown = sorted(row['source_instance'] for row in rows if legacy_anchor(row['settings']) is None and not resolved_for_admission(row))
+                unknown = sorted(row['source_instance'] for row in rows if row['enabled'] and legacy_anchor(row['settings']) is None and not resolved_for_admission(row))
                 existing = sorted(row['source_instance'] for row in rows
                                   if registration_anchor(row['settings']) == anchor)
                 if existing:
@@ -161,7 +170,7 @@ class HostReservations:
                 if unknown:
                     raise HostRegistrationConflict('HOST_REGISTRY_REVIEW_REQUIRED', unknown[0])
                 table = sql.Identifier(self.schema, 'host_reservations')
-                cursor.execute(sql.SQL('SELECT * FROM {} WHERE provider=%s AND anchor=%s').format(table), ('esxi', anchor))
+                cursor.execute(sql.SQL('SELECT * FROM {} WHERE provider=%s AND anchor=%s AND released_at IS NULL').format(table), ('esxi', anchor))
                 current = cursor.fetchone()
                 if current:
                     if (current['source_instance'], current['operation_id'], current['actor_id']) != (source_instance, operation_id, actor_id):
@@ -191,6 +200,8 @@ class HostReservations:
                 reservation = cursor.fetchone()
                 if reservation is None:
                     return {'identity_status': 'NO_BOUND_ATTEMPT'}
+                from .source_archive import archived
+                if archived(connection,self.schema,source_instance):return {'identity_status':'GENERATION_CLOSED'}
                 cursor.execute(sql.SQL('SELECT settings FROM {} WHERE source_instance=%s').format(
                     sql.Identifier(self.schema, 'sources')), (source_instance,))
                 source = cursor.fetchone()
@@ -231,18 +242,16 @@ class HostReservations:
                     acquired=cursor.fetchone()['locked']
                     if not acquired:
                         raise HostRegistrationConflict('HOST_REGISTRATION_RESERVED',source_instance)
-                    cursor.execute(sql.SQL('SELECT source_instance,operation_id,actor_id FROM {} WHERE provider=%s AND anchor=%s').format(
+                    cursor.execute(sql.SQL('SELECT source_instance,operation_id,actor_id FROM {} WHERE provider=%s AND anchor=%s AND released_at IS NULL').format(
                         sql.Identifier(self.schema,'host_reservations')),('esxi',anchor))
                     reserved=cursor.fetchone()
                     if not reserved or (reserved['source_instance'],reserved['operation_id'],reserved['actor_id'])!=(source_instance,UUID(str(operation_id)),actor_id):
                         raise HostRegistrationConflict('HOST_REGISTRATION_RESERVED',source_instance)
-                    cursor.execute(sql.SQL('SELECT source_instance,settings,enabled,sync_enabled FROM {} WHERE source_type=%s').format(
-                        sql.Identifier(self.schema,'sources')),('esxi',))
-                    rows=cursor.fetchall()
+                    rows=self._live_rows(cursor)
                     existing=[row['source_instance'] for row in rows if registration_anchor(row['settings'])==anchor]
                     if existing:self._existing(cursor,existing)
                     from .legacy_admission import resolved_for_admission
-                    if any(legacy_anchor(row['settings']) is None and not resolved_for_admission(row) for row in rows):
+                    if any(row['enabled'] and legacy_anchor(row['settings']) is None and not resolved_for_admission(row) for row in rows):
                         raise HostRegistrationConflict('HOST_REGISTRY_REVIEW_REQUIRED')
                 yield
             finally:

@@ -67,19 +67,22 @@ class LifecycleStore:
     def _retirement_hint(self, connection, source, removed=None):
         present=connection.execute('SELECT to_regclass(%s)',(self.schema+'.source_retirements',)).fetchone()
         if not present or not present['to_regclass']:return None
-        condition=("state='FINALIZED' AND finished_at>=%s" if removed else
+        condition=("(state IN ('SENDING','UNCERTAIN','SUCCEEDED','BLOCKED') OR (state='FINALIZED' AND finished_at>=%s))" if removed else
                    "state IN ('SENDING','UNCERTAIN','SUCCEEDED')")
         parameters=(source,removed['removed_at']) if removed else (source,)
-        result=connection.execute(sql.SQL('SELECT operation_id,state FROM {} WHERE source_instance=%s AND '+condition+' ORDER BY created_at DESC LIMIT 1').format(
+        result=connection.execute(sql.SQL('SELECT operation_id,state,receipt FROM {} WHERE source_instance=%s AND '+condition+' ORDER BY created_at DESC LIMIT 1').format(
             self.table('source_retirements')),parameters).fetchone()
-        return {'operation_id':str(result['operation_id']),'state':result['state']} if result else None
+        return {'operation_id':str(result['operation_id']),'state':result['state'],'archive_required':result['state']=='SUCCEEDED' and bool(result['receipt']) and result['receipt'].get('generation_closed') is not True} if result else None
 
     def read(self, source):
         with self.connect() as connection:
             removed = connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s AND restored_at IS NULL')
                 .format(self.table('source_tombstones')), (source,)).fetchone()
             if removed:
-                return {**{k:v for k,v in removed.items() if k!='restored_at'}, 'removed_at': removed['removed_at'].isoformat(), 'revision': None,
+                from .source_archive import archived
+                closed=archived(connection,self.schema,source)
+                archive=connection.execute(sql.SQL('SELECT mode FROM {} WHERE source_instance=%s').format(self.table('source_archives')),(source,)).fetchone() if closed else None
+                return {**{k:v for k,v in removed.items() if k!='restored_at'}, 'removed_at': removed['removed_at'].isoformat(), 'revision': None, 'archive_mode':archive['mode'] if archive else None,
                         'retirement':self._retirement_hint(connection,source,removed)}
             row = connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s')
                 .format(self.table('sources')), (source,)).fetchone()
@@ -167,35 +170,43 @@ class LifecycleStore:
                                        'display_name=EXCLUDED.display_name,credential_state=EXCLUDED.credential_state,'
                                        'removed_at=clock_timestamp(),restored_at=NULL').format(self.table('source_tombstones')),
                                (source, row['name'], state))
-            if retirement_operation is not None:
-                connection.execute(sql.SQL("UPDATE {} SET state='FINALIZED',finished_at=clock_timestamp() WHERE operation_id=%s AND state='SUCCEEDED'").format(
-                    self.table('source_retirements')),(retirement_operation,))
         # The lifecycle transition is durable before touching any credential file.
-        if remove_credentials:
-            try:
-                with self.connect() as connection:
-                    connection.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
-                                       (f'netbox-sync:{self.schema}:credential-refs',))
-                    refs = {(row['token_id_provider'], row['token_id_key']),
-                            (row['token_secret_provider'], row['token_secret_key'])}
-                    others = connection.execute(sql.SQL('SELECT token_id_provider,token_id_key,'
-                        'token_secret_provider,token_secret_key FROM {} WHERE source_instance<>%s')
-                        .format(self.table('sources')), (source,)).fetchall()
-                    shared = {(item[provider], item[key]) for item in others
-                              for provider,key in [('token_id_provider','token_id_key'),
-                                                   ('token_secret_provider','token_secret_key')]}
-                    # Retain the entire credential pair if any ref is ambiguous/shared.
-                    import re
-                    exclusive = all(provider == 'file' and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{15,127}', key)
-                                    and (provider,key) not in shared for provider,key in refs)
-                    if exclusive:
-                        cleaned = cleanup([key for _,key in sorted(refs)])
-                        state = 'RETAINED_SHARED_OR_LEGACY' if cleaned is False else 'REMOVED'
-                    else:
-                        state = 'RETAINED_SHARED_OR_LEGACY'
-                    connection.execute(sql.SQL('UPDATE {} SET credential_state=%s WHERE source_instance=%s')
-                        .format(self.table('source_tombstones')), (state,source))
-            except Exception:
-                # Persisted CLEANUP_FAILED is deliberately retained on ambiguity/failure.
-                pass
+        if remove_credentials:self.cleanup_credentials(source,cleanup)
         return self.read(source)
+
+    def cleanup_credentials(self,source,cleanup):
+        """Retry only generation-owned filesystem cleanup; never revoke providers."""
+        with self.connect() as connection:
+            row=connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s').format(self.table('sources')),(source,)).fetchone()
+            removed=connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s AND restored_at IS NULL').format(self.table('source_tombstones')),(source,)).fetchone()
+            if not row or not removed:raise LifecycleError('SOURCE_NOT_FOUND')
+            if removed['credential_state'] in ('REMOVED','RETAINED_SHARED_OR_LEGACY'):return removed['credential_state']
+            connection.execute(sql.SQL("UPDATE {} SET credential_state='CLEANUP_FAILED' WHERE source_instance=%s").format(self.table('source_tombstones')),(source,))
+        try:
+            with self.connect() as connection:
+                connection.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
+                                   (f'netbox-sync:{self.schema}:credential-refs',))
+                refs = {(row['token_id_provider'], row['token_id_key']),
+                        (row['token_secret_provider'], row['token_secret_key'])}
+                others = connection.execute(sql.SQL('SELECT token_id_provider,token_id_key,'
+                    'token_secret_provider,token_secret_key FROM {} WHERE source_instance<>%s')
+                    .format(self.table('sources')), (source,)).fetchall()
+                shared = {(item[provider], item[key]) for item in others
+                          for provider,key in [('token_id_provider','token_id_key'),
+                                               ('token_secret_provider','token_secret_key')]}
+                # Retain the entire credential pair if any ref is ambiguous/shared.
+                import re
+                exclusive = all(provider == 'file' and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{15,127}', key)
+                                and (provider,key) not in shared for provider,key in refs)
+                if exclusive:
+                    cleaned = cleanup([key for _,key in sorted(refs)])
+                    state = 'RETAINED_SHARED_OR_LEGACY' if cleaned is False else 'REMOVED'
+                else:
+                    state = 'RETAINED_SHARED_OR_LEGACY'
+                connection.execute(sql.SQL('UPDATE {} SET credential_state=%s WHERE source_instance=%s')
+                    .format(self.table('source_tombstones')), (state,source))
+        except Exception:
+            # Persisted CLEANUP_FAILED is deliberately retained on ambiguity/failure.
+            pass
+        with self.connect() as connection:
+            return connection.execute(sql.SQL('SELECT credential_state FROM {} WHERE source_instance=%s').format(self.table('source_tombstones')),(source,)).fetchone()['credential_state']

@@ -129,6 +129,9 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
         connection.execute("INSERT INTO netbox_sync.source_retirements(operation_id,source_instance,actor_id,revision,guard_instance,plan,state,remove_credentials) VALUES (%s,'esxi-backup-test','admin',%s,%s,%s,'SENDING',false)",
             (uuid.uuid4(),'d'*64,uuid.uuid4(),Jsonb({'remote':{'digest':'e'*64,'manifest':{'format':2,'cluster_id':7,'objects':[['vm:8','f'*64]]}},'removal_generation':None,'source_flags':{'enabled':False,'sync_enabled':False}})))
         connection.commit()
+        connection.execute("INSERT INTO netbox_sync.source_archives(source_instance,operation_id,actor_id,mode,guard_instance,receipt) VALUES ('archived-history',%s,'admin','FULL_DELETE',%s,%s)",(uuid.uuid4(),uuid.uuid4(),Jsonb({'status':'SUCCEEDED','generation_closed':True,'fixture':'immutable receipt'})))
+        connection.commit()
+        expected_archive=connection.execute('SELECT * FROM netbox_sync.source_archives').fetchall()
         expected_retirements=connection.execute('SELECT * FROM netbox_sync.source_retirements').fetchall()
         expected_claims = connection.execute('SELECT * FROM netbox_sync.host_reservations').fetchall()
         expected_recoveries = connection.execute('SELECT * FROM netbox_sync.source_recoveries').fetchall()
@@ -164,6 +167,7 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
     deployment.apply_grants(environment)
     with psycopg.connect(deployment.connection_info('bootstrap', environment)) as connection:
         assert _snapshot(connection) == expected
+        assert connection.execute('SELECT * FROM netbox_sync.source_archives').fetchall()==expected_archive
         assert connection.execute('SELECT * FROM netbox_sync.run_reconciliations').fetchall()==expected_baselines
         assert connection.execute('SELECT * FROM netbox_sync.registration_intents').fetchall()==expected_intents
         assert connection.execute('SELECT * FROM netbox_sync.source_identity_verifications').fetchall()==expected_identity
@@ -191,6 +195,7 @@ def test_custom_dump_round_trip_preserves_multi_source_and_history(tmp_path):
         auth.call(dict(action='authorize',session=session))
     with psycopg.connect(TEST_DSN) as connection:
         assert connection.execute('SELECT valid,decision FROM netbox_sync.run_reconciliations').fetchone()==(False,{'digest':'f'*64,'historical_outcome':'UNPROVED'})
+        assert connection.execute('SELECT verified_at,receipt FROM netbox_sync.source_archives').fetchone()==(None,{'status':'SUCCEEDED','generation_closed':True,'fixture':'immutable receipt'})
         restored_auth=connection.execute('SELECT value FROM netbox_sync.auth_state').fetchone()[0]
         assert restored_auth['principal']==saved_auth['principal']
         assert restored_auth['allowed_hosts']==saved_auth['allowed_hosts']

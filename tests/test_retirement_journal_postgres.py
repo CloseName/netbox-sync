@@ -21,7 +21,7 @@ class Remote:
                 'manifest':{'format':2,'cluster_id':self.cluster,'objects':[['vm:4','b'*64]],'roots':[['vm',4]]},'deleted':[]}
         elif action=='execute':
             self.writes+=1
-            self.result={**self.result,'status':'SUCCEEDED','deleted':['vm:4']}
+            self.result={**self.result,'status':'SUCCEEDED','deleted':['vm:4'],'generation_closed':True}
             if self.lose:raise ControlError('RETIREMENT_UNCERTAIN')
         return {'guard_instance':self.instance,'result':self.result}
 
@@ -42,7 +42,7 @@ def prepare(value):
     return source,current,result
 
 def execute(service,source,current,review):
-    return service.execute(source,review['operation_id'],'admin-fixture',review['digest'],current['display_name'],False)
+    return service.execute(source,review['operation_id'],'admin-fixture',review['digest'],current['display_name'],True)
 
 def test_receipt_before_tombstone_and_idempotent_completion(coordinator):
     service,registry,config,remote,cleanups=coordinator
@@ -70,9 +70,9 @@ def test_other_actor_and_changed_approval_never_write(coordinator):
     service,_,_,remote,_=coordinator
     source,current,review=prepare(coordinator)
     with pytest.raises(LifecycleError,match='RETIREMENT_CONFLICT'):
-        service.execute(source,review['operation_id'],'another-admin',review['digest'],current['display_name'],False)
+        service.execute(source,review['operation_id'],'another-admin',review['digest'],current['display_name'],True)
     with pytest.raises(LifecycleError,match='RETIREMENT_CONFLICT'):
-        service.execute(source,review['operation_id'],'admin-fixture','f'*64,current['display_name'],False)
+        service.execute(source,review['operation_id'],'admin-fixture','f'*64,current['display_name'],True)
     assert remote.writes==0 and service.store.read(source)['removed_at'] is None
 
 def test_shared_current_placement_refuses_review(coordinator):
@@ -115,7 +115,7 @@ def test_confirmed_refusal_is_idempotent_and_does_not_dispatch_again(coordinator
 def test_durable_success_is_rechecked_before_local_finalization(coordinator):
     service,_,_,remote,_=coordinator
     source,current,review=prepare(coordinator)
-    record,dispatch=service.journal.begin(source,review['operation_id'],'admin-fixture',review['digest'],current['display_name'],False)
+    record,dispatch=service.journal.begin(source,review['operation_id'],'admin-fixture',review['digest'],current['display_name'],True)
     assert dispatch
     evidence=remote.call('execute',review['operation_id'],digest=review['digest'])
     service.journal.resolve(source,review['operation_id'],'admin-fixture',evidence['guard_instance'],evidence['result'])
@@ -147,16 +147,16 @@ def test_not_delivered_execute_requires_explicit_same_intent_resume(coordinator,
     if changed:
         remote.result={**remote.result,'digest':'f'*64}
         with pytest.raises(LifecycleError,match='RETIREMENT_CONFLICT'):
-            service.execute(source,review['operation_id'],'admin-fixture',review['digest'],current['display_name'],False,resume=True)
+            service.execute(source,review['operation_id'],'admin-fixture',review['digest'],current['display_name'],True,resume=True)
         assert remote.writes==0 and service.store.read(source)['removed_at'] is None
     else:
         restarted=RetirementCoordinator(service.store,remote,lambda _:None)
         from netbox_sync.lifecycle_protocol import handle_lifecycle
         result=handle_lifecycle(restarted.store,None,dict(action='retirement_resume',source_instance=source,
             operation_id=review['operation_id'],actor_id='admin-fixture',digest=review['digest'],
-            confirmed_source=current['display_name'],remove_credentials=False),retirement=restarted)
+            confirmed_source=current['display_name'],remove_credentials=True),retirement=restarted)
         assert result['state']=='FINALIZED' and remote.writes==1
-        assert restarted.execute(source,review['operation_id'],'admin-fixture',review['digest'],current['display_name'],False,resume=True)==result
+        assert restarted.execute(source,review['operation_id'],'admin-fixture',review['digest'],current['display_name'],True,resume=True)==result
         assert remote.writes==1
 
 
@@ -173,6 +173,7 @@ def test_retained_source_can_retire_proved_objects_without_reactivation_or_secon
     done=execute(service,source,context,review)
     assert done['state']=='FINALIZED' and remote.writes==1 and not cleanups
     assert service.store.read(source)['removed_at']==tombstone['removed_at']
-    assert service.store.read(source)['credential_state']==tombstone['credential_state']
+    assert service.store.read(source)['credential_state']=='RETAINED_SHARED_OR_LEGACY'
+    assert service.store.read(source)['archive_mode']=='FULL_DELETE'
     assert not registry.get_by_source_instance(source).config.enabled
     assert execute(service,source,context,review)==done and remote.writes==1
