@@ -2,13 +2,15 @@ import { isSource } from './sources.ts';
 import type { Source } from './sources';
 
 export const hostRegistrationMessages:Record<string,readonly [string,string]>={
+  HOST_ARCHIVE_RECHECK_REQUIRED:['Recheck the restored archive against NetBox before registering a host.','Перед добавлением хоста сверьте восстановленный архив с NetBox.'],
+  HOST_SOURCE_ARCHIVE_REQUIRED:['Close the old registration before adding this host. Review and preserve its historical objects; observation alone does not authorize recovery.','Перед добавлением завершите старую регистрацию. Проверьте и сохраните её исторические объекты; одного наблюдаемого UUID недостаточно для восстановления.'],
  HOST_LEGACY_PLACEMENT_PROTECTED:['Legacy ownership in this placement is unproved. Choose a separate placement; isolation does not authorize adoption.','Принадлежность старых объектов в этом размещении не доказана. Выберите отдельное размещение; изоляция не разрешает присвоение объектов.'],
  HOST_SOURCE_REMOVED:['This host belongs to a removed source. An administrator must review recovery.','Хост связан с удалённым источником. Администратор должен проверить возможность восстановления.'],
  HOST_ALREADY_REGISTERED:['This host already belongs to a source. Open it; a removed source requires administrator recovery.','Этот хост уже связан с источником. Откройте его; удалённый источник должен восстановить администратор.'],
  HOST_IDENTITY_CONFLICT:['Several source records contain the same host identifier. Administrator reconciliation is required.','В нескольких записях источников сохранён один идентификатор хоста. Нужна сверка администратором.'],
  HOST_REGISTRATION_RESERVED:['An earlier registration reserved this host. Reconcile that attempt before adding it again.','Хост зарезервирован предыдущей попыткой добавления. Сначала нужно проверить её результат.'],
  HOST_IDENTITY_UNAVAILABLE:['A reliable host identity could not be verified. Registration is blocked.','Не удалось подтвердить надёжную идентичность хоста. Добавление заблокировано.'],
- HOST_REGISTRY_REVIEW_REQUIRED:['A legacy ESXi record has no UUID. It is not a confirmed duplicate. An administrator can check the old server or isolate the unverified record below.','У старой записи ESXi нет UUID. Это не подтверждённый дубль. Администратор может проверить старый сервер или изолировать непроверенную запись ниже.'],
+ HOST_REGISTRY_REVIEW_REQUIRED:['A legacy ESXi record has no UUID. It is not a confirmed duplicate. An administrator must review the old registration and its ownership evidence below.','У старой записи ESXi нет UUID. Это не подтверждённый дубль. Администратор должен проверить старую регистрацию и доказательства принадлежности её объектов ниже.'],
  HOST_REGISTRATION_INVALID:['Reload the registration form to obtain a request ID.','Перезагрузите форму добавления для получения идентификатора запроса.'],
 };
 export type HostConflict = {source_instance:string;state:'REGISTERED'|'REMOVED'};

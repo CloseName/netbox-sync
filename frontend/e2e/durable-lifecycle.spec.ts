@@ -47,7 +47,7 @@ function backend(){
       retirementControl.undelivered=false;
       if(retirementControl.lose){retirementControl.lose=false;record.state='UNCERTAIN';return route.abort('connectionreset');}
       record.state='FINALIZED';record.remove_credentials=true;
-      removed.set(id,{...lifecycle(id),revision:null,removed_at:new Date().toISOString(),credential_state:'REMOVED',
+      removed.set(id,{...lifecycle(id),revision:null,removed_at:new Date().toISOString(),credential_state:'REMOVED',archive_mode:'FULL_DELETE',
         retirement:{operation_id:record.operation_id,state:'FINALIZED'}});
       return route.fulfill({json:record});
     }
@@ -99,8 +99,8 @@ for(const width of [1440,1024,768])test(`Remove Source confirmation, active bloc
   await expect(dialog.getByText('VM · NetBox ID 9',{exact:true})).toBeVisible();
   await dialog.screenshot({path:info.outputPath('remove-confirmation.png')});
   await dialog.getByRole('button',{name:'Confirm removal',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Source removed from NetBox Sync'})).toBeVisible();await expect(page.getByText(/Local stored credentials removed/)).toBeVisible();
-  await page.reload();await expect(page.getByRole('heading',{name:'Source removed from NetBox Sync'})).toBeVisible();await expect(page.getByRole('button',{name:'Build plan'})).toHaveCount(0);
+  await expect(page.getByRole('heading',{name:'Source and its NetBox objects deleted'})).toBeVisible();await expect(page.getByText(/Local stored credentials removed/)).toBeVisible();
+  await page.reload();await expect(page.getByRole('heading',{name:'Source and its NetBox objects deleted'})).toBeVisible();await expect(page.getByRole('button',{name:'Build plan'})).toHaveCount(0);
   await page.screenshot({path:info.outputPath('removed-source.png'),fullPage:true});await page.getByRole('link',{name:'Back to Sources',exact:true}).click();expect(server.removed.has('source-1')).toBe(true);
 });
 
@@ -222,7 +222,7 @@ test('removal response loss and reload keep the original operation',async({page,
   expect(server.retirementControl.writes).toBe(1);
   await page.screenshot({path:info.outputPath('retirement-uncertain.png'),fullPage:true});
   await dialog.getByRole('button',{name:'Check result',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Source removed from NetBox Sync'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Source and its NetBox objects deleted'})).toBeVisible();
   await expect(page.getByText(/deleted with a confirmed receipt/)).toBeVisible();
   expect(server.retirementControl.writes).toBe(1);
 });
@@ -242,7 +242,34 @@ for(const language of ['en','ru'] as const)test(`explicit removal continuation $
   await expect(resume).toBeEnabled();expect(server.retirementControl.writes).toBe(0);
   await page.screenshot({path:info.outputPath('explicit-continuation.png'),fullPage:true});
   await resume.click();
-  await expect(page.getByRole('heading',{name:language==='ru'?'Источник удалён из NetBox Sync':'Source removed from NetBox Sync'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:language==='ru'?'Источник и его объекты NetBox удалены':'Source and its NetBox objects deleted'})).toBeVisible();
   expect(server.retirementControl.writes).toBe(1);
   expect(server.retirements.get('source-1').operation_id).toBe(operation);
+});
+
+
+for(const language of ['en','ru'])test(`legacy credential consent is explicit ${language}`,async({page,context})=>{
+ const server=backend();await server.attach(context);
+ await page.goto(url+'/sources/source-1/configuration');await setLanguage(page,language);
+ await page.getByRole('button',{name:language==='ru'?'Удалить источник':'Remove Source',exact:true}).click();
+ const dialog=page.getByRole('dialog'),record=server.retirements.get('source-1');
+ record.state='SUCCEEDED';record.remove_credentials=false;record.safe_code='SOURCE_CREDENTIAL_CLEANUP_PENDING';server.retirementControl.writes=1;
+ await dialog.getByRole('button',{name:language==='ru'?'Закрыть':'Close',exact:true}).click();
+ await page.getByRole('button',{name:language==='ru'?'Проверить удаление':'Check removal',exact:true}).click();
+ const confirm=dialog.getByRole('button',{name:language==='ru'?'Подтвердить очистку данных доступа':'Confirm credential cleanup',exact:true});
+ await expect(confirm).toBeVisible();expect(record.remove_credentials).toBe(false);
+ await confirm.click();
+ await expect(page.getByRole('heading',{name:language==='ru'?'Источник и его объекты NetBox удалены':'Source and its NetBox objects deleted'})).toBeVisible();
+ expect(record.remove_credentials).toBe(true);expect(server.retirementControl.writes).toBe(1);
+});
+
+for(const language of ['en','ru'])test(`visible dependency references ${language}`,async({page,context},info)=>{
+ const server=backend();await server.attach(context);
+ await context.route('**/inventory-review',route=>route.fulfill({json:{source_instance:'source-1',objects:[{kind:'vm',id:9,present:true,claimed:true}],dependencies:[{reason:'EXTERNAL_FIELD_UPDATE',model:'virtualization.virtualmachine',id:87,field:'primary_ip4'}]}}));
+ await page.setViewportSize({width:768,height:900});await page.goto(url+'/sources/source-1/configuration');await setLanguage(page,language);
+ await page.getByRole('button',{name:language==='ru'?'Проверить объекты источника':'Inspect source objects',exact:true}).click();
+ await expect(page.getByText(/virtualization.virtualmachine #87/)).toBeVisible();
+ await expect(page.getByText(language==='ru'?'Зависимости, мешающие удалению':'Dependencies preventing removal',{exact:true})).toBeVisible();
+ await page.screenshot({path:info.outputPath('dependency-details.png'),fullPage:true});
+ expect(server.retirementControl.writes).toBe(0);
 });

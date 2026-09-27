@@ -1,4 +1,4 @@
-import {LegacyAdmission} from '../components/LegacyAdmission';
+import {LifecycleResolution} from '../components/LifecycleResolution';
 import {RunReconciliation} from '../components/RunReconciliation';
 import {TeamEditor} from '../components/SourceTeams';
 import {usePermission} from '../AuthGate';
@@ -449,7 +449,7 @@ export function SourcesPage() {
               scheduleLink={base + "/schedule"}
             />
             {canConfigure && <SourceMappingEditor key={detail.source_instance} source={detail.source_instance} onSaved={source.refresh}/>}
-          {canRemove && detail.type==='esxi' && <LegacyAdmission source={detail.source_instance}/>}
+          {canRemove && detail.type==='esxi' && <LifecycleResolution source={detail.source_instance}/>}
           {canRemove && <RunReconciliation source={detail.source_instance} onSaved={()=>{source.refresh();schedule.refresh();diagnostics.refresh();setReviewGeneration(g=>g+1);}}/>}
           {canRemove && <SourceLifecyclePanel key={detail.source_instance+":"+reviewGeneration} source={detail} onRemoved={setRemoved} />}
           </details>)}

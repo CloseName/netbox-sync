@@ -1,4 +1,4 @@
-import {LegacyAdmission} from '../components/LegacyAdmission';
+import {LifecycleResolution} from '../components/LifecycleResolution';
 import {SourceInventoryAudit} from '../components/SourceInventoryAudit';
 import {RunReconciliation} from '../components/RunReconciliation';
 import {usePermission} from '../AuthGate';
@@ -21,17 +21,17 @@ export function RemovedSource({ value:initial }: { value: Lifecycle }) {
   const [value,setValue]=useState(initial);
   const [reviewGeneration,setReviewGeneration]=useState(0);
   const [language]=useLanguage();const canResolve=usePermission('source.remove');
-  return <main className="source-workspace"><h1>{tr("Source removed from NetBox Sync")}{" "}</h1>
+  return <main className="source-workspace"><h1>{value.archive_mode==='FULL_DELETE'?(language==='ru'?'Источник и его объекты NetBox удалены':'Source and its NetBox objects deleted'):value.archive_mode==='LEGACY_RETAIN'?(language==='ru'?'Регистрация архивирована, объекты сохранены':'Registration archived; objects retained'):value.retirement&&value.retirement.state!=='FINALIZED'?(language==='ru'?'Удаление не завершено':'Removal is not complete'):tr("Source removed from NetBox Sync")}{" "}</h1>
     <p>{value.display_name}</p><details><summary>{tr("Technical details")}</summary><code>{value.source_instance}</code></details>
     <p>{tr("Removed")}{" "}<time dateTime={value.removed_at??undefined}>{value.removed_at?exactTime(value.removed_at):tr("Unavailable")}</time></p>
-    <p>{value.retirement?.state==='FINALIZED'
+    <p>{value.archive_mode==='FULL_DELETE'
       ?(language==='ru'?'История запусков сохранена. Удаление проверенного списка объектов NetBox подтверждено квитанцией.':'Run history is retained. The reviewed NetBox objects were deleted with a confirmed receipt.')
       :tr("Historical runs are retained. NetBox infrastructure was not deleted.")}</p>
-    <p>{tr("This Source ID is reserved and cannot be registered again automatically.")}{" "}</p>
+    <p>{value.archive_mode?(language==='ru'?'Старый Source ID сохранён для истории. Добавьте сервер заново: он получит новый Source ID.':'The old Source ID is retained for history. Add the server again with a new Source ID.'):tr("This Source ID is reserved and cannot be registered again automatically.")}{" "}</p>
     <p>{tr(credentialText(value.credential_state))} {tr("Provider credentials were not revoked.")}{" "}</p>
-    {canResolve&&value.retirement?.state!=='FINALIZED'&&<SourceRetirementPanel key={reviewGeneration} retained source={{source_instance:value.source_instance,name:value.display_name}} onRemoved={setValue}/>}
+    {canResolve&&!value.archive_mode&&value.retirement?.state!=='FINALIZED'&&<SourceRetirementPanel key={reviewGeneration} retained source={{source_instance:value.source_instance,name:value.display_name}} onRemoved={setValue}/>}
     {canResolve&&value.retirement?.state==='FINALIZED'&&<SourceInventoryAudit source={value.source_instance}/> }
-    {canResolve&&<LegacyAdmission source={value.source_instance}/>}
+    {canResolve&&<LifecycleResolution source={value.source_instance}/>}
     {canResolve&&<RunReconciliation source={value.source_instance} onSaved={()=>setReviewGeneration(g=>g+1)}/>}
     <div className="page-actions"><Link to={'/runs?source_instance=' + encodeURIComponent(value.source_instance)}>{tr("View run history")}{" "}</Link><Link to="/sources">{tr("Back to Sources")}{" "}</Link></div>
   </main>;

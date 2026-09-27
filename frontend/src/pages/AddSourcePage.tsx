@@ -1,4 +1,4 @@
-import {LegacyAdmission} from '../components/LegacyAdmission';
+import {LifecycleResolution} from '../components/LifecycleResolution';
 import {SourceIdentityRecords} from '../components/SourceIdentityRecords';
 import {RegistrationContinuation} from '../components/RegistrationContinuation';
 import {SourceRecovery} from '../components/SourceRecovery';
@@ -132,7 +132,7 @@ export function AddSourcePage() {
       setExpiresAt(Number.isFinite(result.expires_in_seconds)?Date.now()+result.expires_in_seconds!*1000:null);setToken(result.onboarding_token);setPreview(result.preview);setReview(false);
       setDraft(d=>({...d,source_instance:d.source_instance||result.suggested_source_instance,name:d.name||result.preview.name||connection.address,host_types:Object.fromEntries(Object.entries(d.host_types).filter(([id])=>result.preview.hosts.some(h=>h.id===id&&preview?.hosts.some(old=>old.id===id&&old.model===h.model&&old.manufacturer===h.manufacturer))))}));
     } catch (failure) {
-      if(failure instanceof HostRegistrationFailure){setLegacyReview(failure.code==='HOST_REGISTRY_REVIEW_REQUIRED');setHostConflicts(failure.conflicts);setExistingSource(failure.source);setRemovedSource(failure.code==='HOST_SOURCE_REMOVED');}
+      if(failure instanceof HostRegistrationFailure){setLegacyReview(['HOST_REGISTRY_REVIEW_REQUIRED','HOST_SOURCE_ARCHIVE_REQUIRED','HOST_ARCHIVE_RECHECK_REQUIRED'].includes(failure.code));setHostConflicts(failure.conflicts);setExistingSource(failure.source);setRemovedSource(failure.code==='HOST_SOURCE_REMOVED');}
       if(failure instanceof SourceConnectionError)setConnectionCode(failure.code);
       setError(
         failure instanceof HostRegistrationFailure ? hostRegistrationMessages[failure.code][language==='ru'?1:0] :
@@ -183,7 +183,7 @@ export function AddSourcePage() {
       if(team&&canAssignTeam&&teams.data){try{await authRequest('teams',{operation:'assign',revision:teams.data.revision,source_instance:result.source_instance,team_id:team});}catch{setTeamUnconfirmed(true);}}
       setCreated(result);
     } catch (failure) {
-      if(failure instanceof HostRegistrationFailure){setLegacyReview(failure.code==='HOST_REGISTRY_REVIEW_REQUIRED');setHostConflicts(failure.conflicts);setExistingSource(failure.source);setRemovedSource(failure.code==='HOST_SOURCE_REMOVED');selectionRejected=true;setReview(false);}
+      if(failure instanceof HostRegistrationFailure){setLegacyReview(['HOST_REGISTRY_REVIEW_REQUIRED','HOST_SOURCE_ARCHIVE_REQUIRED','HOST_ARCHIVE_RECHECK_REQUIRED'].includes(failure.code));setHostConflicts(failure.conflicts);setExistingSource(failure.source);setRemovedSource(failure.code==='HOST_SOURCE_REMOVED');selectionRejected=true;setReview(false);}
       if(failure instanceof CatalogFailure){selectionRejected=true;setReview(false);}
       if(failure instanceof RegistrationFailure&&failure.uncertain){selectionRejected=true;setUncertain(true);setReconciled(false);}
 
@@ -221,7 +221,7 @@ export function AddSourcePage() {
         <p>{t('Recorded identity matches do not prove that the physical servers are identical. Review ownership and history before recovery.','Совпадение сохранённого идентификатора не доказывает тождество физических серверов. Перед восстановлением проверьте принадлежность и историю.')}</p>
         <ul>{hostConflicts.map(row=><li key={row.source_instance}><code>{row.source_instance}</code> — {row.state==='REMOVED'?t('Removed; history retained','Удалён; история сохранена'):<Link to={sourcePath(row.source_instance)}>{t('Registered source','Зарегистрированный источник')}</Link>} {canRecover&&row.state==='REMOVED'&&<button type="button" disabled={busy} onClick={()=>{setExistingSource(row.source_instance);setRemovedSource(true);setRecoveryGeneration(v=>v+1);}}>{t('Review recovery of this record','Проверить восстановление этой записи')}</button>}</li>)}</ul>
       </section>}
-      {error&&existingSource&&legacyReview&&<LegacyAdmission key={existingSource} source={existingSource}/>}
+      {error&&existingSource&&legacyReview&&<LifecycleResolution key={existingSource} source={existingSource}/>}
       {error&&existingSource&&!removedSource&&<p><Link to={sourcePath(existingSource)}>{t('Open existing source','Открыть существующий источник')}</Link></p>}
       {uncertain&&<section className="source-panel"><p>{t('No registration request will be retried automatically.','Запрос регистрации не будет повторён автоматически.')}</p><button type="button" disabled={busy} onClick={async()=>{
         setStarted(Date.now());setBusyAction('reconcile');setBusy(true);try{const response=await fetch('/api/v1/sources/'+encodeURIComponent(draft.source_instance),{cache:'no-store',signal:AbortSignal.timeout(10000)});
@@ -238,7 +238,7 @@ export function AddSourcePage() {
       {notice&&<p role="status">{notice}</p>}
       {error && (
         <p role="alert" tabIndex={-1} className="source-error">
-          {connectionCode?connectionMessages[connectionCode][language==='ru'?1:0]:tr(error)}
+          {connectionCode?connectionMessages[connectionCode][language==='ru'?1:0]:Object.values(hostRegistrationMessages).find(messages=>messages.includes(error))?.[language==='ru'?1:0]??tr(error)}
         </p>
       )}
       {canRecover&&removedSource&&existingSource&&type==='esxi'&&<SourceRecovery key={existingSource+':'+recoveryGeneration} source={existingSource}

@@ -7,25 +7,33 @@ import {selectPlacement,catalogRow,previewResult} from './source-placement-fixtu
 async function fixture(page:any,role='admin',provider='esxi',failure='',hostId='host-a'){
   const permissions=['source.read','run.read','diagnostics.read',...(role==='viewer'?[]:['source.register','source.probe','source.plan','source.apply']),...(role==='admin'?['source.remove','source.configure','catalog.create','policy.read','policy.write','bootstrap.manage','identity.manage']:[])];
   const writes:string[]=[];let registered:any=null,fail=failure;
+  const removals=new Map<string,any>(),retirements=new Map<string,any>();
   await page.route('**/api/v1/**',async(route:any)=>{
     const req=route.request(),path=new URL(req.url()).pathname;
+    if(path==='/api/v1/sources/lifecycle-review')return route.fulfill({json:{sources:[]}});
     if(path==='/api/v1/registration-attempts')return route.fulfill({json:{attempts:[]}});
     if(path==='/api/v1/auth/me')return route.fulfill({json:{principal_id:'fixture-user',username:role,role,provider:'local',permissions}});
     if(path==='/api/v1/bootstrap')return route.fulfill({json:{revision:1,status:'READY',url:'https://netbox.example.test',completed:true,read_token_present:true,apply_token_present:true,safe_code:null,checks:[],validated_at:1}});
     if(path==='/api/v1/teams')return route.fulfill({json:{version:1,revision:1,teams:{team1:{id:'team1',name:'Infrastructure'}},assignments:{}}});
-    if(path.endsWith('test-connection')){if(fail){const code=fail;fail='';return route.fulfill({status:400,json:{error:{code}}});}return route.fulfill({json:{...previewResult,preview:{...previewResult.preview,provider,name:'Fixture host',hosts:previewResult.preview.hosts.map(h=>({...h,id:hostId}))}}});}
+    if(path.endsWith('test-connection')){if(fail){const code=fail;fail='';return route.fulfill({status:400,json:{error:{code}}});}return route.fulfill({json:{...previewResult,suggested_source_instance:removals.size?provider+'-'+randomUUID().replaceAll('-',''):previewResult.suggested_source_instance,preview:{...previewResult.preview,provider,name:'Fixture host',hosts:previewResult.preview.hosts.map(h=>({...h,id:hostId}))}}});}
     if(path.endsWith('cancel-onboarding'))return route.fulfill({json:{status:'cancelled'}});
     if(path.endsWith('resolve-placement'))return route.fulfill({json:{references:Object.fromEntries(['site','platform','device_role','cluster_type'].map(kind=>[kind,{...catalogRow(kind),...(['platform','cluster_type'].includes(kind)&&provider==='proxmox'?{name:'Proxmox VE'}:{})}])),host_types:{[hostId]:catalogRow('device_type')},sites:[catalogRow('site')],create_cluster:true,issues:[]}});
     if(path.endsWith('review-placement'))return route.fulfill({json:{valid:true}});
     if(path.includes('/catalog/')){const kind=path.split('/').pop()!,row=catalogRow(kind);if(kind==='cluster')row.name='Fixture host';if(provider==='proxmox'&&['platform','cluster_type'].includes(kind))row.name='Proxmox VE';return route.fulfill({json:{items:[row],count:1,offset:0,more:false,url:'https://netbox.example.test/'}});}
     if(path==='/api/v1/sources'&&req.method()==='POST'){writes.push(path);const data=req.postDataJSON();expect(Object.keys(data.host_types)).toContain(hostId);expect(data.sync_interval_seconds).toBe(600);expect(data.confirm_sync_disabled).toBe(true);registered={...source(),source_instance:data.source_instance,name:data.name,address:data.address,type:data.source_type,enabled:true,sync_enabled:false,status:'sync_disabled',legacy_identity_owner:false};return route.fulfill({json:registered});}
+    const id=path.split('/')[4];
+    if(path.endsWith('/lifecycle'))return route.fulfill({json:removals.get(id)??{source_instance:id,display_name:registered?.name??id,revision:'a'.repeat(64),removed_at:null,credential_state:null}});
+    if(path.endsWith('/retirement-review')){const body=req.postDataJSON();const review={source_instance:id,operation_id:body.operation_id,state:'READY',revision:'a'.repeat(64),digest:'b'.repeat(64),guard_instance:randomUUID(),manifest:{format:2,cluster_id:7,objects:[['cluster:7','c'.repeat(64)]]}};retirements.set(id,review);return route.fulfill({json:review});}
+    if(path.endsWith('/retire')){const body=req.postDataJSON(),review=retirements.get(id);expect(body.confirmed).toBe(true);expect(body.remove_credentials).toBe(true);expect(body.operation_id).toBe(review.operation_id);removals.set(id,{source_instance:id,display_name:registered.name,revision:null,removed_at:new Date().toISOString(),credential_state:'REMOVED',archive_mode:'FULL_DELETE',retirement:{operation_id:review.operation_id,state:'FINALIZED'}});registered=null;return route.fulfill({json:{...review,state:'FINALIZED',remove_credentials:true}});}
+    if(removals.has(id)&&path==='/api/v1/sources/'+id)return route.fulfill({status:404,json:{error:{code:'SOURCE_NOT_FOUND'}}});
+    if(registered&&path==='/api/v1/sources/'+registered.source_instance)return route.fulfill({json:registered});
     if(path==='/api/v1/sources')return route.fulfill({json:{sources:registered?[registered]:[]}});
     if(path==='/api/v1/diagnostics')return route.fulfill({json:diagnostics(registered?[registered]:[])});
     if(req.method()!=='GET')writes.push(path);
     return route.fulfill({json:{}});
   });
   await page.goto('/sources/add');
-  return {writes};
+  return {writes,get registered(){return registered;}};
 }
 async function connect(page:any,provider='esxi'){
   await page.getByLabel('Source type').selectOption(provider);
@@ -272,31 +280,60 @@ test('exact AM BIOS UUID survives preview placement and final registration',asyn
  expect(server.writes).toEqual(['/api/v1/sources']);
 });
 
-for(const lang of ['en','ru'])test(`legacy Admin decision continues full wizard ${lang}`,async({page})=>{
+for(const lang of ['en','ru'])test(`observed AM archive continues full wizard ${lang}`,async({page})=>{
  const server=await fixture(page,'admin','esxi','','00000000-0000-0000-0000-ac1f6be2c4da');
- let resolved=false,decisions=0,oldProbe=0;
- await page.route('**/api/v1/sources/test-connection',route=>resolved?route.fallback():route.fulfill({status:409,json:{error:{code:'HOST_REGISTRY_REVIEW_REQUIRED',existing_source:'legacy'}}}));
- await page.route('**/api/v1/sources/legacy/legacy-*',async route=>{
+ let resolved=false,decisions=0,review:any;
+ const sourceId='esxi-169610c2cd1c4abfac2c';
+ const lifecycle=()=>({source_instance:sourceId,display_name:'ESXI-AM-QA2',removed_at:'2026-09-20T10:00:00Z',credential_state:'REMOVED',revision:'a'.repeat(64),archive_mode:resolved?'LEGACY_RETAIN':null});
+ await page.route('**/api/v1/sources/test-connection',route=>resolved?route.fallback():route.fulfill({status:409,json:{error:{code:'HOST_SOURCE_ARCHIVE_REQUIRED',existing_source:sourceId}}}));
+ await page.route('**/api/v1/sources/lifecycle-review',route=>route.fulfill({json:{sources:[{source_instance:sourceId,name:'ESXI-AM-QA2',state:resolved?'ARCHIVED':'RETAINED',removed:true,archive_mode:resolved?'LEGACY_RETAIN':null,requires_recheck:false,verified_identity:false,observed_uuid:'00000000-0000-0000-0000-ac1f6be2c4da'}]}}));
+ await page.route('**/api/v1/sources/'+sourceId+'/*',async route=>{
   const path=new URL(route.request().url()).pathname;
-  if(path.endsWith('review'))return route.fulfill({json:{source_instance:'legacy',name:'ESXI-1L-SUP',address:'old.example.test',port:443,verify_ssl:true,revision:'a'.repeat(64),host_uuid:null,state:'REMOVED',isolated:false,site_slug:'old',cluster_name:'Old'}});
-  if(path.endsWith('probe')){oldProbe++;return route.fulfill({status:502,json:{error:{code:'SOURCE_CONNECTION_FAILED'}}});}
-  const body=route.request().postDataJSON();expect(body.decision).toBe('ISOLATE');expect(body.confirmed).toBe(true);expect(body.evidence_token).toBeNull();decisions++;resolved=true;return route.fulfill({json:{status:'RECORDED'}});
+  if(path.endsWith('/retirement-context'))return route.fulfill({json:lifecycle()});
+  if(path.endsWith('/lifecycle'))return route.fulfill({json:{...lifecycle(),revision:null}});
+  if(path.endsWith('/archive-review')){review={source_instance:sourceId,operation_id:route.request().postDataJSON().operation_id,state:'READY',digest:'b'.repeat(64),revision:'a'.repeat(64),guard_instance:randomUUID(),mode:'LEGACY_RETAIN',manifest:{format:4,objects:[],retained:[{kind:'device',id:5,present:true,claimed:false}],historical_outcome:'UNPROVED'}};return route.fulfill({json:review});}
+  if(path.endsWith('/retire')){const body=route.request().postDataJSON();expect(body.confirmed).toBe(true);expect(body.confirmed_source).toBe('ESXI-AM-QA2');expect(body.operation_id).toBe(review.operation_id);decisions++;resolved=true;return route.fulfill({json:{...review,state:'FINALIZED'}});}
+  return route.fulfill({status:404,json:{error:{code:'SOURCE_NOT_FOUND'}}});
  });
- await connect(page);await expect(page.getByText('It is not a confirmed duplicate.',{exact:false})).toBeVisible();
+ await connect(page);
+ const secret=await page.locator('.wizard-form [name=secret]').inputValue();
  if(lang==='ru')await setLanguage(page,'ru');
- await page.getByRole('button',{name:lang==='ru'?'Открыть проверку старой записи':'Review this legacy record',exact:true}).click();
- const old=page.locator('#legacy-identity');
- const newSecret=await page.locator('.wizard-form [name=secret]').inputValue();
- await old.locator('[name=username]').fill('old-account');await old.locator('[name=secret]').fill(randomUUID());
- expect(await old.locator('[name=secret]').inputValue()).not.toBe(newSecret);
- await old.getByRole('button',{name:lang==='ru'?'Проверить старый сервер':'Check old server',exact:true}).click();await expect.poll(()=>oldProbe).toBe(1);
- await expect(page.locator('.wizard-form [name=secret]')).toHaveValue(newSecret);
- await old.getByRole('textbox',{name:lang==='ru'?'Причина решения (без секретов)':'Decision reason (no secrets)'}).fill('Decommissioned; retained ownership is not proved');
- await old.getByRole('checkbox').check();await old.getByRole('button',{name:lang==='ru'?'Изолировать непроверенную запись':'Isolate unverified record',exact:true}).click();
- await expect(old.getByRole('status')).toContainText(lang==='ru'?'Решение сохранено':'Decision saved');
- await page.screenshot({path:test.info().outputPath('legacy-decision-'+lang+'.png'),fullPage:true});
+ await expect(page.locator('.source-error')).toContainText(lang==='ru'?'Перед добавлением завершите старую регистрацию':'Close the old registration');
+ await page.getByRole('button',{name:lang==='ru'?'Проверить архивирование':'Review archive',exact:true}).click();
+ const dialog=page.getByRole('dialog');
+ await expect(dialog.getByText(/NetBox ID 5/)).toBeVisible();
+ await expect(dialog).toContainText(lang==='ru'?'создание не доказано':'creation not proved');
+ await expect(dialog).toContainText(lang==='ru'?'Исторический результат запусков не меняется':'The old execution result remains unchanged');
+ await page.screenshot({path:test.info().outputPath('legacy-archive-review-'+lang+'.png'),fullPage:true});
+ await dialog.getByRole('button',{name:lang==='ru'?'Подтвердить архивирование':'Confirm archive',exact:true}).click();
+ await expect(page.getByRole('status')).toContainText(lang==='ru'?'Поколение закрыто':'Generation closed');
+ await expect(page.locator('.wizard-form [name=secret]')).toHaveValue(secret);
  if(lang==='ru')await setLanguage(page,'en');
  await page.locator('.wizard-form').getByRole('button',{name:'Continue',exact:true}).click();await expect(page).toHaveURL(/step=2/);
  await placement(page);await page.getByRole('button',{name:'Continue',exact:true}).click();await page.getByRole('button',{name:'Add source',exact:true}).click();
  await expect(page).toHaveURL(/\/sources$/);expect(decisions).toBe(1);expect(server.writes).toEqual(['/api/v1/sources']);
+});
+
+
+for(const provider of ['esxi','proxmox'])test(`wizard removal and fresh generation ${provider}`,async({page})=>{
+ const server=await fixture(page,'admin',provider,'','00000000-0000-0000-0000-ac1f6be2c4da');
+ async function add(){await connect(page,provider);await placement(page);await page.getByRole('button',{name:'Continue',exact:true}).click();await page.getByRole('button',{name:'Add source',exact:true}).click();await expect(page).toHaveURL(/\/sources$/);return server.registered.source_instance;}
+ const first=await add();
+ await page.goto('/sources/'+first+'/configuration');
+ await page.getByRole('button',{name:'Remove Source',exact:true}).click();
+ await page.getByRole('dialog').getByRole('button',{name:'Confirm removal',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'Source and its NetBox objects deleted'})).toBeVisible();
+ await page.reload();await expect(page.getByRole('heading',{name:'Source and its NetBox objects deleted'})).toBeVisible();
+ await page.goto('/sources/add');const second=await add();
+ expect(second).not.toBe(first);expect(server.writes.filter(x=>x==='/api/v1/sources')).toHaveLength(2);
+});
+
+
+test('malformed lifecycle review does not crash Sources',async({page})=>{
+ await fixture(page);
+ await page.route('**/api/v1/sources/lifecycle-review',route=>route.fulfill({json:{}}));
+ await page.goto('/sources');await page.getByRole('button',{name:'Review registrations',exact:true}).click();
+ await expect(page.getByRole('alert').filter({hasText:'Lifecycle review is unavailable'})).toBeVisible();
+ await expect(page.getByText('Unexpected Application Error!',{exact:true})).toHaveCount(0);
+ await expect(page.getByRole('link',{name:'Add Source',exact:true}).first()).toBeVisible();
 });

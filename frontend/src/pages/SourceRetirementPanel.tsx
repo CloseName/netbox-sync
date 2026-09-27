@@ -1,4 +1,4 @@
-import {SourceInventoryAudit} from '../components/SourceInventoryAudit';
+import {SourceInventoryAudit,permissionErrors} from '../components/SourceInventoryAudit';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import type {Source} from '../api/sources';
 import {sourceLifecycle, type SourceLifecycle} from '../api/lifecycle';
@@ -7,7 +7,7 @@ import {useLanguage} from '../ui/language';
 import {useResource} from '../ui/useResource';
 import {Alert} from '../ui/primitives';
 
-export function SourceRetirementPanel({source,onRemoved,retained=false}:{source:Pick<Source,'source_instance'|'name'>;retained?:boolean;onRemoved:(value:SourceLifecycle)=>void}) {
+export function SourceRetirementPanel({source,onRemoved,retained=false,archive=false}:{source:Pick<Source,'source_instance'|'name'>;retained?:boolean;archive?:boolean;onRemoved:(value:SourceLifecycle)=>void}) {
   const [language]=useLanguage(),t=(en:string,ru:string)=>language==='ru'?ru:en;
   const state=useResource(useCallback(signal=>retained?retainedContext(source.source_instance,signal):sourceLifecycle(source.source_instance,signal),[source.source_instance,retained]));
   const [review,setReview]=useState<Retirement|null>(null),[open,setOpen]=useState(false),[busy,setBusy]=useState(false);
@@ -15,13 +15,17 @@ export function SourceRetirementPanel({source,onRemoved,retained=false}:{source:
   const dialog=useRef<HTMLDialogElement>(null),trigger=useRef<HTMLButtonElement>(null);
   useEffect(()=>{if(open)dialog.current?.showModal();else dialog.current?.close();},[open]);
   useEffect(()=>{if(!retained&&state.data?.removed_at)onRemoved(state.data);},[state.data,onRemoved,retained]);
-  useEffect(()=>{if(state.data?.retirement)setPending(state.data.retirement.operation_id);},[state.data?.retirement]);
+  useEffect(()=>{if(state.data?.retirement&&state.data.retirement.state!=='FINALIZED'&&!(archive&&state.data.retirement.archive_required))setPending(state.data.retirement.operation_id);},[state.data?.retirement,archive]);
   const errorText=(code:string)=>{
+    if(permissionErrors[code])return t(...permissionErrors[code]);
     if(code==='SOURCE_RETIREMENT_PENDING')return t('A previous removal needs its result checked.','Нужно проверить результат прежнего удаления.');
     if(code==='AUTH_DENIED')return t('Only an administrator can remove a source.','Удалять источники может только администратор.');
     if(code==='SOURCE_OPERATION_ACTIVE'||code==='SOURCE_APPLY_ACTIVE')return t('Wait for the active operation to finish.','Дождитесь завершения выполняющейся операции.');
     if(code==='SOURCE_APPLY_UNCONFIRMED')return t('Reconcile the previous synchronization before removal. Do not repeat apply.','Сначала сверьте результат прежней синхронизации. Не повторяйте применение.');
     const reason:Record<string,[string,string]>={
+      SOURCE_RECOVERY_OUTCOME_UNCERTAIN:['An earlier recovery may have stored credentials. Resume that recovery from the source page before closing this generation; do not start another registration.','Предыдущее восстановление могло сохранить данные доступа. Продолжите его на странице источника перед закрытием поколения; не начинайте другую регистрацию.'],
+      SOURCE_CREDENTIAL_CLEANUP_PENDING:['NetBox has confirmed the result. Continue this operation to retry exclusive local credential cleanup; the UUID is still reserved.','NetBox подтвердил результат. Продолжите операцию для очистки исключительно принадлежащих источнику локальных данных доступа; резерв UUID пока удерживается.'],
+      SOURCE_ARCHIVED:['This generation is closed. Add the server as a new source.','Это поколение закрыто. Добавьте сервер как новый источник.'],
       RETIREMENT_PERMISSION_DENIED:['NetBox refused the service account. Check its guard permissions and object scope, then review again.','NetBox отказал служебной учётной записи. Проверьте её права guard и доступ к объектам, затем повторите просмотр.'],
       RETIREMENT_OWNERSHIP_UNPROVEN:['Creation ownership is unproved. Preserve these objects; source tags or matching names do not authorize deletion. Review creation receipts with the NetBox administrator.','Не доказано, что объекты созданы источником. Сохраните их: метки и имена не разрешают удаление. Проверьте квитанции создания с администратором NetBox.'],
       RETIREMENT_OWNERSHIP_CONFLICT:['Objects have conflicting ownership. Review their recorded source in NetBox; do not transfer them by name.','У объектов конфликтует принадлежность. Проверьте записанный источник в NetBox; не перепривязывайте их по имени.'],
@@ -48,7 +52,7 @@ export function SourceRetirementPanel({source,onRemoved,retained=false}:{source:
     if(busy||!state.data?.revision)return;
     setOpen(true);setBusy(true);setError('');
     const operation=pending??crypto.randomUUID();setPending(operation);
-    try{await accept(await retirement(source.source_instance,pending?'retirement-status':'retirement-review',
+    try{await accept(await retirement(source.source_instance,pending?'retirement-status':archive?'archive-review':'retirement-review',
       {operation_id:operation,...(!pending?{revision:state.data.revision}:{})},AbortSignal.timeout(65000)));}
     catch(e){setError(errorText(e instanceof RetirementError?e.code:''));}
     finally{setBusy(false);}
@@ -58,7 +62,7 @@ export function SourceRetirementPanel({source,onRemoved,retained=false}:{source:
     setBusy(true);setError('');setAttempted(true);
     try{await accept(await retirement(source.source_instance,resume?'retirement-resume':'retire',{
       operation_id:review.operation_id,digest:review.digest,confirmed:true,confirmed_source:state.data.display_name,
-      remove_credentials:review.remove_credentials??!retained},AbortSignal.timeout(65000)));}
+      remove_credentials:true},AbortSignal.timeout(65000)));}
     catch(e){setError(errorText(e instanceof RetirementError?e.code:''));state.refresh();}
     finally{setBusy(false);}
   };
@@ -70,7 +74,7 @@ export function SourceRetirementPanel({source,onRemoved,retained=false}:{source:
       if(['SENDING','UNCERTAIN','SUCCEEDED'].includes(result.state)&&state.data){
         await accept(await retirement(source.source_instance,'retire',{operation_id:result.operation_id,
           digest:result.digest,confirmed:true,confirmed_source:state.data.display_name,
-          remove_credentials:result.remove_credentials??!retained},AbortSignal.timeout(65000)));
+          remove_credentials:result.remove_credentials??true},AbortSignal.timeout(65000)));
       }else{await accept(result);setAttempted(false);}
     }catch(e){setError(errorText(e instanceof RetirementError?e.code:''));}
     finally{setBusy(false);}
@@ -79,30 +83,32 @@ export function SourceRetirementPanel({source,onRemoved,retained=false}:{source:
   const kinds:Record<string,string>={cluster:t('Cluster','Кластер'),device:t('Host','Хост'),vm:t('VM','ВМ'),
     interface:t('Host interface','Интерфейс хоста'),vminterface:t('VM interface','Интерфейс ВМ'),
     disk:t('Disk','Диск'),ip:t('IP address','IP-адрес'),mac:t('MAC address','MAC-адрес')};
-  return <section className="source-panel"><h3>{retained?t('Retire retained NetBox objects','Удалить сохранённые объекты NetBox'):t('Source removal','Удаление источника')}</h3>
+  return <section className="source-panel"><h3>{archive?t('Close historical registration','Завершить старую регистрацию'):retained?t('Retire retained NetBox objects','Удалить сохранённые объекты NetBox'):t('Source removal','Удаление источника')}</h3>
     <p>{t('Review the exact NetBox objects owned by this source before confirming. Shared catalogs and run history are retained.',
       'Перед подтверждением проверьте точный список принадлежащих источнику объектов NetBox. Общие справочники и история запусков сохраняются.')}</p>
     {state.error&&<Alert retry={state.refresh}>{t('Removal state is unavailable.','Состояние удаления недоступно.')}</Alert>}
     {state.data?.removal_blocker&&<p role="alert">{errorText(state.data.removal_blocker)}</p>}
     <button ref={trigger} className="danger" disabled={busy||state.loading||state.error|| (!!state.data?.removal_blocker&&state.data.removal_blocker!=='SOURCE_RETIREMENT_PENDING')}
-      onClick={read}>{pending?t('Check removal','Проверить удаление'):retained?t('Review retained objects','Проверить сохранённые объекты'):t('Remove Source','Удалить источник')}</button>
+      onClick={read}>{pending?t('Check removal','Проверить удаление'):archive?t('Review archive','Проверить архивирование'):retained?t('Review retained objects','Проверить сохранённые объекты'):t('Remove Source','Удалить источник')}</button>
     <SourceInventoryAudit source={source.source_instance}/>
     <dialog ref={dialog} className="sync-dialog" onCancel={event=>{if(busy)event.preventDefault();else setOpen(false);}} aria-labelledby="retirement-title">
-      <h2 id="retirement-title">{t('Remove source','Удалить источник')} {source.name}?</h2>
+      <h2 id="retirement-title">{archive?t('Archive registration','Архивировать регистрацию'):t('Remove source','Удалить источник')} {source.name}?</h2>
       {busy&&<p role="status">{t('Checking the operation…','Проверяем операцию…')}</p>}
       {error&&<p role="alert">{error}</p>}
+      {review?.manifest.retained&&<><p>{t('Objects preserved (not a deletion list)','Сохраняемые объекты (не список удаления)')}</p><ul>{review.manifest.retained.map(o=><li key={o.kind+o.id}>{kinds[o.kind]??o.kind} · NetBox ID {o.id} · {o.present?t('present','существует'):t('already absent','уже отсутствует')} · {o.claimed?t('creation claim recorded','квитанция создания записана'):t('creation not proved','создание не доказано')}</li>)}</ul></>}
       {review&&<><p>{t('Objects in the reviewed removal list:','Объектов в проверенном списке удаления:')} {review.manifest.objects.length}</p>
         <details><summary>{t('View every object','Просмотреть все объекты')}</summary><ul>{review.manifest.objects.map(([key])=>{
           const [kind,id]=key.split(':');return <li key={key}>{kinds[kind]} · NetBox ID {id}</li>;
         })}</ul></details>
-        {review.manifest.retained_cluster&&<p>{t('The selected cluster is not owned by this source and will be retained.','Выбранный кластер не принадлежит источнику и будет сохранён.')}</p>}
-        {review.state==='READY'&&<p>{retained?t('Only the verified NetBox list will be removed. Source history and the existing credential-retention decision stay unchanged.','Будет удалён только проверенный список NetBox. История источника и прежнее решение о сохранении данных доступа не меняются.'):t('Confirmation stops synchronization and deletes only this verified list. Exclusive local credentials will then be removed. Provider access is not revoked.',
+        {!archive&&review.manifest.retained_cluster&&<p>{t('The selected cluster is not owned by this source and will be retained.','Выбранный кластер не принадлежит источнику и будет сохранён.')}</p>}
+        {review.state==='READY'&&<p>{archive?t('Close this registration permanently and release its active UUID claim. All NetBox objects below are retained and protected; a new source gets a new Source ID and cannot adopt them. The old execution result remains unchanged.','Завершить регистрацию и освободить активный резерв UUID. Все перечисленные объекты NetBox сохраняются и защищены; новый источник получит новый Source ID без права присвоить их. Исторический результат запусков не меняется.'):retained?t('Only the verified NetBox list will be removed. History stays; exclusively owned local credentials will be cleaned up.','Будет удалён только проверенный список NetBox. История сохраняется; исключительно принадлежащие источнику локальные данные доступа будут очищены.'):t('Confirmation stops synchronization and deletes only this verified list. Exclusive local credentials will then be removed. Provider access is not revoked.',
           'Подтверждение остановит синхронизацию и удалит только этот проверенный список. Затем будут удалены исключительно принадлежащие источнику локальные данные доступа. Доступ у провайдера не отзывается.')}</p>}
         {pendingResult&&<p role="alert">{t('Removal is not yet confirmed. Checking the result reads the original receipt without repeating NetBox deletion.',
           'Удаление пока не подтверждено. Проверка результата читает исходную квитанцию и не повторяет удаление в NetBox.')}</p>}
-        {review.state==='BLOCKED'&&<p role="alert">{errorText(review.safe_code??'RETIREMENT_BLOCKED')}</p>}</>}
+        {review.safe_code&&review.state!=='BLOCKED'&&<p role="alert">{errorText(review.safe_code)}</p>}{review.state==='BLOCKED'&&<p role="alert">{errorText(review.safe_code??'RETIREMENT_BLOCKED')}</p>}</>}
       <div className="page-actions"><button disabled={busy} onClick={()=>{setOpen(false);trigger.current?.focus();}}>{t('Close','Закрыть')}</button>
-        {review?.state==='READY'&&!attempted&&<button className="danger" disabled={busy} onClick={()=>confirm()}>{t('Confirm removal','Подтвердить удаление')}</button>}
+        {review?.state==='READY'&&!attempted&&<button className="danger" disabled={busy} onClick={()=>confirm()}>{archive?t('Confirm archive','Подтвердить архивирование'):t('Confirm removal','Подтвердить удаление')}</button>}
+        {review?.state==='SUCCEEDED'&&review.remove_credentials===false&&<><p>{t('NetBox removal is confirmed, but the earlier request retained credentials. Confirm exclusive local credential cleanup to finish closing this registration. Shared credentials remain.','Удаление в NetBox подтверждено, но прежний запрос сохранял данные доступа. Подтвердите очистку исключительно принадлежащих источнику локальных данных для завершения регистрации. Общие данные доступа сохраняются.')}</p><button className="danger" disabled={busy} onClick={()=>confirm()}>{t('Confirm credential cleanup','Подтвердить очистку данных доступа')}</button></>}
         {review?.state==='UNCERTAIN'&&<><p>{t(
           'If the original request did not reach NetBox, you can explicitly continue the same removal. The server checks the original receipt and object list again; it does not create a new operation.',
           'Если исходный запрос не дошёл до NetBox, можно явно продолжить то же удаление. Сервер заново проверит исходную квитанцию и список объектов; новая операция не создаётся.')}</p>

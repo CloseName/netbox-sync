@@ -1,3 +1,4 @@
+import {LifecycleResolution} from '../components/LifecycleResolution';
 import {useEffect,useState,useRef} from 'react';
 import {TeamEditor,useTeams} from '../components/SourceTeams';
 import {useLanguage} from '../ui/language';
@@ -86,6 +87,7 @@ export function SourcesListPage() {
   );
   return (
     <main>
+      <LifecycleResolution/>
       <PageHeader
         title={tr("Sources")}
         description={tr("Source configuration and synchronization evidence.")}

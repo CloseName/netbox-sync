@@ -57,6 +57,13 @@ try{
   await route.fulfill({status:response.status,headers:response.headers,body:Buffer.from(response.body,'base64')});
  });
 
+ await page.goto('https://sync.example.test/sources');
+ await page.getByRole('button',{name:'Review registrations',exact:true}).click();
+ const legacy=page.locator('details').filter({has:page.locator('summary',{hasText:'ESXI-1L-SUP'})});
+ await expect(legacy).toBeVisible({timeout:30000});
+ await legacy.locator('summary').click();
+ await expect(legacy.getByRole('button',{name:'Review archive',exact:true})).toBeVisible();
+ await page.screenshot({path:'frontend/test-results/production-legacy-central-review.png',fullPage:true});
  await page.goto('https://sync.example.test/sources/add');
  await page.getByLabel('Source type').selectOption('esxi');
  await page.getByLabel('Hostname or IPv4 address').fill('esxi.probe.test');
@@ -64,18 +71,8 @@ try{
  await page.locator('.wizard-form [name=username]').fill('netbox-sync');
  await page.locator('.wizard-form [name=secret]').fill(config.secret);config.secret='';
  await page.locator('.wizard-form').getByRole('button',{name:'Continue',exact:true}).click();
- const old=page.locator('#legacy-identity');await expect(old).toBeVisible({timeout:30000});
- await old.getByRole('button',{name:'Review this legacy record',exact:true}).click();
- await expect(old.getByText('ESXI-1L-SUP',{exact:true})).toBeVisible();
- await expect(old.locator('[name=secret]')).toBeEmpty();
- await old.getByRole('textbox',{name:'Decision reason (no secrets)'}).fill('Decommissioned fixture, retained ownership unproved');
- await old.getByRole('checkbox').check();
- await old.getByRole('button',{name:'Isolate unverified record',exact:true}).click();
- await expect(old.getByRole('status')).toContainText('Decision saved',{timeout:30000});
- await page.screenshot({path:'frontend/test-results/production-legacy-decision.png',fullPage:true});
- await page.locator('.wizard-form').getByRole('button',{name:'Continue',exact:true}).click();
  await expect(page).toHaveURL(/step=2/,{timeout:30000});
  await expect(page.getByLabel('Display name',{exact:true})).not.toBeEmpty();
  await page.screenshot({path:'frontend/test-results/production-legacy-continue.png',fullPage:true});
- console.log('PASS production browser legacy block, source-bound Admin decision, retained AM form, actual re-probe and placement');
+ console.log('PASS production browser centralized legacy review and registration without a blanket historical veto; actual probe and placement');
 }catch(error){if(page)await page.screenshot({path:'frontend/test-results/production-legacy-failure.png',fullPage:true});throw error;}finally{await browser.close();}
