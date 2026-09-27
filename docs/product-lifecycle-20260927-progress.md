@@ -81,7 +81,7 @@ there were no live hypervisor calls. The fixture is shared in
 `tests/fakes/am_conflicts.py`. VM disk support remains aggregate size, not separate
 VirtualDisk records. No claim of full test-VM acceptance is made.
 
-## Remaining mandatory implementation and gates
+## Remaining mandatory implementation and gates at ddb3209 (historical)
 
 - Full deletion currently still archives local source/history. Replace it only
   after private filesystem cleanup, exact external completion evidence, atomic
@@ -101,7 +101,7 @@ VirtualDisk records. No claim of full test-VM acceptance is made.
 
 ## Container audit and next boundary
 
-Permanent count remains **12 before / 12 currently**. Profiles for one-shot tools
+At checkpoint ddb3209 the count was **12 before / 12 then**. Current bundles below reduce this to 10. Profiles for one-shot tools
 and old stopped test containers are not permanent product components.
 
 | Component | Required boundary / consolidation finding |
@@ -138,3 +138,106 @@ without a replacement fence against old requests. No Guard update was deployed.
 
 These are local checkpoints, not a completed release. No push or deployment has
 been performed for this task. The remaining gates above are still mandatory.
+
+
+## Continuation checkpoints — 2026-09-28
+
+The preceding remaining-work list describes checkpoint ddb3209, not current code.
+The operator explicitly approved a narrowly scoped source-purge SECURITY DEFINER
+function, including source-local history/audit deletion. No live work or backups.
+
+Implemented in local checkpoint `5f77d55`, with UI checkpoint `010b9b2`; the full task is still under integration review:
+- Migration 0014: exact receipt/generation/credential/file evidence, no active or
+  uncertain operations; transactional source-only purge, fixed pg_catalog path,
+  lifecycle-only EXECUTE, no generic DELETE. Shared credentials/other sources and
+  external audit remain. Registration admission and source assignment are fenced.
+- Private NetBox worker verifies the receipt before root-owned source journal
+  cleanup; symlink/hardlink/permission/mismatched pointer checks fail closed.
+  Missing final HTTP response resolves from the exact external closed receipt.
+- Confirmed removal continues from its durable journal after restart. No automatic
+  approval of READY reviews and no blind re-dispatch of an unknown remote write.
+- Supervised NetBox and sync bundles replace two permanent containers (12 to 10),
+  preserve socket peer boundaries, filter child DB-role environments, bound
+  cross-UID termination, and expose socket health. Legacy services are opt-in
+  profiles; installer removes only its own old Compose services on upgrade.
+- Per-installation source namespace and once-only Guard permission generator.
+  Requires the new read-only Guard source_namespace_state capability. External
+  NetBox operator must separately review/update the plugin; no live update here.
+- Removal UI polls automatically and returns to source list after full purge.
+
+Evidence so far (not final acceptance of the entire task):
+- 48 Linux/PostgreSQL lifecycle, continuation, archive compatibility, migration,
+  namespace regressions passed after correcting fixtures to use broker-owned keys.
+- 13 additional source-purge/filesystem tests passed: rollback after late SQL
+  failure; partial shared pair; broker refusal/retry; untrusted legacy file path;
+  exact file cleanup, symlink/hardlink/mode/pointer refusal and interrupted cleanup.
+- 14 actual PostgreSQL deployment-role/grant tests passed in a newly isolated DB.
+- Earlier bundle/continuation/deployment selection: 72 passed, 1 skip.
+- Real NetBox 4.7 HTTPS + PostgreSQL + production NetBox bundle: 1 gate passed,
+  69.94s. Full source purge, repeated completion, AM observations and no-op plans,
+  once-only prefix permissions and outside-prefix denial. Image was built before
+  the last credential cleanup/UI edits; rebuild and final gate remain mandatory.
+- UI: 86 unit tests and TypeScript/Vite passed before the latest copy/client test.
+
+Still mandatory: finish durable registration continuation (including Proxmox),
+active-operation removal waiting, final late-writer race audit, whole UI suites,
+full production API/manual/scheduled/upgrade/reinstall gates without backup/restore,
+Sync-only reinstall procedure, final review, logical commits and ordinary push.
+No claim that all original requirements are complete. The original checkpoints
+are preserved; publication is still deferred until the remaining product gates.
+
+Latest executed evidence:
+- Expanded Linux selection: **368 passed, 1 skip**. The skip is
+  `test_deployment_foundation.py::test_canonical_compose_renders_without_provider_configuration`:
+  no Docker CLI inside the test runner. The actual host Docker Compose models
+  were separately validated for standalone, external ingress and external DB;
+  counts 10/10/9, proxy ports 80/443 only in standalone, exact tmpfs, no backend/DB
+  published ports, broker network_mode none. This skip has replacement evidence.
+- A dict-row admission-lock result initially caused four API registration failures.
+  Corrected tuple/dict handling; the expanded selection above passed afterward.
+- **14 deployment-role tests passed again** on a new uniquely labelled tmpfs
+  PostgreSQL, including migration 0014 and lifecycle-only purge grants.
+- **56 targeted DB/lifecycle/inventory tests passed**, including late scheduler
+  history INSERT refused after purge and atomic rollback of intermediate deletes.
+- **34 durable-lifecycle Playwright scenarios passed**, including EN/RU narrow
+  automatic removal status across reload; **2 saved-registration polling tests
+  passed**, no browser retry of the registration POST; **87 UI unit tests passed**.
+- TypeScript and Docker production build passed with the current UI/backend.
+  Existing Vite bundle-size warning remains (about 755 kB before compression).
+- Strengthened real NetBox 4.7 gate **passed (72.91 s)** after an earlier fixture
+  correctly failed full purge because it used an unproved absolute legacy secret
+  path. The fixture now creates ephemeral credentials through the actual product
+  broker as API UID10001, uses real root-only cleanup transport, proves the file
+  absent, and keeps broker network_mode none. This is stronger than replacing the
+  callback with a successful mock. Full-purge repeat, new host reservation,
+  ESXi/PVE real-model AM observation/no-op scenarios remain covered.
+- `git diff --check` passed. No backup/dump/restore containers or live actions.
+
+The read-only `deploy/reinstall_inventory.py` and draft
+`docs/sync-only-clean-reinstall.md` preserve external NetBox and /etc TLS, reject
+foreign volume/network consumers and external-DB reset, and never execute
+cleanup. The clean reinstall acceptance gate is still NOT executed.
+
+Precise next implementation work (not an authorization blocker):
+1. Durable registration completion after API/browser restart. Current server
+   journal preserves ESXi intent, but credentials are initially ephemeral and
+   Proxmox lacks the equivalent durable intent. UI now automatically reads state;
+   that is not proof of server-side completion. Persist a bounded approved job
+   with metadata/opaque secret references, preserve existing role boundaries,
+   and reconcile guarded cluster creation before final registry insertion.
+2. Confirmed removal waiting for ordinary active operations: current guards
+   correctly refuse active/uncertain writes; automatic waiting/admission pause
+   remains to be implemented without relabelling an unknown apply as safe.
+3. Upgrade/fresh reinstall and complete production API/manual/scheduled/browser
+   gates for both providers, with actual consolidated service topology. Do not run
+   the default auth Compose harness backup/restore branch for this task.
+4. Busy apply socket health: current serial apply interface can time out while
+   handling a bounded long operation. Supervision is verified, but the final
+   health policy must distinguish bounded busy from a dead member without hiding
+   a hung process or changing apply execution semantics.
+5. Final product UX/old administrative paths review and then ordinary push.
+
+External deployment prerequisite: the NetBox operator must independently install
+matching Guard code supporting source_namespace_state. No NetBox update is
+performed or authorized here. This is separate from the unfinished local gates.
+
