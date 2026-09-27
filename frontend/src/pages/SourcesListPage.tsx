@@ -88,6 +88,7 @@ export function SourcesListPage() {
   return (
     <main>
       <LifecycleResolution/>
+      {typeof location.state?.removedSource==='string'&&<p role="status">{language==='ru'?'Источник удалён. Его данные в Sync очищены; общие и чужие объекты сохранены.':'Source removed. Its Sync data is cleared; shared and foreign objects are preserved.'} <strong>{location.state.removedSource}</strong></p>}
       <PageHeader
         title={tr("Sources")}
         description={tr("Source configuration and synchronization evidence.")}

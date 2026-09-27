@@ -20,3 +20,14 @@ test('retained review context requests the Admin route with CSRF and validates e
  ctx.mock.method(globalThis,'fetch',async()=>Response.json({source_instance:'other',removed_at:null,revision:null}));
  await assert.rejects(retainedContext(source,AbortSignal.timeout(1000)),RetirementError);
 });
+
+
+test('empty revision is accepted only for confirmed full purge',async ctx=>{
+ const completed={...value,state:'FINALIZED',safe_code:null,mode:'FULL_DELETE',purged:true,revision:'',remove_credentials:true};
+ ctx.mock.method(globalThis,'fetch',async()=>Response.json(completed));
+ assert.equal((await retirement(source,'retirement-status',{operation_id:operation},AbortSignal.timeout(1000))).purged,true);
+ for(const changed of [{state:'SUCCEEDED'},{purged:false},{mode:'LEGACY_RETAIN'}]){
+   ctx.mock.method(globalThis,'fetch',async()=>Response.json({...completed,...changed}));
+   await assert.rejects(retirement(source,'retirement-status',{operation_id:operation},AbortSignal.timeout(1000)),RetirementError);
+ }
+});

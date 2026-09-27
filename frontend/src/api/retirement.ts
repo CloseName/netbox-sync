@@ -2,7 +2,7 @@ export type RetirementState = 'READY' | 'SENDING' | 'UNCERTAIN' | 'SUCCEEDED' | 
 export interface Retirement {
   source_instance: string; operation_id: string; state: RetirementState; digest: string;
   revision: string; guard_instance: string; safe_code?: string | null; remove_credentials?: boolean | null;
-  mode?: 'FULL_DELETE'|'LEGACY_RETAIN';
+  mode?: 'FULL_DELETE'|'LEGACY_RETAIN'; purged?: boolean;
   manifest: {format: 2|4; cluster_id?: number; retained?: {kind:string;id:number;present:boolean;claimed:boolean}[]; objects: [string,string][]; retained_cluster?: boolean};
 }
 export class RetirementError extends Error {
@@ -29,7 +29,9 @@ export async function retirement(source: string, action: 'archive-review'|'retir
     if (value.safe_code && !codes.has(value.safe_code)) throw new Error();
     if (value.source_instance!==source || value.operation_id!==payload.operation_id
       || !['READY','SENDING','UNCERTAIN','SUCCEEDED','FINALIZED','BLOCKED'].includes(value.state)
-      || !/^[a-f0-9]{64}$/.test(value.digest) || !/^[a-f0-9]{64}$/.test(value.revision)
+      || !/^[a-f0-9]{64}$/.test(value.digest)
+      || (value.purged===true ? value.state!=='FINALIZED'||value.mode!=='FULL_DELETE'||value.revision!=='' : !/^[a-f0-9]{64}$/.test(value.revision))
+      || (value.purged!==undefined && typeof value.purged!=='boolean')
       || ![2,4].includes(value.manifest?.format) || (value.manifest.format===2&&(!Number.isSafeInteger(value.manifest.cluster_id) || (value.manifest.cluster_id??0)<=0))
       || (value.manifest.format===4&&(!Array.isArray(value.manifest.retained)||value.manifest.retained.length>10000||value.manifest.retained.some(o=>!['cluster','device','vm','interface','vminterface','disk','ip','mac'].includes(o.kind)||!Number.isSafeInteger(o.id)||o.id<=0||typeof o.present!=='boolean'||typeof o.claimed!=='boolean')))
       || !Array.isArray(value.manifest.objects) || value.manifest.objects.length>10000

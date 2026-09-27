@@ -2,6 +2,9 @@ import { isSource } from './sources.ts';
 import type { Source } from './sources';
 
 export const hostRegistrationMessages:Record<string,readonly [string,string]>={
+  HOST_SOURCE_CLOSED:['This source was removed. Start a new registration.','Этот источник удалён. Начните новое добавление.'],
+  HOST_INTEGRATION_UPGRADE_REQUIRED:['The NetBox integration needs an update before adding sources. Contact the NetBox administrator.','Для добавления источников нужно обновить интеграцию NetBox. Обратитесь к администратору NetBox.'],
+  HOST_INTEGRATION_UNAVAILABLE:['NetBox integration could not be checked. Nothing was registered; try again when it is available.','Не удалось проверить интеграцию NetBox. Источник не добавлен; повторите после восстановления связи.'],
   HOST_ARCHIVE_RECHECK_REQUIRED:['Recheck the restored archive against NetBox before registering a host.','Перед добавлением хоста сверьте восстановленный архив с NetBox.'],
   HOST_SOURCE_ARCHIVE_REQUIRED:['Close the old registration before adding this host. Review and preserve its historical objects; observation alone does not authorize recovery.','Перед добавлением завершите старую регистрацию. Проверьте и сохраните её исторические объекты; одного наблюдаемого UUID недостаточно для восстановления.'],
  HOST_LEGACY_PLACEMENT_PROTECTED:['Legacy ownership in this placement is unproved. Choose a separate placement; isolation does not authorize adoption.','Принадлежность старых объектов в этом размещении не доказана. Выберите отдельное размещение; изоляция не разрешает присвоение объектов.'],

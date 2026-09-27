@@ -58,7 +58,13 @@ function backend(){
     const found=sources.find(s=>s.source_instance===id&&!removed.has(id));
     return route.fulfill({status:found?200:404,json:found??{error:{code:'SOURCE_NOT_FOUND'}}});
   });
-  return {attach,slots,complete,calls,removed,retirements,retirementControl};
+  const finishRemoval=(id:string)=>{
+    const record=retirements.get(id);
+    if(retirementControl.undelivered){retirementControl.writes++;retirementControl.undelivered=false;}
+    Object.assign(record,{state:'FINALIZED',purged:true,mode:'FULL_DELETE',revision:'',remove_credentials:true});
+    removed.set(id,{...lifecycle(id),removed_at:new Date().toISOString()});
+  };
+  return {attach,slots,complete,calls,removed,retirements,retirementControl,finishRemoval};
 }
 test('two browsers share Plan and Discovery; close, reopen, deduplicate and isolate sources',async({browser})=>{
   const server=backend(),a=await browser.newContext(),b=await browser.newContext();
@@ -216,33 +222,37 @@ test('removal response loss and reload keep the original operation',async({page,
   await expect(dialog.getByText(/The result could not be confirmed/)).toBeVisible();
   const original=server.retirements.get('source-1').operation_id;
   expect(server.retirementControl.writes).toBe(1);
-  await page.reload();await page.getByRole('button',{name:'Check removal',exact:true}).click();
-  await expect(dialog.getByText(/Removal is not yet confirmed/)).toBeVisible();
+  await page.reload();await page.getByRole('button',{name:'Removal progress',exact:true}).click();
+  await expect(dialog.getByText(/Removal is in progress/)).toBeVisible();
   expect(server.retirements.get('source-1').operation_id).toBe(original);
   expect(server.retirementControl.writes).toBe(1);
   await page.screenshot({path:info.outputPath('retirement-uncertain.png'),fullPage:true});
-  await dialog.getByRole('button',{name:'Check result',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Source and its NetBox objects deleted'})).toBeVisible();
-  await expect(page.getByText(/deleted with a confirmed receipt/)).toBeVisible();
+  server.finishRemoval('source-1');
+  await expect(page).toHaveURL(url+'/sources',{timeout:12000});
+  await expect(page.getByText(/Its Sync data is cleared/)).toBeVisible();
   expect(server.retirementControl.writes).toBe(1);
 });
 
 
-for(const language of ['en','ru'] as const)test(`explicit removal continuation ${language}`,async({page,context},info)=>{
+for(const language of ['en','ru'] as const)test(`automatic removal continuation ${language}`,async({page,context},info)=>{
   const server=backend();await server.attach(context);server.retirementControl.undelivered=true;
-  await page.setViewportSize({width:768,height:900});
+  await page.setViewportSize({width:390,height:844});
   await page.goto(url+'/sources/source-1/configuration');await setLanguage(page,language);
   await page.getByRole('button',{name:language==='ru'?'Удалить источник':'Remove Source',exact:true}).click();
   const dialog=page.getByRole('dialog');
   await dialog.getByRole('button',{name:language==='ru'?'Подтвердить удаление':'Confirm removal',exact:true}).click();
-  const resume=dialog.getByRole('button',{name:language==='ru'?'Подтвердить продолжение':'Confirm continuation',exact:true});
-  await expect(resume).toBeVisible();
+  await expect(dialog.getByText(language==='ru'?/Сервер проверяет результат/:/The server checks its result/)).toBeVisible();
+  expect(server.retirementControl.writes).toBe(0);
   const operation=server.retirements.get('source-1').operation_id;
-  await dialog.getByRole('button',{name:language==='ru'?'Проверить результат':'Check result',exact:true}).click();
-  await expect(resume).toBeEnabled();expect(server.retirementControl.writes).toBe(0);
-  await page.screenshot({path:info.outputPath('explicit-continuation.png'),fullPage:true});
-  await resume.click();
-  await expect(page.getByRole('heading',{name:language==='ru'?'Источник и его объекты NetBox удалены':'Source and its NetBox objects deleted'})).toBeVisible();
+  await dialog.getByRole('button',{name:language==='ru'?'Закрыть':'Close',exact:true}).click();
+  await page.reload();
+  await expect(page.getByText(language==='ru'?'Удаление продолжается на сервере.':'Removal is continuing on the server.',{exact:true})).toBeVisible();
+  await page.screenshot({path:info.outputPath('automatic-continuation.png'),fullPage:true});
+  // The real worker's receipt-driven continuation is tested in PostgreSQL/Compose.
+  // This fixture publishes completion without any second browser mutation.
+  server.finishRemoval('source-1');
+  await expect(page).toHaveURL(url+'/sources',{timeout:12000});
+  await expect(page.getByText(language==='ru'?/Его данные в Sync очищены/:/Its Sync data is cleared/)).toBeVisible();
   expect(server.retirementControl.writes).toBe(1);
   expect(server.retirements.get('source-1').operation_id).toBe(operation);
 });
@@ -255,7 +265,7 @@ for(const language of ['en','ru'])test(`legacy credential consent is explicit ${
  const dialog=page.getByRole('dialog'),record=server.retirements.get('source-1');
  record.state='SUCCEEDED';record.remove_credentials=false;record.safe_code='SOURCE_CREDENTIAL_CLEANUP_PENDING';server.retirementControl.writes=1;
  await dialog.getByRole('button',{name:language==='ru'?'Закрыть':'Close',exact:true}).click();
- await page.getByRole('button',{name:language==='ru'?'Проверить удаление':'Check removal',exact:true}).click();
+ await page.getByRole('button',{name:language==='ru'?'Ход удаления':'Removal progress',exact:true}).click();
  const confirm=dialog.getByRole('button',{name:language==='ru'?'Подтвердить очистку данных доступа':'Confirm credential cleanup',exact:true});
  await expect(confirm).toBeVisible();expect(record.remove_credentials).toBe(false);
  await confirm.click();
@@ -267,6 +277,7 @@ for(const language of ['en','ru'])test(`visible dependency references ${language
  const server=backend();await server.attach(context);
  await context.route('**/inventory-review',route=>route.fulfill({json:{source_instance:'source-1',objects:[{kind:'vm',id:9,present:true,claimed:true}],dependencies:[{reason:'EXTERNAL_FIELD_UPDATE',model:'virtualization.virtualmachine',id:87,field:'primary_ip4'}]}}));
  await page.setViewportSize({width:768,height:900});await page.goto(url+'/sources/source-1/configuration');await setLanguage(page,language);
+ await page.getByText(language==='ru'?'Сведения о принадлежности':'Ownership details',{exact:true}).click();
  await page.getByRole('button',{name:language==='ru'?'Проверить объекты источника':'Inspect source objects',exact:true}).click();
  await expect(page.getByText(/virtualization.virtualmachine #87/)).toBeVisible();
  await expect(page.getByText(language==='ru'?'Зависимости, мешающие удалению':'Dependencies preventing removal',{exact:true})).toBeVisible();
