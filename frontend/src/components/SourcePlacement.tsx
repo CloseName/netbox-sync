@@ -7,7 +7,7 @@ import {Lookup,genericModel} from './CatalogLookup';
 export {Lookup,genericModel,suggestion} from './CatalogLookup';
 import {CatalogCreate} from './CatalogCreate';
 import type {CatalogItem,SourcePreview} from '../api/onboarding';
-export interface Placement {resolution_name?:string;resolution_site?:number;resolution_ready?:boolean;create_cluster?:boolean;registration_id?:string;source_instance:string;name:string;interval:number;references:Record<string,CatalogItem>;host_types:Record<string,CatalogItem>;}
+export interface Placement {saved_site_id?:number;resolution_name?:string;resolution_site?:number;resolution_ready?:boolean;create_cluster?:boolean;registration_id?:string;source_instance:string;name:string;interval:number;references:Record<string,CatalogItem>;host_types:Record<string,CatalogItem>;}
 function ManualPlacement({preview,draft,setDraft,language,editing=false,wizard=false}:{preview:SourcePreview;draft:Placement;setDraft:Dispatch<SetStateAction<Placement>>;language:string;editing?:boolean;wizard?:boolean}){
  const canCreate=usePermission('catalog.create');
  const t=(en:string,ru:string)=>language==='ru'?ru:en;

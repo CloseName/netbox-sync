@@ -1,3 +1,5 @@
+import {readSourceDraft,saveSourceDraft} from '../ui/sourceDraft';
+import {usePrincipal} from '../AuthGate';
 import {LifecycleResolution} from '../components/LifecycleResolution';
 import {SourceIdentityRecords} from '../components/SourceIdentityRecords';
 import {RegistrationContinuation} from '../components/RegistrationContinuation';
@@ -35,21 +37,24 @@ import { Link, useNavigate, useSearchParams, useBlocker } from "react-router-dom
 import { PageHeader } from "../ui/primitives";
 import { sourcePath } from "../ui/routes";
 // In-memory non-secret draft survives an auth-boundary remount; no token or password.
-let remembered: {type:'proxmox'|'esxi';connection:{address:string;verify_ssl:boolean;port:number};draft:Placement;preview:SourcePreview|null;uncertain:boolean}|null=null;
+let remembered: {owner:string;type:'proxmox'|'esxi';connection:{address:string;verify_ssl:boolean;port:number};draft:Placement;preview:SourcePreview|null;uncertain:boolean}|null=null;
 export function AddSourcePage() {
+  const owner=usePrincipal()?.principal_id;
+  const [saved]=useState(()=>readSourceDraft(owner));
+  const memory=remembered?.owner===owner?remembered:null;
   const [language] = useLanguage();
   const validation=useFormValidation(language);
   const t = (en: string, ru: string) => language === "ru" ? ru : en;
-  const [type, setType] = useState<"proxmox" | "esxi">(remembered?.type??"proxmox");
-  const [connection, setConnection] = useState(remembered?.connection??{
+  const [type, setType] = useState<"proxmox" | "esxi">(memory?.type??saved?.type??"proxmox");
+  const [connection, setConnection] = useState(memory?.connection??saved?.connection??{
     address: "",
     port: 8006,
     verify_ssl: true,
   });
   const [token, setToken] = useState("");
-  const [preview,setPreview]=useState<SourcePreview|null>(remembered?.preview??null);
+  const [preview,setPreview]=useState<SourcePreview|null>(memory?.preview??null);
   const [review,setReview]=useState(false);
-  const [draft,setDraft]=useState<Placement>(remembered?.draft??{source_instance:'',name:'',interval:600,references:{},host_types:{}});
+  const [draft,setDraft]=useState<Placement>(memory?.draft??{source_instance:saved?.source_instance??'',name:saved?.name??'',registration_id:saved?.registration_id,interval:600,saved_site_id:saved?.site_id,references:{},host_types:{}});
   const [busy, setBusy] = useState(false);
   const [busyAction,setBusyAction]=useState<'connection'|'address'|'placement'|'registration'|'reconcile'|'recovery'>('connection');
   const inFlight = useRef(false); const [started,setStarted]=useState(0);
@@ -64,7 +69,7 @@ export function AddSourcePage() {
   const [connectionCode,setConnectionCode]=useState<keyof typeof connectionMessages|null>(null);
   const [identity,setIdentity]=useState({user:'',token:'',edited:false,parsed:false});
   const [expiresAt,setExpiresAt]=useState<number|null>(null);
-  const [uncertain,setUncertain]=useState(remembered?.uncertain??false);
+  const [uncertain,setUncertain]=useState(memory?.uncertain??saved?.uncertain??false);
   const [reconciled,setReconciled]=useState(false);
   const [created, setCreated] = useState<Source | null>(null);
 
@@ -85,8 +90,10 @@ export function AddSourcePage() {
   useEffect(()=>{const leave=(event:BeforeUnloadEvent)=>{if(dirty&&!created){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',leave);return()=>window.removeEventListener('beforeunload',leave);},[dirty,created]);
   const go=(next:number)=>setParams({step:String(next)});
   function invalidate(){setRecoveryGeneration(value=>value+1);if(token)void cancelOnboarding(token).catch(()=>{});setToken('');setReview(false);setExpiresAt(null);}
-  useEffect(()=>{if(created){remembered=null;navigate(restored?sourcePath(created.source_instance):'/sources',{replace:true,state:{addedSource:{name:created.name,id:created.source_instance,teamUnconfirmed}}});}},[created,navigate,teamUnconfirmed,restored]);
-  useEffect(()=>{remembered=created?null:{type,connection,draft,preview,uncertain};},[type,connection,draft,preview,created,uncertain]);
+  useEffect(()=>{if(created){remembered=null;saveSourceDraft(owner,null);navigate(restored?sourcePath(created.source_instance):'/sources',{replace:true,state:{addedSource:{name:created.name,id:created.source_instance,teamUnconfirmed}}});}},[created,navigate,teamUnconfirmed,restored]);
+  useEffect(()=>{remembered=created?null:{owner:owner??'',type,connection,draft,preview,uncertain};
+    saveSourceDraft(owner,created?null:{type,connection:{address:connection.address,port:connection.port,verify_ssl:connection.verify_ssl},name:draft.name,source_instance:draft.source_instance,registration_id:draft.registration_id,site_id:draft.references.site?.id??draft.saved_site_id,uncertain});
+  },[owner,type,connection,draft,preview,created,uncertain]);
   const workspace = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!error && !token && !created) return;
@@ -212,7 +219,7 @@ export function AddSourcePage() {
       </nav>
       <dialog ref={exitDialog} onCancel={event=>{event.preventDefault();if(blocker.state==='blocked')blocker.reset();}}>
         <h2>{t('Your entered data will be lost','Введённые данные будут потеряны')}</h2>
-        <div className="page-actions"><button autoFocus type="button" onClick={()=>{if(blocker.state==='blocked')blocker.reset();}}>{t('Stay','Остаться')}</button><button type="button" onClick={()=>{remembered=null;if(token)void cancelOnboarding(token).catch(()=>{});if(blocker.state==='blocked')blocker.proceed();}}>{t('Leave','Выйти')}</button></div>
+        <div className="page-actions"><button autoFocus type="button" onClick={()=>{if(blocker.state==='blocked')blocker.reset();}}>{t('Stay','Остаться')}</button><button type="button" onClick={()=>{remembered=null;saveSourceDraft(owner,null);if(token)void cancelOnboarding(token).catch(()=>{});if(blocker.state==='blocked')blocker.proceed();}}>{t('Leave','Выйти')}</button></div>
       </dialog>
       <RegistrationContinuation key={String(uncertain)} language={language} done={setCreated}/>
       {validation.summary}

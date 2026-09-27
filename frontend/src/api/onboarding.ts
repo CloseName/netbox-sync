@@ -62,7 +62,7 @@ export interface RegistrationInput {
   references?: Record<string, CatalogItem>; host_types?: Record<string, CatalogItem>;
 }
 
-async function post(path: string, payload: ConnectionInput | RegistrationInput | { onboarding_token: string } | {source_type: 'esxi' | 'proxmox'; address: string; port: number}): Promise<unknown> {
+async function post(path: string, payload: ConnectionInput | RegistrationInput | {onboarding_token:string;name:string;site_id?:number} | { onboarding_token: string } | {source_type: 'esxi' | 'proxmox'; address: string; port: number}): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(path, { method: 'POST', cache: 'no-store',
@@ -159,4 +159,9 @@ export async function reviewPlacement(onboarding_token:string,references:Record<
 
 export async function checkDestination(input:{source_type:'esxi'|'proxmox';address:string;port:number}){
  const result=await post('/api/v1/sources/check-destination',input);if(typeof result!=='object'||result===null||!('allowed' in result)||result.allowed!==true)throw new Error('Destination not confirmed');
+}
+
+
+export async function resolvePlacement(input:{onboarding_token:string;name:string;site_id?:number}):Promise<any>{
+ return post('/api/v1/sources/resolve-placement',input);
 }

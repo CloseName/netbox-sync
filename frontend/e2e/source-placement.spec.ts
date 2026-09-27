@@ -9,6 +9,7 @@ async function fixture(page:any,scenario='exact'){
  if(scenario==='missing')preview.preview.hosts[0]={...host,manufacturer:null,model:null} as any;
  if(scenario==='heterogeneous')preview.preview={provider:'proxmox',name:'Production cluster',cluster:'Production cluster',hosts:[{...host,id:'a',name:'pve-a',manufacturer:null,model:null},{...host,id:'b',name:'pve-b',manufacturer:null,model:null}]} as any;
  await page.route('**/api/v1/**',route=>{const url=new URL(route.request().url());const path=url.pathname;
+ if(path==='/api/v1/registration-attempts')return route.fulfill({json:{attempts:[]}});
  if(path==='/api/v1/teams')return route.fulfill({json:{version:1,revision:1,teams:{},assignments:{}}});
  if(path.endsWith('resolve-placement')){
  const body=route.request().postDataJSON(),missing=scenario==='missing'||scenario==='heterogeneous';

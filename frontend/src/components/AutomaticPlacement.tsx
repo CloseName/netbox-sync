@@ -1,6 +1,6 @@
 import {useEffect,useState,type Dispatch,type SetStateAction} from 'react';
 import {usePermission} from '../AuthGate';
-import {authRequest} from '../AuthGate';
+import {resolvePlacement,HostRegistrationFailure,hostRegistrationMessages} from '../api/onboarding';
 import {Lookup} from './CatalogLookup';
 import {CatalogCreate} from './CatalogCreate';
 import type {Placement} from './SourcePlacement';
@@ -9,13 +9,13 @@ type Resolution={references:Record<string,CatalogItem>;host_types:Record<string,
 export function AutomaticPlacement({preview,draft,setDraft,language,receipt}:{preview:SourcePreview;draft:Placement;setDraft:Dispatch<SetStateAction<Placement>>;language:string;receipt:string}){
  const t=(en:string,ru:string)=>language==='ru'?ru:en,admin=usePermission('catalog.create');
  const [result,setResult]=useState<Resolution|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(true),[revision,setRevision]=useState(0),[creating,setCreating]=useState<{kind:string;host_id?:string}|null>(null);
- const [site,setSite]=useState(draft.references.site?.id);
+ const [site,setSite]=useState(draft.references.site?.id??draft.saved_site_id);
  useEffect(()=>{let current=true;setBusy(true);setError('');setDraft(d=>({...d,resolution_ready:false}));
- const timer=setTimeout(()=>authRequest('sources/resolve-placement',{onboarding_token:receipt,name:draft.name,site_id:site}).then(value=>{
+ const timer=setTimeout(()=>resolvePlacement({onboarding_token:receipt,name:draft.name,site_id:site}).then(value=>{
   if(!current)return;
   if(!value||!Array.isArray(value.issues)||!Array.isArray(value.sites)||!value.references||!value.host_types||typeof value.create_cluster!=='boolean')throw new Error();
   setResult(value);setDraft(d=>({...d,resolution_name:draft.name,resolution_site:value.references.site?.id,resolution_ready:value.issues.length===0,references:value.references,host_types:value.host_types,create_cluster:value.create_cluster,registration_id:d.registration_id||crypto.randomUUID()}));setBusy(false);
- }).catch(()=>{if(current){setError(t('NetBox parameters could not be checked. Retry.','Не удалось проверить параметры NetBox. Повторите проверку.'));setBusy(false);}}),300);
+ }).catch(failure=>{if(current){setError(failure instanceof HostRegistrationFailure?hostRegistrationMessages[failure.code][language==='ru'?1:0]:t('NetBox parameters could not be checked. Retry.','Не удалось проверить параметры NetBox. Повторите проверку.'));setBusy(false);}}),300);
  return()=>{current=false;clearTimeout(timer);};},[receipt,draft.name,site,revision]);
  const labels:Record<string,string>={site:t('Site','Площадка'),platform:t('Platform','Платформа'),device_role:t('Device role','Роль устройства'),cluster_type:t('Cluster type','Тип кластера'),device_type:t('Device type','Тип устройства'),cluster:t('Cluster','Кластер')};
  return <section className="wizard-section" aria-busy={busy}>

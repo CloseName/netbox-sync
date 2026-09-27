@@ -337,3 +337,21 @@ test('malformed lifecycle review does not crash Sources',async({page})=>{
  await expect(page.getByText('Unexpected Application Error!',{exact:true})).toHaveCount(0);
  await expect(page.getByRole('link',{name:'Add Source',exact:true}).first()).toBeVisible();
 });
+
+
+test('reload retains explicit TLS and endpoint but never credentials',async({page})=>{
+ await fixture(page);
+ await page.getByLabel('Source type').selectOption('esxi');
+ await page.getByLabel('Hostname or IPv4 address').fill('fixture.example.test');
+ await page.getByLabel('HTTPS port').fill('8443');
+ await page.getByLabel('Verify TLS certificate').uncheck();
+ const secret=randomUUID();await page.locator('[name=secret]').fill(secret);
+ await page.locator('[name=username]').fill('service-user');
+ await page.reload();
+ await expect(page.getByLabel('Source type')).toHaveValue('esxi');
+ await expect(page.getByLabel('Hostname or IPv4 address')).toHaveValue('fixture.example.test');
+ await expect(page.getByLabel('HTTPS port')).toHaveValue('8443');
+ await expect(page.getByLabel('Verify TLS certificate')).not.toBeChecked();
+ await expect(page.locator('[name=secret]')).toHaveValue('');
+ expect(await page.evaluate(()=>JSON.stringify([localStorage,sessionStorage]))).not.toContain(secret);
+});
