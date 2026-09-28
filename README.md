@@ -162,3 +162,4 @@ The explicitly no-backup disposable rehearsal uses the separate
 status and evidence are in the [lifecycle progress record](docs/product-lifecycle-20260927-progress.md).
 For a cluster already removed outside Sync, use the
 [missing-cluster retirement update and recovery procedure](docs/missing-cluster-retirement.md).
+- [Large-source retirement: performance, recovery and acceptance](docs/large-source-retirement-20260928.md)
