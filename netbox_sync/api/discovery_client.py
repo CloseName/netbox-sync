@@ -50,7 +50,7 @@ class DiscoveryWorkerClient:
             raise DiscoveryRequestError('DISCOVERY_RESPONSE_INVALID')
         if response.get('ok') is not True:
             code = response.get('error')
-            allowed = {'SOURCE_NOT_FOUND', 'SOURCE_DISABLED', 'CREDENTIAL_UNAVAILABLE',
+            allowed = {'SOURCE_RETIREMENT_PENDING', 'SOURCE_ARCHIVED', 'SOURCE_NOT_FOUND', 'SOURCE_DISABLED', 'CREDENTIAL_UNAVAILABLE',
                        'REGISTRY_UNAVAILABLE', 'DISCOVERY_TIMEOUT', 'PROVIDER_UNAVAILABLE',
                        'NETBOX_UNAVAILABLE', 'DISCOVERY_FAILED', 'OPERATIONS_UNAVAILABLE',
                        'OPERATION_INVALID', 'OPERATION_STILL_EXECUTING', 'OPERATION_INTERRUPTED',

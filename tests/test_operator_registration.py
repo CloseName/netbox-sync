@@ -45,7 +45,7 @@ def test_direct_admin_routes_remain_forbidden(role):
     with TestClient(create_app(settings=ApiSettings(bootstrap_socket=''),auth_client=Client()),base_url='https://localhost:8000') as http:
         http.cookies.set(COOKIE,session)
         for method,path in [('POST','catalog/cluster'),('POST','catalog/platform'),('POST','teams'),
-            ('POST','policy'),('POST','sources/source-1/remove'),('PATCH','sources/source-1/name'),
+            ('POST','policy'),('POST','sources/source-1/remove'),('POST','sources/source-1/removal-request'),('POST','sources/source-1/removal-status'),('PATCH','sources/source-1/name'),
             ('PATCH','sources/source-1/placement'),('GET','settings/ldap')]:
             response=http.request(method,'/api/v1/'+path,headers=HEADERS,**({'json':{}} if method!='GET' else {}))
             assert response.status_code==403,(method,path,response.status_code)

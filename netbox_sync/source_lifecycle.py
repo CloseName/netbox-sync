@@ -72,7 +72,13 @@ class LifecycleStore:
         parameters=(source,removed['removed_at']) if removed else (source,)
         result=connection.execute(sql.SQL('SELECT operation_id,state,receipt FROM {} WHERE source_instance=%s AND '+condition+' ORDER BY created_at DESC LIMIT 1').format(
             self.table('source_retirements')),parameters).fetchone()
-        return {'operation_id':str(result['operation_id']),'state':result['state'],'archive_required':result['state']=='SUCCEEDED' and bool(result['receipt']) and result['receipt'].get('generation_closed') is not True} if result else None
+        if result:
+            return {'operation_id':str(result['operation_id']),'state':result['state'],'archive_required':result['state']=='SUCCEEDED' and bool(result['receipt']) and result['receipt'].get('generation_closed') is not True}
+        exists=connection.execute('SELECT to_regclass(%s)',(self.schema+'.source_removal_requests',)).fetchone()
+        if exists and exists['to_regclass']:
+            queued=connection.execute(sql.SQL('SELECT operation_id,state FROM {} WHERE source_instance=%s').format(self.table('source_removal_requests')),(source,)).fetchone()
+            if queued:return {'operation_id':str(queued['operation_id']),'state':queued['state'],'queued':True}
+        return None
 
     def read(self, source):
         with self.connect() as connection:

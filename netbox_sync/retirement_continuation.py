@@ -15,11 +15,14 @@ class RetirementContinuation:
     def __init__(self, coordinator):
         self.coordinator = coordinator
         self.after = UUID(int=0)
+        from .removal_queue import RemovalQueue
+        self.queue = RemovalQueue(coordinator)
 
     def __call__(self):
         store = self.coordinator.store
         operation = None
         try:
+            self.queue.tick()
             with store.connect() as connection:
                 row = connection.execute(sql.SQL("""SELECT r.*, s.name
                     FROM {} r JOIN {} s USING (source_instance)

@@ -63,6 +63,7 @@ def test_discovery_requires_same_origin_control_boundary():
 
 
 @pytest.mark.parametrize(('code', 'status'), [
+    ('SOURCE_RETIREMENT_PENDING', 409), ('SOURCE_ARCHIVED', 409),
     ('SOURCE_NOT_FOUND', 404), ('SOURCE_DISABLED', 409), ('DISCOVERY_TIMEOUT', 504),
     ('CREDENTIAL_UNAVAILABLE', 503), ('DISCOVERY_UNAVAILABLE', 503), ('DISCOVERY_FAILED', 502),
 ])
@@ -113,3 +114,26 @@ def test_discovery_hardware_projection_reaches_http_without_raw_provider_data():
     with client(FakeDiscovery(value)) as api:
         invalid=api.post('/api/v1/sources/pve-test/discovery',headers=HEADERS,json={})
     assert invalid.status_code==500 and SECRET not in invalid.text
+
+
+@pytest.mark.parametrize('code', ['SOURCE_RETIREMENT_PENDING', 'SOURCE_ARCHIVED', 'untrusted error'])
+def test_discovery_transport_preserves_only_bounded_lifecycle_errors(code, monkeypatch):
+    import socket
+    # No socket is opened: an injected connector exercises response validation.
+    monkeypatch.setattr(socket, "AF_UNIX", getattr(socket, "AF_UNIX", 1), raising=False)
+    from netbox_sync.api.discovery_client import DiscoveryWorkerClient
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def settimeout(self, *args): pass
+        def connect(self, *args): pass
+        def sendall(self, *args): pass
+        def shutdown(self, *args): pass
+        def recv(self, *args):
+            if getattr(self, 'done', False): return b''
+            self.done = True
+            return json.dumps(dict(ok=False, error=code)).encode()
+    worker = DiscoveryWorkerClient('/fixture/socket', connector=lambda *args: Connection())
+    with pytest.raises(DiscoveryRequestError) as error:
+        worker.start_operation('pve-test', 'PLAN')
+    assert error.value.code == (code if code != 'untrusted error' else 'DISCOVERY_UNAVAILABLE')

@@ -24,6 +24,15 @@ class Confirm(Status):
         return value
 
 
+class Queue(Review):
+    confirmed:Literal[True]
+    @field_validator('confirmed',mode='before')
+    @classmethod
+    def explicit(cls,value):
+        if value is not True:raise ValueError('Explicit confirmation required')
+        return value
+
+
 def admin(http):
     # principal is supplied only by the existing authenticated server middleware.
     # Client role/body/header assertions are never consulted.
@@ -54,6 +63,13 @@ def routes(lifecycle):
     def retained_context(source:str,http:Request):
         return lifecycle.retirement('context',source,actor_id=admin(http))
 
+    @router.post('/{source}/removal-request')
+    def enqueue(source:str,payload:Queue,http:Request):
+        return lifecycle.removal('request',source,operation_id=str(payload.operation_id),
+            actor_id=admin(http),revision=payload.revision,confirmed=payload.confirmed)
+    @router.post('/{source}/removal-status')
+    def queued_status(source:str,payload:Status,http:Request):
+        return lifecycle.removal('status',source,operation_id=str(payload.operation_id),actor_id=admin(http))
     @router.post('/{source}/retirement-review')
     def review(source:str,payload:Review,http:Request):
         return lifecycle.retirement('review',source,operation_id=str(payload.operation_id),

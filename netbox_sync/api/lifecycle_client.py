@@ -40,6 +40,16 @@ class LifecycleClient:
         try:return request(self.path,{'action':'source_generations','source_instance':'lifecycle'},timeout=15,response_limit=2*1024*1024)['result']
         except ControlError as exc:raise LifecycleRequestError(exc.code) from None
 
+    def removal(self,action,source,**payload):
+        from ..local_control import request,ControlError
+        if action not in {'request','status'}:raise LifecycleRequestError('REQUEST_INVALID')
+        try:
+            value=request(self.path,{'action':'removal_'+action,'source_instance':source,**payload},timeout=15)['result']
+            if value.get('source_instance')!=source:raise ValueError()
+            return value
+        except ControlError as exc:raise LifecycleRequestError(exc.code) from None
+        except Exception:raise LifecycleRequestError('RETIREMENT_UNAVAILABLE') from None
+
     def retirement(self,action,source,**payload):
         from ..local_control import request,ControlError
         if action not in {'context','archive_check','review','archive_review','execute','resume','status'}:raise LifecycleRequestError('REQUEST_INVALID')

@@ -3,6 +3,7 @@
 
 import json
 import logging
+import re
 from functools import partial
 from datetime import datetime, timezone
 from pathlib import Path
@@ -212,6 +213,8 @@ def _install_boundaries(app, settings, auth_client):
     @app.exception_handler(DiscoveryRequestError)
     async def discovery_error(request, exc):
         errors = {
+            'SOURCE_RETIREMENT_PENDING': (409, 'Source removal is pending; new operations are blocked'),
+            'SOURCE_ARCHIVED': (409, 'This source generation is closed'),
             'SOURCE_DISCOVERY_REQUIRED': (409, 'Run Discovery to refresh host mappings'),
             'SOURCE_NOT_FOUND': (404, 'Source not found'),
             'SOURCE_DISABLED': (409, 'Disabled sources cannot be discovered'),
@@ -323,15 +326,26 @@ def _install_boundaries(app, settings, auth_client):
                     response = _error(request, 413, 'API_REQUEST_TOO_LARGE', 'Request body is too large')
                 else:
                     ready = True
-                    if settings.bootstrap_socket and request.url.path.startswith('/api/v1/sources'):
+                    bootstrap_failure = None
+                    # These POSTs are actor-bound status reads, not write admission.
+                    # They must remain available while an admitted catalog/removal
+                    # operation briefly owns BootstrapStore's exclusive lock.
+                    source_status = (request.url.path == '/api/v1/sources/registration-status'
+                        or re.fullmatch(r'/api/v1/sources/[^/]+/(removal-status|retirement-status)', request.url.path))
+                    if settings.bootstrap_socket and request.url.path.startswith('/api/v1/sources') and not source_status:
                         from starlette.concurrency import run_in_threadpool
                         from .bootstrap import BootstrapClient
                         try:
                             state = await run_in_threadpool(BootstrapClient(settings.bootstrap_socket).call, 'status')
                             ready = state.status == 'READY'
+                        except ControlError as exc:
+                            bootstrap_failure = 'BOOTSTRAP_BUSY' if exc.code == 'BOOTSTRAP_BUSY' else 'BOOTSTRAP_UNAVAILABLE'
                         except Exception:
-                            ready = False
-                    response = await call_next(request) if ready else _error(request, 409, 'BOOTSTRAP_NOT_READY', 'Complete NetBox setup first')
+                            bootstrap_failure = 'BOOTSTRAP_UNAVAILABLE'
+                    if bootstrap_failure:
+                        response = _error(request, 503, bootstrap_failure, 'NetBox setup state is temporarily unavailable; no new operation was admitted')
+                    else:
+                        response = await call_next(request) if ready else _error(request, 409, 'BOOTSTRAP_NOT_READY', 'Complete NetBox setup first')
             else:
                 response = await call_next(request)
         except Exception:  # pylint: disable=broad-exception-caught
@@ -636,11 +650,18 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
             recovery_meta=lifecycle_client.recovery('describe',request.recovery_source,
                 actor_id=http.state.principal['principal_id'])
         if settings.probe_socket:
-            preview=remote_test_authorized(settings.probe_socket, request.credentials(), session, policy['revision'], **({'preview':True} if request.preview or request.source_type == 'esxi' else {}))
+            preview=remote_test_authorized(settings.probe_socket, request.credentials(), session, policy['revision'], **({'preview':True} if request.preview or request.registration_resume or request.source_type == 'esxi' else {}))
             if request.registration_resume:
-                token=onboarding_service.accept_registration_resume(request.credentials(),preview,
-                    request.registration_resume.source_instance,request.registration_resume.registration_id,
-                    http.state.principal['principal_id'])
+                saved = jobs.get(request.registration_resume.source_instance, request.registration_resume.registration_id,
+                    http.state.principal['principal_id']) if jobs else None
+                if saved and saved['state']=='STAGING':
+                    checked=jobs.resume_staging(request.registration_resume.source_instance,
+                        request.registration_resume.registration_id,http.state.principal['principal_id'],request.credentials(),preview)
+                    token=onboarding_service._pending.issue(request.credentials(),checked)
+                else:
+                    token=onboarding_service.accept_registration_resume(request.credentials(),preview,
+                        request.registration_resume.source_instance,request.registration_resume.registration_id,
+                        http.state.principal['principal_id'])
             else:
                 token = (onboarding_service.accept_recovery_credentials(request.credentials(),preview,
                     request.recovery_source,recovery_meta['host_uuid']) if recovery_meta else
@@ -681,8 +702,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         if site.get('slug'):onboarding_service.check_placement(site['slug'],payload.name)
         return resolved
 
-    @router.post('/sources', response_model=SourceDTO, status_code=201)
-    def register_source(request: RegistrationRequest, http: Request):
+    def complete_registration(request, onboarding_service, actor, receipt_check=lambda: None, receipt_consume=lambda: None):
         with onboarding_service.registration_admission():
             if not onboarding_injected:
                 from ..local_control import request as control_request, ControlError
@@ -701,26 +721,26 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
                     # Only a persisted actor-bound historical attempt may retain its
                     # old namespace. New caller-chosen namespaces are not admitted.
                     outcome=onboarding_service.registration_outcome(request.source_instance,
-                        request.registration_id,http.state.principal['principal_id'])
+                        request.registration_id,actor)
                     if outcome.get('identity_status') != 'OUTCOME_UNCERTAIN':
                         raise HostRegistrationConflict('HOST_REGISTRATION_INVALID')
             fingerprint=request.intent_fingerprint()
             durable_request=request.durable_request()
             def bind_intent():
                 return onboarding_service.registration_intent(request.command(),request.registration_id,
-                    http.state.principal['principal_id'],fingerprint,durable_request)
+                    actor,fingerprint,durable_request)
             # Reserve before catalog POSTs or filesystem credentials. The actor/nonce
             # binding survives response loss and cannot be claimed by another request.
-            auth_client.call('receipt.check', session=http.cookies.get(COOKIE), receipt=request.onboarding_token)
+            receipt_check()
             onboarding_service.reserve_provider_identity(request.command(), request.registration_id,
-                                                          http.state.principal['principal_id'],
+                                                          actor,
                                                           intent={'fingerprint':fingerprint,'request':durable_request})
             with onboarding_service.registration_guard(request.command(), request.registration_id,
-                                                        http.state.principal['principal_id']):
+                                                        actor):
                 bind_intent()
                 if request.automatic_placement:
                     from .catalog import call
-                    auth_client.call('receipt.check',session=http.cookies.get(COOKIE),receipt=request.onboarding_token)
+                    receipt_check()
                     onboarding_service.check_registration(request.command())
                     preview=onboarding_service.preview(request.onboarding_token)
                     if not preview or not request.registration_id:raise CatalogError('SELECTION_REQUIRED')
@@ -738,7 +758,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
                         from .catalog import create_call
                         bind_intent()
                         operation_id=str(uuid5(UUID('b6c311eb-0d55-45af-80a5-b949a20bfe47'),
-                            http.state.principal['principal_id']+':'+request.source_instance+':'+str(request.registration_id)))
+                            actor+':'+request.source_instance+':'+str(request.registration_id)))
                         outcome=create_call(settings.bootstrap_socket,dict(action='catalog-reconcile',operation_id=operation_id))
                         if (outcome.get('status')!='CREATED'
                                 or not isinstance(outcome.get('item'),dict)
@@ -750,12 +770,12 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
                     # Authorize the exact receipt before starting any optional remote write.
                     from uuid import UUID, uuid5
                     from .catalog import create_call
-                    auth_client.call('receipt.check', session=http.cookies.get(COOKIE), receipt=request.onboarding_token)
+                    receipt_check()
                     onboarding_service.check_registration(request.command())
                     pending=catalog_validate(settings.bootstrap_socket, request.references, request.host_types,
                         onboarding_service.preview(request.onboarding_token), pending_cluster=True)
                     operation_id=str(uuid5(UUID('b6c311eb-0d55-45af-80a5-b949a20bfe47'),
-                        http.state.principal['principal_id']+':'+request.source_instance+':'+str(request.registration_id)))
+                        actor+':'+request.source_instance+':'+str(request.registration_id)))
                     bind_intent()
                     try:
                         outcome=create_call(settings.bootstrap_socket, dict(action='registration-cluster',
@@ -785,8 +805,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
                         raise CatalogError('SELECTION_REQUIRED')
                     mapping['ip_conflict_policy']='observe'
                     registration=bind_intent()
-                    auth_client.call('receipt.consume', session=http.cookies.get(COOKIE),
-                                     receipt=request.onboarding_token, destination=request.address, provider=request.source_type)
+                    receipt_consume()
                     onboarding_service.register(replace(request.command(),mapping=mapping),registration=registration)
                     return SourceDTO.from_view(source_view({
                         **request.model_dump(), 'enabled': True, 'sync_enabled': False, 'legacy_identity_owner': False,
@@ -798,12 +817,107 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
                         raise OnboardingError(ErrorCode.REGISTRATION_CLUSTER_RETAINED) from None
                     raise
 
+    jobs = continuation = None
+    if not onboarding_injected and settings.registration_dsn:
+        from ..registration_jobs import RegistrationJobs, RegistrationContinuation
+        jobs = RegistrationJobs(settings.registration_dsn, settings.registry_schema)
+        def attest_registration(job):
+            from ..local_control import request as control_request
+            return control_request(settings.lifecycle_socket, dict(action='registration_credentials',
+                source_instance=job['source_instance'], operation_id=str(job['operation_id']),
+                actor_id=job['actor_id']))['result'].get('verified') is True
+        continuation = RegistrationContinuation(jobs, onboarding_service, complete_registration, attest_registration)
+        from contextlib import asynccontextmanager
+        import threading
+        @asynccontextmanager
+        async def registration_lifespan(app):
+            stopped = threading.Event()
+            def run():
+                while not stopped.wait(5):
+                    try:
+                        continuation()
+                    except Exception:
+                        LOGGER.info('registration continuation unavailable')
+            thread = threading.Thread(target=run, daemon=True, name='registration-continuation')
+            thread.start()
+            try:
+                yield
+            finally:
+                stopped.set()
+                # All underlying socket/DB operations have bounded timeouts;
+                # shutdown never waits indefinitely for an unresponsive peer.
+                thread.join(timeout=1)
+        app.router.lifespan_context = registration_lifespan
+
+    @router.post('/sources', response_model=SourceDTO, status_code=201)
+    def register_source(request: RegistrationRequest, http: Request):
+        actor = http.state.principal['principal_id']
+        check = lambda: auth_client.call('receipt.check', session=http.cookies.get(COOKIE), receipt=request.onboarding_token)
+        consume = lambda: auth_client.call('receipt.consume', session=http.cookies.get(COOKIE),
+            receipt=request.onboarding_token, destination=request.address, provider=request.source_type)
+        if jobs is None:
+            return complete_registration(request, onboarding_service, actor, check, consume)
+        from ..registration_jobs import StagedOnboarding
+        with jobs.guard(request.source_instance):
+            job = jobs.get(request.source_instance, request.registration_id, actor)
+            if job is not None:
+                original = RegistrationRequest.model_validate({**job['payload']['request'], 'onboarding_token':'x'*32})
+                if original.intent_fingerprint() != request.intent_fingerprint():
+                    raise HostRegistrationConflict('HOST_REGISTRATION_INTENT_CHANGED')
+            if job is None or job['state'] == 'STAGING':
+                check()
+                onboarding_service.check_registration(request.command())
+                preview = onboarding_service.preview(request.onboarding_token)
+                with onboarding_service.registration_admission():
+                    # Validate the installation and closed-generation fence before
+                    # credential creation, just as the completion path does.
+                    from ..registration_namespace import belongs
+                    if settings.source_namespace and not belongs(request.source_instance, settings.source_namespace):
+                        outcome=onboarding_service.registration_outcome(request.source_instance,request.registration_id,actor)
+                        if outcome.get('identity_status')!='OUTCOME_UNCERTAIN':
+                            raise HostRegistrationConflict('HOST_REGISTRATION_INVALID')
+                    from ..local_control import request as control_request, ControlError
+                    try:
+                        state = control_request(settings.bootstrap_socket, dict(action='namespace-check',
+                            source_instance=request.source_instance), timeout=50)['result']
+                    except ControlError as exc:
+                        raise HostRegistrationConflict('HOST_INTEGRATION_UPGRADE_REQUIRED' if exc.code=='RETIREMENT_GUARD_CHANGED' else 'HOST_INTEGRATION_UNAVAILABLE') from None
+                    if state.get('source_instance') != request.source_instance or type(state.get('closed')) is not bool:
+                        raise HostRegistrationConflict('HOST_REGISTRATION_INVALID')
+                    if state['closed']:
+                        raise HostRegistrationConflict('HOST_SOURCE_CLOSED')
+                    onboarding_service.reserve_provider_identity(request.command(), request.registration_id, actor,
+                        intent={'fingerprint':request.intent_fingerprint(), 'request':request.durable_request()})
+                    with onboarding_service.registration_guard(request.command(), request.registration_id, actor):
+                        consume()
+                        credentials = onboarding_service._pending.consume(request.onboarding_token)
+                        job = jobs.begin(request, actor, preview, credentials.username)
+                        jobs.stage(job, credentials, onboarding_service._secrets)
+                        del credentials
+            result = continuation.run(jobs.get(request.source_instance, request.registration_id, actor))
+            if isinstance(result, SourceDTO):
+                return result
+            return SourceDTO.from_view(source_view({**request.model_dump(), 'enabled':True,
+                'sync_enabled':False, 'legacy_identity_owner':False}))
+
     @router.get('/registration-attempts')
     def pending_registrations(http: Request):
-        return {'attempts':onboarding_service.pending_registrations(http.state.principal['principal_id'])}
+        actor = http.state.principal['principal_id']
+        saved = onboarding_service.pending_registrations(actor)
+        durable = jobs.public_attempts(actor) if jobs else []
+        current = {row['source_instance'] for row in durable}
+        return {'attempts':durable + [row for row in saved if row['source_instance'] not in current]}
 
     @router.post('/sources/registration-status')
     def registration_status(request: RegistrationStatusRequest, http: Request):
+        if jobs:
+            job = jobs.get(request.source_instance, request.registration_id, http.state.principal['principal_id'])
+            if job:
+                if job['state'] == 'COMPLETED':
+                    return {'status':'REGISTERED', 'source_instance':request.source_instance,
+                            'source_url':'/sources/'+request.source_instance}
+                return {'status':'UNCERTAIN', 'server_continuing':job['state']=='READY',
+                        'resume_supported':job['state']=='STAGING', 'safe_code':job['safe_code']}
         # The browser never chooses a raw privileged catalog journal ID. Its
         # registration nonce is bound to the authenticated actor and source.
         identity = onboarding_service.registration_outcome(request.source_instance,

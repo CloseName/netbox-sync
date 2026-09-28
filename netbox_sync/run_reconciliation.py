@@ -25,7 +25,7 @@ class RunReconciliation:
         return row,[{**run,'run_id':str(run['run_id']),'finished_at':run['finished_at'].isoformat()} for run in runs]
 
     def _review(self,source,operation):
-        with self.store.connect() as connection,source_gate(connection,self.store.schema,source):
+        with self.store.connect() as connection,source_gate(connection,self.store.schema,source,allow_waiting=True):
             row,runs=self._local(connection,source)
             revision=self.store.revision(row)
             previous=connection.execute(sql.SQL('SELECT operation_id,actor_id,created_at,valid,array_agg(run_id ORDER BY run_id) AS runs FROM {} WHERE source_instance=%s GROUP BY operation_id,actor_id,created_at,valid ORDER BY created_at DESC LIMIT 100').format(self.store.table('run_reconciliations')),(source,)).fetchall()
@@ -55,7 +55,7 @@ class RunReconciliation:
                     return dict(source_instance=source,status='BASELINE_ACCEPTED',historical_outcome='UNPROVED')
             reviewed=self._review(source,operation)
             if reviewed['digest']!=digest or not reviewed['runs']:raise LifecycleError('SOURCE_LIFECYCLE_CONFLICT')
-            with self.store.connect() as connection,source_gate(connection,self.store.schema,source):
+            with self.store.connect() as connection,source_gate(connection,self.store.schema,source,allow_waiting=True):
                 row,runs=self._local(connection,source)
                 if self.store.revision(row)!=reviewed['revision'] or runs!=reviewed['runs']:raise LifecycleError('SOURCE_LIFECYCLE_CONFLICT')
                 for run in runs:

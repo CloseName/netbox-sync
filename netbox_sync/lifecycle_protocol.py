@@ -17,6 +17,9 @@ def handle_lifecycle(lifecycle, secrets, request, retirement=None):
     if lifecycle is None:
         raise LifecycleError('LIFECYCLE_UNAVAILABLE')
     try:
+        if request.get('action') == 'registration_credentials' and set(request) == {'action','source_instance','operation_id','actor_id'}:
+            from .registration_jobs import verify_staged
+            return verify_staged(lifecycle, secrets, source, request['operation_id'], request['actor_id'])
         if request.get('action')=='source_generations' and set(request)=={'action','source_instance'}:
             from .source_archive import generations
             return generations(lifecycle)
@@ -39,6 +42,16 @@ def handle_lifecycle(lifecycle, secrets, request, retirement=None):
                 return recovery.review(source,request['operation_id'])
             if request['action']=='run_reconciliation_confirm' and set(request)==base|{'actor_id','digest','acknowledgements'}:
                 return recovery.confirm(source,request['operation_id'],request['actor_id'],request['digest'],request['acknowledgements'])
+            raise LifecycleError('REQUEST_INVALID')
+        if request.get('action') in {'removal_request','removal_status'}:
+            from .removal_queue import RemovalQueue
+            if retirement is None:raise LifecycleError('RETIREMENT_UNAVAILABLE')
+            queue=RemovalQueue(retirement)
+            base={'action','source_instance','operation_id','actor_id'}
+            if request['action']=='removal_request' and set(request)==base|{'revision','confirmed'}:
+                return queue.enqueue(source,request['operation_id'],request['actor_id'],request['revision'],request['confirmed'])
+            if request['action']=='removal_status' and set(request)==base:
+                return queue.status(source,request['operation_id'],request['actor_id'])
             raise LifecycleError('REQUEST_INVALID')
         if request.get('action') in {'retirement_archive_check','retirement_context','retirement_archive_review','retirement_review','retirement_execute','retirement_resume','retirement_status'}:
             if retirement is None:raise LifecycleError('RETIREMENT_UNAVAILABLE')

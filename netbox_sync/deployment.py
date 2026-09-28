@@ -389,6 +389,12 @@ def apply_grants(environ=None):
             cursor.execute(sql.SQL('GRANT SELECT, INSERT ON {} TO {}').format(
                 sql.Identifier(schema, 'registration_intents'),
                 sql.Identifier(DATABASE_ROLES['registration_writer'])))
+            cursor.execute(sql.SQL('GRANT SELECT, INSERT ON {} TO {}').format(
+                sql.Identifier(schema, 'registration_jobs'), sql.Identifier(DATABASE_ROLES['registration_writer'])))
+            _grant_columns(cursor, 'UPDATE', sql.Identifier(schema, 'registration_jobs'),
+                           ('state', 'safe_code', 'updated_at'), DATABASE_ROLES['registration_writer'])
+            cursor.execute(sql.SQL('GRANT SELECT ON {} TO {}').format(
+                sql.Identifier(schema, 'registration_jobs'), sql.Identifier(DATABASE_ROLES['lifecycle_writer'])))
             _grant_columns(cursor, 'INSERT', sources, REGISTRATION_INSERT_COLUMNS,
                            DATABASE_ROLES['registration_writer'])
             for key in ('discovery_reader', 'apply_registry_reader', 'registry_reader'):
@@ -434,7 +440,7 @@ def apply_grants(environ=None):
                 'site_slug','cluster_name','platform_slug','device_role_slug','cluster_type_slug','device_type_slug','settings',
                 'address','verify_ssl','username','token_id_provider','token_id_key','token_secret_provider','token_secret_key'),
                            DATABASE_ROLES['lifecycle_writer'])
-            _grant_columns(cursor, 'UPDATE', operations, ('status','result','safe_error_code','updated_at'),
+            _grant_columns(cursor, 'UPDATE', operations, ('status','result','safe_error_code','updated_at','finished_at'),
                            DATABASE_ROLES['lifecycle_writer'])
             recovery_table=sql.Identifier(schema, 'source_recoveries')
             lifecycle_role=sql.Identifier(DATABASE_ROLES['lifecycle_writer'])
@@ -458,6 +464,11 @@ def apply_grants(environ=None):
             _grant_columns(cursor,'SELECT',sql.Identifier(schema,'host_reservations'),('released_at',),DATABASE_ROLES['lifecycle_writer'])
             for key in ('web_reader','registration_writer','schedule_writer','operation_writer','run_writer','apply_registry_reader','registry_reader','discovery_reader'):
                 _grant_columns(cursor,'SELECT',archives,('source_instance','verified_at'),DATABASE_ROLES[key])
+            queue=sql.Identifier(schema,'source_removal_requests')
+            cursor.execute(sql.SQL('GRANT SELECT, INSERT ON {} TO {}').format(queue,lifecycle_role))
+            _grant_columns(cursor,'UPDATE',queue,('state','safe_code','operation_id','actor_id','revision','display_name'),DATABASE_ROLES['lifecycle_writer'])
+            for key in ('registration_writer','schedule_writer','operation_writer','run_writer','apply_registry_reader','registry_reader','discovery_reader'):
+                _grant_columns(cursor,'SELECT',queue,('source_instance',),DATABASE_ROLES[key])
             retirements=sql.Identifier(schema,'source_retirements')
             cursor.execute(sql.SQL('GRANT SELECT, INSERT ON {} TO {}').format(retirements,lifecycle_role))
             _grant_columns(cursor,'UPDATE',retirements,('state','receipt','safe_code','remove_credentials','finished_at','superseded_by'),DATABASE_ROLES['lifecycle_writer'])

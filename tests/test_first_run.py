@@ -245,3 +245,38 @@ def test_guard_probe_result_survives_worker_api_public_projection(store,monkeypa
     assert response.json()['safe_code']==code
     assert response.json()['access_checks']==result['access_checks']
     assert SECRET not in response.text
+
+
+@pytest.mark.parametrize('code', ['BOOTSTRAP_BUSY','CONTROL_UNAVAILABLE','REMOTE_SENTINEL'])
+def test_unavailable_bootstrap_is_not_reported_as_unfinished_setup(monkeypatch,code):
+    def unavailable(*args):raise ControlError(code)
+    monkeypatch.setattr(BootstrapClient,'call',unavailable)
+    client=TestClient(create_app(ApiSettings(bootstrap_socket='/test',allowed_write_hosts=('testserver',))))
+    response=client.post('/api/v1/sources',json={},headers={'Origin':'http://testserver','X-NetBox-Sync-CSRF':'same-origin'})
+    assert response.status_code==503
+    assert response.json()['error']['code']==('BOOTSTRAP_BUSY' if code=='BOOTSTRAP_BUSY' else 'BOOTSTRAP_UNAVAILABLE')
+    assert 'SENTINEL' not in response.text and 'Complete NetBox setup first' not in response.text
+
+
+def test_ready_bootstrap_lock_contention_is_temporary_not_onboarding_loss(store,monkeypatch):
+    from netbox_sync.api.bootstrap import State
+    store.configure(PAYLOAD);store.validate(1,lambda _:success());store.finish(1)
+    monkeypatch.setattr(BootstrapClient,'call',lambda *args:State.model_validate(store.status()))
+    client=TestClient(create_app(ApiSettings(bootstrap_socket='/test',allowed_write_hosts=('testserver',))))
+    headers={'Origin':'http://testserver','X-NetBox-Sync-CSRF':'same-origin'}
+    with store.locked():
+        response=client.post('/api/v1/sources',json={},headers=headers)
+    assert response.status_code==503 and response.json()['error']['code']=='BOOTSTRAP_BUSY'
+    assert store.status()['status']=='READY'
+    # The gate opens again, leaving the endpoint's ordinary DTO validation intact.
+    assert client.post('/api/v1/sources',json={},headers=headers).status_code==422
+
+
+def test_actor_bound_registration_status_does_not_require_bootstrap_write_admission(monkeypatch):
+    from types import SimpleNamespace
+    from uuid import uuid4
+    monkeypatch.setattr(BootstrapClient,'call',lambda *a:pytest.fail('Status must not consult busy bootstrap'))
+    onboarding=SimpleNamespace(registration_outcome=lambda *a:dict(identity_status='REGISTERED',source_instance='esxi-fixture'))
+    client=TestClient(create_app(ApiSettings(bootstrap_socket='/test',allowed_write_hosts=('testserver',)),onboarding_service=onboarding))
+    response=client.post('/api/v1/sources/registration-status',json=dict(source_instance='esxi-fixture',registration_id=str(uuid4())),headers={'Origin':'http://testserver','X-NetBox-Sync-CSRF':'same-origin'})
+    assert response.status_code==200 and response.json()['status']=='REGISTERED'

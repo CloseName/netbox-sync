@@ -12,7 +12,7 @@ from netbox_sync.source_lifecycle import LifecycleError
 
 TABLES=('sources','source_operations','sync_runs','run_reconciliations','source_recoveries',
         'source_identity_verifications','registration_intents','host_reservations',
-        'source_retirements','source_archives','source_tombstones')
+        'source_retirements','source_archives','source_tombstones','registration_jobs','source_removal_requests')
 
 
 def test_full_purge_and_lost_final_response(coordinator):

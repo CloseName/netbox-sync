@@ -52,7 +52,8 @@ class RetirementHintDTO(BaseModel):
     archive_required: bool = False
     model_config = ConfigDict(extra='forbid')
     operation_id: UUID
-    state: Literal['SENDING','UNCERTAIN','SUCCEEDED','FINALIZED','BLOCKED']
+    queued: bool = False
+    state: Literal['WAITING','SENDING','UNCERTAIN','SUCCEEDED','FINALIZED','BLOCKED']
 
 
 class LifecycleDTO(BaseModel):

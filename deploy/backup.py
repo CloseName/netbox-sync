@@ -31,7 +31,7 @@ RESTORE_BOOTSTRAP_FILE = 'postgres_bootstrap_password_next'
 FORMAT_VERSION = 1
 ALEMBIC_CHAIN = (
     '0001_registry_baseline', '0002_sync_run_history', '0003_netbox_sync_naming',
-    '0004_source_operations', '0005_source_tombstones', '0006_auth_policy', '0007_host_reservations', '0008_registration_intents', '0009_source_identity_proof', '0010_source_retirements', '0011_registration_requests', '0012_run_reconciliation', '0013_source_archives', '0014_source_purge')
+    '0004_source_operations', '0005_source_tombstones', '0006_auth_policy', '0007_host_reservations', '0008_registration_intents', '0009_source_identity_proof', '0010_source_retirements', '0011_registration_requests', '0012_run_reconciliation', '0013_source_archives', '0014_source_purge', '0015_registration_jobs', '0016_removal_queue')
 ALEMBIC_HEAD = ALEMBIC_CHAIN[-1]
 PRODUCT = 'NetBox Sync'
 DATABASE_NAME = 'netbox_sync'
@@ -52,7 +52,7 @@ VALID_BROKER_XATTR_SETS = frozenset({
     frozenset(BROKER_XATTRS),
 })
 PAYLOAD_FILES = ('database.dump', 'state.tar', 'manifest.json')
-FOUNDATION_TABLES = ('alembic_version', 'auth_audit', 'auth_state', 'host_reservations', 'registration_intents', 'run_reconciliations', 'schema_meta', 'source_archives', 'source_identity_verifications', 'source_operations', 'source_recoveries',
+FOUNDATION_TABLES = ('alembic_version', 'auth_audit', 'auth_state', 'host_reservations', 'registration_intents', 'registration_jobs', 'source_removal_requests', 'run_reconciliations', 'schema_meta', 'source_archives', 'source_identity_verifications', 'source_operations', 'source_recoveries',
                      'source_retirements', 'source_tombstones', 'sources', 'sync_runs')
 SAFE_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
 SAFE_SCHEMA = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,62}$')

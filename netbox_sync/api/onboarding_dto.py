@@ -38,8 +38,8 @@ class ConnectionRequest(PublicModel):
 
     @model_validator(mode='after')
     def credentials_valid(self):
-        if self.registration_resume and (self.recovery_source or self.source_type!='esxi'):
-            raise ValueError('Registration continuation requires ESXi and cannot restore a removed source')
+        if self.registration_resume and self.recovery_source:
+            raise ValueError('Registration continuation cannot restore a removed source')
         values = [self.username.get_secret_value(), self.secret.get_secret_value()]
         if self.source_type == 'proxmox':
             if self.token_id is None:

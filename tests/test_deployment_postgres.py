@@ -53,7 +53,7 @@ def test_clean_bootstrap_migrate_grants_and_idempotency(tmp_path):
     with psycopg.connect(deployment.connection_info('bootstrap', env)) as connection:
         with connection.cursor() as cursor:
             cursor.execute("SELECT version_num FROM netbox_sync.alembic_version")
-            assert cursor.fetchone() == ('0014_source_purge',)
+            assert cursor.fetchone() == ('0016_removal_queue',)
             cursor.execute("SELECT count(*) FROM netbox_sync.sources")
             assert cursor.fetchone() == (0,)
             cursor.execute("SELECT rolname FROM pg_roles WHERE rolname = ANY(%s)",
@@ -349,3 +349,26 @@ def test_purge_execute_is_exclusive_to_lifecycle_role(tmp_path):
             if key!='owner':
                 assert not connection.execute('SELECT has_table_privilege(%s,%s,%s)',
                     (role,'netbox_sync.sources','DELETE')).fetchone()[0]
+
+
+def test_registration_jobs_and_removal_queue_have_narrow_runtime_grants(tmp_path):
+    env=_environment(tmp_path)
+    deployment.bootstrap_roles(env);deployment.migrate(env);deployment.apply_grants(env)
+    with psycopg.connect(deployment.connection_info('bootstrap',env)) as connection:
+        for role,table,column,privilege,expected in (
+            ('registration_writer','registration_jobs','payload','INSERT',True),
+            ('registration_writer','registration_jobs','payload','UPDATE',False),
+            ('registration_writer','registration_jobs','state','UPDATE',True),
+            ('lifecycle_writer','registration_jobs','payload','SELECT',True),
+            ('lifecycle_writer','registration_jobs','state','UPDATE',False),
+            ('web_reader','registration_jobs','payload','SELECT',False),
+            ('operation_writer','source_removal_requests','source_instance','SELECT',True),
+            ('operation_writer','source_removal_requests','actor_id','SELECT',False),
+            ('lifecycle_writer','source_removal_requests','state','UPDATE',True)):
+            assert connection.execute('SELECT has_column_privilege(%s,%s,%s,%s)',
+                (deployment.DATABASE_ROLES[role],'netbox_sync.'+table,column,privilege)).fetchone()==(expected,)
+        for role in deployment.DATABASE_ROLES:
+            if role=='owner':continue
+            for table in ('registration_jobs','source_removal_requests'):
+                assert connection.execute('SELECT has_table_privilege(%s,%s,%s)',
+                    (deployment.DATABASE_ROLES[role],'netbox_sync.'+table,'DELETE')).fetchone()==(False,)

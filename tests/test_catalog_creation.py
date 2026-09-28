@@ -248,18 +248,18 @@ def test_guarded_cluster_after_lost_response_reads_receipt_without_post(store, m
     calls=[]
     def read(value):
         calls.append(value['action'])
-        assert value['action']=='receipt' and value['guard']['operation_id']==request['operation_id']
+        assert value['action']=='resume-registration' and value['guard']['operation_id']==request['operation_id']
         return dict(status=outcome,item={'id':123,'name':'Scoped cluster'} if outcome=='CREATED' else None)
     resumed=creation.CatalogCreation(store, read)
     result=resumed.execute(request, registration=True, source_instance='esxi-fixture')
     assert result['status']==('CREATED' if outcome=='CREATED' else 'UNCERTAIN')
-    assert calls==['receipt']
+    assert calls==['resume-registration']
     assert value['apply_token'] not in (store.root/('catalog-'+request['operation_id']+'.json')).read_text()
     monkeypatch.setenv('NETBOX_SYNC_GUARD_INSTANCE', str(uuid4()))
     if outcome!='CREATED':
         with pytest.raises(ProbeError,match='CATALOG_CHANGED'):
             resumed.execute(dict(action='catalog-reconcile',operation_id=request['operation_id']))
-    assert calls==['receipt']
+    assert calls==['resume-registration']
 
 
 @pytest.mark.parametrize('uncertain',[False,True])
@@ -292,3 +292,43 @@ def test_registration_can_retry_definitive_guard_denial_with_same_intent(store,m
     assert second['status']=='CREATED'
     assert calls==[request['operation_id']]*2
     assert creation.CatalogCreation(store,lambda _:pytest.fail('already created')).execute(request,registration=True,source_instance='source-test')==second
+
+
+@pytest.mark.parametrize('failure,capability,posts', [
+    ('REQUEST_NOT_FOUND',True,1), ('REQUEST_NOT_FOUND',False,0),
+    ('REQUEST_CONFLICT',True,0), ('GUARD_TIMEOUT',True,0), (None,True,0),
+])
+def test_registration_receipt_transport_only_replays_exact_idempotent_intent(monkeypatch,failure,capability,posts):
+    """Real GuardClient serializes HTTP; no patched receipt/create methods."""
+    import hashlib
+    import requests
+    value,_,_=session_fixture(monkeypatch)
+    value.update(action='resume-registration',kind='cluster',object={'name':'Host','type':1,'scope_type':'dcim.site','scope_id':2},
+        guard={'instance':str(uuid4()),'operation_id':str(uuid4()),'source_instance':'source-test'})
+    guard=value['guard'];obj={**value['object'],'id':17};calls=[]
+    wire=dict(nonce=guard['operation_id'],source_instance=guard['source_instance'],resource='cluster',cluster_id=None,data=value['object'])
+    digest=lambda obj:hashlib.sha256(json.dumps(obj,sort_keys=True,separators=(',',':'),default=str).encode()).hexdigest()
+    receipt=dict(nonce=guard['operation_id'],source_instance=guard['source_instance'],resource='cluster',
+        digest=digest([guard['source_instance'],'cluster',{'wire':digest(wire)},None]),object=obj)
+    class Session:
+        verify=True;trust_env=False
+        def request(self,method,url,**kwargs):
+            calls.append((method,url,kwargs.get('json')))
+            assert kwargs['allow_redirects'] is False and kwargs['timeout']==(3,15)
+            if '/objects/receipts/' in url:
+                if failure=='GUARD_TIMEOUT':raise requests.Timeout()
+                code,body=(404,{'code':failure}) if failure else (200,receipt)
+            elif url.endswith('/capabilities/'):
+                code,body=200,dict(protocol=1,guard_instance=guard['instance'],netbox_version='4.7.0',
+                    atomic_dependency_guard=True,creation_receipts=True,retirement_receipts=True,idempotent_creation=capability)
+            elif url.endswith('/objects/create/'):
+                assert method=='POST' and kwargs['json']==wire
+                code,body=201,obj
+            else:pytest.fail('Unexpected HTTP path')
+            return nullcontext(SimpleNamespace(status_code=code,iter_content=lambda _:iter([json.dumps(body).encode()])))
+    result=creation.query(value,lambda:nullcontext(Session()))
+    assert sum(method=='POST' for method,_,_ in calls)==posts
+    assert calls[0][0]=='GET' and '/objects/receipts/' in calls[0][1]
+    if posts or failure is None:assert result['status']=='CREATED'
+    else:assert result['status']!='CREATED'
+    assert value['write_token'] not in json.dumps(result)

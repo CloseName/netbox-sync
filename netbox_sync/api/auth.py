@@ -12,7 +12,7 @@ PUBLIC = {('GET', '/api/v1/health'), ('GET', '/api/v1/auth/status'), ('POST', '/
 ROUTES = (
     ('POST', r'/api/v1/sources/lifecycle-review', 'source.remove'),
     ('POST', r'/api/v1/sources/identity-audit', 'source.remove'),
-    ('POST', r'/api/v1/sources/[^/]+/(archive-check|archive-review|legacy-review|legacy-probe|legacy-confirm|retirement-context|inventory-review|identity-records|reconciliation-review|reconciliation-confirm|recovery-review|recover|recovery-abandon|recovery-status|identity-review|identity-confirm|retirement-review|retirement-status|retirement-resume|retire)', 'source.remove'),
+    ('POST', r'/api/v1/sources/[^/]+/(archive-check|archive-review|legacy-review|legacy-probe|legacy-confirm|retirement-context|inventory-review|identity-records|reconciliation-review|reconciliation-confirm|recovery-review|recover|recovery-abandon|recovery-status|identity-review|identity-confirm|removal-request|removal-status|retirement-review|retirement-status|retirement-resume|retire)', 'source.remove'),
     ('GET', r'/api/v1/users', 'identity.manage'),
     ('POST', r'/api/v1/users/(sync|role)', 'identity.manage'),
     ('GET', r'/api/v1/settings/(ldap|roles)', 'identity.manage'),

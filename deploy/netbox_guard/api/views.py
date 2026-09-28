@@ -80,7 +80,7 @@ class GuardView(APIView):
 class Capabilities(GuardView):
     namespace_required=False
     def get(self,request):
-        return Response({'protocol':1,'guard_instance':str(GuardIdentity.objects.get(pk=1).identifier),'netbox_version':'4.7.0','atomic_dependency_guard':True,
+        return Response({'protocol':1,'guard_instance':str(GuardIdentity.objects.get(pk=1).identifier),'netbox_version':'4.7.0','atomic_dependency_guard':True,'idempotent_creation':True,
                          'creation_receipts':True,'retirement_receipts':True,
                          'source_coordinator_required':True,'source_tree_retirement':True,'source_audit':True,'source_generation_closure':True,'source_namespace_state':True,
                          'audit_permission':request.user.has_perm('netbox_guard.audit_retirementintent'),

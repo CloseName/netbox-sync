@@ -75,10 +75,10 @@ class RetirementCoordinator:
             if exists:return self.public(self.journal._record(connection,source,operation,actor))
         return self._completed(source,operation)
 
-    def review(self,source,operation,actor,revision,*,archive=False):
+    def review(self,source,operation,actor,revision,*,archive=False,queued=False):
         operation=UUID(str(operation))
         with self.store.lock(self.store.lock_path):
-            with self.store.connect() as connection,source_gate(connection,self.store.schema,source,allow_retirement=archive):
+            with self.store.connect() as connection,source_gate(connection,self.store.schema,source,allow_retirement=archive or queued):
                 if archive:
                     from .source_archive import archived
                     if archived(connection,self.store.schema,source):raise LifecycleError('SOURCE_ARCHIVED')

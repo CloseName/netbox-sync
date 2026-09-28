@@ -32,7 +32,7 @@ class OperationError(RuntimeError):
 
 
 @contextmanager
-def source_gate(connection, schema, source, *, allow_retirement=False):
+def source_gate(connection, schema, source, *, allow_retirement=False, allow_waiting=False):
     """Serialize short lifecycle/generation transitions for one source only."""
     connection.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))',
                        (f'netbox-sync:{schema}:source:{source}',))
@@ -45,6 +45,11 @@ def source_gate(connection, schema, source, *, allow_retirement=False):
         present=(exists.get('to_regclass') if isinstance(exists,dict) else exists[0]) if exists else None
         if present and connection.execute(sql.SQL("SELECT source_instance FROM {} WHERE source_instance=%s AND state IN ('SENDING','UNCERTAIN','SUCCEEDED') LIMIT 1").format(
                 sql.Identifier(schema,'source_retirements')),(source,)).fetchone():
+            raise OperationError('SOURCE_RETIREMENT_PENDING')
+        queued=connection.execute('SELECT to_regclass(%s)',(schema+'.source_removal_requests',)).fetchone()
+        present=(queued.get('to_regclass') if isinstance(queued,dict) else queued[0]) if queued else None
+        if present and not allow_waiting and connection.execute(sql.SQL('SELECT source_instance FROM {} WHERE source_instance=%s').format(
+                sql.Identifier(schema,'source_removal_requests')),(source,)).fetchone():
             raise OperationError('SOURCE_RETIREMENT_PENDING')
     yield
 

@@ -68,12 +68,23 @@ def query(value, session_factory=requests.Session):
         host, address = EgressPolicy(allowed_hosts=(parsed.hostname,)).resolve(parsed.hostname, port)
         with pinned_dns(host, address, port), session_factory() as session:
             configure_session(session)
-            if value['action'] == 'receipt':
-                from .retirement_transport import GuardClient
+            if value['action'] in ('receipt', 'resume-registration'):
+                from .retirement_transport import GuardClient, GuardTransportError
                 guard = value['guard']
                 if kind != 'cluster': raise ProbeError('SELECTION_REQUIRED')
                 client = GuardClient(session, value['url'], authorization(value['write_token']), guard['instance'])
-                row = client.creation_receipt(guard['operation_id'], guard['source_instance'], 'cluster', None, obj)
+                try:
+                    row = client.creation_receipt(guard['operation_id'], guard['source_instance'], 'cluster', None, obj)
+                except GuardTransportError as exc:
+                    if value['action'] != 'resume-registration' or exc.code != 'REQUEST_NOT_FOUND':
+                        raise
+                    # Only an exact, immutable registration journal may reach
+                    # this path. The pinned Guard serializes nonce+wire digest
+                    # atomically; a delayed original request cannot duplicate it.
+                    if client.capabilities().get('idempotent_creation') is not True:
+                        raise ProbeError('SELECTION_REQUIRED')
+                    write_started = True
+                    row = client.create(guard['operation_id'], guard['source_instance'], 'cluster', None, obj)
                 actual = dict(row)
                 if isinstance(actual.get('type'), dict): actual['type'] = actual['type']['id']
                 if any(actual.get(key) != expected for key, expected in obj.items()):
@@ -92,7 +103,7 @@ def query(value, session_factory=requests.Session):
                 if key in obj:
                     fetch(session, value['url'] + '/api/' + ENDPOINTS[dependency] + '/' + str(obj[key]) + '/', value['read_token'])
             if value.get('guard'):
-                from .retirement_transport import GuardClient
+                from .retirement_transport import GuardClient, GuardTransportError
                 guard = value['guard']
                 if kind != 'cluster': raise ProbeError('SELECTION_REQUIRED')
                 client = GuardClient(session, value['url'], authorization(value['write_token']), guard['instance'])
@@ -148,18 +159,19 @@ class CatalogCreation:
     """Journal each explicit request under the bootstrap and shared apply locks.
 
     Callers own the shared apply lock. The bootstrap lock fences NetBox configuration.
-    The durable journal never contains the write token and never authorizes replay.
+    The journal never contains the write token. Only an exact registration intent
+    may continue a missing receipt through the explicitly idempotent Guard API.
     """
     def __init__(self, store, child=run_child):
         self.store, self.child = store, child
 
-    def _reconcile_guard(self, recorded, journal, url):
+    def _reconcile_guard(self, recorded, journal, url, *, continue_missing=False):
         # The durable protected intent, not a caller-supplied source or token,
         # selects the original receipt. Missing receipts are not proof of failure.
         guard = recorded['guard']
         if str(os.environ.get('NETBOX_SYNC_GUARD_INSTANCE', '')) != guard['instance']:
             raise ProbeError('CATALOG_CHANGED')
-        result = self.child(dict(action='receipt', url=url, kind=recorded['kind'],
+        result = self.child(dict(action='resume-registration' if continue_missing else 'receipt', url=url, kind=recorded['kind'],
                                  object=recorded['object'], guard=guard,
                                  write_token=runtime_netbox(self.store.path, 'apply')[1]))
         if result.get('status') == 'CREATED':
@@ -218,7 +230,7 @@ class CatalogCreation:
             if recorded is not None:
                 if recorded.get('digest') != digest: raise ProbeError('CONFLICT')
                 if recorded.get('guard') and recorded['status'] not in ('CREATED', 'REFUSED'):
-                    return self._reconcile_guard(recorded, journal, url)
+                    return self._reconcile_guard(recorded, journal, url, continue_missing=registration)
                 if not (registration and recorded['status']=='REFUSED'):
                     return self.public(recorded)
                 # An explicit identical registration retry may correct a proven

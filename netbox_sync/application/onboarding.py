@@ -315,26 +315,8 @@ class SourceOnboardingService:
             if isinstance(exc, OnboardingError):
                 raise
             raise OnboardingError(ErrorCode.SECRET_STORE_FAILED) from None
-        token_reference = SecretReference(
-            provider='file', key=(token_receipt.key if request.source_type == 'proxmox' else secret_receipt.key),
-        )
-        config = SourceConfig(
-            id=request.source_instance, source_instance=request.source_instance,
-            name=request.name, source_type=request.source_type, address=request.address,
-            enabled=True, sync_enabled=False, sync_interval_seconds=request.sync_interval_seconds,
-            verify_ssl=request.verify_ssl,
-            target=NetBoxTargetConfig(
-                site_slug=request.site_slug, cluster_name=request.cluster_name,
-                platform_slug=request.platform_slug, device_role_slug=request.device_role_slug,
-                device_type_slug=request.device_type_slug, cluster_type_slug=request.cluster_type_slug,
-            ),
-            credentials=SourceCredentials(
-                username=credentials.username, token_id=token_reference,
-                token_secret=SecretReference(provider='file', key=secret_receipt.key),
-            ),
-            legacy_identity_owner=False, settings={**({"onboarding_mapping":request.mapping} if request.mapping else {}),
-                      **({"api_port":request.port} if request.port is not None else {})},
-        )
+        config = self.staged_config(request, credentials.username,
+            token_receipt.key if request.source_type == 'proxmox' else secret_receipt.key, secret_receipt.key)
         try:
             return self._registry.create(config)
         except Exception as exc:
@@ -351,6 +333,45 @@ class SourceOnboardingService:
                 raise OnboardingError(code) from None
             state = self._registry.reconcile(request.source_instance)
             if state == config:
+                return config
+            raise OnboardingError(ErrorCode.REGISTRATION_UNCERTAIN) from None
+
+    @staticmethod
+    def staged_config(request, username, token_key, secret_key):
+        """Construct the same runtime record from opaque, broker-attested references."""
+        token_reference = SecretReference(
+            provider='file', key=token_key,
+        )
+        config = SourceConfig(
+            id=request.source_instance, source_instance=request.source_instance,
+            name=request.name, source_type=request.source_type, address=request.address,
+            enabled=True, sync_enabled=False, sync_interval_seconds=request.sync_interval_seconds,
+            verify_ssl=request.verify_ssl,
+            target=NetBoxTargetConfig(
+                site_slug=request.site_slug, cluster_name=request.cluster_name,
+                platform_slug=request.platform_slug, device_role_slug=request.device_role_slug,
+                device_type_slug=request.device_type_slug, cluster_type_slug=request.cluster_type_slug,
+            ),
+            credentials=SourceCredentials(
+                username=username, token_id=token_reference,
+                token_secret=SecretReference(provider='file', key=secret_key),
+            ),
+            legacy_identity_owner=False, settings={**({"onboarding_mapping":request.mapping} if request.mapping else {}),
+                      **({"api_port":request.port} if request.port is not None else {})},
+        )
+        return config
+
+    def register_staged(self, request, username, token_key, secret_key):
+        config = self.staged_config(request, username, token_key, secret_key)
+        existing = self._registry.reconcile(request.source_instance)
+        if existing is not None:
+            if existing == config:
+                return config
+            raise OnboardingError(ErrorCode.SOURCE_ALREADY_EXISTS)
+        try:
+            return self._registry.create(config)
+        except Exception:
+            if self._registry.reconcile(request.source_instance) == config:
                 return config
             raise OnboardingError(ErrorCode.REGISTRATION_UNCERTAIN) from None
 
