@@ -41,6 +41,8 @@ def _inventory(count=2):
     if count == 2:
         review = deepcopy(hosts[0].virtual_machines[0])
         review.external_id = '503c5ad7-aaaa-bbbb-cccc-0123456789ab'
+        review.esxi_instance_uuid = review.external_id
+        review.esxi_bios_uuid = '42000000-aaaa-bbbb-cccc-0123456789ab'
         review.vmid = review.external_id
         review.source_id = f'esxi:{review.external_id}'
         review.original_name = 'REVIEW'

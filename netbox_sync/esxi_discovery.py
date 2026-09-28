@@ -351,6 +351,9 @@ def _virtual_machine(vm, host, source_config, host_id):
         vmid=external_id,
         external_id=external_id,
         provider_object_id=_managed_object_id(vm),
+        esxi_instance_uuid=(_normalized_uuid(_value(vm, 'config.instanceUuid'))
+                            or _normalized_uuid(_value(vm, 'summary.config.instanceUuid'))),
+        esxi_bios_uuid=_normalized_uuid(_value(vm, 'config.uuid')),
         description=_value(vm, 'config.annotation', None),
         original_name=name,
         normalized_name=name.upper(),

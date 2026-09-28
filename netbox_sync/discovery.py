@@ -120,6 +120,8 @@ class DiscoveredVirtualMachine:
     external_id: Optional[str] = None
     description: Optional[str] = None
     provider_object_id: Optional[str] = None
+    esxi_instance_uuid: Optional[str] = None
+    esxi_bios_uuid: Optional[str] = None
 
 
 @dataclass

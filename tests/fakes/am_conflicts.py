@@ -18,6 +18,8 @@ def guests(template):
     for index, (name, addresses) in enumerate(CASES, 1):
         vm = deepcopy(template)
         vm.external_id = vm.vmid = str(UUID(int=index))
+        vm.esxi_instance_uuid = vm.external_id
+        vm.esxi_bios_uuid = str(UUID(int=1000+index))
         vm.source_id = 'esxi:' + vm.external_id
         vm.provider_object_id = f'vm-{index}'
         vm.original_name = vm.normalized_name = name

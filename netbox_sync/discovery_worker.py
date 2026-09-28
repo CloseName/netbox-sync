@@ -213,6 +213,8 @@ def execute_child(payload):
             with EsxiClient(resolver=Resolved()).session(config) as service:
                 hosts = discover_esxi(service, config)
         if payload.get('operation') != 'plan':
+            from .esxi_vm_identity import resolve_vm_identities
+            hosts, _ = resolve_vm_identities(nb_api, hosts, config)
             review = _comparison(lambda: build_esxi_review(build_esxi_adoption_plan(nb_api, hosts, config), config), hosts, config)
     else:
         raise WorkerError('DISCOVERY_FAILED')

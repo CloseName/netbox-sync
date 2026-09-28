@@ -114,7 +114,7 @@ try:
         docker('exec',operator,'mkdir','/baseline')
         docker('exec','-i',operator,'tar','-xf','-','-C','/baseline',input=baseline)
         print('Running isolated full product lifecycle / upgrade / reinstall',flush=True)
-        result=docker('exec','-e','NETBOX_SYNC_LARGE_RETIREMENT='+os.environ.get('NETBOX_SYNC_LARGE_RETIREMENT','0'),'-e','FIXTURE_MOUNT='+mount,'-e','NETBOX_SYNC_REVIEW_IMAGE='+os.environ['NETBOX_SYNC_REVIEW_IMAGE'],
+        result=docker('exec','-e','NETBOX_SYNC_PAM_IDENTITIES='+os.environ.get('NETBOX_SYNC_PAM_IDENTITIES','0'),'-e','NETBOX_SYNC_LARGE_RETIREMENT='+os.environ.get('NETBOX_SYNC_LARGE_RETIREMENT','0'),'-e','FIXTURE_MOUNT='+mount,'-e','NETBOX_SYNC_REVIEW_IMAGE='+os.environ['NETBOX_SYNC_REVIEW_IMAGE'],
             '-e','NETBOX_SYNC_BASELINE_IMAGE=netbox-sync-lifecycle:f6d297f-baseline',operator,'python3','/review/tests/lifecycle_product_scenario.py',mount+'/product',product_project,proxy,check=False,timeout=1400)
         print(result.stdout.decode(errors='replace'),flush=True)
         if result.returncode:print(result.stderr.decode(errors='replace')[-3500:],flush=True)

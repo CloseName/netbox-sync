@@ -95,6 +95,10 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False):
     """Reconcile managed and genuinely new objects; legacy candidates stay separate."""
     from .application.inventory_order import canonical_hosts
     hosts = canonical_hosts(hosts)
+    from .esxi_vm_identity import resolve_vm_identities
+    hosts, identity_conflicts = resolve_vm_identities(nb_api, hosts, config)
+    if identity_conflicts:
+        raise EsxiRuntimeError("ESXi VM identity requires review; no writes allowed")
     from .application.ip_observations import executable_inventory
     hosts, _ = executable_inventory(nb_api, hosts, config)
 

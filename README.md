@@ -163,3 +163,4 @@ status and evidence are in the [lifecycle progress record](docs/product-lifecycl
 For a cluster already removed outside Sync, use the
 [missing-cluster retirement update and recovery procedure](docs/missing-cluster-retirement.md).
 - [Large-source retirement: performance, recovery and acceptance](docs/large-source-retirement-20260928.md)
+- [ESXi duplicate VM UUIDs: BIOS identity and PAM acceptance](docs/esxi-vm-bios-identity-20260928.md)

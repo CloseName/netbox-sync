@@ -17,6 +17,8 @@ def build_runtime_plan(nb_api, hosts, config):
     from .ip_observations import assignment_inventory, source_policy
     from ..network_scopes import scoped_inventory,NetworkScopeError
     nb_api=PlanningNetBox(nb_api)
+    from ..esxi_vm_identity import resolve_vm_identities
+    hosts, identity_conflicts = resolve_vm_identities(nb_api, hosts, config)
     try:hosts=scoped_inventory(nb_api,hosts,config)
     except NetworkScopeError:
         return SyncPlan(source_instance=config.source_instance,source_id=config.id,source_type=config.source_type,
@@ -26,6 +28,7 @@ def build_runtime_plan(nb_api, hosts, config):
                 action=SyncAction.BLOCKED,reason_code='NETWORK_SCOPE_REVIEW_REQUIRED',
                 reason='Selected network scope changed or no longer exists. Review the source VRF mapping.'),))
     _, conflicts, observations = assignment_inventory(hosts, source_policy(config))
+    conflicts = tuple(dict.fromkeys((*identity_conflicts, *conflicts)))
     if conflicts:
         from dataclasses import asdict
         return SyncPlan(

@@ -265,6 +265,23 @@ if os.environ.get('NETBOX_SYNC_LARGE_RETIREMENT')=='1':
  Path('/fixture/bridge/capture-retirement').unlink()
  print('PASS production large removal '+json.dumps(size)+': timed-out client, NetBox transaction, worker/lifecycle restart, same nonce receipt, complete purge',flush=True)
 else:remove(first,wait_for_plan=True)
+if os.environ.get('NETBOX_SYNC_PAM_IDENTITIES')=='1':
+ def fixture_mode(mode):
+  run(['docker','exec',peer,'python','-c',"import requests;requests.post('https://esxi.probe.test:8443/fixture/"+mode+"',verify='/fixture/server.crt',timeout=5).raise_for_status()"])
+ fixture_mode('pam-identities')
+ for cycle in range(2):
+  pam=add('esxi','PAM local')
+  pam_plan=plan(pam);assert pam_plan['apply_allowed']
+  vm_creates=[i for i in pam_plan['items'] if i['action']=='CREATE' and i['object_kind']=='virtualization.virtual_machines']
+  assert len(vm_creates)==16,(len(vm_creates),{i['object_kind'] for i in pam_plan['items']})
+  assert sum(i['external_id'].startswith('esxi-bios-v1/') for i in vm_creates)==13
+  assert any(i['reason_code']=='IP_OBSERVATION_ONLY' for i in pam_plan['items'])
+  apply(pam,pam_plan)
+  assert not any(i['action'] in ('CREATE','UPDATE') for i in plan(pam)['items'])
+  scheduled(pam)
+  remove(pam)
+ print('PASS PAM four duplicate groups / 13 VM plus 3 unique VM: Guard creation, NIC ownership, observations, no-op, scheduled, complete removal and same-host re-add',flush=True)
+ fixture_mode('restore-am')
 second=add('esxi','AM isolated',restart=True);assert second!=first
 apply(second,plan(second));assert not any(i['action'] in ('CREATE','UPDATE') for i in plan(second)['items']);remove(second,wait_for_plan=True)
 missing=add('esxi','Missing cluster isolated')

@@ -14,9 +14,24 @@ for i,(name,addresses) in enumerate(CASES,1):
     for key,value in base.items():
         properties[(obj,key)]=value.replace('ESXI-VM',escape(name)).replace('42000000-1111-2222-3333-0123456789ab',str(UUID(int=i))).replace('503c5ad7-0000-1111-2222-0123456789ab',str(UUID(int=100+i))).replace('00:50:56:aa:bb:01',mac)
     properties[(obj,'guest')]='<val xsi:type="GuestInfo"><net><network>VM Network</network><macAddress>'+mac+'</macAddress><connected>true</connected><deviceConfigId>4000</deviceConfigId><ipConfig>'+''.join('<ipAddress><ipAddress>'+a.split('/')[0]+'</ipAddress><prefixLength>'+a.split('/')[1]+'</prefixLength></ipAddress>' for a in addresses)+'</ipConfig></net></val>'
+original_properties=dict(properties)
 class Handler(ProviderHandler):
     hold_inventory=False
     def do_POST(self):
+        if self.path=='/fixture/pam-identities':
+            properties.clear();properties.update(original_properties)
+            properties[('ha-host','vm')]='<val xsi:type="ArrayOfManagedObjectReference">'+''.join('<ManagedObjectReference type="VirtualMachine">vm-'+str(i)+'</ManagedObjectReference>' for i in range(1,17))+'</val>'
+            for i in range(1,17):
+                group=1 if i<=7 else 2 if i<=9 else 3 if i<=11 else 4 if i<=13 else i
+                obj='vm-'+str(i);mac='02:50:56:00:00:'+format(i,'02x')
+                for key,value in base.items():
+                    properties[(obj,key)]=value.replace('ESXI-VM','PAM-local-'+str(i)).replace('42000000-1111-2222-3333-0123456789ab',str(UUID(int=1000+i))).replace('503c5ad7-0000-1111-2222-0123456789ab',str(UUID(int=2000+group))).replace('00:50:56:aa:bb:01',mac)
+                address='10.11.5.25' if i<=2 else '192.0.2.'+str(i)
+                properties[(obj,'guest')]=base['guest'].replace('10.20.40.42',address).replace('<prefixLength>24</prefixLength>','<prefixLength>32</prefixLength>').replace('00:50:56:aa:bb:01',mac)
+            return self.respond(b'{}')
+        if self.path=='/fixture/restore-am':
+            properties.clear();properties.update(original_properties)
+            return self.respond(b'{}')
         if self.path=='/fixture/hold-next-inventory':
             Handler.hold_inventory=True
             return self.respond(b'{}')
