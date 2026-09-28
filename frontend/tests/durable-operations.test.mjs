@@ -45,3 +45,11 @@ test('timeout before headers and during response body is distinguished from malf
   await assert.rejects(fetchOperations('source-1',controller.signal),e=>e.reason==='TIMEOUT'&&!e.message.includes('SENTINEL'));
  }
 });
+
+
+test('removal fences have precise safe messages',async(t)=>{
+ for(const [code,reason] of [['SOURCE_RETIREMENT_PENDING','REMOVAL_PENDING'],['SOURCE_ARCHIVED','SOURCE_CLOSED'],['REMOTE_SENTINEL','HTTP_ERROR']]){
+  t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({error:{code,message:'REMOTE_SENTINEL'}}),{status:409}));
+  await assert.rejects(startOperation('source-1','PLAN',new AbortController().signal),e=>e.reason===reason&&!e.message.includes('SENTINEL'));
+ }
+});

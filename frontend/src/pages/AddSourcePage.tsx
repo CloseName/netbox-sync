@@ -70,7 +70,6 @@ export function AddSourcePage() {
   const [identity,setIdentity]=useState({user:'',token:'',edited:false,parsed:false});
   const [expiresAt,setExpiresAt]=useState<number|null>(null);
   const [uncertain,setUncertain]=useState(memory?.uncertain??saved?.uncertain??false);
-  const [reconciled,setReconciled]=useState(false);
   const [created, setCreated] = useState<Source | null>(null);
 
   const navigate=useNavigate(),[params,setParams]=useSearchParams();
@@ -192,11 +191,11 @@ export function AddSourcePage() {
     } catch (failure) {
       if(failure instanceof HostRegistrationFailure){setLegacyReview(['HOST_REGISTRY_REVIEW_REQUIRED','HOST_SOURCE_ARCHIVE_REQUIRED','HOST_ARCHIVE_RECHECK_REQUIRED'].includes(failure.code));setHostConflicts(failure.conflicts);setExistingSource(failure.source);setRemovedSource(failure.code==='HOST_SOURCE_REMOVED');selectionRejected=true;setReview(false);}
       if(failure instanceof CatalogFailure){selectionRejected=true;setReview(false);}
-      if(failure instanceof RegistrationFailure&&failure.uncertain){selectionRejected=true;setUncertain(true);setReconciled(false);}
+      if(failure instanceof RegistrationFailure&&failure.uncertain){selectionRejected=true;setUncertain(true);}
 
       setError(
         failure instanceof HostRegistrationFailure?hostRegistrationMessages[failure.code][language==='ru'?1:0]:
-        failure instanceof RegistrationFailure?failure.code==='REGISTRATION_CLUSTER_RETAINED'?t('The cluster was created, but adding the source is not confirmed. Check the saved source before retrying; the cluster is retained.','Кластер создан, но добавление источника не подтверждено. Перед повтором проверьте сохранённый источник; кластер оставлен.'):failure.uncertain?t('The registration outcome is unknown. Check server state before any further action. Your choices are retained.','Результат регистрации неизвестен. Сначала сверьте состояние сервера. Ваш выбор сохранён.'):t('The connection check or session is no longer valid. Sign in if needed, re-enter credentials and repeat the check; your placement choices are retained.','Проверка подключения или сеанс больше не действуют. При необходимости войдите, повторно введите данные доступа и выполните проверку; выбранное размещение сохранено.'):
+        failure instanceof RegistrationFailure?failure.code==='REGISTRATION_CLUSTER_RETAINED'?t('The cluster was created, but adding the source is not confirmed. Check the saved source before retrying; the cluster is retained.','Кластер создан, но добавление источника не подтверждено. Перед повтором проверьте сохранённый источник; кластер оставлен.'):failure.uncertain?t('Registration has not finished. The server checks the result automatically. Your choices are retained.','Добавление ещё не завершено. Сервер проверяет результат автоматически. Ваш выбор сохранён.'):t('The connection check or session is no longer valid. Sign in if needed, re-enter credentials and repeat the check; your placement choices are retained.','Проверка подключения или сеанс больше не действуют. При необходимости войдите, повторно введите данные доступа и выполните проверку; выбранное размещение сохранено.'):
         failure instanceof CatalogFailure&&failure.code==='CATALOG_PERMISSION_DENIED'?t('NetBox refused the required permission. Ask an administrator to check the configured NetBox access; no source was registered.','NetBox отказал в необходимом праве. Попросите администратора проверить настроенный доступ к NetBox; источник не зарегистрирован.'):
         failure instanceof CatalogFailure?t('NetBox selection changed or could not be verified. Refresh the lists and review the site, cluster and host device types; nothing was registered.','Выбор NetBox изменился или не прошёл проверку. Обновите списки, проверьте площадку, кластер и типы устройств хостов; источник не зарегистрирован.'):
         failure instanceof SourceIdReservedError ? failure.message :
@@ -221,7 +220,7 @@ export function AddSourcePage() {
         <h2>{t('Your entered data will be lost','Введённые данные будут потеряны')}</h2>
         <div className="page-actions"><button autoFocus type="button" onClick={()=>{if(blocker.state==='blocked')blocker.reset();}}>{t('Stay','Остаться')}</button><button type="button" onClick={()=>{remembered=null;saveSourceDraft(owner,null);if(token)void cancelOnboarding(token).catch(()=>{});if(blocker.state==='blocked')blocker.proceed();}}>{t('Leave','Выйти')}</button></div>
       </dialog>
-      <RegistrationContinuation key={String(uncertain)} language={language} done={setCreated}/>
+      <RegistrationContinuation key={String(uncertain)} language={language} done={setCreated} focusAttempt={uncertain&&draft.registration_id?{source:draft.source_instance,operation:draft.registration_id}:undefined}/>
       {validation.summary}
       {error&&canRecover&&hostConflicts.length>0&&<SourceIdentityRecords key={hostConflicts[0].source_instance} source={hostConflicts[0].source_instance}/>}
       {error&&hostConflicts.length>0&&<section aria-label={t('Conflicting source records','Конфликтующие записи источников')}>
@@ -230,17 +229,6 @@ export function AddSourcePage() {
       </section>}
       {error&&existingSource&&legacyReview&&<LifecycleResolution key={existingSource} source={existingSource}/>}
       {error&&existingSource&&!removedSource&&<p><Link to={sourcePath(existingSource)}>{t('Open existing source','Открыть существующий источник')}</Link></p>}
-      {uncertain&&<section className="source-panel"><p>{t('No registration request will be retried automatically.','Запрос регистрации не будет повторён автоматически.')}</p><button type="button" disabled={busy} onClick={async()=>{
-        setStarted(Date.now());setBusyAction('reconcile');setBusy(true);try{const response=await fetch('/api/v1/sources/'+encodeURIComponent(draft.source_instance),{cache:'no-store',signal:AbortSignal.timeout(10000)});
-          if(response.status===404&&draft.create_cluster&&draft.registration_id){
-            const checked=await fetch('/api/v1/sources/registration-status',{method:'POST',headers:{'Content-Type':'application/json','X-NetBox-Sync-CSRF':'same-origin'},body:JSON.stringify({source_instance:draft.source_instance,registration_id:draft.registration_id}),signal:AbortSignal.timeout(40000)});
-            if(!checked.ok)throw new Error();const result=await checked.json();
-            setError((result.status==='CREATED'||result.catalog_status==='CREATED')?t('The cluster is saved; the source is not registered. The original registration attempt must be continued; do not create a new source ID.','Кластер сохранён; источник не зарегистрирован. Нужно продолжить исходную попытку регистрации; не создавайте новый Source ID.'):result.status==='EXISTS_REVIEW_REQUIRED'?t('A matching cluster exists, but ownership of this write is unconfirmed. Ask an administrator to review it before continuing.','Совпадающий кластер существует, но результат этой записи не подтверждён. Обратитесь к администратору для проверки перед продолжением.'):t('The result remains unconfirmed. No creation request was repeated.','Результат остаётся неподтверждённым. Запрос создания не повторялся.'));
-            setReconciled(false);return;
-          }
-          setReconciled(response.ok);setError(response.ok?t('A source with this ID exists. Open it and verify the saved configuration.','Источник с этим ID существует. Откройте его и проверьте сохранённую конфигурацию.'):t('The outcome is still unconfirmed. Ask the operator to inspect the operation before retrying.','Результат пока не подтверждён. Перед повтором оператор должен проверить состояние операции.'));
-        }catch{setError(t('Could not check server state. No registration was repeated.','Не удалось сверить состояние сервера. Регистрация не повторялась.'));}finally{setBusy(false);}
-      }}>{t('Check server state','Сверить состояние сервера')}</button>{reconciled&&<Link to={sourcePath(draft.source_instance)}>{t('Open source for review','Открыть источник для проверки')}</Link>}</section>}
       {step>1&&expiresAt&&<p className="muted">{t('Connection check valid until: ','Проверка подключения действует до: ')}{new Date(expiresAt).toLocaleTimeString(language)}</p>}
       {notice&&<p role="status">{notice}</p>}
       {error && (

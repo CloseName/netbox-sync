@@ -3,6 +3,7 @@ import { test, expect } from './operation-fixture';
 import { randomUUID } from 'node:crypto';
 async function fixture(page, code = 'SOURCE_TLS_FAILED') {
  await page.route('**/api/v1/**', route => route.fulfill({status: route.request().method() === 'POST' ? 400 : 200, json: route.request().method() === 'POST' ? {error:{code,message:'REMOTE_DETAIL_MUST_NOT_ESCAPE'}} : {sources:[]}}));
+ await page.route('**/api/v1/registration-attempts',route=>route.fulfill({json:{attempts:[]}}));
  await page.goto('/sources/add');
 }
 for (const language of ['en','ru']) for (const theme of ['light','dark']) {
@@ -69,6 +70,7 @@ test('slow probe sends once, remains readable and does not invent progress',asyn
  const gate=new Promise<void>(resolve=>release=resolve);
  await page.route('**/api/v1/**',route=>route.fulfill({json:{sources:[]}}));
  await page.route('**/api/v1/sources/test-connection',async route=>{calls++;await gate;await route.abort('connectionfailed');});
+ await page.route('**/api/v1/registration-attempts',route=>route.fulfill({json:{attempts:[]}}));
  await page.goto('/sources/add');
  await page.getByLabel('Source type').selectOption('esxi');await page.getByLabel('Hostname or IPv4 address').fill('esxi.example.test');
  await page.locator('[name=username]').fill('netbox-sync');await page.locator('[name=secret]').fill(randomUUID());

@@ -20,3 +20,15 @@ for(const language of ['en','ru'])test(`saved registration result is read automa
  await expect(page.getByRole('link',{name:language==='ru'?'Открыть источник':'Open source',exact:true})).toBeVisible({timeout:12000});
  expect(writes).toBe(0);
 });
+
+for(const language of ['en','ru'])test(`server continuation hides redundant credentials ${language}`,async({page,context})=>{
+ const attempt={source_instance:'esxi-continuing',registration_id:'a5b7ae0b-609a-46f0-bf92-103eaa087dd4',request:null,created_at:'2026-09-28T00:00:00Z',server_continuing:true};
+ await page.addInitScript(language=>localStorage.setItem('netbox-sync.language',language),language);
+ await context.route('**/api/v1/**',r=>r.fulfill({json:new URL(r.request().url()).pathname==='/api/v1/bootstrap'?{revision:1,status:'READY',url:'https://netbox.example.test',completed:true,read_token_present:true,apply_token_present:true,safe_code:null,checks:[],validated_at:1}:{}}));
+ await context.route('**/api/v1/registration-attempts',r=>r.fulfill({json:{attempts:[attempt]}}));
+ await context.route('**/api/v1/sources/registration-status',r=>r.fulfill({json:{status:'UNCERTAIN',server_continuing:true}}));
+ await page.goto('/sources/add');await page.getByRole('button',{name:attempt.source_instance,exact:true}).click();
+ const panel=page.getByRole('region',{name:language==='ru'?'Продолжить сохранённое добавление':'Continue a saved registration'});
+ await expect(panel.getByText(language==='ru'?'Добавление продолжается на сервере. Страницу можно закрыть.':'Registration continues on the server. You can close this page.')).toBeVisible();
+ await expect(panel.locator('input[type=password]')).toHaveCount(0);
+});

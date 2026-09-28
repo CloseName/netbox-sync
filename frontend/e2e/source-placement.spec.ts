@@ -99,12 +99,12 @@ for(const code of ['ONBOARDING_TOKEN_INVALID','PROBE_RECEIPT_INVALID'])test(`exp
 test('unknown registration checks server without another POST',async({page})=>{
  await fixture(page);let writes=0,reads=0;
  await page.route('**/api/v1/sources',route=>{writes++;return route.abort('connectionfailed');});
- await page.route('**/api/v1/sources/esxi-aabbccddeeff',route=>{reads++;return route.fulfill({status:404,json:{error:{code:'SOURCE_NOT_FOUND'}}});});
+ await page.route('**/api/v1/sources/registration-status',route=>{reads++;return route.fulfill({json:{status:'UNCERTAIN',server_continuing:true,resume_supported:false}});});
  await selectPlacement(page);
  await page.getByRole('button',{name:'Add source',exact:true}).click();
  await expect(page.getByRole('button',{name:'Add source',exact:true})).toBeDisabled();
- await page.getByRole('button',{name:'Check server state',exact:true}).click();
- await expect(page.getByRole('alert')).toContainText('still unconfirmed');expect(writes).toBe(1);expect(reads).toBe(1);
+ await expect(page.getByText('Registration continues on the server. You can close this page.',{exact:true})).toBeVisible();
+ expect(writes).toBe(1);expect(reads).toBeGreaterThanOrEqual(1);
 });
 
 for(const outcome of ['CREATED','REFUSED','UNCERTAIN','EXISTS_REVIEW_REQUIRED'])test(`explicit catalog creation ${outcome}`,async({page})=>{

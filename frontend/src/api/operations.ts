@@ -1,8 +1,10 @@
 import {knownPublicError,publicError} from '../ui/publicErrors.ts';
 import { validPlan, type SyncPlan } from './sync.ts';
 import { validDiscovery, type DiscoveryResult } from './discovery.ts';
-export type OperationFailure = 'TIMEOUT' | 'TRANSPORT' | 'ACCESS_DENIED' | 'HTTP_ERROR' | 'INVALID_RESPONSE' | 'UNKNOWN';
+export type OperationFailure = 'TIMEOUT' | 'TRANSPORT' | 'ACCESS_DENIED' | 'REMOVAL_PENDING' | 'SOURCE_CLOSED' | 'HTTP_ERROR' | 'INVALID_RESPONSE' | 'UNKNOWN';
 const requestMessages: Record<OperationFailure,string> = {
+ REMOVAL_PENDING:'Source removal is pending. New operations are paused.',
+ SOURCE_CLOSED:'This source has been removed. Return to the source list.',
  TIMEOUT:'The state request timed out. Reload to check the operation.',
  TRANSPORT:'No response received. Check connectivity and reload the operation state.',
  ACCESS_DENIED:'Access to operation state was denied. Check access before retrying.',
@@ -57,7 +59,15 @@ async function request(source: string, signal: AbortSignal, kind?: OperationKind
   } catch(error) {
     throw new OperationRequestError(signal.aborted&&signal.reason?.name==='TimeoutError'?'TIMEOUT':error instanceof TypeError?'TRANSPORT':'UNKNOWN');
   }
-  if (!response.ok) throw new OperationRequestError(response.status===401||response.status===403?'ACCESS_DENIED':'HTTP_ERROR');
+  if (!response.ok) {
+    if(response.status===409){
+      const data:unknown=await response.json().catch(()=>null);
+      const code=record(data)&&record(data.error)?data.error.code:null;
+      if(code==='SOURCE_RETIREMENT_PENDING')throw new OperationRequestError('REMOVAL_PENDING');
+      if(code==='SOURCE_ARCHIVED')throw new OperationRequestError('SOURCE_CLOSED');
+    }
+    throw new OperationRequestError(response.status===401||response.status===403?'ACCESS_DENIED':'HTTP_ERROR');
+  }
   try {return await response.json() as unknown;} catch(error) {throw new OperationRequestError(signal.aborted&&signal.reason?.name==='TimeoutError'?'TIMEOUT':error instanceof TypeError?'TRANSPORT':'INVALID_RESPONSE');}
 }
 export async function fetchOperations(source: string, signal: AbortSignal) {

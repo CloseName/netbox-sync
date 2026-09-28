@@ -181,11 +181,11 @@ test('lost final response checks the actor-bound journal without another registr
  let posts=0,checks=0;
  await page.route('**/api/v1/sources',route=>{posts++;return route.fulfill({status:503,json:{error:{code:'REGISTRATION_UNCERTAIN'}}});});
  await page.route('**/api/v1/sources/esxi-aabbccddeeff',route=>route.fulfill({status:404,json:{error:{code:'SOURCE_NOT_FOUND'}}}));
- await page.route('**/api/v1/sources/registration-status',route=>{checks++;expect(Object.keys(route.request().postDataJSON()).sort()).toEqual(['registration_id','source_instance']);return route.fulfill({json:{status:'CREATED'}});});
+ await page.route('**/api/v1/sources/registration-status',route=>{checks++;expect(Object.keys(route.request().postDataJSON()).sort()).toEqual(['registration_id','source_instance']);return route.fulfill({json:{status:'UNCERTAIN',server_continuing:true,resume_supported:false,catalog_status:'CREATED'}});});
  await page.getByRole('button',{name:'Add source',exact:true}).click();
- await page.getByRole('button',{name:'Check server state',exact:true}).click();
- await expect(page.getByRole('alert')).toContainText('The cluster is saved; the source is not registered.');
- expect(posts).toBe(1);expect(checks).toBe(1);
+ await expect(page.getByText('Registration continues on the server. You can close this page.',{exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Check server state',exact:true})).toHaveCount(0);
+ expect(posts).toBe(1);expect(checks).toBeGreaterThanOrEqual(1);
  await expect(page.getByRole('button',{name:'Add source',exact:true})).toBeDisabled();
 });
 
@@ -306,7 +306,7 @@ for(const lang of ['en','ru'])test(`observed AM archive continues full wizard ${
  await expect(dialog).toContainText(lang==='ru'?'Исторический результат запусков не меняется':'The old execution result remains unchanged');
  await page.screenshot({path:test.info().outputPath('legacy-archive-review-'+lang+'.png'),fullPage:true});
  await dialog.getByRole('button',{name:lang==='ru'?'Подтвердить архивирование':'Confirm archive',exact:true}).click();
- await expect(page.getByRole('status')).toContainText(lang==='ru'?'Поколение закрыто':'Generation closed');
+ await expect(page.getByText(lang==='ru'?'Поколение закрыто. Повторите проверку нового источника в мастере.':'Generation closed. Recheck the new source in the wizard.',{exact:true})).toBeVisible();
  await expect(page.locator('.wizard-form [name=secret]')).toHaveValue(secret);
  if(lang==='ru')await setLanguage(page,'en');
  await page.locator('.wizard-form').getByRole('button',{name:'Continue',exact:true}).click();await expect(page).toHaveURL(/step=2/);

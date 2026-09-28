@@ -1,3 +1,4 @@
+import {QueuedSourceRemoval} from '../components/QueuedSourceRemoval';
 import {useNavigate} from 'react-router-dom';
 import {SourceInventoryAudit,permissionErrors} from '../components/SourceInventoryAudit';
 import {useCallback, useEffect, useRef, useState} from 'react';
@@ -17,7 +18,7 @@ export function SourceRetirementPanel({source,onRemoved,retained=false,archive=f
   const dialog=useRef<HTMLDialogElement>(null),trigger=useRef<HTMLButtonElement>(null);
   useEffect(()=>{if(open)dialog.current?.showModal();else dialog.current?.close();},[open]);
   useEffect(()=>{if(!retained&&state.data?.removed_at&&!state.data.retirement)onRemoved(state.data);},[state.data,onRemoved,retained]);
-  useEffect(()=>{if(state.data?.retirement&&state.data.retirement.state!=='FINALIZED'&&!(archive&&state.data.retirement.archive_required))setPending(state.data.retirement.operation_id);},[state.data?.retirement,archive]);
+  useEffect(()=>{if(!state.data?.retirement?.queued&&state.data?.retirement&&state.data.retirement.state!=='FINALIZED'&&!(archive&&state.data.retirement.archive_required))setPending(state.data.retirement.operation_id);},[state.data?.retirement,archive]);
   const errorText=(code:string)=>{
     if(permissionErrors[code])return t(...permissionErrors[code]);
     if(code==='SOURCE_RETIREMENT_PENDING')return t('Removal is already in progress. Its result is checked automatically.','Удаление уже выполняется. Результат проверяется автоматически.');
@@ -89,6 +90,7 @@ export function SourceRetirementPanel({source,onRemoved,retained=false,archive=f
   const kinds:Record<string,string>={cluster:t('Cluster','Кластер'),device:t('Host','Хост'),vm:t('VM','ВМ'),
     interface:t('Host interface','Интерфейс хоста'),vminterface:t('VM interface','Интерфейс ВМ'),
     disk:t('Disk','Диск'),ip:t('IP address','IP-адрес'),mac:t('MAC address','MAC-адрес')};
+  if(!retained&&!archive&&state.data&&(state.data.retirement?.queued||state.data.removal_blocker==='SOURCE_OPERATION_ACTIVE'))return <QueuedSourceRemoval source={source.source_instance} name={source.name} lifecycle={state.data}/>;
   return <section className="source-panel"><h3>{archive?t('Close historical registration','Завершить старую регистрацию'):retained?t('Retire retained NetBox objects','Удалить сохранённые объекты NetBox'):t('Source removal','Удаление источника')}</h3>
     <p>{t('Review the exact NetBox objects owned by this source before confirming. Shared catalogs are retained. On completion, source settings, credentials and run history in Sync are removed.',
       'Перед подтверждением проверьте точный список принадлежащих источнику объектов NetBox. Общие справочники сохраняются. После завершения настройки, данные доступа и история этого источника в Sync удаляются.')}</p>

@@ -757,6 +757,8 @@ export const ru: Record<string,string> = {
   "Synchronization needs attention.": "Синхронизация требует внимания.",
   "No problems reported.": "Проблем не обнаружено.",
   "The state request timed out. Reload to check the operation.": "Истекло время ожидания состояния. Обновите данные об операции.",
+  "Source removal is pending. New operations are paused.": "Удаление источника ожидает завершения. Новые операции приостановлены.",
+  "This source has been removed. Return to the source list.": "Источник удалён. Вернитесь к списку источников.",
   "No response received. Check connectivity and reload the operation state.": "Ответ не получен. Проверьте подключение и обновите состояние операции.",
   "Access to operation state was denied. Check access before retrying.": "Доступ к состоянию операции отклонён. Проверьте права перед повтором.",
   "The server could not return operation state. Reload or ask the operator.": "Сервер не смог вернуть состояние операции. Обновите данные или обратитесь к оператору.",

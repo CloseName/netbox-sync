@@ -1,6 +1,6 @@
 export interface SourceLifecycle {
   archive_mode?: 'FULL_DELETE'|'LEGACY_RETAIN'|null;
-  retirement?: {archive_required?:boolean;operation_id: string; state: "SENDING"|"UNCERTAIN"|"SUCCEEDED"|"FINALIZED"|"BLOCKED"} | null;
+  retirement?: {queued?:boolean;archive_required?:boolean;operation_id: string; state: "WAITING"|"SENDING"|"UNCERTAIN"|"SUCCEEDED"|"FINALIZED"|"BLOCKED"} | null;
   removal_blocker?: "SOURCE_APPLY_UNCONFIRMED" | "SOURCE_OPERATION_ACTIVE" | "SOURCE_RETIREMENT_PENDING" | null;
   source_instance: string; display_name: string; removed_at: string | null;
   revision: string | null; credential_state: 'RETAINED_BY_REQUEST' | 'REMOVED' | 'RETAINED_SHARED_OR_LEGACY' | 'CLEANUP_FAILED' | null;
