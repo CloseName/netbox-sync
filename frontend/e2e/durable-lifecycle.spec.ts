@@ -216,10 +216,12 @@ for(const locale of ['en','ru'])for(const sameInterface of [true,false])test(`co
 
 test('removal response loss and reload keep the original operation',async({page,context},info)=>{
   const server=backend();await server.attach(context);server.retirementControl.lose=true;
+  let statusReads=0;await context.route('**/retirement-status',async route=>{statusReads++;await route.fallback();});
   await page.goto(url+'/sources/source-1/configuration');
   await page.getByRole('button',{name:'Remove Source',exact:true}).click();
   const dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'Confirm removal',exact:true}).click();
-  await expect(dialog.getByText(/The result could not be confirmed/)).toBeVisible();
+  await expect(dialog.getByText(/The outcome is not confirmed|Removal is in progress/)).toBeVisible();
+  await expect.poll(()=>statusReads,{timeout:12000}).toBeGreaterThan(0);
   const original=server.retirements.get('source-1').operation_id;
   expect(server.retirementControl.writes).toBe(1);
   await page.reload();await page.getByRole('button',{name:'Removal progress',exact:true}).click();
@@ -246,7 +248,7 @@ for(const language of ['en','ru'] as const)test(`automatic removal continuation 
   const operation=server.retirements.get('source-1').operation_id;
   await dialog.getByRole('button',{name:language==='ru'?'Закрыть':'Close',exact:true}).click();
   await page.reload();
-  await expect(page.getByText(language==='ru'?'Удаление продолжается на сервере.':'Removal is continuing on the server.',{exact:true})).toBeVisible();
+  await expect(page.getByText(language==='ru'?'Результат ещё не подтверждён. Сервер проверяет исходную квитанцию; не повторяйте удаление.':'The outcome is not confirmed. The server is checking the original receipt; do not repeat removal.',{exact:true})).toBeVisible();
   await page.screenshot({path:info.outputPath('automatic-continuation.png'),fullPage:true});
   // The real worker's receipt-driven continuation is tested in PostgreSQL/Compose.
   // This fixture publishes completion without any second browser mutation.
@@ -299,7 +301,7 @@ for (const language of ['en','ru']) test(`missing cluster explanation and automa
  await expect(page.getByText(language==='ru'?/Кластер уже отсутствует/:/The cluster is already absent/)).toBeVisible();
  await page.getByRole('button',{name:language==='ru'?'Подтвердить удаление':'Confirm removal',exact:true}).click();
  await page.reload();
- await expect(page.getByText(language==='ru'?'Удаление продолжается на сервере.':'Removal is continuing on the server.',{exact:true})).toBeVisible();
+ await expect(page.getByText(language==='ru'?'Результат ещё не подтверждён. Сервер проверяет исходную квитанцию; не повторяйте удаление.':'The outcome is not confirmed. The server is checking the original receipt; do not repeat removal.',{exact:true})).toBeVisible();
  server.finishRemoval('source-1');
  await expect(page).toHaveURL(/\/sources$/,{timeout:12000});expect(server.retirementControl.writes).toBe(1);
 });

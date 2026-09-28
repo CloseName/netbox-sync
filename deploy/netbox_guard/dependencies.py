@@ -106,6 +106,29 @@ def _closure(roots):
     return _snapshot(collector), collector
 
 
+def _batch_closure(roots):
+    """Homogeneous whole-source phase; identical snapshot/dependency checks.
+
+    Kept separate from the legacy arbitrary-root API. Real NetBox regression
+    compares objects and field updates against each individual root, verifies
+    foreign-child refusal, exact deletion counts and full transaction rollback.
+    """
+    from django.apps import apps
+    from django.db import connection
+    from django.db.models.deletion import Collector
+    checked = _checked_roots(roots)
+    kind = checked[0][0]
+    if any(resource != kind for resource,_ in checked):
+        raise DependencyGuardBlocked('INVALID_ROOTS')
+    identifiers = {identifier for _,identifier in checked}
+    objects = list(apps.get_model(MODELS[kind]).objects.filter(pk__in=identifiers).order_by('pk'))
+    if {obj.pk for obj in objects} != identifiers:
+        raise DependencyGuardBlocked('OBJECT_MISSING')
+    collector = Collector(using=connection.alias)
+    collector.collect(objects)
+    return _snapshot(collector), collector
+
+
 @contextmanager
 def _database_fence():
     """One independent transaction; every guarded path shares the same fence."""

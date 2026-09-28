@@ -55,7 +55,7 @@ class LifecycleClient:
         if action not in {'context','archive_check','review','archive_review','execute','resume','status'}:raise LifecycleRequestError('REQUEST_INVALID')
         try:
             value=request(self.path,{'action':'retirement_'+action,'source_instance':source,**payload},
-                          timeout=60,response_limit=2*1024*1024)['result']
+                          timeout=170,response_limit=2*1024*1024)['result']
             if value.get('source_instance')!=source:raise ValueError()
             return value
         except ControlError as exc:raise LifecycleRequestError(exc.code) from None

@@ -68,9 +68,9 @@ class LifecycleStore:
         present=connection.execute('SELECT to_regclass(%s)',(self.schema+'.source_retirements',)).fetchone()
         if not present or not present['to_regclass']:return None
         condition=("(state IN ('SENDING','UNCERTAIN','SUCCEEDED','BLOCKED') OR (state='FINALIZED' AND finished_at>=%s))" if removed else
-                   "state IN ('SENDING','UNCERTAIN','SUCCEEDED')")
+                   "(state IN ('SENDING','UNCERTAIN','SUCCEEDED') OR (state='BLOCKED' AND safe_code='SOURCE_OPERATION_ACTIVE'))")
         parameters=(source,removed['removed_at']) if removed else (source,)
-        result=connection.execute(sql.SQL('SELECT operation_id,state,receipt FROM {} WHERE source_instance=%s AND '+condition+' ORDER BY created_at DESC LIMIT 1').format(
+        result=connection.execute(sql.SQL('SELECT operation_id,state,receipt FROM {} WHERE source_instance=%s AND '+condition+" ORDER BY CASE WHEN state IN ('SENDING','UNCERTAIN','SUCCEEDED') THEN 0 ELSE 1 END, CASE WHEN state IN ('SENDING','UNCERTAIN','SUCCEEDED') THEN created_at END ASC, created_at DESC LIMIT 1").format(
             self.table('source_retirements')),parameters).fetchone()
         if result:
             return {'operation_id':str(result['operation_id']),'state':result['state'],'archive_required':result['state']=='SUCCEEDED' and bool(result['receipt']) and result['receipt'].get('generation_closed') is not True}

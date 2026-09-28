@@ -108,6 +108,10 @@ def _install_boundaries(app, settings, auth_client):
             'RETIREMENT_MANUAL_CHANGE': (409, 'Manual field changes require review; no deletion was confirmed'),
             'RETIREMENT_PROTECTED_DEPENDENCY': (409, 'A protected dependency must be resolved in NetBox before a new review'),
             'RETIREMENT_GUARD_CHANGED': (409, 'The pinned NetBox guard installation or protocol differs'),
+            'RETIREMENT_SERVER_BUSY': (409, 'The original NetBox operation is still being reconciled; wait for its receipt'),
+            'RETIREMENT_BUDGET_EXCEEDED': (409, 'NetBox exceeded the removal budget and rolled back this attempt; inspect Guard diagnostics'),
+            'RETIREMENT_DATABASE_REFUSAL': (409, 'NetBox refused and rolled back this transaction; inspect Guard diagnostics'),
+            'RETIREMENT_SOURCE_OBJECTS_REMAIN': (409, 'Source-owned objects remain outside the expected placement; inspect their ownership and dependencies'),
             'RETIREMENT_UNCERTAIN': (409, 'Retirement outcome is not confirmed; check the original receipt'),
             'SOURCE_RECOVERY_NOT_REMOVED': (409, 'This source is active; open its existing page'),
             'SOURCE_IDENTITY_UNSUPPORTED': (409, 'This provider has no supported legacy hardware identity verification'),
@@ -127,7 +131,7 @@ def _install_boundaries(app, settings, auth_client):
             'SOURCE_LIFECYCLE_CONFLICT': (409, 'Source changed; review its current state'),
             'SOURCE_CONFIRMATION_INVALID': (422, 'Enter the exact display name'),
             'SOURCE_OPERATION_ACTIVE': (409, 'Wait for active Plan or Discovery to finish'),
-            'SOURCE_APPLY_ACTIVE': (409, 'Wait for active synchronization to finish'),
+            'SOURCE_APPLY_ACTIVE': (409, 'The shared operation lock is busy; wait for synchronization or lifecycle work to finish'),
             'SOURCE_APPLY_UNCONFIRMED': (409, 'Synchronization outcome requires reconciliation'),
         }
         status, message = messages.get(exc.code, (503, 'Source lifecycle is unavailable; reload to check its state'))

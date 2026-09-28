@@ -27,6 +27,9 @@ def client(response):
     return GuardClient(session, 'https://netbox.example', 'Token fixture-only', str(uuid4())), session
 
 @pytest.mark.parametrize('status,body,uncertain,code', [
+    (409, {'code':'RETIREMENT_DEADLINE'}, False, 'RETIREMENT_DEADLINE'),
+    (409, {'code':'DEPENDENCY_DATABASE_REFUSAL'}, False, 'DEPENDENCY_DATABASE_REFUSAL'),
+    (409, {'code':'SOURCE_NAMESPACE_BUSY'}, False, 'SOURCE_NAMESPACE_BUSY'),
     (409, {'code':'OWNERSHIP_CONFLICT'}, False, 'OWNERSHIP_CONFLICT'),
     (409, {'code':'SOURCE_OBJECTS_REMAIN'}, False, 'SOURCE_OBJECTS_REMAIN'),
     (409, {'code':'OBJECT_MISSING'}, False, 'OBJECT_MISSING'),

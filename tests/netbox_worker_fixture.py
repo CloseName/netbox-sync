@@ -48,6 +48,28 @@ def exercise(context,application,certfile,source,cluster,instance,token,direct_u
             body=b'{"code":"GUARD_UNAVAILABLE"}'
             start_response('503 Service Unavailable',[('Content-Type','application/json'),('Content-Length',str(len(body)))])
             return [body]
+        if (os.environ.get('NETBOX_SYNC_LARGE_RETIREMENT')=='1'
+                and (root/'bridge/capture-retirement').exists()
+                and environ.get('PATH_INFO','').endswith('/sources/execute/')
+                and environ.get('REQUEST_METHOD')=='POST'):
+            # Preserve the request byte-for-byte. Record only its validated UUID.
+            import io
+            from uuid import UUID
+            from django.db import connection
+            raw=environ['wsgi.input'].read(int(environ['CONTENT_LENGTH']))
+            environ['wsgi.input']=io.BytesIO(raw)
+            nonce=str(UUID(json.loads(raw)['nonce']))
+            with (root/'bridge/retirement-calls').open('a') as calls:calls.write(nonce+'\n')
+            delayed=False
+            def hold(execute,sql,params,many,context):
+                nonlocal delayed
+                if not delayed and sql.lstrip().upper().startswith('DELETE ') and (root/'bridge/hold-retirement').exists():
+                    delayed=True
+                    (root/'bridge/retirement-in-transaction').touch()
+                    end=time.monotonic()+8
+                    while (root/'bridge/hold-retirement').exists() and time.monotonic()<end:time.sleep(.05)
+                return execute(sql,params,many,context)
+            with connection.execute_wrapper(hold):return application(environ,start_response)
         return application(environ,start_response)
     server.set_app(controlled)
     # Only the test byte relay mounts this fixture directory. Public TLS remains
@@ -73,6 +95,13 @@ def exercise(context,application,certfile,source,cluster,instance,token,direct_u
                     permission.constraints=(prior if isinstance(prior,list) else [prior])+[{'source_instance__startswith':'n'+namespace+'-'}]
                     permission.save();applied.add(namespace)
                     (root/'bridge/installation-ready.json').write_text(json.dumps({'namespace':namespace}))
+            growth=root/'bridge/grow-retirement.json';grown=root/'bridge/grew-retirement.json'
+            if os.environ.get('NETBOX_SYNC_LARGE_RETIREMENT')=='1' and growth.exists() and not grown.exists():
+                from users.models import ObjectPermission
+                request=json.loads(growth.read_text())
+                assert any(request['source'].startswith('n'+value+'-') for value in applied)
+                result=runpy.run_path('/app/tests/netbox_large_worker_fixture.py')['grow'](request['source'],ObjectPermission.objects.get(pk=permission_id).users.get())
+                grown.write_text(json.dumps(result))
             command=root/'bridge/remove-empty-cluster.json'
             ack=root/'bridge/removed-empty-cluster.json'
             if os.environ.get('NETBOX_SYNC_FULL_LIFECYCLE')=='1' and command.exists() and not ack.exists():

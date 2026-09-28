@@ -1,3 +1,4 @@
+import {retirementReason,retirementProgress} from '../ui/retirementFeedback';
 import {QueuedSourceRemoval} from '../components/QueuedSourceRemoval';
 import {useNavigate} from 'react-router-dom';
 import {SourceInventoryAudit,permissionErrors} from '../components/SourceInventoryAudit';
@@ -38,6 +39,7 @@ export function SourceRetirementPanel({source,onRemoved,retained=false,archive=f
       RETIREMENT_PROTECTED_DEPENDENCY:['A protected dependency prevents removal. Resolve it explicitly in NetBox, preserving shared and foreign objects, then review again.','Защищённая зависимость мешает удалению. Разрешите её явно в NetBox, сохранив общие и чужие объекты, затем повторите просмотр.'],
       RETIREMENT_GUARD_CHANGED:['The NetBox guard installation or protocol changed. Verify the pinned installation and compatible plugin before retrying.','Изменились установка или протокол NetBox guard. Проверьте привязку установки и совместимость плагина перед повтором.'],
     };
+    const timing=retirementReason(code);if(timing)return t(...timing);
     if(reason[code])return t(...reason[code]);
     if(code==='RETIREMENT_BLOCKED')return t('Removal is blocked: ownership, dependencies or permission could not be verified. No completion is confirmed.','Удаление заблокировано: не подтверждены владение, зависимости или права. Завершение не подтверждено.');
     if(code==='SOURCE_LIFECYCLE_CONFLICT'||code==='RETIREMENT_CONFLICT')return t('The reviewed state changed. Reload and review it again.','Проверенное состояние изменилось. Обновите данные и проверьте список заново.');
@@ -45,7 +47,7 @@ export function SourceRetirementPanel({source,onRemoved,retained=false,archive=f
   };
   const accept=async(result:Retirement)=>{
     setReview(result);setPending(result.operation_id);
-    if(result.state==='BLOCKED'||result.state==='FINALIZED')setAttempted(false);
+    if(result.state==='READY'||result.state==='BLOCKED'||result.state==='FINALIZED')setAttempted(false);
     if(result.state==='FINALIZED'){
       if(result.purged){navigate('/sources',{replace:true,state:{removedSource:source.name}});return;}
       const current=await sourceLifecycle(source.source_instance,AbortSignal.timeout(15000));
@@ -58,7 +60,7 @@ export function SourceRetirementPanel({source,onRemoved,retained=false,archive=f
     setOpen(true);setBusy(true);setError('');
     const operation=pending??crypto.randomUUID();setPending(operation);
     try{await accept(await retirement(source.source_instance,pending?'retirement-status':archive?'archive-review':'retirement-review',
-      {operation_id:operation,...(!pending?{revision:state.data.revision}:{})},AbortSignal.timeout(65000)));}
+      {operation_id:operation,...(!pending?{revision:state.data.revision}:{})},AbortSignal.timeout(175000)));}
     catch(e){setError(errorText(e instanceof RetirementError?e.code:''));}
     finally{setBusy(false);}
   };
@@ -67,15 +69,15 @@ export function SourceRetirementPanel({source,onRemoved,retained=false,archive=f
     setBusy(true);setError('');setAttempted(true);
     try{await accept(await retirement(source.source_instance,resume?'retirement-resume':'retire',{
       operation_id:review.operation_id,digest:review.digest,confirmed:true,confirmed_source:state.data.display_name,
-      remove_credentials:true},AbortSignal.timeout(65000)));}
-    catch(e){setError(errorText(e instanceof RetirementError?e.code:''));state.refresh();}
+      remove_credentials:true},AbortSignal.timeout(175000)));}
+    catch(e){setReview({...review,state:'UNCERTAIN',safe_code:'RETIREMENT_UNCERTAIN'});setError(errorText(e instanceof RetirementError?e.code:''));state.refresh();}
     finally{setBusy(false);}
   };
   const check=async()=>{
     if(busy||!pending)return;
     setBusy(true);setError('');
     try{
-      const result=await retirement(source.source_instance,'retirement-status',{operation_id:pending},AbortSignal.timeout(65000));
+      const result=await retirement(source.source_instance,'retirement-status',{operation_id:pending},AbortSignal.timeout(175000));
       await accept(result);
     }catch(e){setError(errorText(e instanceof RetirementError?e.code:''));}
     finally{setBusy(false);}
@@ -99,12 +101,12 @@ export function SourceRetirementPanel({source,onRemoved,retained=false,archive=f
     {state.data?.removal_blocker&&<p role="alert">{errorText(state.data.removal_blocker)}</p>}
     <button ref={trigger} className="danger" disabled={busy||state.loading||state.error|| (!!state.data?.removal_blocker&&state.data.removal_blocker!=='SOURCE_RETIREMENT_PENDING')}
       onClick={read}>{pending?t('Removal progress','Ход удаления'):archive?t('Review archive','Проверить архивирование'):retained?t('Review retained objects','Проверить сохранённые объекты'):t('Remove Source','Удалить источник')}</button>
-    {pendingResult&&<p role="status">{t('Removal is continuing on the server.','Удаление продолжается на сервере.')}</p>}
+    {pendingResult&&<p role="status">{t(...retirementProgress(attempted&&review?.state==='READY'?'SUBMITTING':review?.state,review?.safe_code))}</p>}
     <details><summary>{t('Ownership details','Сведения о принадлежности')}</summary><SourceInventoryAudit source={source.source_instance}/></details>
     <dialog ref={dialog} className="sync-dialog" onCancel={()=>setOpen(false)} aria-labelledby="retirement-title">
       <h2 id="retirement-title">{archive?t('Archive registration','Архивировать регистрацию'):t('Remove source','Удалить источник')} {source.name}?</h2>
       {busy&&<p role="status">{t('Checking the operation…','Проверяем операцию…')}</p>}
-      {error&&<p role="alert">{error}</p>}
+      {error&&error!==(review?.safe_code?errorText(review.safe_code):null)&&<p role="alert">{error}</p>}
       {review?.manifest.retained&&<><p>{t('Objects preserved (not a deletion list)','Сохраняемые объекты (не список удаления)')}</p><ul>{review.manifest.retained.map(o=><li key={o.kind+o.id}>{kinds[o.kind]??o.kind} · NetBox ID {o.id} · {o.present?t('present','существует'):t('already absent','уже отсутствует')} · {o.claimed?t('creation claim recorded','квитанция создания записана'):t('creation not proved','создание не доказано')}</li>)}</ul></>}
       {review&&<><p>{t('Objects in the reviewed removal list:','Объектов в проверенном списке удаления:')} {review.manifest.objects.length}</p>
         <details><summary>{t('View every object','Просмотреть все объекты')}</summary><ul>{review.manifest.objects.map(([key])=>{

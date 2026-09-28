@@ -112,12 +112,31 @@ class RetirementJournal:
                 self.store.table('source_retirements')),(remove_credentials,record['operation_id'])).fetchone()
             return record,True
 
-    def uncertain(self,source,operation,actor):
+    def resume_legacy_busy(self,source,operation,actor):
+        """Repair only the old misclassified namespace-busy confirmed attempt.
+
+        This grants no new consent and sends no write. The coordinator must next
+        read the exact original remote intent/receipt before any continuation.
+        """
+        with self.store.connect() as connection,source_gate(connection,self.store.schema,source,allow_retirement=True):
+            record=self._record(connection,source,operation,actor)
+            if (record['state']!='BLOCKED' or record['safe_code']!='SOURCE_OPERATION_ACTIVE'
+                    or record['remove_credentials'] is not True or record['receipt'] is not None
+                    or record.get('superseded_by') is not None
+                    or record['plan']['remote']['manifest'].get('format')!=2):
+                raise LifecycleError('RETIREMENT_CONFLICT')
+            self._guard(connection,source,record['revision'],record['plan']['source_flags'])
+            if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND operation_id<>%s AND state IN ('SENDING','UNCERTAIN','SUCCEEDED')").format(self.store.table('source_retirements')),(source,record['operation_id'])).fetchone():
+                raise LifecycleError('SOURCE_RETIREMENT_PENDING')
+            connection.execute(sql.SQL("UPDATE {} SET state='UNCERTAIN',safe_code='RETIREMENT_SERVER_BUSY' WHERE operation_id=%s").format(self.store.table('source_retirements')),(record['operation_id'],))
+
+    def uncertain(self,source,operation,actor,code='RETIREMENT_UNCERTAIN'):
+        if code not in {'RETIREMENT_UNCERTAIN','RETIREMENT_SERVER_BUSY'}:raise LifecycleError('REQUEST_INVALID')
         with self.store.connect() as connection,source_gate(connection,self.store.schema,source,allow_retirement=True):
             record=self._record(connection,source,operation,actor)
             if record['state'] not in ('SENDING','UNCERTAIN'):raise LifecycleError('RETIREMENT_CONFLICT')
-            connection.execute(sql.SQL("UPDATE {} SET state='UNCERTAIN',safe_code='RETIREMENT_UNCERTAIN' WHERE operation_id=%s").format(
-                self.store.table('source_retirements')),(record['operation_id'],))
+            connection.execute(sql.SQL("UPDATE {} SET state='UNCERTAIN',safe_code=%s WHERE operation_id=%s").format(
+                self.store.table('source_retirements')),(code,record['operation_id']))
 
     def resolve(self,source,operation,actor,guard_instance,receipt):
         with self.store.connect() as connection,source_gate(connection,self.store.schema,source,allow_retirement=True):

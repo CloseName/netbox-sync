@@ -26,8 +26,10 @@ cookie='';password=secrets.token_urlsafe(32);provider_secret=secrets.token_urlsa
 class UnixHTTP(http.client.HTTPConnection):
  def connect(self):
   self.sock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);self.sock.settimeout(220);self.sock.connect(str(root/'ingress/upstream.sock'))
-def request(path,body=None,method=None):
+def request(path,body=None,method=None,timeout=None):
  c=UnixHTTP('sync.example.test',timeout=220)
+ if timeout is not None:
+  c.connect();c.sock.settimeout(timeout)
  c.request(method or ('GET' if body is None else 'POST'),path,None if body is None else json.dumps(body),headers={'Host':'sync.example.test','Origin':'https://sync.example.test','X-Forwarded-Proto':'https','X-NetBox-Sync-CSRF':'same-origin','Content-Type':'application/json','Cookie':cookie})
  r=c.getresponse();data=r.read();result={'status':r.status,'body':json.loads(data),'cookie':r.getheader('Set-Cookie')};c.close();return result
 
@@ -145,7 +147,19 @@ def apply(sid,planned):
  base='/api/v1/sources/'+sid
  operation=next(o for o in ok(base+'/operations')['operations'] if o['operation_kind']=='PLAN' and o['status']=='READY')
  confirmation=ok(base+'/sync-confirmations',dict(plan_digest=planned['digest'],operation_id=operation['operation_id'],confirmed=True))
- result=ok(base+'/sync',dict(confirmation_token=confirmation['confirmation_token'],operation_id=operation['operation_id'],run_id=str(uuid4())))
+ response=request(base+'/sync',dict(confirmation_token=confirmation['confirmation_token'],operation_id=operation['operation_id'],run_id=str(uuid4())))
+ if response['status']!=200:
+  logs=subprocess.run(['docker','logs',project+'-apply-worker'],capture_output=True,text=True)
+  import re
+  for line in (logs.stdout+logs.stderr).splitlines():
+   try:event=json.loads(line[line.index('{'):])
+   except (ValueError,TypeError):continue
+   if isinstance(event,dict) and 'frames' in event:
+    safe={k:v for k,v in event.items() if k in ('code','exception_class','phase') and isinstance(v,str) and re.fullmatch('[A-Za-z_]{1,100}',v)}
+    safe['frames']=[{k:v for k,v in frame.items() if k in ('module','function') and isinstance(v,str) and re.fullmatch('[A-Za-z_]{1,100}',v) or k=='line' and type(v)is int} for frame in event['frames'][:8] if isinstance(frame,dict)]
+    print('SAFE APPLY FAILURE',json.dumps(safe),flush=True)
+  raise AssertionError(('apply',response['status'],response['body'].get('error',{})))
+ result=response['body']
  assert result['status']=='SUCCEEDED',('apply',result['status'])
 
 def remove(sid,wait_for_plan=False):
@@ -211,8 +225,48 @@ def scheduled(sid):
  ok(base+'/schedule',dict(sync_enabled=False,sync_interval_seconds=60,expected_sync_enabled=current['sync_enabled'],expected_sync_interval_seconds=current['sync_interval_seconds']),'PATCH')
  print('PASS real scheduler after manual sync: no-op, digest and definite result',flush=True)
 scheduled(first)
-remove(first,wait_for_plan=True);second=add('esxi','AM isolated',restart=True);assert second!=first
-apply(second,plan(second));assert not any(i['action'] in ('CREATE','UPDATE') for i in plan(second)['items']);remove(second)
+if os.environ.get('NETBOX_SYNC_LARGE_RETIREMENT')=='1':
+ Path('/fixture/bridge/grow-retirement.json').write_text(json.dumps({'source':first}))
+ for _ in range(1200):
+  if Path('/fixture/bridge/grew-retirement.json').exists():break
+  time.sleep(.1)
+ else:raise AssertionError('Large fixture inventory not ready')
+ size=json.loads(Path('/fixture/bridge/grew-retirement.json').read_text())
+ assert size['vms']>=276 and size['objects']>=1099
+ base='/api/v1/sources/'+first;life=ok(base+'/lifecycle');nonce=str(uuid4())
+ reviewed=ok(base+'/retirement-review',dict(operation_id=nonce,revision=life['revision']))
+ assert len(reviewed['manifest']['objects'])==size['objects']
+ Path('/fixture/bridge/capture-retirement').touch();Path('/fixture/bridge/hold-retirement').touch()
+ payload=dict(operation_id=nonce,digest=reviewed['digest'],confirmed=True,confirmed_source=life['display_name'],remove_credentials=True)
+ try:request(base+'/retire',payload,timeout=.1)
+ except (TimeoutError,socket.timeout):pass
+ else:raise AssertionError('Client interruption did not occur')
+ for _ in range(300):
+  if Path('/fixture/bridge/retirement-in-transaction').exists():break
+  time.sleep(.1)
+ else:raise AssertionError('Guard did not enter the real delete transaction')
+ # Disconnect/restart the production HTTP worker while NetBox still owns its
+ # atomic transaction. No altered timeout or capabilities in product Compose.
+ run([*command,'restart','netbox-sync-bootstrap-worker'])
+ Path('/fixture/bridge/hold-retirement').unlink(missing_ok=True)
+ run([*command,'restart','netbox-sync-lifecycle-worker'])
+ for _ in range(240):
+  result=request(base+'/retirement-status',dict(operation_id=nonce))
+  if result['status']==503:time.sleep(.5);continue
+  assert result['status']==200,result['status']
+  state=result['body'];assert state['state']!='BLOCKED',state.get('safe_code')
+  if state['state']=='FINALIZED' and state.get('purged'):break
+  time.sleep(.5)
+ else:raise AssertionError('Large retirement did not reconcile after restart')
+ assert set(Path('/fixture/bridge/retirement-calls').read_text().splitlines())=={nonce}
+ assert all(s['source_instance']!=first for s in ok('/api/v1/sources')['sources'])
+ assert not ok('/api/v1/runs?source_instance='+first)['runs']
+ assert ok(base+'/retire',payload)['state']=='FINALIZED'  # repeat original click
+ Path('/fixture/bridge/capture-retirement').unlink()
+ print('PASS production large removal '+json.dumps(size)+': timed-out client, NetBox transaction, worker/lifecycle restart, same nonce receipt, complete purge',flush=True)
+else:remove(first,wait_for_plan=True)
+second=add('esxi','AM isolated',restart=True);assert second!=first
+apply(second,plan(second));assert not any(i['action'] in ('CREATE','UPDATE') for i in plan(second)['items']);remove(second,wait_for_plan=True)
 missing=add('esxi','Missing cluster isolated')
 base='/api/v1/sources/'+missing
 life=ok(base+'/lifecycle');nonce=str(uuid4())

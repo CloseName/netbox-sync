@@ -83,6 +83,8 @@ class RetirementCoordinator:
                     from .source_archive import archived
                     if archived(connection,self.store.schema,source):raise LifecycleError('SOURCE_ARCHIVED')
                     if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND (state IN ('SENDING','UNCERTAIN') OR (state='SUCCEEDED' AND receipt->>'generation_closed'='true'))").format(self.store.table('source_retirements')),(source,)).fetchone():raise LifecycleError('SOURCE_RETIREMENT_PENDING')
+                if not archive and connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND operation_id<>%s AND superseded_by IS NULL AND (state IN ('SENDING','UNCERTAIN','SUCCEEDED') OR (state='BLOCKED' AND safe_code='SOURCE_OPERATION_ACTIVE'))").format(self.store.table('source_retirements')),(source,operation)).fetchone():
+                    raise LifecycleError('SOURCE_RETIREMENT_PENDING')
                 _,cluster,_=self.journal._guard(connection,source,revision,archive=archive)
             result=self.remote.call('archive_review',operation,source_instance=source) if archive else self.remote.call('review',operation,source_instance=source,cluster_id=cluster)
             record=self.journal.prepare(source,operation,actor,revision,result['guard_instance'],result['result'])
@@ -100,6 +102,8 @@ class RetirementCoordinator:
                 return done
             with self.store.connect() as connection:
                 prior=self.journal._record(connection,source,operation,actor)
+                if resume and prior['state']=='BLOCKED' and prior['safe_code']=='SOURCE_OPERATION_ACTIVE':
+                    self.journal.resume_legacy_busy(source,operation,actor)
                 if prior['state']=='FINALIZED':
                     if prior['plan']['remote']['digest']!=digest or prior['remove_credentials']!=remove_credentials:
                         raise LifecycleError('RETIREMENT_CONFLICT')
@@ -137,7 +141,7 @@ class RetirementCoordinator:
                     record=self.journal.resolve(source,operation,actor,result['guard_instance'],result['result'])
                 except ControlError as exc:
                     if dispatch and exc.code in DEFINITE_REFUSALS:self.journal.blocked(source,operation,actor,exc.code)
-                    else:self.journal.uncertain(source,operation,actor)
+                    else:self.journal.uncertain(source,operation,actor,exc.code if exc.code=='RETIREMENT_SERVER_BUSY' else 'RETIREMENT_UNCERTAIN')
                     return self.status(source,operation,actor)
             if record['receipt'].get('generation_closed') is not True:
                 raise LifecycleError('RETIREMENT_CONFLICT')

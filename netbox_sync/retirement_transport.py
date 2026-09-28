@@ -41,7 +41,7 @@ class GuardClient:
         mutation = method == 'POST'
         try:
             with self.session.request(method, self.url + path, json=body,
-                                      headers=self.headers, timeout=(3, 15),
+                                      headers=self.headers, timeout=(3, 45 if path.startswith('sources/') else 15),
                                       allow_redirects=False, stream=True) as response:
                 raw = bytearray()
                 for part in response.iter_content(8192):
@@ -58,7 +58,7 @@ class GuardClient:
                     # Remote text is never a diagnostic. Only known, bounded protocol
                     # refusals prove no mutation; 5xx/redirects/connection loss do not.
                     code = value.get('code')
-                    known = {'SOURCE_OBJECTS_REMAIN','OWNED_OBJECT_OUTSIDE_PLACEMENT','OBJECT_MISSING','SOURCE_NAMESPACE_CLOSED','SOURCE_NAMESPACE_BUSY','PERMISSION_DENIED', 'GUARD_INSTANCE_CHANGED', 'REQUEST_CONFLICT',
+                    known = {'RETIREMENT_DEADLINE','DEPENDENCY_DATABASE_REFUSAL','SOURCE_OBJECTS_REMAIN','OWNED_OBJECT_OUTSIDE_PLACEMENT','OBJECT_MISSING','SOURCE_NAMESPACE_CLOSED','SOURCE_NAMESPACE_BUSY','PERMISSION_DENIED', 'GUARD_INSTANCE_CHANGED', 'REQUEST_CONFLICT',
                              'OBJECT_INVALID', 'OBJECT_FIELDS_UNSUPPORTED', 'REQUEST_INVALID',
                              'REQUEST_TOO_LARGE', 'OWNERSHIP_CONFLICT', 'PLACEMENT_CHANGED',
                              'CREATION_OWNERSHIP_UNPROVEN', 'DEPENDENCIES_CHANGED',

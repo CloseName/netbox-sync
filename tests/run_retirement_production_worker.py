@@ -73,6 +73,7 @@ try:
         '--mount','type=volume,source='+volume+',target=/fixture',
         '-e','PYTHONPATH=/app/deploy','-e','NETBOX_SYNC_ISOLATED_MODEL_TEST=1',
         '-e','NETBOX_SYNC_FULL_LIFECYCLE='+('1' if full else '0'),
+        '-e','NETBOX_SYNC_LARGE_RETIREMENT='+os.environ.get('NETBOX_SYNC_LARGE_RETIREMENT','0'),
         '-e','NETBOX_SYNC_MODEL_DB=netbox_sync_guard_test','-e','NETBOX_SYNC_GUARD_WORKER_TEST=1',
         '--entrypoint','/opt/netbox/venv/bin/python','netboxcommunity/netbox:v4.7.0','/app/tests/netbox_guard_http_scenario.py')
     created.append(('container',fixture))
@@ -113,7 +114,7 @@ try:
         docker('exec',operator,'mkdir','/baseline')
         docker('exec','-i',operator,'tar','-xf','-','-C','/baseline',input=baseline)
         print('Running isolated full product lifecycle / upgrade / reinstall',flush=True)
-        result=docker('exec','-e','FIXTURE_MOUNT='+mount,'-e','NETBOX_SYNC_REVIEW_IMAGE='+os.environ['NETBOX_SYNC_REVIEW_IMAGE'],
+        result=docker('exec','-e','NETBOX_SYNC_LARGE_RETIREMENT='+os.environ.get('NETBOX_SYNC_LARGE_RETIREMENT','0'),'-e','FIXTURE_MOUNT='+mount,'-e','NETBOX_SYNC_REVIEW_IMAGE='+os.environ['NETBOX_SYNC_REVIEW_IMAGE'],
             '-e','NETBOX_SYNC_BASELINE_IMAGE=netbox-sync-lifecycle:f6d297f-baseline',operator,'python3','/review/tests/lifecycle_product_scenario.py',mount+'/product',product_project,proxy,check=False,timeout=1400)
         print(result.stdout.decode(errors='replace'),flush=True)
         if result.returncode:print(result.stderr.decode(errors='replace')[-3500:],flush=True)

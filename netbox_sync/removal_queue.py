@@ -38,7 +38,7 @@ class RemovalQueue:
                 raise LifecycleError('SOURCE_APPLY_UNCONFIRMED')
             if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND state='CREDENTIALS_PENDING'").format(self.store.table('source_recoveries')),(source,)).fetchone():
                 raise LifecycleError('SOURCE_RECOVERY_OUTCOME_UNCERTAIN')
-            if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND state IN ('SENDING','UNCERTAIN','SUCCEEDED')").format(self.store.table('source_retirements')),(source,)).fetchone():
+            if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND (state IN ('SENDING','UNCERTAIN','SUCCEEDED') OR (state='BLOCKED' AND safe_code='SOURCE_OPERATION_ACTIVE'))").format(self.store.table('source_retirements')),(source,)).fetchone():
                 raise LifecycleError('SOURCE_RETIREMENT_PENDING')
             paused=connection.execute(sql.SQL('UPDATE {} SET sync_enabled=false WHERE source_instance=%s RETURNING *').format(self.store.table('sources')),(source,)).fetchone()
             values=(operation,actor,self.store.revision(paused),row['name'],source)

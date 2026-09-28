@@ -10,9 +10,11 @@ from django.apps import apps
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
 from .dependencies import (MODELS, MAX_OBJECTS, DependencySnapshot, DependencyGuardBlocked,
-                           _database_fence, _closure, _digest)
+                           _database_fence, _batch_closure, _digest)
 from .models import CreationClaim, CreationReceipt, RetirementIntent, RetirementReceipt
 from .service import _permission, _source, _claims, _cluster_fingerprint
+
+from .retirement_diagnostics import profiled, phase, set_deadline
 
 BUDGET_SECONDS = 30
 
@@ -59,7 +61,8 @@ def _inventory(source, cluster, deadline):
             raise DependencyGuardBlocked('OWNED_OBJECT_OUTSIDE_PLACEMENT')
     rows=tuple(sorted(objects.items()))
     snapshot=DependencySnapshot(rows,(),_digest(rows))
-    _claims(snapshot,source,cluster,lambda:_deadline(deadline))
+    with phase('ownership',len(rows)):
+        _claims(snapshot,source,cluster,lambda:_deadline(deadline))
     _deadline(deadline)
     roots=[['vm',pk] for pk in ids['vm']]+[['device',pk] for pk in ids['device']]+[['cluster',pk] for pk in ids['cluster']]
     return snapshot,roots
@@ -99,6 +102,7 @@ def _confirmed_inventory(source, cluster, deadline, expected=()):
     return DependencySnapshot(rows,(),_digest(rows)),[],None
 
 
+@profiled('review')
 def review_source(user, nonce, source, cluster):
     actor=_permission(user,'retire_retirementintent')
     source=_source(source);nonce=UUID(str(nonce))
@@ -113,10 +117,12 @@ def review_source(user, nonce, source, cluster):
     previous=RetirementIntent.objects.filter(nonce=nonce).first()
     if previous: return existing(previous)
     deadline=time.monotonic()+BUDGET_SECONDS
+    set_deadline(deadline)
     with _database_fence():
         previous=RetirementIntent.objects.filter(nonce=nonce).first()
         if previous: return existing(previous)
-        snapshot,roots,fingerprint=_confirmed_inventory(source,cluster,deadline)
+        with phase('inventory'):
+            snapshot,roots,fingerprint=_confirmed_inventory(source,cluster,deadline)
         manifest={'format':2,'cluster_id':cluster,'cluster_fingerprint':fingerprint,
                   'objects':[list(row) for row in snapshot.objects], 'roots':roots,
                   'fingerprint':snapshot.fingerprint,'retained_cluster':fingerprint is not None and not any(root[0]=='cluster' for root in roots),
@@ -128,6 +134,7 @@ def review_source(user, nonce, source, cluster):
         return intent
 
 
+@profiled('execute')
 def retire_source(user, nonce, digest):
     actor=_permission(user,'retire_retirementintent')
     intent=RetirementIntent.objects.get(nonce=UUID(str(nonce)))
@@ -137,6 +144,7 @@ def retire_source(user, nonce, digest):
             or _digest([actor,intent.source_instance,manifest])!=digest):
         raise DependencyGuardBlocked('REQUEST_CONFLICT')
     deadline=time.monotonic()+BUDGET_SECONDS
+    set_deadline(deadline)
     from .source_closure import namespace_fence,assert_open,seal
     with namespace_fence(intent.source_instance),_database_fence():
         _permission(user,'retire_retirementintent',intent)
@@ -145,7 +153,8 @@ def retire_source(user, nonce, digest):
             if previous.digest!=digest: raise DependencyGuardBlocked('RECEIPT_CONFLICT')
             return previous
         assert_open(intent.source_instance)
-        snapshot,roots,fingerprint=_confirmed_inventory(intent.source_instance,manifest['cluster_id'],deadline,manifest['objects'])
+        with phase('inventory'):
+            snapshot,roots,fingerprint=_confirmed_inventory(intent.source_instance,manifest['cluster_id'],deadline,manifest['objects'])
         if fingerprint is None:
             # Nothing remains anywhere in the supported source inventory. The
             # original reviewed intent/digest is immutable; no DELETE is claimed.
@@ -158,23 +167,29 @@ def retire_source(user, nonce, digest):
             raise DependencyGuardBlocked('PLACEMENT_CHANGED')
         remaining=dict(snapshot.objects)
         deleted=[]
-        for root in roots:
-            _deadline(deadline)
-            current,collector=_closure([root])
-            # The actual deletion cascade must be a subset of exactly what was
-            # reviewed. Any external SET_NULL/unknown relation already refuses.
-            if any(remaining.get(key)!=value for key,value in current.objects):
-                raise DependencyGuardBlocked('DEPENDENCIES_CHANGED')
-            _claims(current,intent.source_instance,manifest['cluster_id'],lambda:_deadline(deadline))
-            expected={}
-            for key,_ in current.objects:
-                label=MODELS[key.split(':')[0]]
-                expected[label]=expected.get(label,0)+1
-            count,actual=collector.delete()
-            if actual!=expected or count!=len(current.objects):
-                raise DependencyGuardBlocked('DELETE_EFFECT_MISMATCH')
-            for key,_ in current.objects:
-                remaining.pop(key);deleted.append(key)
+        with phase('deletion',len(snapshot.objects)):
+            for kind in ('vm','device','cluster'):
+                batch=[root for root in roots if root[0]==kind]
+                if not batch:continue
+                _deadline(deadline)
+                with phase('collect_'+kind,len(batch)):
+                    current,collector=_batch_closure(batch)
+                # The actual deletion cascade must be a subset of exactly what was
+                # reviewed. Any external SET_NULL/unknown relation already refuses.
+                if any(remaining.get(key)!=value for key,value in current.objects):
+                    raise DependencyGuardBlocked('DEPENDENCIES_CHANGED')
+                _claims(current,intent.source_instance,manifest['cluster_id'],lambda:_deadline(deadline))
+                expected={}
+                for key,_ in current.objects:
+                    label=MODELS[key.split(':')[0]]
+                    expected[label]=expected.get(label,0)+1
+                with phase('delete_'+kind,len(current.objects)):
+                    count,actual=collector.delete()
+                    _deadline(deadline)
+                if actual!=expected or count!=len(current.objects):
+                    raise DependencyGuardBlocked('DELETE_EFFECT_MISMATCH')
+                for key,_ in current.objects:
+                    remaining.pop(key);deleted.append(key)
         _deadline(deadline)
         if remaining: raise DependencyGuardBlocked('DELETE_EFFECT_MISMATCH')
         # All phases and the final receipt commit together. Mid-phase failure or

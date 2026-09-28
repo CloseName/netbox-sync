@@ -24,12 +24,20 @@ class RetirementContinuation:
         try:
             self.queue.tick()
             with store.connect() as connection:
+                # Resolve the active operation before legacy busy refusals; the DB
+                # unique index permits only one active nonce per source.
+                # Two legacy nonces must never race each other after a restart.
+                pending="(r.state IN ('SENDING','UNCERTAIN','SUCCEEDED') OR (r.state='BLOCKED' AND r.safe_code='SOURCE_OPERATION_ACTIVE'))"
+                older=pending.replace('r.','older.')
                 row = connection.execute(sql.SQL("""SELECT r.*, s.name
                     FROM {} r JOIN {} s USING (source_instance)
-                    WHERE r.state IN ('SENDING','UNCERTAIN','SUCCEEDED')
-                      AND r.superseded_by IS NULL AND r.remove_credentials IS TRUE
+                    WHERE """+pending+""" AND r.superseded_by IS NULL AND r.remove_credentials IS TRUE
+                    AND NOT EXISTS (SELECT 1 FROM {} older WHERE older.source_instance=r.source_instance
+                        AND older.superseded_by IS NULL AND """+older+"""
+                        AND (CASE WHEN older.state='BLOCKED' THEN 1 ELSE 0 END,older.created_at,older.operation_id)
+                          <(CASE WHEN r.state='BLOCKED' THEN 1 ELSE 0 END,r.created_at,r.operation_id))
                     ORDER BY (r.operation_id > %s) DESC, r.operation_id LIMIT 1""").format(
-                        store.table('source_retirements'), store.table('sources')),
+                        store.table('source_retirements'), store.table('sources'),store.table('source_retirements')),
                         (self.after,)).fetchone()
             if row is None:
                 return

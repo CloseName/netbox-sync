@@ -22,7 +22,7 @@ def test_retirement_is_admin_only(monkeypatch,role,route):
             assert options=={'timeout':15}
         else:
             assert payload['action']=='retirement_'+expected[route]
-            assert options=={'timeout':60,'response_limit':2*1024*1024}
+            assert options=={'timeout':170,'response_limit':2*1024*1024}
         return {'result':{'source_instance':payload['source_instance'],'state':'READY'}}
     # Keep the real API -> LifecycleClient validation, including action allowlist.
     monkeypatch.setattr('netbox_sync.local_control.request',control)
@@ -81,3 +81,18 @@ def test_recorded_identity_comparison_is_admin_only(monkeypatch,role,route):
         response=http.post('/api/v1/sources/esxi-fixture/'+route,json={} if route=='identity-records' else {'operation_id':str(uuid4())},headers={'Origin':'https://localhost:8000','X-NetBox-Sync-CSRF':'same-origin'})
     assert response.status_code==(200 if role=='admin' else 403)
     assert bool(calls)==(role=='admin')
+
+
+@pytest.mark.parametrize('code',['RETIREMENT_SERVER_BUSY','RETIREMENT_BUDGET_EXCEEDED','RETIREMENT_DATABASE_REFUSAL','RETIREMENT_SOURCE_OBJECTS_REMAIN'])
+def test_guard_refusal_codes_reach_authenticated_api(monkeypatch,code):
+    from netbox_sync.local_control import ControlError
+    service,_,session=configured('admin')
+    class Auth:
+        def call(self,action,**payload):return service.call(dict(action=action,**payload))
+    def control(*args,**kwargs):raise ControlError(code)
+    monkeypatch.setattr('netbox_sync.local_control.request',control)
+    with TestClient(create_app(ApiSettings(bootstrap_socket=''),auth_client=Auth()),base_url='https://localhost:8000') as http:
+        http.cookies.set(COOKIE,session)
+        response=http.post('/api/v1/sources/esxi-fixture/retirement-review',json={'operation_id':str(uuid4()),'revision':'a'*64},headers={'Origin':'https://localhost:8000','X-NetBox-Sync-CSRF':'same-origin'})
+    assert response.status_code==409
+    assert response.json()['error']['code']==code
