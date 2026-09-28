@@ -1,8 +1,77 @@
-# Product lifecycle rework — active, NOT accepted as complete
+# Product lifecycle rework — local acceptance evidence
 
 Base: `49a3b95b74494ff8ebcf7455587141b19f733772`, canonical `main`.
 Task: attachment `3bf59d58-b945-4cbc-a720-3100d4f59264`.
 Evidence updated 28 September 2026. No live remediation is claimed.
+
+## Final local acceptance — 28 September 2026
+
+This section supersedes the chronological intermediate/pending notes below.
+The complete production lifecycle/upgrade/Sync-only reinstall scenario passed
+with real NetBox 4.7/PostgreSQL and synthetic ESXi SOAP/Proxmox HTTPS providers.
+No user installation or external NetBox was accessed. No backup/dump was created.
+
+| Original requirement | Implementation and executed evidence |
+| --- | --- |
+| Atomic registration and useful refusals | Reservation + immutable intent transaction; placement preflight; typed Guard refusal; PostgreSQL rollback/concurrency and complete public API registration |
+| Automatic continuation | 0015 durable jobs, exact broker attestation, actor/nonce binding; real API restart during cluster refusal completes one cluster/source without another final POST |
+| Complete deletion | 0014 constrained purge plus 0015/0016 dependent-row cleanup; real broker credential deletion and NetBox ownership closure; foreign/shared resources and external audit retained |
+| Wait for existing work | 0016 durable Admin consent, schedule pause, row-locked admission fence; production active PLAN/removal/lifecycle restart; unit/PG active-write and uncertain-outcome refusal |
+| Same-host re-add | Full source removal followed by new registration, manual apply, unchanged replan and removal, through public API |
+| Conflicting AM IP/MAC | Seven-VM SOAP fixture with all supplied AM IP cases; actual plan/apply and zero-change replan; observation/strict/ownership/VRF coverage in targeted regression suites |
+| Proxmox completeness | Production VM/LXC manual plan/apply, unchanged plan, real scheduled no-op and complete removal |
+| One-time integration rights | One namespace grant per installation, multiple sources and providers; no per-source permission edits; foreign namespace refusal covered separately |
+| Container simplification | 12 to 10 permanent containers; 5 real supervised-bundle/cross-UID tests; actual Compose models 10 standalone / 10 external ingress / 9 external DB |
+| Ordinary UX | Automatic attempt status and removal progress; 81 affected browser cases, 88 UI unit cases; precise EN/RU admission errors and unchanged auth checks |
+| Upgrade | Exact f6d297f image to current implementation through installer components; unchanged DB container/mounts, secret hashes, policy, onboarding, sources, history and installation identity |
+| Sync-only reinstall | Inventory ownership checks, removal of only fixture-owned Sync resources, fresh namespace/DB/enrollment, retained separate NetBox/TLS, same-host add/apply/no-op/schedule/remove |
+
+Executed commands and test selections for the final diff:
+
+- `NETBOX_SYNC_FULL_LIFECYCLE=1` with `tests/run_retirement_production_worker.py`:
+  complete production ingress/API/manual/scheduled/upgrade/reinstall sequence PASS.
+  Final real-NetBox/production-bundle/broker/PG full-purge regression also passed
+  (1 test, 73.25 seconds); complete harness exit status 0.
+  Only its nonprivileged isolated operator helper receives Docker socket; product
+  Compose never receives it. Fixture project: `netbox-sync-retirement-408d42ebad25`.
+- 181 affected Linux/PostgreSQL regressions passed: removal queue, registration
+  jobs, purge, retirement journal/continuation, source lifecycle, migrations,
+  catalog creation, Operator registration and discovery transport/API.
+- 113 identity/namespace/installer/inventory checks passed. Four opt-in supervisor
+  skips replaced by all 5 explicit Linux bundle tests passing; the Docker-CLI
+  skip replaced by actual host Compose validation. These are accounted-for
+  environment skips, not silent acceptance gaps.
+- 15 real PostgreSQL deployment/grant tests passed, including immutable registration
+  payload and narrow queue/job permissions, without generic runtime DELETE.
+- 95 Linux first-run/discovery/authorization regressions passed after the last
+  status-gate fix. Real Bootstrap lock contention returns temporary unavailability,
+  not false unfinished setup. Status-only POSTs retain session/role/actor checks
+  while avoiding the Bootstrap write-admission lock.
+- 81 affected Playwright tests and 88 UI unit tests passed; TypeScript, Vite and
+  Docker production image build passed. Existing large-bundle advisory remains.
+- Docker desktop-linux, Engine 29.7.2, Compose 5.5.0. Tested image manifest:
+  `sha256:8b8c3052ba7a5581c2ef05f3a6e9c95f2eb9fd71dc3c16149a4ed00d1d7e78a8`.
+
+Integration failures found and corrected before acceptance: lost first UI status
+response due to reference comparison; pending-removal transport code discarded;
+Bootstrap busy misreported as unfinished setup; read-only continuation status
+unnecessarily dependent on the Bootstrap exclusive lock. Full gate rerun, not
+just component tests, verifies these corrections together.
+
+Limits: providers are controlled realistic fixtures, not live hypervisors. Real
+host systemd startup/reboot was not exercised in a container; generation/installer
+unit checks and the actual scheduled container entrypoint were exercised. The
+full runtime upgrade starts at f6d297f (already bundled); legacy 12-to-10 transition
+has installer regressions, not a claim of a live upgrade. Browser tests use fixtures;
+production public API/worker/NetBox scenarios are an additional independent gate.
+External Guard must be updated separately by its operator to the matching code
+and once-per-installation permissions before new registration. Existing unproved
+ownership is not fabricated; unknown writes still block deletion. Never-stored
+credentials require re-entry. These safety limits are explicit product behavior.
+
+See [Sync-only reinstall](sync-only-clean-reinstall.md),
+[service boundaries](worker-bundles-and-continuation.md), and
+[one-time permissions](guard-installation-permissions.md).
 
 ## Restrictions
 
@@ -247,3 +316,63 @@ wrong-generation or exited-process evidence fails health. The execution timeout,
 shared apply lock, confirmation store and network/capability boundaries are
 unchanged. No credentials/source contents enter this marker. Source process
 supervision still terminates the whole bundle immediately when a member exits.
+
+
+2026-09-28 continuation from f6d297f (in progress, not accepted/published):
+- Added immutable durable registration jobs (0015), lifecycle attestation of
+  deterministic broker-owned references, API restart continuation for both
+  providers without retaining credentials in DB or needing a browser session.
+  Missing pre-staging secrets require explicit re-entry; no invented credentials.
+- Exact unknown cluster intent uses GET receipt first; only REQUEST_NOT_FOUND plus
+  the Guard idempotent_creation capability permits identical nonce/wire replay.
+  Ordinary catalog reconciliation remains read-only. External Guard update is a
+  separate operator prerequisite, never executed against the user installation.
+- Added confirmed removal queue (0016): pause new work, wait for admitted work,
+  reconcile expired read-only operations only after their owner lock is free,
+  refuse unknown/partial writes, permit evidence reconciliation and reviewed retry.
+- Executed 160 targeted Linux/PostgreSQL regressions, 14 real deployment-role
+  tests, 87 UI unit tests and TypeScript successfully. Two initial test failures
+  were tuple-vs-list empty collection expectations, corrected before full rerun.
+- Real NetBox 4.7 + production Compose bootstrap bundle/broker + PG full-purge
+  gate passed, 72.14s. Old harness omitted Redis, causing fixture errors; added
+  a uniquely labelled tmpfs Redis with no persistence in the isolated namespace.
+- Exact f6d297f baseline and prepared production images built successfully.
+- Full public ingress/API/real-NetBox AM/manual/scheduled/remove/re-add and
+  upgrade/reinstall harness is being executed; not yet passing. No live actions,
+  backups/dumps, publication or external NetBox changes.
+- Latest row-lock strengthening in migration0016 and UI refusal explanation need
+  final rerun/build. Whole original task still ACTIVE; do not report completion.
+
+
+Further integration review (still in progress):
+- 181 affected Linux/PostgreSQL tests passed, including the queue row-lock race,
+  registration restart, immutable intent, purge rollback and discovery transport.
+- 113 additional identity/namespace/deployment/inventory checks passed. Five skips
+  were four opt-in bundle cases and one Docker-CLI-in-runner case. Replacement:
+  all five bundle tests passed in an explicitly isolated init container; actual
+  host Compose models passed standalone/external-ingress/external-DB (10/10/9).
+  The bare bundle test now creates the same root:root 0755 socket volume roots as
+  Docker; product socket permissions/capabilities are unchanged.
+- 81 complete affected Playwright scenarios and 88 UI unit tests passed. A real
+  selected-attempt object-reference race discarded the first automatic status
+  response; comparison now uses source/registration identity.
+- 39 real API AuthPolicy checks passed, including new queue/status routes: Admin
+  only; Operator/Viewer denied before the lifecycle transport is called.
+- Production integration found pending-removal admission codes discarded by the
+  discovery client/API mapping. Preserve exact SOURCE_RETIREMENT_PENDING and
+  SOURCE_ARCHIVED as HTTP409; UI renders closed EN/RU messages, never remote text.
+- Repeated full rehearsals must have their own empty NetBox database. Reusing a
+  failed fixture correctly triggered host name/ownership adoption refusal. The
+  full harness now creates its own uniquely labelled tmpfs PostgreSQL and removes
+  only its own resources; it never clears an existing NetBox database.
+- Full gate not yet complete; final publication remains conditional on it.
+
+- A full isolated gate reached the final fresh-install removal after passing AM,
+  scheduler, upgrade preservation, automatic registration after API restart,
+  full removal/re-add and Proxmox VM/LXC. Final status polling exposed a second
+  product defect: middleware labelled any unavailable Bootstrap status as
+  BOOTSTRAP_NOT_READY. Real READY-file lock contention now reproduces the issue;
+  temporary BUSY/unavailability returns fail-closed HTTP503, while confirmed
+  non-READY remains HTTP409. Polling retries only status, not removal writes.
+  The 94 Linux bootstrap/discovery/authorization regressions all passed.
+  A new complete gate with this correction is running; no final success claimed.

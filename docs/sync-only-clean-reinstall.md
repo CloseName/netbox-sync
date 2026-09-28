@@ -1,8 +1,8 @@
 # Disposable test VM: reinstall Sync only
 
-**Draft acceptance runbook: do not execute until the final local reinstall gate
-is recorded in product-lifecycle-20260927-progress.md.** No live operations have
-been performed. This disposable test task explicitly forbids backups, dumps and
+**Local isolated reinstall gate passed on 28 September 2026.** See
+[executed evidence and limits](product-lifecycle-20260927-progress.md). No live
+operations have been performed. Host execution remains a separate operator action. This disposable test task explicitly forbids backups, dumps and
 restore-test containers. That exception does not change production backup policy.
 
 Keep the external NetBox installation, `/netbox-test`, its PostgreSQL, Redis,
@@ -63,7 +63,8 @@ shared dependencies block retirement, stop that source's onboarding and show the
 specific ownership conflict. A new installation namespace cannot inherit old
 sources merely because DNS/UUID/name matches.
 
-This release requires Guard capability `source_namespace_state`. Its deployment
+This release requires Guard capabilities `source_namespace_state` and
+`idempotent_creation`. Its deployment
 is a **separate NetBox operator change**, outside this task. Existing Guard identity,
 external audit and closed-source seals must remain. See
 [once-only integration permissions](guard-installation-permissions.md). Do not
@@ -107,6 +108,25 @@ For this shared-ingress rehearsal, the outer operator ingress retains TLS files
 under `/etc/netbox-sync-test/cert/`; Sync requires no duplicate public certificate.
 Use the verified external Guard installation UUID, obtained through the reviewed
 integration setup; it is an identity, not a secret. Never guess it.
+
+Prepare the installer-owned layout first. If NetBox uses a corporate issuer,
+set NETBOX_CA_SOURCE to the operator-provided public PEM CA bundle (not a server
+private key). A clean root intentionally does not retain the old application CA
+file; provide trust explicitly again. Do not disable certificate verification.
+
+```sh
+sudo python3 "$CHECKOUT/deploy/install.py" --root "$ROOT" \
+  --init-tls-layout --ingress-mode external
+if [ -n "${NETBOX_CA_SOURCE:-}" ]; then
+  sudo install -o 0 -g 0 -m 0644 -- "$NETBOX_CA_SOURCE" "$ROOT/secrets/ca/netbox-ca.pem"
+fi
+sudo python3 "$CHECKOUT/deploy/install.py" --root "$ROOT" \
+  --check-tls --ingress-mode external \
+  --public-url https://netbox-sync-test.indeed-id.hq
+```
+
+Stop if layout/CA validation fails. Then use the complete installer path, without
+prepare-only/no-start/no-systemd; the host timer and runtime must be installed.
 
 ```sh
 sudo python3 "$CHECKOUT/deploy/install.py" \

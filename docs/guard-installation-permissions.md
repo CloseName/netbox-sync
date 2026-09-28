@@ -41,8 +41,11 @@ gets a different namespace and cannot silently adopt the old installation's obje
 ## Closed-source fencing and compatible transition
 
 This release needs Guard capability `source_namespace_state` and authenticated
-`GET sources/<source>/state/`. This returns only source identity and a closed/open
-boolean. It performs no write. GuardIdentity, SourceClosure and external audit
+`GET sources/<source>/state/`. Automatic continuation of a confirmed cluster
+registration also requires the explicit `idempotent_creation` capability. The
+namespace-state endpoint returns only source identity and a closed/open boolean;
+it performs no write. The creation capability confirms the existing transactional
+nonce-bound receipt contract, not permission to repeat an arbitrary POST. GuardIdentity, SourceClosure and external audit
 remain unchanged. Existing Guard CREATE/retirement routes remain compatible;
 there is no migration for this new endpoint.
 
@@ -58,3 +61,22 @@ multiple ESXi/Proxmox source trees without per-source permission edits, and reje
 an outside namespace with transaction rollback. Live operator acceptance remains
 separate. External NetBox receipts and generation seals are security/audit records;
 Sync-local purge does not erase them or reopen a retired namespace.
+
+
+## Interrupted registration
+
+A final authenticated Add source request durably binds its actor, provider preview,
+placement and nonce before starting remote effects. Its journal stores metadata
+and opaque broker references, never a password or token secret. After those files
+are attested by the lifecycle worker, API restart continues the same request.
+Cluster response loss is resolved by the original receipt. Only an explicit
+REQUEST_NOT_FOUND response and the pinned Guard idempotent_creation contract allow
+the exact nonce/wire intent to be submitted again. A timeout, malformed reply,
+changed definition or unknown Guard version does not permit an invented retry.
+No per-source grant or second browser confirmation is needed for the saved request.
+
+If the process died before credential storage completed, the operator must provide
+access again for the saved attempt. This is the only way to recover a secret that
+was never durably stored. A changed identity or placement remains a visible conflict.
+The original request is not silently retargeted. Ordinary upgrades preserve the
+installation prefix and both registration/removal journals.

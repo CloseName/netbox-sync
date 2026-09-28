@@ -169,7 +169,7 @@ production action or provider write during repository development.
 2. Install the reviewed current release with the canonical installer.
 3. Verify canonical releases/current/config/secrets/backups/state/runtime paths and modes.
 4. Verify bundled PostgreSQL health and no published DB port.
-5. Verify migration head `0009_source_identity_proof`.
+5. Verify migration head `0016_removal_queue`.
 6. Verify database/schema `netbox_sync` and canonical separated roles/grants.
 7. Verify service/timer units and zero-source scheduler success.
 8. Open a direct application URL in two browsers; both show first-run.

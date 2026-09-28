@@ -1,5 +1,11 @@
 # Lifecycle upgrade and operator acceptance
 
+**This is the earlier production backup-based procedure.** For the explicitly
+no-backup disposable September 2026 rehearsal, use
+[Sync-only clean reinstall](sync-only-clean-reinstall.md) and the current
+[product lifecycle evidence](product-lifecycle-20260927-progress.md). Do not run
+the backup commands below on that test stand. Production backup policy is unchanged.
+
 Operator commands only. No deployment/live connection was performed during development.
 Read [model and evidence](source-lifecycle-20260927.md) first.
 

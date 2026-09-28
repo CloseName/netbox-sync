@@ -147,3 +147,16 @@ See the [individual-role migration and live-audit evidence](docs/live-audit-2026
 See [the authorization and directory contract](docs/ldaps-rbac.md),
 [upgrade/recovery runbook](docs/ldaps-upgrade-runbook.md), and
 [local runtime evidence and AD acceptance limits](docs/ldaps-rbac-progress.md).
+
+
+## Source lifecycle and disposable Sync reinstall
+
+For the current source registration/removal flow and its privilege boundaries, see
+[worker bundles and automatic continuation](docs/worker-bundles-and-continuation.md).
+[Once-only integration permissions](docs/guard-installation-permissions.md) replace
+per-source Guard grants for new installation-scoped sources. The external NetBox
+operator manages that integration; Sync does not install or update NetBox.
+
+The explicitly no-backup disposable rehearsal uses the separate
+[Sync-only reinstall runbook](docs/sync-only-clean-reinstall.md). Its acceptance
+status and evidence are in the [lifecycle progress record](docs/product-lifecycle-20260927-progress.md).
