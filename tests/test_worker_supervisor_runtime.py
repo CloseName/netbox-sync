@@ -25,6 +25,13 @@ ISOLATED = os.name == 'posix' and Path('/.dockerenv').exists() and os.environ.ge
 @pytest.mark.skipif(not ISOLATED, reason='requires isolated Docker with explicit bundle test flag')
 @pytest.mark.parametrize('bundle', ['netbox','sync'])
 def test_real_bundle_health_and_shutdown(bundle, tmp_path):
+    if bundle=='sync':
+        # Docker named-volume roots exist as root:root 0755 before workers start.
+        # A bare pytest container must recreate that production mount boundary.
+        for name in ('discovery','apply'):
+            directory=Path('/run/netbox-sync-'+name)
+            directory.mkdir(mode=0o755,exist_ok=True)
+            directory.chmod(0o755)
     root = tmp_path/'netbox'
     root.mkdir(mode=0o700)
     environment = dict(os.environ, NETBOX_SYNC_NETBOX_STATE_DIR=str(root),
@@ -34,14 +41,14 @@ def test_real_bundle_health_and_shutdown(bundle, tmp_path):
         NETBOX_SYNC_OPERATION_WRITER_DSN='host=127.0.0.1 dbname=test user=test',
         NETBOX_SYNC_RUN_WRITER_DSN='host=127.0.0.1 dbname=test user=test')
     command = [sys.executable,'-m','netbox_sync.worker_supervisor',bundle]
-    with subprocess.Popen(command, env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE) as process:
+    with (tmp_path/'worker.log').open('w+') as log, subprocess.Popen(command, env=environment, stdout=subprocess.DEVNULL, stderr=log) as process:
         try:
             for _ in range(40):
-                assert process.poll() is None, process.stderr.read().decode()
+                assert process.poll() is None, (tmp_path/'worker.log').read_text()
                 probe = subprocess.run(command+['--health'], env=environment, capture_output=True, timeout=8)
                 if probe.returncode == 0:break
                 time.sleep(0.1)
-            else:pytest.fail('Both production worker interfaces must respond')
+            else:pytest.fail('Both production worker interfaces must respond: '+(tmp_path/'worker.log').read_text()[-2500:])
         finally:
             process.terminate()
             process.wait(timeout=9)

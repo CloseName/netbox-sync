@@ -68,7 +68,7 @@ add.object_types.set([ContentType.objects.get_for_model(apps.get_model(label)) f
 tokens=[];headers=[];clusters=[]
 fixture_fields=[];fixture_platform=None;fixture_read=None;fixture_vrfs=[];scoped_audit_views=[]
 for enabled in (True,False):
-    token=Token(user=user,write_enabled=enabled,expires=timezone.now()+timedelta(minutes=5))
+    token=Token(user=user,write_enabled=enabled,expires=timezone.now()+timedelta(minutes=45))
     token.full_clean();token.save();tokens.append(token)
     headers.append({'Authorization':token.get_auth_header_prefix()+token.token})
 def post(path,body,auth=headers[0]):
@@ -250,8 +250,11 @@ try:
         denied=post('objects/create/',{'nonce':str(uuid4()),'source_instance':'outside-'+source,'resource':'cluster','cluster_id':None,'data':{'name':tag+'-denied','type':kind.pk}})
         assert denied.status_code==403
         assert not Cluster.objects.filter(name=tag+'-denied').exists()
+        if os.environ.get('NETBOX_SYNC_FULL_LIFECYCLE')=='1':
+            Path('/fixture/tokens.json').touch(mode=0o600)
+            Path('/fixture/tokens.json').write_text(json.dumps({'read':headers[1]['Authorization'].split(' ',1)[1],'apply':headers[0]['Authorization'].split(' ',1)[1]}))
         helper=runpy.run_path('/app/tests/netbox_worker_fixture.py')
-        helper['exercise'](context,get_wsgi_application(),certfile,source,cluster,capability['guard_instance'],headers[0]['Authorization'].split(' ',1)[1],url.split('/api/')[0],tag,[v.pk for v in fixture_vrfs])
+        helper['exercise'](context,get_wsgi_application(),certfile,source,cluster,capability['guard_instance'],headers[0]['Authorization'].split(' ',1)[1],url.split('/api/')[0],tag,[v.pk for v in fixture_vrfs],cap.pk)
     elif os.environ.get('NETBOX_SYNC_GUARD_TREE')=='1':
         nonce=str(uuid4())
         intent=client.review_source(nonce,source,cluster)

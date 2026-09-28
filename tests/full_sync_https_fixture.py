@@ -94,20 +94,21 @@ class Handler(ProbeHandler):
 
 from tests.fakes.esxi_properties import properties
 
-context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-context.load_cert_chain('/fixture/server.crt','/fixture/server.key')
-seed=FakeNetBox();add_target(seed)
-from netbox_sync.prerequisites import definition
-seed.extras.custom_fields.add(FakeRecord(id=77,**definition('sync_network_observations')))
-seed.virtualization.clusters.add(FakeRecord(id=9,name='Proxmox Fixture Cluster',type=seed.virtualization.cluster_types.get(id=2),scope_type='dcim.site',scope_id=1))
-seed.dcim.device_roles.add(FakeRecord(id=4,name='Server',slug='server'))
-seed.dcim.platforms.add(FakeRecord(id=5,name='Proxmox',slug='proxmox'))
-seed.dcim.device_types.add(FakeRecord(id=6,model='PowerEdge R650',slug='r650',manufacturer=FakeRecord(id=7,name='Dell Inc.')))
-seed.dcim.device_types.add(FakeRecord(id=8,model='Reviewed replacement',slug='replacement',manufacturer=FakeRecord(id=7,name='Dell Inc.')))
-for identifier in (21,22):seed.ipam.vrfs.add(FakeRecord(id=identifier,name=f'Isolated fixture {identifier}',rd=f'65000:{identifier}',enforce_unique=True))
-requests=[]
-behavior={'reverse_reads':True,'deny_reads':['virtualization.virtual_disks']}
-with netbox_http(seed,context,requests=requests,behavior=behavior,bind=('0.0.0.0',9443),public_base='https://netbox.example.test:9443') as (_api,rows,writes):
-    server=ThreadingHTTPServer(('0.0.0.0',8443),Handler)
-    server.socket=context.wrap_socket(server.socket,server_side=True)
-    server.serve_forever()
+if __name__=='__main__':
+    context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain('/fixture/server.crt','/fixture/server.key')
+    seed=FakeNetBox();add_target(seed)
+    from netbox_sync.prerequisites import definition
+    seed.extras.custom_fields.add(FakeRecord(id=77,**definition('sync_network_observations')))
+    seed.virtualization.clusters.add(FakeRecord(id=9,name='Proxmox Fixture Cluster',type=seed.virtualization.cluster_types.get(id=2),scope_type='dcim.site',scope_id=1))
+    seed.dcim.device_roles.add(FakeRecord(id=4,name='Server',slug='server'))
+    seed.dcim.platforms.add(FakeRecord(id=5,name='Proxmox',slug='proxmox'))
+    seed.dcim.device_types.add(FakeRecord(id=6,model='PowerEdge R650',slug='r650',manufacturer=FakeRecord(id=7,name='Dell Inc.')))
+    seed.dcim.device_types.add(FakeRecord(id=8,model='Reviewed replacement',slug='replacement',manufacturer=FakeRecord(id=7,name='Dell Inc.')))
+    for identifier in (21,22):seed.ipam.vrfs.add(FakeRecord(id=identifier,name=f'Isolated fixture {identifier}',rd=f'65000:{identifier}',enforce_unique=True))
+    requests=[]
+    behavior={'reverse_reads':True,'deny_reads':['virtualization.virtual_disks']}
+    with netbox_http(seed,context,requests=requests,behavior=behavior,bind=('0.0.0.0',9443),public_base='https://netbox.example.test:9443') as (_api,rows,writes):
+        server=ThreadingHTTPServer(('0.0.0.0',8443),Handler)
+        server.socket=context.wrap_socket(server.socket,server_side=True)
+        server.serve_forever()

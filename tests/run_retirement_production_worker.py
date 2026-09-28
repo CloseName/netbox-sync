@@ -21,6 +21,22 @@ label='netbox-sync.task='+project
 network=project+'-network';volume=project+'-fixture'
 fixture=project+'-netbox';proxy=project+'-relay';worker=project+'-bootstrap-worker'
 created=[];fixture_ready=False
+full=os.environ.get('NETBOX_SYNC_FULL_LIFECYCLE')=='1'
+product_project=project+'-product'
+
+def clean_product():
+    if not full:return
+    for kind,listing in [('container',('ps','-aq')),('network',('network','ls','-q')),('volume',('volume','ls','-q'))]:
+        for identifier in docker(*listing,'--filter','label=com.docker.compose.project='+product_project).stdout.decode().split():
+            found=json.loads(docker(*(('inspect',identifier) if kind=='container' else (kind,'inspect',identifier))).stdout)[0]
+            labels=found['Config']['Labels'] if kind=='container' else found['Labels']
+            assert labels.get('com.docker.compose.project')==product_project
+            docker(*(('rm','-f',identifier) if kind=='container' else (kind,'rm',identifier)))
+    for identifier in docker('ps','-aq','--filter','label=netbox-sync.task='+product_project).stdout.decode().split():
+        found=json.loads(docker('inspect',identifier).stdout)[0]
+        assert found['Config']['Labels']['netbox-sync.task']==product_project
+        docker('rm','-f',identifier)
+
 
 def owned_remove(kind,name):
     found=docker(*(('inspect',name) if kind=='container' else (kind,'inspect',name)),check=False)
@@ -31,24 +47,45 @@ def owned_remove(kind,name):
     docker(*(('rm','-f',name) if kind=='container' else (kind,'rm',name)))
 
 try:
+    if full:
+        # Each full clean-install rehearsal requires an actually empty NetBox DB.
+        # Failed older rehearsals may retain protected objects in their own DB.
+        pg=project+'-postgres'
+        docker('run','-d','--name',pg,'--label',label,'--network','none',
+            '--tmpfs','/var/lib/postgresql/data:size=512m',
+            '-e','POSTGRES_HOST_AUTH_METHOD=trust','-e','POSTGRES_DB=netbox_sync_test','postgres:16-bookworm')
+        created.append(('container',pg))
+        deadline=time.monotonic()+40
+        while docker('exec',pg,'pg_isready','-U','postgres',check=False).returncode:
+            if time.monotonic()>deadline:raise AssertionError('Isolated PostgreSQL not ready')
+            time.sleep(.2)
     docker('network','create','--internal','--label',label,network);created.append(('network',network))
     docker('volume','create','--label',label,volume);created.append(('volume',volume))
+    redis=project+'-redis'
+    docker('run','-d','--name',redis,'--label',label,'--network','container:'+pg,
+        '--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true',
+        '--user','999:999','--tmpfs','/data:size=32m,mode=1777',
+        'redis:7-alpine','redis-server','--save','','--appendonly','no')
+    created.append(('container',redis))
     docker('run','-d','--name',fixture,'--label',label,'--user','0:0','--network','container:'+pg,
         '--mount','type=bind,source='+str(root)+',target=/app,readonly',
         '--mount','type=bind,source='+str(root/'tests/netbox_guard_plugins.py')+',target=/etc/netbox/config/plugins.py,readonly',
         '--mount','type=volume,source='+volume+',target=/fixture',
         '-e','PYTHONPATH=/app/deploy','-e','NETBOX_SYNC_ISOLATED_MODEL_TEST=1',
+        '-e','NETBOX_SYNC_FULL_LIFECYCLE='+('1' if full else '0'),
         '-e','NETBOX_SYNC_MODEL_DB=netbox_sync_guard_test','-e','NETBOX_SYNC_GUARD_WORKER_TEST=1',
         '--entrypoint','/opt/netbox/venv/bin/python','netboxcommunity/netbox:v4.7.0','/app/tests/netbox_guard_http_scenario.py')
     created.append(('container',fixture))
     print('Preparing isolated real NetBox fixture',flush=True)
-    deadline=time.monotonic()+180
+    deadline=time.monotonic()+900 # cold NetBox migration budget; worker timeouts stay unchanged
     while True:
         value=docker('exec',fixture,'cat','/fixture/bridge/ready.json',check=False)
         if value.returncode==0:
             meta=json.loads(value.stdout);fixture_ready=True;break
         state=json.loads(docker('inspect',fixture).stdout)[0]['State']
-        if not state['Running']:raise AssertionError('NetBox fixture exited: '+docker('logs',fixture).stdout.decode(errors='replace')[-1800:])
+        if not state['Running']:
+            logs=docker('logs',fixture)
+            raise AssertionError('NetBox fixture exited '+str({key:state[key] for key in ('ExitCode','OOMKilled')})+': '+(logs.stdout+logs.stderr).decode(errors='replace')[-2400:])
         if time.monotonic()>deadline:raise AssertionError('NetBox fixture preparation deadline')
         time.sleep(1)
     assert set(meta)=={'guard_instance','source','cluster','direct_url','catalog_slug','vrfs'}
@@ -58,6 +95,36 @@ try:
         '--mount','type=bind,source='+str(root/'tests/retirement_bridge.py')+',target=/relay.py,readonly',
         '--entrypoint','python',os.environ.get('NETBOX_SYNC_REVIEW_IMAGE','netbox-sync-retirement:20260923'),'-B','/relay.py')
     created.append(('container',proxy))
+    if full:
+        # Operator-only Docker socket, never part of product Compose. Exact
+        # project-scoped mounts and cleanup; no privileged container or live host.
+        mount=json.loads(docker('volume','inspect',volume).stdout)[0]['Mountpoint']
+        operator=product_project+'-operator'
+        docker('run','--rm','--user','0:0','--network','none','--label',label,'--mount','type=volume,source='+volume+',target=/fixture',
+            '--entrypoint','python',os.environ['NETBOX_SYNC_REVIEW_IMAGE'],'-c',"from pathlib import Path;Path('/fixture/runtime').mkdir(mode=0o750)")
+        docker('run','-d','--name',operator,'--label',label,'--network','none',
+            '--mount','type=volume,source='+volume+',target='+mount,
+            '--mount','type=volume,source='+volume+',target=/fixture',
+            '--mount','type=bind,source='+mount+'/runtime,target=/run/netbox-sync',
+            '--mount','type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock',
+            '--mount','type=bind,source='+str(root)+',target=/review,readonly','netbox-sync-probe-host:review')
+        created.append(('container',operator))
+        baseline=subprocess.run(['git','archive','f6d297f6a6610a8fb7390faa6a7827f4cb4f4539'],cwd=root,capture_output=True,check=True).stdout
+        docker('exec',operator,'mkdir','/baseline')
+        docker('exec','-i',operator,'tar','-xf','-','-C','/baseline',input=baseline)
+        print('Running isolated full product lifecycle / upgrade / reinstall',flush=True)
+        result=docker('exec','-e','FIXTURE_MOUNT='+mount,'-e','NETBOX_SYNC_REVIEW_IMAGE='+os.environ['NETBOX_SYNC_REVIEW_IMAGE'],
+            '-e','NETBOX_SYNC_BASELINE_IMAGE=netbox-sync-lifecycle:f6d297f-baseline',operator,'python3','/review/tests/lifecycle_product_scenario.py',mount+'/product',product_project,proxy,check=False,timeout=1400)
+        print(result.stdout.decode(errors='replace'),flush=True)
+        if result.returncode:print(result.stderr.decode(errors='replace')[-3500:],flush=True)
+        # Detach the separately managed NetBox relay before deleting own networks.
+        attached=json.loads(docker('inspect',proxy).stdout)[0]['NetworkSettings']['Networks']
+        for name in attached:
+            if name.startswith(product_project+'_'):docker('network','disconnect',name,proxy)
+        # Provider peer has test-task ownership, not a product Compose service.
+        for identifier in docker('ps','-aq','--filter','label=netbox-sync.task='+product_project).stdout.decode().split():docker('rm','-f',identifier)
+        clean_product()
+        assert result.returncode==0,'Full product lifecycle gate failed'
     mounts=[{'type':'volume','source':'retirement-fixture','target':target,'read_only':readonly,'volume':{'subpath':subpath}}
             for subpath,target,readonly in [('worker','/run/netbox-sync-retirement',False),('bootstrap','/run/netbox-sync-bootstrap',False),('lock','/run/netbox-sync-lock',False),('config','/var/lib/netbox-sync/netbox',False),('ca','/run/netbox-sync-ca',True)]]
     # JSON is valid YAML; the explicit !override is necessary to replace only
@@ -111,6 +178,14 @@ try:
     assert result.stdout.strip()==b'0','NetBox ownership verification failed'
     print('PASS actual production Compose worker + real NetBox TLS + PostgreSQL lifecycle + complete source purge',flush=True)
 finally:
+    if full:
+        found=docker('inspect',proxy,check=False)
+        if found.returncode==0:
+            for name in json.loads(found.stdout)[0]['NetworkSettings']['Networks']:
+                if name.startswith(product_project+'_'):docker('network','disconnect',name,proxy)
+        # End only this fixture's provider before its network.
+        for identifier in docker('ps','-aq','--filter','label=netbox-sync.task='+product_project).stdout.decode().split():docker('rm','-f',identifier)
+        clean_product()
     if fixture_ready:
         docker('exec',fixture,'/opt/netbox/venv/bin/python','-c',
             "from pathlib import Path;p=Path('/fixture/bridge/done.json');p.exists() or p.write_text('{\"passed\": false}')",check=False)

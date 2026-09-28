@@ -9,8 +9,10 @@ import time
 from wsgiref.simple_server import WSGIServer, WSGIRequestHandler
 
 
-def exercise(context,application,certfile,source,cluster,instance,token,direct_url,catalog_slug,vrfs):
+def exercise(context,application,certfile,source,cluster,instance,token,direct_url,catalog_slug,vrfs,permission_id=None):
     assert Path('/.dockerenv').is_file() and os.environ.get('NETBOX_SYNC_GUARD_WORKER_TEST')=='1'
+    import faulthandler
+    faulthandler.dump_traceback_later(1900 if os.environ.get('NETBOX_SYNC_FULL_LIFECYCLE')=='1' else 300, exit=True)
     root=Path('/fixture')
     for name,mode in (('bridge',0o755),('worker',0o755),('bootstrap',0o755),('lock',0o700),('config',0o700),('ca',0o755),('broker',0o755),('auth-socket',0o755),('source-secrets',0o700),('auth-secrets',0o700)):
         (root/name).mkdir(mode=mode)
@@ -28,7 +30,17 @@ def exercise(context,application,certfile,source,cluster,instance,token,direct_u
     class Quiet(WSGIRequestHandler):
         def log_message(self,*args):pass
     server=UnixServer(str(root/'bridge/netbox.sock'),Quiet)
-    server.set_app(application)
+    def controlled(environ, start_response):
+        if (os.environ.get('NETBOX_SYNC_FULL_LIFECYCLE')=='1'
+                and (root/'bridge/refuse-creation').exists()
+                and environ.get('PATH_INFO','').endswith('/objects/create/')
+                and environ.get('REQUEST_METHOD')=='POST'):
+            (root/'bridge/creation-refused').touch()
+            body=b'{"detail":"isolated transient failure"}'
+            start_response('503 Service Unavailable',[('Content-Type','application/json'),('Content-Length',str(len(body)))])
+            return [body]
+        return application(environ,start_response)
+    server.set_app(controlled)
     # Only the test byte relay mounts this fixture directory. Public TLS remains
     # end-to-end between real worker and NetBox WSGI; relay cannot read payloads.
     (root/'bridge/netbox.sock').chmod(0o666)
@@ -36,8 +48,22 @@ def exercise(context,application,certfile,source,cluster,instance,token,direct_u
     thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
     (root/'bridge/ready.json').write_text(json.dumps({'guard_instance':instance,'source':source,'cluster':cluster,'direct_url':direct_url,'catalog_slug':catalog_slug,'vrfs':vrfs}))
     try:
-        deadline=time.monotonic()+240
+        deadline=time.monotonic()+(1800 if os.environ.get('NETBOX_SYNC_FULL_LIFECYCLE')=='1' else 240)
+        applied=set()
         while not (root/'bridge/done.json').exists():
+            if os.environ.get('NETBOX_SYNC_FULL_LIFECYCLE')=='1' and (root/'bridge/installation.json').exists():
+                # Test setup emulates the external NetBox operator's once-only
+                # installation grant. No application endpoint grants itself rights.
+                import re
+                namespace=json.loads((root/'bridge/installation.json').read_text())['namespace']
+                assert re.fullmatch('[a-f0-9]{32}',namespace)
+                if namespace not in applied:
+                    from users.models import ObjectPermission
+                    permission=ObjectPermission.objects.get(pk=permission_id)
+                    prior=permission.constraints
+                    permission.constraints=(prior if isinstance(prior,list) else [prior])+[{'source_instance__startswith':'n'+namespace+'-'}]
+                    permission.save();applied.add(namespace)
+                    (root/'bridge/installation-ready.json').write_text(json.dumps({'namespace':namespace}))
             if time.monotonic()>deadline:raise AssertionError('isolated worker gate did not finish')
             time.sleep(.1)
         assert json.loads((root/'bridge/done.json').read_text())=={'passed':True}
