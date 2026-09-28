@@ -13,6 +13,8 @@ def exercise(context,application,certfile,source,cluster,instance,token,direct_u
     assert Path('/.dockerenv').is_file() and os.environ.get('NETBOX_SYNC_GUARD_WORKER_TEST')=='1'
     import faulthandler
     faulthandler.dump_traceback_later(1900 if os.environ.get('NETBOX_SYNC_FULL_LIFECYCLE')=='1' else 300, exit=True)
+    import runpy
+    runpy.run_path('/app/tests/netbox_missing_cluster_scenario.py')['exercise']()
     root=Path('/fixture')
     for name,mode in (('bridge',0o755),('worker',0o755),('bootstrap',0o755),('lock',0o700),('config',0o700),('ca',0o755),('broker',0o755),('auth-socket',0o755),('source-secrets',0o700),('auth-secrets',0o700)):
         (root/name).mkdir(mode=mode)
@@ -37,6 +39,13 @@ def exercise(context,application,certfile,source,cluster,instance,token,direct_u
                 and environ.get('REQUEST_METHOD')=='POST'):
             (root/'bridge/creation-refused').touch()
             body=b'{"detail":"isolated transient failure"}'
+            start_response('503 Service Unavailable',[('Content-Type','application/json'),('Content-Length',str(len(body)))])
+            return [body]
+        if (os.environ.get('NETBOX_SYNC_FULL_LIFECYCLE')=='1'
+                and (root/'bridge/refuse-retirement').exists()
+                and environ.get('PATH_INFO','').endswith('/sources/execute/')
+                and environ.get('REQUEST_METHOD')=='POST'):
+            body=b'{"code":"GUARD_UNAVAILABLE"}'
             start_response('503 Service Unavailable',[('Content-Type','application/json'),('Content-Length',str(len(body)))])
             return [body]
         return application(environ,start_response)
@@ -64,6 +73,18 @@ def exercise(context,application,certfile,source,cluster,instance,token,direct_u
                     permission.constraints=(prior if isinstance(prior,list) else [prior])+[{'source_instance__startswith':'n'+namespace+'-'}]
                     permission.save();applied.add(namespace)
                     (root/'bridge/installation-ready.json').write_text(json.dumps({'namespace':namespace}))
+            command=root/'bridge/remove-empty-cluster.json'
+            ack=root/'bridge/removed-empty-cluster.json'
+            if os.environ.get('NETBOX_SYNC_FULL_LIFECYCLE')=='1' and command.exists() and not ack.exists():
+                from virtualization.models import Cluster
+                from netbox_guard.models import CreationClaim
+                request=json.loads(command.read_text())
+                assert any(request['source'].startswith('n'+value+'-') for value in applied)
+                claim=CreationClaim.objects.get(source_instance=request['source'],resource='cluster')
+                target=Cluster.objects.get(pk=claim.object_id)
+                assert not target.virtual_machines.exists() and not target.devices.exists()
+                identifier=target.pk;target.delete()
+                ack.write_text(json.dumps({'cluster':identifier}))
             if time.monotonic()>deadline:raise AssertionError('isolated worker gate did not finish')
             time.sleep(.1)
         assert json.loads((root/'bridge/done.json').read_text())=={'passed':True}

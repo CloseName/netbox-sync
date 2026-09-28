@@ -181,3 +181,18 @@ def test_retained_source_can_retire_proved_objects_without_reactivation_or_secon
     assert done['state']=='FINALIZED' and remote.writes==1 and len(cleanups)==1
     assert registry.get_by_source_instance(source) is None and done['purged']
     assert execute(service,source,context,review)==done and remote.writes==1
+
+
+@pytest.mark.parametrize('absent,deleted,valid', [(['vm:4'],[],True),([],[],False),(['vm:4'],['vm:4'],False),(['vm:9'],[],False)])
+def test_absence_receipt_accounts_for_exact_original_plan(coordinator,absent,deleted,valid):
+    service,registry,source,remote,_=coordinator
+    operation=uuid4();actor='admin-fixture'
+    review=service.review(source.source_instance,operation,actor,service.store.read(source.source_instance)['revision'])
+    service.journal.begin(source.source_instance,operation,actor,review['digest'],source.name,True)
+    receipt={**remote.result,'status':'SUCCEEDED','generation_closed':True,'deleted':deleted,'already_absent':absent}
+    if valid:
+        result=service.journal.resolve(source.source_instance,operation,actor,remote.instance,receipt)
+        assert result['state']=='SUCCEEDED' and not result['receipt']['deleted']
+    else:
+        with pytest.raises(LifecycleError,match='RETIREMENT_CONFLICT'):
+            service.journal.resolve(source.source_instance,operation,actor,remote.instance,receipt)

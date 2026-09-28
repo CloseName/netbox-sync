@@ -58,7 +58,7 @@ class GuardClient:
                     # Remote text is never a diagnostic. Only known, bounded protocol
                     # refusals prove no mutation; 5xx/redirects/connection loss do not.
                     code = value.get('code')
-                    known = {'SOURCE_NAMESPACE_CLOSED','SOURCE_NAMESPACE_BUSY','PERMISSION_DENIED', 'GUARD_INSTANCE_CHANGED', 'REQUEST_CONFLICT',
+                    known = {'SOURCE_OBJECTS_REMAIN','OWNED_OBJECT_OUTSIDE_PLACEMENT','OBJECT_MISSING','SOURCE_NAMESPACE_CLOSED','SOURCE_NAMESPACE_BUSY','PERMISSION_DENIED', 'GUARD_INSTANCE_CHANGED', 'REQUEST_CONFLICT',
                              'OBJECT_INVALID', 'OBJECT_FIELDS_UNSUPPORTED', 'REQUEST_INVALID',
                              'REQUEST_TOO_LARGE', 'OWNERSHIP_CONFLICT', 'PLACEMENT_CHANGED',
                              'CREATION_OWNERSHIP_UNPROVEN', 'DEPENDENCIES_CHANGED',

@@ -191,7 +191,8 @@ staged=install.compose_command(root,release=p.release,config=p.config,overrides=
 for service in ('netbox-sync-db-roles','netbox-sync-migrate','netbox-sync-db-grants'):
  run([*staged,'--profile','tools','run','--rm','--no-deps',service])
 install.activate_prepared(p,install_units=False,start_services=False);install.start_runtime(p,overrides=(overlay,));wait_ready()
-assert run([*command,'ps','-q','postgres'])==db and json.loads(run(['docker','inspect',db]))[0]['Mounts']==mounts
+assert run([*command,'ps','-q','postgres'])==db, 'PostgreSQL container changed'
+assert {m['Destination']:m for m in json.loads(run(['docker','inspect',db]))[0]['Mounts']}=={m['Destination']:m for m in mounts}, 'PostgreSQL mount definition changed'
 assert before=={str(f.relative_to(root)):hashlib.sha256(f.read_bytes()).hexdigest() for f in (root/'secrets').rglob('*') if f.is_file()}
 assert ok('/api/v1/policy')==policy and ok('/api/v1/runs')==runs and ok('/api/v1/sources')==sources
 assert (root/'state/installation-id').read_text().strip()==namespace
@@ -212,6 +213,41 @@ def scheduled(sid):
 scheduled(first)
 remove(first,wait_for_plan=True);second=add('esxi','AM isolated',restart=True);assert second!=first
 apply(second,plan(second));assert not any(i['action'] in ('CREATE','UPDATE') for i in plan(second)['items']);remove(second)
+missing=add('esxi','Missing cluster isolated')
+base='/api/v1/sources/'+missing
+life=ok(base+'/lifecycle');nonce=str(uuid4())
+review=ok(base+'/retirement-review',dict(operation_id=nonce,revision=life['revision']))
+Path('/fixture/bridge/remove-empty-cluster.json').write_text(json.dumps({'source':missing}))
+for _ in range(100):
+ if Path('/fixture/bridge/removed-empty-cluster.json').exists():break
+ time.sleep(.1)
+else:raise AssertionError('Isolated manual cluster removal did not finish')
+Path('/fixture/bridge/refuse-retirement').touch()
+result=ok(base+'/retire',dict(operation_id=nonce,digest=review['digest'],confirmed=True,confirmed_source=life['display_name'],remove_credentials=True))
+assert result['state']=='UNCERTAIN'
+run([*command,'stop','netbox-sync-lifecycle-worker'])
+Path('/fixture/bridge/refuse-retirement').unlink()
+run([*command,'start','netbox-sync-lifecycle-worker'])
+for _ in range(100):
+ if result['state']=='FINALIZED' and result.get('purged'):break
+ time.sleep(.5)
+ response=request(base+'/retirement-status',dict(operation_id=nonce))
+ if response['status']==503:continue
+ assert response['status']==200,response['status']
+ result=response['body']
+else:raise AssertionError(('Missing cluster did not finalize',result['state']))
+assert all(s['source_instance']!=missing for s in ok('/api/v1/sources')['sources'])
+again=add('esxi','After missing cluster');assert again!=missing
+# Also exercise disappearance BEFORE Sync's first removal review.
+Path('/fixture/bridge/remove-empty-cluster.json').write_text(json.dumps({'source':again}))
+Path('/fixture/bridge/removed-empty-cluster.json').unlink()
+for _ in range(100):
+ if Path('/fixture/bridge/removed-empty-cluster.json').exists():break
+ time.sleep(.1)
+else:raise AssertionError('Second isolated external cluster deletion did not finish')
+remove(again)
+last=add('esxi','After absent review');assert last not in (again,missing);remove(last)
+print('PASS public API add -> external empty cluster delete -> original-nonce retirement/full purge -> same-host re-add',flush=True)
 pve=add('proxmox','PVE isolated');apply(pve,plan(pve));assert not any(i['action'] in ('CREATE','UPDATE') for i in plan(pve)['items']);scheduled(pve);remove(pve)
 print('PASS full server removal and same-host fresh registration; Proxmox VM/LXC manual cycle',flush=True)
 # Exact own-project reset only. Preserve separately managed NetBox fixture and TLS.

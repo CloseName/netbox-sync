@@ -28,6 +28,9 @@ def client(response):
 
 @pytest.mark.parametrize('status,body,uncertain,code', [
     (409, {'code':'OWNERSHIP_CONFLICT'}, False, 'OWNERSHIP_CONFLICT'),
+    (409, {'code':'SOURCE_OBJECTS_REMAIN'}, False, 'SOURCE_OBJECTS_REMAIN'),
+    (409, {'code':'OBJECT_MISSING'}, False, 'OBJECT_MISSING'),
+    (409, {'code':'OWNED_OBJECT_OUTSIDE_PLACEMENT'}, False, 'OWNED_OBJECT_OUTSIDE_PLACEMENT'),
     (403, {'code':'PERMISSION_DENIED'}, False, 'PERMISSION_DENIED'),
     (503, {'code':'OWNERSHIP_CONFLICT'}, True, 'GUARD_RESPONSE_UNCONFIRMED'),
     (409, {'code':'arbitrary remote text'}, True, 'GUARD_RESPONSE_UNCONFIRMED'),

@@ -37,6 +37,8 @@ def _public(intent, receipt=None):
     return {'nonce':str(intent.pk),'source_instance':intent.source_instance,
             'digest':intent.digest,'status':'SUCCEEDED' if receipt else 'REVIEWED',
             'manifest':intent.manifest,'deleted':receipt.deleted if receipt else [],
+            **({'already_absent':sorted(key for key,_ in intent.manifest['objects'] if key not in receipt.deleted)}
+               if receipt and intent.manifest.get('format')==2 and len(receipt.deleted)!=len(intent.manifest['objects']) else {}),
             'generation_closed':bool(receipt and SourceClosure.objects.filter(source_instance=intent.source_instance,intent=intent).exists())}
 
 
@@ -82,7 +84,7 @@ class Capabilities(GuardView):
     def get(self,request):
         return Response({'protocol':1,'guard_instance':str(GuardIdentity.objects.get(pk=1).identifier),'netbox_version':'4.7.0','atomic_dependency_guard':True,'idempotent_creation':True,
                          'creation_receipts':True,'retirement_receipts':True,
-                         'source_coordinator_required':True,'source_tree_retirement':True,'source_audit':True,'source_generation_closure':True,'source_namespace_state':True,
+                         'source_coordinator_required':True,'source_tree_retirement':True,'absent_source_retirement':True,'source_audit':True,'source_generation_closure':True,'source_namespace_state':True,
                          'audit_permission':request.user.has_perm('netbox_guard.audit_retirementintent'),
                          'retire_permission':request.user.has_perm('netbox_guard.retire_retirementintent'),
                          'token_write_enabled':bool(getattr(request.auth,'write_enabled',False))})

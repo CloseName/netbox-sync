@@ -11,7 +11,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
 from .dependencies import (MODELS, MAX_OBJECTS, DependencySnapshot, DependencyGuardBlocked,
                            _database_fence, _closure, _digest)
-from .models import CreationClaim, RetirementIntent, RetirementReceipt
+from .models import CreationClaim, CreationReceipt, RetirementIntent, RetirementReceipt
 from .service import _permission, _source, _claims, _cluster_fingerprint
 
 BUDGET_SECONDS = 30
@@ -65,6 +65,40 @@ def _inventory(source, cluster, deadline):
     return snapshot,roots
 
 
+def _confirmed_inventory(source, cluster, deadline, expected=()):
+    """Absence is a current fenced observation, never a fabricated DELETE.
+
+    Cluster deletion can detach hosts. Search globally by provenance, including
+    historical creation IDs whose active claims were invalidated by signals.
+    A reused ID is deliberately a blocker, never authority to delete its owner.
+    """
+    model = apps.get_model(MODELS['cluster'])
+    if model.objects.filter(pk=cluster).exists():
+        snapshot, roots = _inventory(source, cluster, deadline)
+        return snapshot, roots, _cluster_fingerprint(cluster)
+    candidates = set()
+    for records in (CreationClaim, CreationReceipt):
+        rows = list(records.objects.filter(source_instance=source)
+                    .values_list('resource', 'object_id').distinct()[:MAX_OBJECTS+1])
+        candidates.update(rows)
+        if len(rows)>MAX_OBJECTS or len(candidates)>MAX_OBJECTS:
+            raise DependencyGuardBlocked('DEPENDENCY_LIMIT')
+    for key, _ in expected:
+        kind, identifier = key.split(':')
+        candidates.add((kind, int(identifier)))
+    if len(candidates)>MAX_OBJECTS or any(kind not in MODELS for kind,_ in candidates):
+        raise DependencyGuardBlocked('DEPENDENCY_LIMIT')
+    for kind, label in MODELS.items():
+        _deadline(deadline)
+        query = (Q(pk__in=[pk for resource,pk in candidates if resource==kind])
+                 | Q(custom_field_data__sync_identities__contains=[{'instance':source}]))
+        if apps.get_model(label).objects.filter(query).exists():
+            raise DependencyGuardBlocked('SOURCE_OBJECTS_REMAIN')
+    _deadline(deadline)
+    rows=()
+    return DependencySnapshot(rows,(),_digest(rows)),[],None
+
+
 def review_source(user, nonce, source, cluster):
     actor=_permission(user,'retire_retirementintent')
     source=_source(source);nonce=UUID(str(nonce))
@@ -82,10 +116,11 @@ def review_source(user, nonce, source, cluster):
     with _database_fence():
         previous=RetirementIntent.objects.filter(nonce=nonce).first()
         if previous: return existing(previous)
-        snapshot,roots=_inventory(source,cluster,deadline)
-        manifest={'format':2,'cluster_id':cluster,'cluster_fingerprint':_cluster_fingerprint(cluster),
+        snapshot,roots,fingerprint=_confirmed_inventory(source,cluster,deadline)
+        manifest={'format':2,'cluster_id':cluster,'cluster_fingerprint':fingerprint,
                   'objects':[list(row) for row in snapshot.objects], 'roots':roots,
-                  'fingerprint':snapshot.fingerprint,'retained_cluster':not any(root[0]=='cluster' for root in roots)}
+                  'fingerprint':snapshot.fingerprint,'retained_cluster':fingerprint is not None and not any(root[0]=='cluster' for root in roots),
+                  'cluster_missing':fingerprint is None}
         intent=RetirementIntent.objects.create(nonce=nonce,actor=actor,source_instance=source,
             manifest=manifest,digest=_digest([actor,source,manifest]))
         _permission(user,'retire_retirementintent',intent)
@@ -110,11 +145,16 @@ def retire_source(user, nonce, digest):
             if previous.digest!=digest: raise DependencyGuardBlocked('RECEIPT_CONFLICT')
             return previous
         assert_open(intent.source_instance)
-        snapshot,roots=_inventory(intent.source_instance,manifest['cluster_id'],deadline)
+        snapshot,roots,fingerprint=_confirmed_inventory(intent.source_instance,manifest['cluster_id'],deadline,manifest['objects'])
+        if fingerprint is None:
+            # Nothing remains anywhere in the supported source inventory. The
+            # original reviewed intent/digest is immutable; no DELETE is claimed.
+            seal(intent)
+            return RetirementReceipt.objects.create(intent=intent,digest=digest,deleted=[])
         if (list(map(list,snapshot.objects))!=manifest['objects'] or roots!=manifest['roots']
                 or snapshot.fingerprint!=manifest['fingerprint']):
             raise DependencyGuardBlocked('DEPENDENCIES_CHANGED')
-        if _cluster_fingerprint(manifest['cluster_id'])!=manifest['cluster_fingerprint']:
+        if fingerprint!=manifest['cluster_fingerprint']:
             raise DependencyGuardBlocked('PLACEMENT_CHANGED')
         remaining=dict(snapshot.objects)
         deleted=[]

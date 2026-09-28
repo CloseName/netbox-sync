@@ -3,7 +3,7 @@ export interface Retirement {
   source_instance: string; operation_id: string; state: RetirementState; digest: string;
   revision: string; guard_instance: string; safe_code?: string | null; remove_credentials?: boolean | null;
   mode?: 'FULL_DELETE'|'LEGACY_RETAIN'; purged?: boolean;
-  manifest: {format: 2|4; cluster_id?: number; retained?: {kind:string;id:number;present:boolean;claimed:boolean}[]; objects: [string,string][]; retained_cluster?: boolean};
+  manifest: {format: 2|4; cluster_id?: number; retained?: {kind:string;id:number;present:boolean;claimed:boolean}[]; objects: [string,string][]; retained_cluster?: boolean; cluster_missing?: boolean};
 }
 export class RetirementError extends Error {
   constructor(readonly code: string) {super(code);}
@@ -12,7 +12,7 @@ const codes = new Set(['RETIREMENT_AUTH_FAILED','RETIREMENT_TOKEN_WRITE_REQUIRED
   'SOURCE_APPLY_UNCONFIRMED','SOURCE_LIFECYCLE_CONFLICT','SOURCE_RETIREMENT_PENDING',
   'RETIREMENT_UNAVAILABLE','RETIREMENT_CONFLICT','RETIREMENT_BLOCKED','RETIREMENT_UNCERTAIN',
   'RETIREMENT_PERMISSION_DENIED','RETIREMENT_OWNERSHIP_UNPROVEN','RETIREMENT_OWNERSHIP_CONFLICT',
-  'RETIREMENT_DEPENDENCIES_CHANGED','RETIREMENT_MANUAL_CHANGE','RETIREMENT_PROTECTED_DEPENDENCY','RETIREMENT_GUARD_CHANGED']);
+  'RETIREMENT_SOURCE_OBJECTS_REMAIN','RETIREMENT_DEPENDENCIES_CHANGED','RETIREMENT_MANUAL_CHANGE','RETIREMENT_PROTECTED_DEPENDENCY','RETIREMENT_GUARD_CHANGED']);
 export async function retirement(source: string, action: 'archive-review'|'retirement-review'|'retire'|'retirement-status'|'retirement-resume',
   payload: {operation_id:string; revision?:string; digest?:string; confirmed?:true; confirmed_source?:string; remove_credentials?:boolean},
   signal: AbortSignal): Promise<Retirement> {

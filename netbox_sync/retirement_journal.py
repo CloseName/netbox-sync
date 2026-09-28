@@ -127,7 +127,9 @@ class RetirementJournal:
                     or receipt.get('source_instance')!=source or receipt.get('digest')!=expected['digest']
                     or receipt.get('manifest')!=expected['manifest'] or receipt.get('status')!='SUCCEEDED'
                     or not isinstance(receipt.get('deleted'),list)
-                    or sorted(receipt['deleted'])!=(sorted(item[0] for item in expected['manifest']['objects']) if expected['manifest']['format']==2 else [])):
+                    or not isinstance(receipt.get('already_absent',[]),list)
+                    or (receipt.get('already_absent') and receipt['deleted'])
+                    or sorted(receipt['deleted']+receipt.get('already_absent',[]))!=(sorted(item[0] for item in expected['manifest']['objects']) if expected['manifest']['format']==2 else [])):
                 raise LifecycleError('RETIREMENT_CONFLICT')
             if record['state'] in ('SUCCEEDED','FINALIZED'):
                 if record['receipt']!=receipt:raise LifecycleError('RETIREMENT_CONFLICT')

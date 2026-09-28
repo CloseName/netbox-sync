@@ -284,3 +284,33 @@ for(const language of ['en','ru'])test(`visible dependency references ${language
  await page.screenshot({path:info.outputPath('dependency-details.png'),fullPage:true});
  expect(server.retirementControl.writes).toBe(0);
 });
+
+for (const language of ['en','ru']) test(`missing cluster explanation and automatic reconciliation ${language}`,async({page,context})=>{
+ const server=backend();server.retirementControl.undelivered=true;
+ await page.addInitScript(language=>localStorage.setItem('netbox-sync.language',language),language);
+ await server.attach(context);
+ await context.route('**/retirement-review',async route=>{
+  const nonce=route.request().postDataJSON().operation_id;
+  const result={source_instance:'source-1',operation_id:nonce,state:'READY',digest:'b'.repeat(64),revision:'a'.repeat(64),guard_instance:randomUUID(),manifest:{format:2,cluster_id:7,cluster_missing:true,retained_cluster:false,objects:[]}};
+  server.retirements.set('source-1',result);await route.fulfill({json:result});
+ });
+ await page.goto(url+'/sources/source-1/configuration');
+ await page.getByRole('button',{name:language==='ru'?'Удалить источник':'Remove Source',exact:true}).click();
+ await expect(page.getByText(language==='ru'?/Кластер уже отсутствует/:/The cluster is already absent/)).toBeVisible();
+ await page.getByRole('button',{name:language==='ru'?'Подтвердить удаление':'Confirm removal',exact:true}).click();
+ await page.reload();
+ await expect(page.getByText(language==='ru'?'Удаление продолжается на сервере.':'Removal is continuing on the server.',{exact:true})).toBeVisible();
+ server.finishRemoval('source-1');
+ await expect(page).toHaveURL(/\/sources$/,{timeout:12000});expect(server.retirementControl.writes).toBe(1);
+});
+
+for (const language of ['en','ru']) test(`detached source objects explain removal refusal ${language}`,async({page,context})=>{
+ const server=backend();await server.attach(context);
+ await page.addInitScript(language=>localStorage.setItem('netbox-sync.language',language),language);
+ await context.route('**/retirement-review',route=>route.fulfill({status:409,json:{error:{code:'RETIREMENT_SOURCE_OBJECTS_REMAIN'}}}));
+ await page.goto(url+'/sources/source-1/configuration');
+ await page.getByRole('button',{name:language==='ru'?'Удалить источник':'Remove Source',exact:true}).click();
+ await expect(page.getByRole('dialog').getByText(language==='ru'?/в NetBox остались связанные/:/source-related objects remain in NetBox/)).toBeVisible();
+ await expect(page.getByRole('button',{name:language==='ru'?'Подтвердить удаление':'Confirm removal',exact:true})).toHaveCount(0);
+ expect(server.retirementControl.writes).toBe(0);
+});

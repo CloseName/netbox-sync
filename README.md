@@ -160,3 +160,5 @@ operator manages that integration; Sync does not install or update NetBox.
 The explicitly no-backup disposable rehearsal uses the separate
 [Sync-only reinstall runbook](docs/sync-only-clean-reinstall.md). Its acceptance
 status and evidence are in the [lifecycle progress record](docs/product-lifecycle-20260927-progress.md).
+For a cluster already removed outside Sync, use the
+[missing-cluster retirement update and recovery procedure](docs/missing-cluster-retirement.md).
