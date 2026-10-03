@@ -32,11 +32,8 @@ class SourceConnectionResult:
 def _pyvmomi_connect(host, username, password, verify_ssl, *, port=443):
     from pyVim.connect import SmartConnect  # pylint: disable=import-outside-toplevel
 
-    context = (
-        ssl.create_default_context()
-        if verify_ssl
-        else ssl._create_unverified_context()  # pylint: disable=protected-access
-    )
+    from .source_tls import source_context
+    context = source_context(verify_ssl)
     return SmartConnect(
         host=host,
         port=port,

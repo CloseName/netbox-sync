@@ -200,6 +200,8 @@ def execute_child(payload):
         with failure_stage('provider'):
             provider = ProxmoxAPI(config.address, user=credentials['username'], token_name=token_name,
                                   token_value=credentials['token_secret'], verify_ssl=config.verify_ssl, port=config.api_port)
+            from .source_tls import configure_proxmox
+            configure_proxmox(provider, config.verify_ssl)
             hosts = discover_proxmox(provider, config)
         if payload.get('operation') != 'plan':
             review = _comparison(lambda: build_proxmox_review(nb_api, hosts, config), hosts, config)

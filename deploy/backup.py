@@ -180,7 +180,7 @@ def _persistent_permissions(relative, directory=False):
     if relative=='secrets/tls' and directory:return 0o750,10001
     if relative=='secrets/ca' and directory:return 0o755,0
     if relative in ('secrets/tls/fullchain.pem','secrets/tls/privkey.pem') and not directory:return 0o640,10001
-    if relative=='secrets/ca/netbox-ca.pem' and not directory:return 0o644,0
+    if relative in ('secrets/ca/netbox-ca.pem','secrets/ca/source-ca.pem') and not directory:return 0o644,0
     if relative.startswith(('secrets/tls/','secrets/ca/')):
         raise BackupError('non-canonical TLS/CA entry')
     return (0o700 if directory else 0o600),0

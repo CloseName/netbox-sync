@@ -823,9 +823,10 @@ def initialize_ingress_directory(root):
 
 
 def validate_netbox_ca(root):
-    ca = root / 'secrets/ca/netbox-ca.pem'
-    if ca.exists() or ca.is_symlink():
-        _tls['validate_ca'](_tls['protected_file'](ca, 0o644))
+    for name in ('netbox-ca.pem', 'source-ca.pem'):
+        ca = root / 'secrets/ca' / name
+        if ca.exists() or ca.is_symlink():
+            _tls['validate_ca'](_tls['protected_file'](ca, 0o644))
 
 
 def read_compose_values(root):

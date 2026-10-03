@@ -838,6 +838,8 @@ def execute_proxmox_source(
         port=source_config.api_port,
     )
 
+    from .source_tls import configure_proxmox
+    configure_proxmox(pve_api, source_config.verify_ssl)
     hosts = discover_hosts(pve_api, source_config)
     return execute_discovered_source(
         source_config,

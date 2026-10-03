@@ -136,6 +136,7 @@ services:
     cap_add: [SETUID, SETGID, CHOWN, KILL]
     volumes:
       - netbox-sync-probe-socket:/run/netbox-sync-probe
+      - ${NETBOX_SYNC_CA_DIR:-./deploy/example-secrets/ca}:/run/netbox-sync-ca:ro
       - netbox-sync-auth-socket:/run/netbox-sync-auth:ro
     restart: unless-stopped
 

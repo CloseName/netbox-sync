@@ -30,7 +30,8 @@ def classify(exc):
         return ErrorCode.SOURCE_DNS_FAILED
     if isinstance(exc, TimeoutError):
         return ErrorCode.SOURCE_TIMEOUT
-    if isinstance(exc, ssl.SSLError):
+    from ..tls_config import TLSConfigurationError
+    if isinstance(exc, (ssl.SSLError, TLSConfigurationError)):
         return ErrorCode.SOURCE_TLS_FAILED
     if isinstance(exc, PermissionError) or type(exc).__name__ in ('NoPermission', 'vim.fault.NoPermission'):
         return ErrorCode.SOURCE_PERMISSION_DENIED
@@ -119,7 +120,8 @@ def execute(credentials, policy, preview=False, destination_only=False):
     port = credentials.api_port
     host, address = policy.resolve(credentials.address, port)
     if destination_only: return None
-    context = ssl.create_default_context() if credentials.verify_ssl else ssl._create_unverified_context()
+    from ..source_tls import source_context
+    context = source_context(credentials.verify_ssl)
     with pinned_dns(host, address, port):
         if credentials.source_type == 'proxmox':
             probe_proxmox(credentials, host, context)
