@@ -63,3 +63,45 @@ def test_truncated_unpaginated_response_fails_closed():
     rows,payload,listing=fixture()
     def truncated(kind,search):return {**listing(kind,search),'count':2}
     with pytest.raises(ProbeError,match='RESPONSE_INVALID'):resolve(payload,truncated,project)
+
+
+def test_manual_type_resolves_missing_proxmox_hardware_with_fresh_catalog():
+    rows,payload,listing=fixture('proxmox')
+    payload['hosts'][0].update(model=None,manufacturer=None)
+    selected=project('device_type',rows['device_type'][0])
+    payload['host_types']={'uuid-a':{**selected,'name':'untrusted client label'}}
+    calls=[]
+    def retrieve(kind,identifier):
+        calls.append((kind,identifier))
+        return rows[kind][0]
+    result=resolve(payload,listing,project,retrieve)
+    assert not result['issues']
+    assert result['host_types']['uuid-a']==selected
+    assert calls==[('device_type',5)]
+    assert payload['hosts'][0]['model'] is None
+
+
+def test_manual_type_rejects_catalog_changed_since_selection():
+    from netbox_sync.bootstrap_probe import ProbeError
+    rows,payload,listing=fixture('proxmox')
+    payload['host_types']={'uuid-a':project('device_type',rows['device_type'][0])}
+    rows['device_type'][0]['model']='Changed model'
+    with pytest.raises(ProbeError,match='CATALOG_CHANGED'):
+        resolve(payload,listing,project,lambda kind,identifier:rows[kind][0])
+
+
+@pytest.mark.parametrize('selection',[None,[],{'other':{'id':5}}, {'uuid-a':{'id':True,'fingerprint':'x'}}, {'uuid-a':{'id':0,'fingerprint':'x'}}, {'uuid-a':{'id':5}}])
+def test_manual_type_rejects_invalid_or_foreign_selection(selection):
+    from netbox_sync.bootstrap_probe import ProbeError
+    rows,payload,listing=fixture('proxmox')
+    payload['host_types']=selection
+    with pytest.raises(ProbeError,match='SELECTION_REQUIRED'):
+        resolve(payload,listing,project,lambda kind,identifier:rows[kind][0])
+
+
+def test_manual_type_requires_fresh_lookup():
+    from netbox_sync.bootstrap_probe import ProbeError
+    rows,payload,listing=fixture('proxmox')
+    payload['host_types']={'uuid-a':project('device_type',rows['device_type'][0])}
+    with pytest.raises(ProbeError,match='SELECTION_REQUIRED'):
+        resolve(payload,listing,project)

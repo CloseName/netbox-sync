@@ -120,7 +120,7 @@ def query(value,session_factory=requests.Session):
             from .placement_resolution import resolve
             def listing(kind,search):
                 return get(kind,'?'+urlencode(dict(q=search,limit=20,ordering='id')))
-            resolved=resolve(payload,listing,project)
+            resolved=resolve(payload,listing,project,lambda kind, identifier:get(kind,str(identifier)+'/'))
             cluster=resolved['references'].get('cluster')
             if cluster:
                 # Existing inventory is not proof of ownership by this new source.

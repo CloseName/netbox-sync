@@ -701,7 +701,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         preview=onboarding_service.preview(payload.onboarding_token)
         if not preview:raise CatalogError('SELECTION_REQUIRED')
         resolved=call(settings.bootstrap_socket,dict(action='resolve-placement',provider=preview['provider'],
-            hosts=preview['hosts'],name=payload.name,site_id=payload.site_id,default_site_slug=settings.default_site_slug))
+            hosts=preview['hosts'],name=payload.name,site_id=payload.site_id,default_site_slug=settings.default_site_slug,host_types=payload.host_types))
         site=resolved.get('references',{}).get('site',{})
         if site.get('slug'):onboarding_service.check_placement(site['slug'],payload.name)
         return resolved
@@ -749,7 +749,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
                     preview=onboarding_service.preview(request.onboarding_token)
                     if not preview or not request.registration_id:raise CatalogError('SELECTION_REQUIRED')
                     resolved=call(settings.bootstrap_socket,dict(action='resolve-placement',provider=request.source_type,
-                        hosts=preview['hosts'],name=request.name,site_id=(request.references.get('site') or {}).get('id'),
+                        hosts=preview['hosts'],name=request.name,host_types=request.host_types,site_id=(request.references.get('site') or {}).get('id'),
                         default_site_slug=settings.default_site_slug))
                     selected_site=resolved.get('references',{}).get('site',{})
                     if selected_site.get('slug'):onboarding_service.check_placement(selected_site['slug'],request.name)

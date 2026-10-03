@@ -1,9 +1,13 @@
 """Exact, bounded read-only placement resolution; never adopts inventory by name."""
 from .bootstrap_probe import ProbeError
 
-def resolve(payload, listing, project):
+def resolve(payload, listing, project, retrieve=None):
     provider=payload.get('provider'); hosts=payload.get('hosts'); name=payload.get('name','')
     if provider not in ('esxi','proxmox') or not isinstance(hosts,list) or not 1<=len(hosts)<=16 or not isinstance(name,str) or len(name)>100:
+        raise ProbeError('SELECTION_REQUIRED')
+    selections=payload.get('host_types', {})
+    host_ids={h.get('id') for h in hosts if isinstance(h,dict) and isinstance(h.get('id'),str)}
+    if not isinstance(selections,dict) or len(selections)>16 or set(selections)-host_ids:
         raise ProbeError('SELECTION_REQUIRED')
     refs={}; types={}; issues=[]
     def choices(kind,search):
@@ -28,6 +32,16 @@ def resolve(payload, listing, project):
     exact('platform',platform);exact('cluster_type',platform);exact('device_role','Hypervisor')
     for host in hosts:
         if not isinstance(host,dict) or not isinstance(host.get('id'),str):raise ProbeError('RESPONSE_INVALID')
+        if host['id'] in selections:
+            selected=selections[host['id']]
+            if (not isinstance(selected,dict) or type(selected.get('id')) is not int
+                    or selected['id']<=0 or not isinstance(selected.get('fingerprint'),str) or retrieve is None):
+                raise ProbeError('SELECTION_REQUIRED')
+            fresh=project('device_type',retrieve('device_type',selected['id']))
+            if fresh['fingerprint']!=selected['fingerprint']:
+                raise ProbeError('CATALOG_CHANGED')
+            types[host['id']]=fresh
+            continue
         model=host.get('model');manufacturer=host.get('manufacturer')
         matches=[]
         if model and manufacturer:
