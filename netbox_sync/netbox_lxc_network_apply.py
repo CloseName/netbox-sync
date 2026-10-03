@@ -1,3 +1,4 @@
+from .interface_display import interface_display_name, validate_interface_names
 from .host_mapping import cluster_filter
 import ipaddress
 from .network_scopes import scope_key,object_id as scope_object_id
@@ -109,7 +110,7 @@ def _find_interface(
         raise LXCNetworkApplyError(
             f'Duplicate interface identity '
             f'on {container.original_name}:'
-            f'{nic.name}'
+            f'{interface_display_name(container, nic)}'
         )
 
     if len(identity_matches) == 1:
@@ -120,7 +121,7 @@ def _find_interface(
         for interface in interfaces
         if (
             interface.name.casefold()
-            == nic.name.casefold()
+            in (nic.name.casefold(), interface_display_name(container, nic).casefold())
         )
     ]
 
@@ -129,7 +130,7 @@ def _find_interface(
             f'LXC NIC adoption candidate '
             f'exists without identity: '
             f'{container.original_name}:'
-            f'{nic.name}'
+            f'{interface_display_name(container, nic)}'
         )
 
     return None
@@ -161,10 +162,10 @@ def _interface_changes(
 
     data = interface.serialize()
 
-    if interface.name != nic.name:
+    if interface.name != interface_display_name(container, nic):
         changes[
             'name'
-        ] = nic.name
+        ] = interface_display_name(container, nic)
 
     if data.get(
         'enabled'
@@ -361,11 +362,15 @@ def apply_lxc_networks(
                 )
             )
 
+            validate_interface_names(
+                container, existing_interfaces, _find_interface, LXCNetworkApplyError,
+            )
+
             discovered_names = {}
 
             for nic in container.interfaces:
                 discovered_names.setdefault(
-                    nic.name.casefold(),
+                    interface_display_name(container, nic).casefold(),
                     [],
                 ).append(nic)
 
@@ -437,7 +442,7 @@ def apply_lxc_networks(
                     ).append(
                         (
                             container.original_name,
-                            nic.name,
+                            interface_display_name(container, nic),
                         )
                     )
 
@@ -505,7 +510,7 @@ def apply_lxc_networks(
                             f'Primary MAC conflict '
                             f'on '
                             f'{container.original_name}:'
-                            f'{nic.name}'
+                            f'{interface_display_name(container, nic)}'
                         )
 
                 ip_contexts = []
@@ -525,7 +530,7 @@ def apply_lxc_networks(
                     ).append(
                         (
                             container.original_name,
-                            nic.name,
+                            interface_display_name(container, nic),
                         )
                     )
 
@@ -681,9 +686,7 @@ def apply_lxc_networks(
     print()
 
     for context in contexts:
-        container = context[
-            'container'
-        ]
+        container = context['container']
 
         netbox_vm = context[
             'netbox_vm'
@@ -720,7 +723,7 @@ def apply_lxc_networks(
 
             print(
                 f'  {action} INTERFACE '
-                f'name={nic.name} '
+                f'name={interface_display_name(container, nic)} '
                 f'bridge={nic.bridge or "-"} '
                 f'vlan='
                 f'{nic.vlan_id if nic.vlan_id is not None else "-"}'
@@ -852,6 +855,7 @@ def apply_lxc_networks(
     )
 
     for context in contexts:
+        container = context['container']
         netbox_vm = context[
             'netbox_vm'
         ]
@@ -877,7 +881,7 @@ def apply_lxc_networks(
                         virtual_machine=(
                             netbox_vm.id
                         ),
-                        name=nic.name,
+                        name=interface_display_name(container, nic),
                         enabled=True,
                         custom_fields=(
                             nic_context[
@@ -893,7 +897,7 @@ def apply_lxc_networks(
                     f'CREATE INTERFACE '
                     f'id={interface.id} '
                     f'lxc={netbox_vm.name!r} '
-                    f'name={nic.name}'
+                    f'name={interface_display_name(container, nic)}'
                 )
 
             elif nic_context[
@@ -910,7 +914,7 @@ def apply_lxc_networks(
                 print(
                     f'UPDATE INTERFACE '
                     f'id={interface.id} '
-                    f'name={nic.name}'
+                    f'name={interface_display_name(container, nic)}'
                 )
 
             else:

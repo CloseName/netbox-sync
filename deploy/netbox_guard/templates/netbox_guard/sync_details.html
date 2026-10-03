@@ -1,0 +1,19 @@
+<div class="card">
+  <h2 class="card-header">NetBox Sync — сведения об источнике</h2>
+  <div class="card-body">
+    {% for section in sync_sections %}
+      {% if section.technical %}<details><summary>{{ section.title }}</summary>
+      {% else %}<h3 class="h5">{{ section.title }}</h3>{% endif %}
+      <div class="table-responsive">
+        <table class="table table-sm table-striped">
+          <tbody>
+            {% for label, value in section.rows %}
+              <tr><th scope="row" class="text-break">{{ label }}</th><td class="text-break" style="white-space: pre-wrap">{{ value }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if section.technical %}</details>{% endif %}
+    {% endfor %}
+  </div>
+</div>

@@ -1,3 +1,4 @@
+from .interface_display import interface_display_name, validate_interface_names
 from .host_mapping import cluster_filter
 import ipaddress
 from .network_scopes import scope_key,object_id as scope_object_id
@@ -108,7 +109,7 @@ def _interface_match(
         for interface in existing_interfaces
         if (
             interface.name.casefold()
-            == nic.name.casefold()
+            in (nic.name.casefold(), interface_display_name(vm, nic).casefold())
         )
     ]
 
@@ -117,7 +118,7 @@ def _interface_match(
             f'NIC adoption candidate exists '
             f'without sync identity: '
             f'vm={vm.original_name!r} '
-            f'nic={nic.name!r}'
+            f'nic={interface_display_name(vm, nic)!r}'
         )
 
     return None
@@ -147,8 +148,8 @@ def _desired_interface_changes(
 
     changes = {}
 
-    if existing.name != nic.name:
-        changes['name'] = nic.name
+    if existing.name != interface_display_name(vm, nic):
+        changes['name'] = interface_display_name(vm, nic)
 
     data = existing.serialize()
 
@@ -367,11 +368,15 @@ def apply_vm_networks(
                 )
             )
 
+            validate_interface_names(
+                vm, existing_interfaces, _interface_match, VMNetworkApplyError,
+            )
+
             nic_names = {}
 
             for nic in vm.interfaces:
                 nic_names.setdefault(
-                    nic.name.casefold(),
+                    interface_display_name(vm, nic).casefold(),
                     [],
                 ).append(nic)
 
@@ -442,7 +447,7 @@ def apply_vm_networks(
                     ).append(
                         (
                             vm.original_name,
-                            nic.name,
+                            interface_display_name(vm, nic),
                         )
                     )
 
@@ -512,7 +517,7 @@ def apply_vm_networks(
                             f'Existing primary MAC '
                             f'conflicts on '
                             f'{vm.original_name}:'
-                            f'{nic.name}'
+                            f'{interface_display_name(vm, nic)}'
                         )
 
                 ip_contexts = []
@@ -534,7 +539,7 @@ def apply_vm_networks(
                     ).append(
                         (
                             vm.original_name,
-                            nic.name,
+                            interface_display_name(vm, nic),
                         )
                     )
 
@@ -738,7 +743,7 @@ def apply_vm_networks(
 
             print(
                 f'  {action} INTERFACE '
-                f'name={nic.name} '
+                f'name={interface_display_name(vm, nic)} '
                 f'bridge={nic.bridge or "-"} '
                 f'vlan='
                 f'{nic.vlan_id if nic.vlan_id is not None else "-"}'
@@ -863,6 +868,7 @@ def apply_vm_networks(
     skipped = 0
 
     for context in contexts:
+        vm = context['source_vm']
         netbox_vm = context['netbox_vm']
         applied_ips = {}
 
@@ -880,7 +886,7 @@ def apply_vm_networks(
                         virtual_machine=(
                             netbox_vm.id
                         ),
-                        name=nic.name,
+                        name=interface_display_name(vm, nic),
                         enabled=True,
                         custom_fields=(
                             nic_context[
@@ -896,7 +902,7 @@ def apply_vm_networks(
                     f'CREATE INTERFACE '
                     f'id={interface.id} '
                     f'vm={netbox_vm.name!r} '
-                    f'name={nic.name}'
+                    f'name={interface_display_name(vm, nic)}'
                 )
 
             elif nic_context[
@@ -913,7 +919,7 @@ def apply_vm_networks(
                 print(
                     f'UPDATE INTERFACE '
                     f'id={interface.id} '
-                    f'name={nic.name}'
+                    f'name={interface_display_name(vm, nic)}'
                 )
             else:
                 skipped += 1

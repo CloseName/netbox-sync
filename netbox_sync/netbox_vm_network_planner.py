@@ -1,3 +1,6 @@
+from .interface_display import interface_display_name, validate_interface_names
+from .netbox_vm_network_apply import _interface_match
+from .netbox_vm_interface_metadata import find_nic_sync_identity_matches
 import ipaddress
 
 from .netbox_vm_metadata import find_vm_sync_identity_matches
@@ -390,19 +393,19 @@ def plan_vm_networks(
             )
         )
 
-        interface_names = {}
-
-        for interface in existing_interfaces:
-            interface_names.setdefault(
-                interface.name.casefold(),
-                [],
-            ).append(interface)
+        try:
+            validate_interface_names(discovered_vm, existing_interfaces,
+                                     _interface_match, ValueError)
+        except (ValueError, RuntimeError) as exc:
+            counters['interface_conflict'] += 1
+            print(f'      CONFLICT INTERFACE {exc}')
+            continue
 
         discovered_names = {}
 
         for nic in discovered_vm.interfaces:
             discovered_names.setdefault(
-                nic.name.casefold(),
+                interface_display_name(discovered_vm, nic).casefold(),
                 [],
             ).append(nic)
 
@@ -440,9 +443,8 @@ def plan_vm_networks(
             key=lambda item: item.name,
         ):
             existing_matches = (
-                interface_names.get(
-                    nic.name.casefold(),
-                    [],
+                find_nic_sync_identity_matches(
+                    existing_interfaces, discovered_vm, nic,
                 )
             )
 
@@ -455,7 +457,7 @@ def plan_vm_networks(
 
                 print(
                     f'      CONFLICT INTERFACE '
-                    f'name={nic.name!r} '
+                    f'name={interface_display_name(discovered_vm, nic)!r} '
                     f'matches={len(existing_matches)}'
                 )
 
@@ -473,7 +475,7 @@ def plan_vm_networks(
                 print(
                     f'      MATCH INTERFACE '
                     f'id={existing_interface.id} '
-                    f'name={nic.name}'
+                    f'name={interface_display_name(discovered_vm, nic)}'
                 )
             else:
                 counters[
@@ -482,7 +484,7 @@ def plan_vm_networks(
 
                 print(
                     f'      CREATE INTERFACE '
-                    f'name={nic.name}'
+                    f'name={interface_display_name(discovered_vm, nic)}'
                 )
 
             print(

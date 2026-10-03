@@ -140,6 +140,8 @@ def test_large_esxi_plan_uses_each_remote_selection_once_and_rechecks_next_plan(
     for index in range(276):
         vm = deepcopy(template)
         vm.external_id = str(UUID(int=index+1))
+        vm.esxi_instance_uuid = vm.external_id
+        vm.esxi_bios_uuid = str(UUID(int=index+1000))
         vm.vmid = vm.external_id
         vm.source_id = 'esxi:' + vm.external_id
         vm.provider_object_id = 'vm-' + str(index+1)

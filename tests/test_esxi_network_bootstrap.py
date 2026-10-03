@@ -148,7 +148,7 @@ def test_source_config_creates_network_and_second_run_is_idempotent(fake_netbox)
     mac = fake_netbox.dcim.mac_addresses.all()[0]
     ip = fake_netbox.ipam.ip_addresses.all()[0]
     assert interface.virtual_machine == records[0].id
-    assert interface.name == 'Network adapter 1'
+    assert interface.name == 'VM Network'
     assert interface.custom_fields['sync_identities'][0]['kind'] == 'vm-nic'
     assert mac.assigned_object_id == interface.id
     assert interface.primary_mac_address == mac.id
