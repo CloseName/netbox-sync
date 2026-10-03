@@ -38,6 +38,21 @@ def query(value,session_factory=requests.Session):
         configure_session(session)
         def get(kind,tail):
             return fetch(session,value['url']+'/api/'+ENDPOINTS[kind]+'/'+tail,value['read_token'])
+        if action == 'pfsense-list':
+            offset = payload.get('offset', 0)
+            if type(offset) is not int or not 0 <= offset <= 10000:
+                raise ProbeError('RESPONSE_INVALID')
+            page = fetch(session, value['url'] + '/api/virtualization/virtual-machines/?' +
+                         urlencode(dict(name__ic='pfsense', limit=50, offset=offset, ordering='id', exclude='config_context')), value['read_token'])
+            result = []
+            for row in page['results']:
+                if 'pfsense' not in row['name'].casefold():
+                    raise ProbeError('RESPONSE_INVALID')
+                result.append(dict(id=row['id'], name=row['name'], cluster=(row.get('cluster') or {}).get('name', ''),
+                    site=(row.get('site') or {}).get('name', ''),
+                    address=((row.get('primary_ip4') or {}).get('address') or '').split('/')[0],
+                    url=value['url'] + '/virtualization/virtual-machines/' + str(row['id']) + '/'))
+            return dict(items=result, count=page['count'])
         if action=='validate-scopes':
             from .network_scopes import rules,NetworkScopeError
             if set(payload)!={'action','rules'}:raise ProbeError('RESPONSE_INVALID')

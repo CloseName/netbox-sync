@@ -41,6 +41,9 @@ class BootstrapControl:
     def __call__(self, payload):
         if payload == {'action':'health'}:return {'status':'ok'}
         action = payload.get('action')
+        if action == 'pfsense':
+            from .pfsense_control import handle
+            return handle(self.store, self.lock_path, payload)
         if action == 'namespace-check' and set(payload)=={'action','source_instance'}:
             from .retirement_worker import handle
             from uuid import uuid4

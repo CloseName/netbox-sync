@@ -10,6 +10,7 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY pyproject.toml README.md LICENSE.txt requirements-migrations.txt alembic.ini ./
 COPY netbox_sync ./netbox_sync
+COPY deploy/pfsense /app/deploy/pfsense
 COPY migrations ./migrations
 RUN pip install --no-cache-dir '.[web]' -r requirements-migrations.txt \
     && useradd --uid 10001 --create-home netbox-sync

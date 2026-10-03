@@ -48,7 +48,7 @@ def test_all_declared_business_routes_have_explicit_permissions():
     for template, methods in app.openapi()['paths'].items():
         if template in public:continue
         import re
-        path=re.sub(r'\{[^}]+\}', 'source-1', template)
+        path=re.sub(r'\{[^}]+\}', 'source-1', template.replace('{vm_id}', '1'))
         for method in methods:
             assert permission(method.upper(),path)!='unmapped.deny',(method,path)
 

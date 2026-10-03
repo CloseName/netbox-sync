@@ -464,6 +464,11 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         request.state.run_id = str(run_id)
         return SyncRunDTO.from_record(run_service.get_run(run_id))
 
+    @router.get('/pfsense')
+    def pfsense_list(offset: int = Query(default=0, ge=0, le=10000)):
+        from .catalog import call
+        return call(settings.bootstrap_socket, {'action':'pfsense-list', 'offset':offset})
+
     @router.get('/sources', response_model=SourceListDTO)
     def sources():
         return SourceListDTO(sources=[SourceDTO.from_view(view) for view in source_service.list_sources()])
@@ -958,6 +963,8 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         from .bootstrap import BootstrapClient, routes
         bootstrap_client = BootstrapClient(settings.bootstrap_socket)
         app.include_router(routes(bootstrap_client))
+    from .pfsense import routes as pfsense_routes
+    app.include_router(pfsense_routes(settings))
     app.include_router(router)
     if settings.web_dist:
         root = Path(settings.web_dist)

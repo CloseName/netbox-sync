@@ -1,3 +1,5 @@
+import {SourceNavigation} from './ui/SourceNavigation';
+import {PfSensePage} from './pages/PfSensePage';
 import {DirectoryUsersPage} from './pages/DirectoryUsersPage';
 import {SessionControls,Permission} from './AuthGate';
 import {AuthenticationSettings} from './pages/AuthenticationSettings';
@@ -46,7 +48,7 @@ export function App() {
   const navToggle = useRef<HTMLButtonElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const crumbs = breadcrumbs(location.pathname);
-  const sourceDetail = /^\/sources\/(?!add(?:\/|$))[^/]+/.test(
+  const sourceDetail = /^\/sources\/(?!(?:add|pfsense)(?:\/|$))[^/]+/.test(
     location.pathname,
   );
   useEffect(() => {
@@ -86,7 +88,7 @@ export function App() {
           }}
         >
           <p className="nav-section">{tr("Operations")}{" "}</p>
-          {navigation.filter(item=>item.to!=='/diagnostics').map((item) => (
+          {navigation.filter(item=>item.to!=='/diagnostics').map((item) => (item.to==='/sources'?<SourceNavigation key={item.to}/>:
             <NavLink key={item.to} to={item.to} end={item.to === "/"}>
               <NavIcon path={item.to} />
               {item.to==='/runs'?(language==='ru'?'История запусков':'Run history'):tr(item.label)}
@@ -113,6 +115,7 @@ export function App() {
           <Routes>
             <Route path="/" element={<OverviewWorkspace/>} />
             <Route path="/sources" element={<SourcesListPage />} />
+            <Route path="/sources/pfsense" element={<PfSensePage/>} />
             <Route path="/sources/add" element={<Permission permission="source.register"><AddSourcePage /></Permission>} />
             <Route
               path="/sources/:sourceInstance/*"

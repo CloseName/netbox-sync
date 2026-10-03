@@ -201,6 +201,7 @@ services:
     volumes:
       - ${NETBOX_SYNC_CA_DIR:-./deploy/example-secrets/ca}:/run/netbox-sync-ca:ro
       - netbox-sync-bootstrap-socket:/run/netbox-sync-bootstrap
+      - netbox-sync-auth-socket:/run/netbox-sync-auth:ro
       - netbox-sync-retirement-socket:/run/netbox-sync-retirement
       - ${NETBOX_SYNC_APPLY_LOCK_DIR:-/run/netbox-sync}:/run/netbox-sync-lock
       - ${NETBOX_SYNC_NETBOX_SECRET_DIR:-./deploy/example-secrets/netbox}:/var/lib/netbox-sync/netbox
