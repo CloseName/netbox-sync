@@ -143,8 +143,9 @@ code {
 
 .catalog-lookup > label { display:block; }
 
-.source-nav-toggle {display:flex;align-items:center;gap:.75rem;width:100%;background:transparent;border:0;text-align:left;padding:1rem;color:inherit;}
-.source-nav-toggle svg {width:1.25rem;height:1.25rem;}
+.sidebar .source-nav-toggle {display:flex;align-items:center;justify-content:flex-start;gap:11px;width:100%;margin:0 0 4px;background:transparent;border:0;border-radius:var(--radius);text-align:left;padding:10px 12px;color:var(--nav-text);}
+.sidebar .source-nav-toggle:hover {background:var(--nav-hover);}
+.sidebar .source-nav-toggle svg {width:19px;height:19px;flex:0 0 auto;}
 #source-subnavigation {padding-left:1.5rem;}
 .pfsense-connect {max-width:40rem;width:90vw;}
 .pfsense-connect label {display:block;margin:.8rem 0;}

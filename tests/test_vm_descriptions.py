@@ -39,15 +39,22 @@ def test_description_discovery_plan_apply_replan(provider,value,fake_netbox):
         assert rows
         assert rows[0].get('comments')==value
         if value is None: assert 'comments' not in rows[0]
+        short = ' '.join((value or '').split())
+        if len(short) > 200: short = short[:199] + '…'
+        assert rows[0].get('description') == (short if value is not None else None)
         execute()
         read=lambda:next(row for row in fake_netbox.virtualization.virtual_machines.all() if row.name==vm.original_name)
         stored=read()
+        assert (stored.serialize().get('description') or '') == short
         assert stored.serialize().get('comments')==(value if value is not None else '')
         assert not [row for row in build_runtime_plan(fake_netbox,hosts,config).items if row.action.value in ('CREATE','UPDATE')]
         vm.description='Changed\nFull text'
         assert any(dict(row.after).get('comments')==vm.description for row in build_runtime_plan(fake_netbox,hosts,config).items)
         execute(); assert read().comments==vm.description
+        assert read().description=='Changed Full text'
         vm.description=None
         assert not any('comments' in dict(row.after) for row in build_runtime_plan(fake_netbox,hosts,config).items if row.action.value=='UPDATE')
         execute(); assert read().comments=='Changed\nFull text'
+        assert read().description=='Changed Full text'
         vm.description='';execute();assert read().comments==''
+        assert read().description==''

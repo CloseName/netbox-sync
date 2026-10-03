@@ -16,6 +16,12 @@ test('source categories and pfSense setup keep credentials out of repeated colle
  await expect(page.getByRole('link',{name:'ESXi (1)',exact:true})).toBeVisible();
  await expect(page.getByRole('link',{name:'Proxmox (1)',exact:true})).toBeVisible();
  await expect(page.getByRole('link',{name:'pfSense (1)',exact:true})).toBeVisible();
+ const selected=page.locator('.sidebar [aria-current="page"]');
+ await expect(selected).toHaveCount(1);
+ await expect(selected).toHaveText('pfSense (1)');
+ const sourceIcon=await page.locator('.source-nav-toggle svg').boundingBox();
+ const overviewIcon=await page.getByRole('link',{name:'Overview',exact:true}).locator('svg').boundingBox();
+ expect(sourceIcon!.x).toBe(overviewIcon!.x);
  await page.getByRole('button',{name:'Connection',exact:true}).click();
  await page.getByLabel('Administrator (LDAP or local)',{exact:true}).fill('admin@example.test');
  await page.getByLabel('Password',{exact:true}).fill('not-a-real-password');
@@ -29,4 +35,12 @@ test('source categories and pfSense setup keep credentials out of repeated colle
  await page.getByRole('button',{name:'Close',exact:true}).click();
  await page.getByRole('link',{name:'Proxmox (1)',exact:true}).click();
  await expect(page).toHaveURL(/provider=proxmox/);
+ await expect(selected).toHaveCount(1);
+ await expect(selected).toHaveText('Proxmox (1)');
+ await page.getByRole('link',{name:'ESXi (1)',exact:true}).click();
+ await expect(selected).toHaveCount(1);
+ await expect(selected).toHaveText('ESXi (1)');
+ await page.getByRole('link',{name:'Overview',exact:true}).click();
+ await expect(selected).toHaveCount(1);
+ await expect(selected).toHaveText('Overview');
 });

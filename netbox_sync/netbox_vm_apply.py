@@ -227,6 +227,17 @@ def _managed_metadata(
     return desired, changed
 
 
+def _description_fields(discovered_vm):
+    """Keep full provider notes and a short native NetBox description."""
+    if discovered_vm.description is None:
+        return {}
+    comments = discovered_vm.description.strip()
+    description = ' '.join(comments.split())
+    if len(description) > 200:
+        description = description[:199] + '…'
+    return {'description': description, 'comments': comments}
+
+
 def build_vm_create_fields(
         discovered_vm,
         cluster,
@@ -247,7 +258,7 @@ def build_vm_create_fields(
         'disk': _desired_disk(discovered_vm),
         'start_on_boot': _desired_start_on_boot(discovered_vm),
         'custom_fields': desired_custom_fields,
-        **({'comments': discovered_vm.description.strip()} if discovered_vm.description is not None else {}),
+        **_description_fields(discovered_vm),
     }
 
 
@@ -260,11 +271,9 @@ def _vm_changes(
 ):
     data = existing_vm.serialize()
     changes = {}
-    if discovered_vm.description is not None:
-        # Match the API's persisted value; preserve whitespace inside the text.
-        comments = discovered_vm.description.strip()
-        if (data.get('comments') or '') != comments:
-            changes['comments'] = comments
+    for field, value in _description_fields(discovered_vm).items():
+        if (data.get(field) or '') != value:
+            changes[field] = value
 
     if data.get('name') != (
         netbox_vm_name(discovered_vm)
