@@ -105,7 +105,8 @@ def snapshot_record(inventory, preview, previous=None, now=None):
     if preview['collected_at']!=value['collected_at'] or preview['version']!=value['version']:
         raise ValueError('Core snapshot and inventory disagree')
     value.update(schema='netbox-sync.pfsense.inventory.snapshot.v1',vm_id=preview['vm_id'],
-                 interface_bindings=[dict(id=r['match']['id'],mac=r['runtime']['mac']) for r in preview['interfaces']])
+                 interface_bindings=[dict(id=r['match']['id'],mac=r['runtime']['mac']) for r in preview['interfaces']],
+                 interface_labels={r['configuration']['id']: r['configuration']['name'] for r in preview['interfaces']})
     if previous==value:return value
     stamp=datetime.fromisoformat(value['collected_at'].replace('Z','+00:00'))
     now=now or datetime.now(timezone.utc)
@@ -136,8 +137,27 @@ def panel(value):
                         if not values:return 'Нет'
                         if values==['']:return 'Да'
                     return ', '.join(values) or '—'
-                tables.append(dict(title=TITLES.get(table,table),columns=[COLUMNS.get(k,k) for k in columns],
-                    rows=[[cell(r,k) for k in columns] for r in rows[:100]],count=len(rows),truncated=len(rows)>100))
+                groups = [(TITLES.get(table,table), rows)]
+                grouped = name == 'firewall' and table == 'rules'
+                if grouped:
+                    labels = value.get('interface_labels', {})
+                    buckets = {}
+                    for row in rows:
+                        ids = tuple(sorted(set(token.strip() for item in row['interface']
+                                               for token in item.split(',') if token.strip())))
+                        floating = bool(row['floating']) and row['floating'] != ['no']
+                        key = (floating, ids)
+                        buckets.setdefault(key, []).append(row)
+                    groups = []
+                    for (floating, ids), entries in buckets.items():
+                        names = ', '.join(str(labels.get(i) or i.upper()) for i in ids)
+                        title = ('Floating — ' + (names or 'Все интерфейсы')) if floating else (names or 'Интерфейс не указан')
+                        groups.append((title, entries))
+                    columns = [k for k in columns if k != 'interface']
+                for title, entries in groups:
+                    tables.append(dict(title=title,columns=[COLUMNS.get(k,k) for k in columns],
+                        rows=[[cell(r,k) for k in columns] for r in entries[:100]],
+                        count=len(entries),truncated=len(entries)>100,grouped=grouped))
             details.append(dict(name=LABELS[name],tables=tables))
         routes=[dict(name='IPv4' if key=='routes4' else 'IPv6',state=STATE[v['collection']],
                      text=v['text'][:65536],truncated=len(v['text'])>65536) for key,v in clean['runtime'].items()]

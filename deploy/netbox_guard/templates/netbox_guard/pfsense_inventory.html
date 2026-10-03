@@ -13,7 +13,8 @@
     {% for component in inventory.details %}
     <details class="mb-3"><summary>{{ component.name }}</summary>
       {% for table in component.tables %}
-      <h3 class="h5 mt-3">{{ table.title }} ({{ table.count }})</h3>
+      {% if table.grouped %}<details class="mt-3"><summary>{{ table.title }} ({{ table.count }})</summary>
+      {% else %}<h3 class="h5 mt-3">{{ table.title }} ({{ table.count }})</h3>{% endif %}
       {% if table.rows %}
       <div class="table-responsive"><table class="table table-sm table-striped">
         <thead><tr>{% for heading in table.columns %}<th scope="col" class="text-nowrap">{{ heading }}</th>{% endfor %}</tr></thead>
@@ -21,6 +22,8 @@
       </table></div>
       {% else %}<p class="text-muted">Записей нет.</p>{% endif %}
       {% if table.truncated %}<p>Показаны первые 100 записей. Полный список сохранён в JSON-поле снимка.</p>{% endif %}
+      {% if table.grouped %}</details>{% endif %}
+      {% empty %}<p class="text-muted">Записей нет.</p>
       {% endfor %}
     </details>
     {% endfor %}

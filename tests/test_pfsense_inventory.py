@@ -86,3 +86,22 @@ def test_template_escapes_configuration_text():
     template=(ROOT/'deploy/netbox_guard/templates/netbox_guard/pfsense_inventory.html').read_text(encoding='utf-8')
     result=Engine().from_string(template).render(Context({'inventory':m.panel(m.snapshot_record(value,preview,now=NOW))},use_l10n=False))
     assert '<script>' not in result and '&lt;script&gt;' in result
+
+
+def test_firewall_groups_preserve_rules_and_remove_interface_column():
+    value, preview = fixture()
+    rows = []
+    for index, (interfaces, floating) in enumerate([(['wan'], []), (['lan'], []), (['wan'], []), (['wan,lan'], ['yes']), (['wan,lan'], [])], 1):
+        row = {k: [] for k in m.SCHEMA['firewall']['rules']}
+        row.update(order=index, interface=interfaces, floating=floating)
+        rows.append(row)
+    value['components']['firewall']['tables']['rules'] = rows
+    record = m.snapshot_record(value, preview, now=NOW)
+    record['interface_labels'] = {'wan': 'WAN', 'lan': 'INTERLAN'}
+    tables = m.panel(record)['details'][0]['tables']
+    assert [t['title'] for t in tables] == ['WAN', 'INTERLAN', 'Floating — INTERLAN, WAN', 'INTERLAN, WAN']
+    assert [row[0] for row in tables[0]['rows']] == [1, 3]
+    assert sum(t['count'] for t in tables) == 5
+    assert all('Интерфейс' not in t['columns'] and t['grouped'] for t in tables)
+    del record['interface_labels']
+    assert m.panel(record)['details'][0]['tables'][1]['title'] == 'LAN'
