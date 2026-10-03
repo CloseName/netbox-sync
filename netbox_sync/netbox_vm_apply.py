@@ -247,7 +247,7 @@ def build_vm_create_fields(
         'disk': _desired_disk(discovered_vm),
         'start_on_boot': _desired_start_on_boot(discovered_vm),
         'custom_fields': desired_custom_fields,
-        **({'comments': discovered_vm.description} if discovered_vm.description is not None else {}),
+        **({'comments': discovered_vm.description.strip()} if discovered_vm.description is not None else {}),
     }
 
 
@@ -260,8 +260,11 @@ def _vm_changes(
 ):
     data = existing_vm.serialize()
     changes = {}
-    if discovered_vm.description is not None and (data.get('comments') or '') != discovered_vm.description:
-        changes['comments'] = discovered_vm.description
+    if discovered_vm.description is not None:
+        # Match the API's persisted value; preserve whitespace inside the text.
+        comments = discovered_vm.description.strip()
+        if (data.get('comments') or '') != comments:
+            changes['comments'] = comments
 
     if data.get('name') != (
         netbox_vm_name(discovered_vm)
