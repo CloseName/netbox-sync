@@ -16,8 +16,8 @@
       <h3 class="h5 mt-3">{{ table.title }} ({{ table.count }})</h3>
       {% if table.rows %}
       <div class="table-responsive"><table class="table table-sm table-striped">
-        <thead><tr>{% for heading in table.columns %}<th scope="col">{{ heading }}</th>{% endfor %}</tr></thead>
-        <tbody>{% for row in table.rows %}<tr>{% for cell in row %}<td class="text-break">{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+        <thead><tr>{% for heading in table.columns %}<th scope="col" class="text-nowrap">{{ heading }}</th>{% endfor %}</tr></thead>
+        <tbody>{% for row in table.rows %}<tr>{% for cell in row %}<td class="text-nowrap">{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody>
       </table></div>
       {% else %}<p class="text-muted">Записей нет.</p>{% endif %}
       {% if table.truncated %}<p>Показаны первые 100 записей. Полный список сохранён в JSON-поле снимка.</p>{% endif %}
