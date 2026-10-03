@@ -36,3 +36,32 @@ virtual interface's reported media.
 configuration restoration; custom files are not necessarily included in a
 standard pfSense configuration backup. Rollback: restore the previous forced
 `/usr/bin/id` key entry. This collector changes no network configuration.
+
+## Stage 2: operator preview
+
+`netbox_sync/pfsense_preview.py` parses the snapshot using only Python's standard
+library. `netbox_preview(path, vm_id)` runs in NetBox's Django shell and reads the
+explicit VM and its primary interface MAC addresses inside a read-only database
+transaction. It performs no SSH, token lookup, NetBox writes, or service restarts.
+This is an operator preview, not yet a web UI feature or a scheduled integration.
+
+Matching uses MAC only within the selected VM. Duplicate MACs on either side,
+missing interfaces or missing MACs are explicit blocking issues. Names and IPs
+are never identity fallbacks. Additional WAN addresses remain separate; link-local
+IPv6 is retained as an observation and excluded from IPAM candidates. Candidates
+are observations only, not an approved IPAM write plan: VRF, ownership, freshness,
+and existing assignments still need checking before any future apply operation.
+The snapshot does not authenticate VM identity by itself. The operator selects
+the SSH target with a verified host key and explicitly selects the NetBox VM.
+The reader rejects malformed snapshots and non-contiguous netmasks.
+
+Example inside `manage.py shell` after copying script and snapshot to /tmp:
+
+```python
+import runpy
+preview = runpy.run_path('/tmp/pfsense_preview.py')
+preview['netbox_preview']('/tmp/pfsense-snapshot.json', 2609)
+```
+
+A successful match does not create or rename interfaces or assign IP addresses.
+Use the actual fresh SSH output file, not a terminal copy with wrapped JSON lines.
