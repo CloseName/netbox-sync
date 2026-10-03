@@ -4,14 +4,14 @@ import {usePermission} from '../AuthGate';
 import {useLanguage} from '../ui/language';
 const errors:Record<string,string>={USER_CONFLICT:'Учётная запись netbox-sync уже существует и не принадлежит этому подключению. Требуется проверка.',SOURCE_APPLY_ACTIVE:'Сейчас выполняется синхронизация. Повторите после её завершения.',POLICY_CONFLICT:'Правила доступа изменились. Повторите подключение.',AUTH_DENIED:'Недостаточно прав для этой операции.',AUTH_REQUIRED:'Войдите в Sync повторно.',TLS_FAILED:'Не удалось проверить сертификат pfSense.',UNSUPPORTED_VERSION:'Автоматическая подготовка пока поддерживает pfSense CE 2.7.2.',SSH_DISABLED:'На pfSense выключен SSH. Включите его и повторите подключение.',VM_IDENTITY_MISMATCH:'MAC-адреса pfSense не совпадают с выбранной VM.',GUI_COMMAND_FAILED:'Не удалось выполнить подготовку. Проверьте вход и права Diagnostics: Command.',GUI_ACCESS_DENIED:'Вход или доступ к Diagnostics: Command запрещён.',NETBOX_IMPORT_FAILED:'Сбор выполнен, но NetBox не принял снимок. Проверьте версию Guard и права записи.',OUTCOME_UNKNOWN:'Результат не подтверждён. Проверьте состояние перед повторным подключением.',ENDPOINT_CHANGED:'Для этой VM сохранён другой адрес. Автоматическая замена подключения запрещена.',CONNECTION_FAILED:'Подключение не завершено. Проверьте адрес, учётные данные и доступность SSH.',CONNECT_REQUIRED:'Сначала завершите подключение с административной учётной записью.',SSH_HOST_KEY_CHANGED:'SSH-ключ устройства изменился. Подключение остановлено.'};
 export function PfSenseConnect({vm}:{vm:PfSenseVM}){
- const [enabled,setEnabled]=useState(true),[interval,setInterval]=useState(60);
+ const [enabled,setEnabled]=useState(true),[interval,setIntervalMinutes]=useState(60);
  const [success,setSuccess]=useState('');
  const dialog=useRef<HTMLDialogElement>(null),[language]=useLanguage(),t=(en:string,ru:string)=>language==='ru'?ru:en;
  const allowed=usePermission('source.register'),canCollect=usePermission('source.apply');
  const [address,setAddress]=useState(vm.address),[port,setPort]=useState(443),[verify,setVerify]=useState(true),[username,setUsername]=useState(''),[password,setPassword]=useState('');
  const [busy,setBusy]=useState(false),[status,setStatus]=useState<Record<string,unknown>|null>(null),[failure,setFailure]=useState('');
- useEffect(()=>{void refresh();const timer=setInterval(()=>{if(!dialog.current?.open)void refresh();},30000);return ()=>clearInterval(timer);},[vm.id]);
- async function refresh(){try{const r=await fetch(`/api/v1/pfsense/${vm.id}/status`,{cache:'no-store'});if(!r.ok)throw Error();const value=await r.json();setStatus(value);setEnabled(value.sync_enabled??true);setInterval(value.interval_minutes??60);setFailure(value.error?(errors[value.error]||String(value.error)):'');if(value.address){setAddress(value.address);setPort(value.port);setVerify(value.verify_tls);}}catch{setFailure(t('Status unavailable','Состояние недоступно'));}}
+ useEffect(()=>{void refresh();const timer=window.setInterval(()=>{if(!dialog.current?.open)void refresh();},30000);return ()=>window.clearInterval(timer);},[vm.id]);
+ async function refresh(){try{const r=await fetch(`/api/v1/pfsense/${vm.id}/status`,{cache:'no-store'});if(!r.ok)throw Error();const value=await r.json();setStatus(value);setEnabled(value.sync_enabled??true);setIntervalMinutes(value.interval_minutes??60);setFailure(value.error?(errors[value.error]||String(value.error)):'');if(value.address){setAddress(value.address);setPort(value.port);setVerify(value.verify_tls);}}catch{setFailure(t('Status unavailable','Состояние недоступно'));}}
  async function run(operation:'connect'|'collect'|'schedule'){
  setBusy(true);setFailure('');setSuccess('');
  const credential=password;setPassword('');
@@ -34,7 +34,7 @@ export function PfSenseConnect({vm}:{vm:PfSenseVM}){
  <label>{t('Administrator (LDAP or local)','Администратор (LDAP или локальный)')}<input required autoComplete="username" value={username} onChange={e=>setUsername(e.target.value)} disabled={busy}/></label>
  <label>{t('Password','Пароль')}<input type="password" required autoComplete="off" value={password} onChange={e=>setPassword(e.target.value)} disabled={busy}/></label>
  <label><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)} disabled={busy}/>{t('Collect automatically','Собирать автоматически')}</label>
- {enabled&&<label>{t('Interval (minutes)','Интервал (минуты)')}<input type="number" min="5" max="10080" value={interval} onChange={e=>setInterval(Number(e.target.value))} disabled={busy}/></label>}
+ {enabled&&<label>{t('Interval (minutes)','Интервал (минуты)')}<input type="number" min="5" max="10080" value={interval} onChange={e=>setIntervalMinutes(Number(e.target.value))} disabled={busy}/></label>}
  <button className="primary" disabled={busy}>{busy?t('Working…','Выполняется…'):t('Set up and collect','Подключить и собрать')}</button></form>}
  {canCollect&&!!status?.ssh_port&&<button disabled={busy} onClick={()=>void run('schedule')}>{t('Save schedule','Сохранить расписание')}</button>}
  {canCollect&&<button disabled={busy||!status?.ssh_port} onClick={()=>void run('collect')}>{t('Collect now','Собрать сейчас')}</button>}
