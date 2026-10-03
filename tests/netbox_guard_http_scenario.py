@@ -120,6 +120,81 @@ try:
     result=post('objects/create/',vm_body);assert result.status_code==201,(result.status_code,result.text)
     assert result.json()['comments']==''
     vm=result.json()['id']
+    # Validate the exact serializer boundary without save/POST. Read-only PostgreSQL
+    # also fails any accidental write in serializer validation.
+    from netbox_guard.management.commands.diagnose_sync_vm_creates import diagnose
+    candidate={'format':'sync-guard-candidates-v1','source_instance':source,
+               'run_id':str(uuid4()),'candidates':[
+        {'external_id':'compatible','data':{'name':'candidate-new','cluster':cluster,
+         'status':'active','vcpus':4,'memory':8192,'disk':20480,'start_on_boot':'off',
+         'comments':'private description'}},
+        {'external_id':'duplicate','data':dict(vm_body['data'])},
+        {'external_id':'invalid-choice','data':{'name':'candidate-invalid','cluster':cluster,'start_on_boot':'private-invalid'}},
+        {'external_id':'temporary-ref','data':{'name':'candidate-temp','cluster':-1}}]}
+    before_counts=(VirtualMachine.objects.count(),CreationReceipt.objects.count(),CreationClaim.objects.count())
+    before_posts=verbs.count('POST')
+    diagnosis=diagnose(candidate,user)
+    assert [row['code'] for row in diagnosis['candidates']]==['SERIALIZER_VALID','OBJECT_INVALID','OBJECT_INVALID','UNRESOLVED_PLAN_REFERENCE'],diagnosis
+    assert diagnosis['candidates'][2]['validation_issues']==[{'field':'start_on_boot','code':'invalid'}]
+    assert 'private' not in json.dumps(diagnosis,default=str)
+    assert (VirtualMachine.objects.count(),CreationReceipt.objects.count(),CreationClaim.objects.count())==before_counts
+    assert verbs.count('POST')==before_posts
+    from io import BytesIO, StringIO
+    from types import SimpleNamespace
+    from django.core.management import call_command
+    output=StringIO()
+    with patch('sys.stdin',SimpleNamespace(buffer=BytesIO(json.dumps(candidate).encode()))):
+        call_command('diagnose_sync_vm_creates',actor_id=user.pk,stdout=output)
+    assert json.loads(output.getvalue())['candidates']==diagnosis['candidates']
+    # Enforce READ ONLY even if a future/custom serializer attempted a write.
+    from django.db import DatabaseError
+    with patch('netbox_guard.management.commands.diagnose_sync_vm_creates.validated_create_values',
+               side_effect=lambda *args: VirtualMachine.objects.create(name='must-not-write',cluster_id=cluster)):
+        try: diagnose(candidate,user)
+        except DatabaseError: pass
+        else: raise AssertionError('Diagnostic transaction permitted a write')
+    assert not VirtualMachine.objects.filter(name='must-not-write',cluster_id=cluster).exists()
+    # Exercise documented exporter CLI with a least-privilege SELECT role in
+    # disposable PostgreSQL, not runner state or owner privileges.
+    import os, subprocess, hashlib
+    export_schema='guard_candidate_'+uuid4().hex
+    export_role='guard_candidate_'+uuid4().hex
+    plan={'source_instance':source,'items':[dict(object_kind='virtualization.virtual_machines',
+        action='CREATE',external_id=c['external_id'],after=list(c['data'].items())) for c in candidate['candidates']]}
+    plan['digest']=hashlib.sha256(json.dumps(plan,sort_keys=True,separators=(',',':'),ensure_ascii=True).encode()).hexdigest()
+    from psycopg import sql
+    with connection.cursor() as cursor:
+        cursor.execute(sql.SQL('CREATE SCHEMA {}').format(sql.Identifier(export_schema)))
+        cursor.execute(sql.SQL('CREATE ROLE {} LOGIN').format(sql.Identifier(export_role)))
+        cursor.execute(sql.SQL('CREATE TABLE {}.sync_runs (run_id uuid,source_instance text,plan_digest text)').format(sql.Identifier(export_schema)))
+        cursor.execute(sql.SQL('CREATE TABLE {}.source_operations (source_instance text,operation_kind text,result jsonb)').format(sql.Identifier(export_schema)))
+        cursor.execute(sql.SQL('INSERT INTO {}.sync_runs VALUES (%s,%s,%s)').format(sql.Identifier(export_schema)),[candidate['run_id'],source,plan['digest']])
+        cursor.execute(sql.SQL("INSERT INTO {}.source_operations VALUES (%s,'PLAN',%s)").format(sql.Identifier(export_schema)),[source,json.dumps(plan)])
+        cursor.execute(sql.SQL('GRANT USAGE ON SCHEMA {} TO {}').format(sql.Identifier(export_schema),sql.Identifier(export_role)))
+        cursor.execute(sql.SQL('GRANT SELECT ON ALL TABLES IN SCHEMA {} TO {}').format(sql.Identifier(export_schema),sql.Identifier(export_role)))
+    try:
+        export_env=dict(os.environ,NETBOX_SYNC_REGISTRY_SCHEMA=export_schema,
+            NETBOX_SYNC_LIFECYCLE_WRITER_DSN=f'host=127.0.0.1 dbname=netbox_sync_guard_test user={export_role}')
+        exported=subprocess.run(['/opt/netbox/venv/bin/python','/app/netbox_sync/guard_candidates.py',
+            '--source',source,'--run-id',candidate['run_id']],env=export_env,capture_output=True,timeout=20)
+        assert exported.returncode==0,exported.stderr.decode()
+        envelope=json.loads(exported.stdout)
+        assert envelope['candidates']==candidate['candidates']
+        assert diagnose(envelope,user)['candidates']==diagnosis['candidates']
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(export_schema)))
+            cursor.execute(sql.SQL('DROP ROLE {}').format(sql.Identifier(export_role)))
+    # Same invalid payload really returns 409 (once, local fixture only).
+    invalid={**vm_body,'nonce':str(uuid4()),'data':candidate['candidates'][2]['data']}
+    try: client.create(invalid['nonce'],source,'vm',cluster,invalid['data'])
+    except transport.GuardTransportError as exc:
+        assert exc.code=='OBJECT_INVALID' and not exc.uncertain
+        assert exc.guard_detail==dict(code='OBJECT_INVALID',http_status=409,resource='vm',nonce=invalid['nonce'])
+    else: raise AssertionError('Invalid VM accepted')
+    assert not CreationReceipt.objects.filter(nonce=invalid['nonce']).exists()
+    assert Device.objects.filter(pk=host).exists() and CreationReceipt.objects.filter(nonce=device_body['nonce']).exists()
+    print('Guard VM diagnosis: actual serializer; invalid choice / duplicate refused; no diagnostic writes or POST; prior device retained')
     def child(resource,data):
         value={'nonce':str(uuid4()),'source_instance':source,'resource':resource,'cluster_id':cluster,'data':data}
         response=post('objects/create/',value)

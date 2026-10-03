@@ -62,6 +62,11 @@ class GuardView(APIView):
 
     def handle_exception(self, exc):
         if isinstance(exc, DependencyGuardBlocked):
+            context = getattr(self, 'creation_context', None)
+            if context is not None:
+                logging.getLogger(__name__).warning(json.dumps(dict(event='GUARD_CREATE_REFUSED',
+                    code=str(exc), http_status=403 if str(exc)=='PERMISSION_DENIED' else 409,
+                    **context, validation_issues=getattr(exc, 'validation_issues', [])), sort_keys=True))
             return Response({'code':str(exc)},status=403 if str(exc) in {'PERMISSION_DENIED','TOKEN_WRITE_REQUIRED','GUARD_AUDIT_PERMISSION_REQUIRED','GUARD_SOURCE_SCOPE_DENIED','GUARD_OBJECT_VIEW_DENIED'} else 409)
         # A serializer can fail AFTER the transaction committed. Do not label
         # arbitrary ValueError/TypeError as a definitive pre-write refusal.
@@ -90,11 +95,55 @@ class Capabilities(GuardView):
                          'token_write_enabled':bool(getattr(request.auth,'write_enabled',False))})
 
 
+def validated_create_values(kind, data, request):
+    """Same serializer and model-field boundary for CREATE and read-only diagnosis."""
+    from importlib import import_module
+    module, name = SERIALIZERS[kind]
+    serializer_class = getattr(import_module(module), name)
+    serializer=serializer_class(data=data,context={'request':request})
+    if any(key not in serializer.fields or serializer.fields[key].read_only for key in data):
+        raise DependencyGuardBlocked('OBJECT_FIELDS_UNSUPPORTED')
+    if not serializer.is_valid():
+        exc = DependencyGuardBlocked('OBJECT_INVALID')
+        # Codes only. DRF messages may embed names, descriptions or supplied values.
+        codes = {'required','null','blank','invalid','invalid_choice','max_length',
+                 'min_length','max_value','min_value','unique','does_not_exist',
+                 'incorrect_type','max_digits','max_decimal_places','max_whole_digits'}
+        issues = []
+        def collect(value, field):
+            if len(issues) >= 32: return
+            if isinstance(value, dict):
+                for nested in value.values(): collect(nested, field)
+            elif isinstance(value, (tuple,list)):
+                for nested in value: collect(nested, field)
+            else:
+                code = getattr(value, 'code', 'invalid')
+                issue = {'field':field, 'code':code if code in codes else 'invalid'}
+                if issue not in issues: issues.append(issue)
+        for key, errors in serializer.errors.items():
+            collect(errors, key if key in serializer.fields else 'non_field_errors')
+        exc.validation_issues = issues
+        raise exc
+    # Runtime Sync CREATEs use fixed scalar/FK/custom-field payloads. Never
+    # expand this into nested arbitrary model creation via a generic endpoint.
+    values=dict(serializer.validated_data)
+    for key in tuple(values):
+        try: field=apps.get_model(MODELS[kind])._meta.get_field(key)
+        except Exception: raise DependencyGuardBlocked('OBJECT_FIELDS_UNSUPPORTED') from None
+        if field.many_to_many:
+            if values.pop(key): raise DependencyGuardBlocked('OBJECT_FIELDS_UNSUPPORTED')
+    return values
+
+
 class CreateOwned(GuardView):
     def post(self,request):
         from importlib import import_module
         body=_body(request,('nonce','source_instance','resource','cluster_id','data'))
         kind=body['resource']
+        self.creation_context = {}
+        if isinstance(kind, str) and kind in SERIALIZERS: self.creation_context['resource'] = kind
+        try: self.creation_context['nonce'] = str(UUID(str(body['nonce'])))
+        except (ValueError, TypeError): pass
         if not isinstance(kind,str) or kind not in SERIALIZERS or not isinstance(body['data'],dict):
             raise DependencyGuardBlocked('REQUEST_INVALID')
         if any(key in body['data'] for key in ('id','pk','tags')):
@@ -112,18 +161,7 @@ class CreateOwned(GuardView):
             obj=create_owned(request.user,nonce,body['source_instance'],kind,{},
                              cluster=body['cluster_id'],request_digest=wire_digest)
             return Response(serializer_class(obj,context={'request':request}).data,status=201)
-        serializer=serializer_class(data=body['data'],context={'request':request})
-        if any(key not in serializer.fields or serializer.fields[key].read_only for key in body['data']):
-            raise DependencyGuardBlocked('OBJECT_FIELDS_UNSUPPORTED')
-        if not serializer.is_valid(): raise DependencyGuardBlocked('OBJECT_INVALID')
-        # Runtime Sync CREATEs use fixed scalar/FK/custom-field payloads. Never
-        # expand this into nested arbitrary model creation via a generic endpoint.
-        values=dict(serializer.validated_data)
-        for key in tuple(values):
-            try: field=apps.get_model(MODELS[kind])._meta.get_field(key)
-            except Exception: raise DependencyGuardBlocked('OBJECT_FIELDS_UNSUPPORTED') from None
-            if field.many_to_many:
-                if values.pop(key): raise DependencyGuardBlocked('OBJECT_FIELDS_UNSUPPORTED')
+        values=validated_create_values(kind, body['data'], request)
         obj=create_owned(request.user,body['nonce'],body['source_instance'],kind,values,cluster=body['cluster_id'],request_digest=wire_digest)
         return Response(serializer_class(obj,context={'request':request}).data,status=201)
 

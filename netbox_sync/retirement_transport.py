@@ -12,11 +12,34 @@ import requests
 
 MAX_RESPONSE = 2 * 1024 * 1024
 
+GUARD_CODES = {'RETIREMENT_DEADLINE','DEPENDENCY_DATABASE_REFUSAL','SOURCE_OBJECTS_REMAIN','OWNED_OBJECT_OUTSIDE_PLACEMENT','OBJECT_MISSING','SOURCE_NAMESPACE_CLOSED','SOURCE_NAMESPACE_BUSY','PERMISSION_DENIED', 'GUARD_INSTANCE_CHANGED', 'REQUEST_CONFLICT',
+                             'OBJECT_INVALID', 'OBJECT_FIELDS_UNSUPPORTED', 'REQUEST_INVALID',
+                             'REQUEST_TOO_LARGE', 'OWNERSHIP_CONFLICT', 'PLACEMENT_CHANGED',
+                             'CREATION_OWNERSHIP_UNPROVEN', 'DEPENDENCIES_CHANGED',
+                             'OBJECT_GENERATION_CHANGED', 'EXTERNAL_FIELD_UPDATE',
+                             'PROTECTED_DEPENDENCY', 'REQUEST_NOT_FOUND',
+                             'AUTHENTICATION_REQUIRED', 'REQUEST_REFUSED','TOKEN_WRITE_REQUIRED','GUARD_AUDIT_PERMISSION_REQUIRED','GUARD_SOURCE_SCOPE_DENIED','GUARD_OBJECT_VIEW_DENIED'} | {'INVALID_SOURCE', 'INVALID_CREATE', 'UNSAVED_REFERENCE', 'INVALID_CREATE_VALUE',
+    'CREATED_OBJECT_NO_LONGER_OWNED', 'PLACEMENT_UNPROVEN'}
+RESOURCES = frozenset(('cluster','device','vm','interface','vminterface','disk','ip','mac'))
+
+def safe_guard_detail(value):
+    if not isinstance(value, dict): return {}
+    result = {}
+    if isinstance(value.get('code'), str) and value['code'] in GUARD_CODES: result['code'] = value['code']
+    if type(value.get('http_status')) is int and 100 <= value['http_status'] <= 599: result['http_status'] = value['http_status']
+    if isinstance(value.get('resource'), str) and value['resource'] in RESOURCES: result['resource'] = value['resource']
+    for key in ('nonce', 'run_id'):
+        try: result[key] = str(UUID(str(value[key])))
+        except (KeyError, ValueError, TypeError, AttributeError): pass
+    return result
+
+
 
 class GuardTransportError(RuntimeError):
-    def __init__(self, code, *, uncertain=False):
+    def __init__(self, code, *, uncertain=False, detail=None):
         self.code = code
         self.uncertain = uncertain
+        self.guard_detail = safe_guard_detail(detail)
         super().__init__(code)
 
 
@@ -43,31 +66,27 @@ class GuardClient:
             with self.session.request(method, self.url + path, json=body,
                                       headers=self.headers, timeout=(3, 45 if path.startswith('sources/') else 15),
                                       allow_redirects=False, stream=True) as response:
+                context = dict(http_status=response.status_code, resource=(body or {}).get('resource'),
+                               nonce=(body or {}).get('nonce'))
                 raw = bytearray()
                 for part in response.iter_content(8192):
                     raw.extend(part)
                     if len(raw) > MAX_RESPONSE:
-                        raise GuardTransportError('GUARD_RESPONSE_INVALID', uncertain=mutation)
+                        raise GuardTransportError('GUARD_RESPONSE_INVALID', uncertain=mutation, detail=context)
                 try:
                     value = json.loads(raw)
                 except (ValueError, UnicodeError):
-                    raise GuardTransportError('GUARD_RESPONSE_INVALID', uncertain=mutation) from None
+                    raise GuardTransportError('GUARD_RESPONSE_INVALID', uncertain=mutation, detail=context) from None
                 if not isinstance(value, dict):
-                    raise GuardTransportError('GUARD_RESPONSE_INVALID', uncertain=mutation)
+                    raise GuardTransportError('GUARD_RESPONSE_INVALID', uncertain=mutation, detail=context)
                 if response.status_code not in (200, 201):
                     # Remote text is never a diagnostic. Only known, bounded protocol
                     # refusals prove no mutation; 5xx/redirects/connection loss do not.
                     code = value.get('code')
-                    known = {'RETIREMENT_DEADLINE','DEPENDENCY_DATABASE_REFUSAL','SOURCE_OBJECTS_REMAIN','OWNED_OBJECT_OUTSIDE_PLACEMENT','OBJECT_MISSING','SOURCE_NAMESPACE_CLOSED','SOURCE_NAMESPACE_BUSY','PERMISSION_DENIED', 'GUARD_INSTANCE_CHANGED', 'REQUEST_CONFLICT',
-                             'OBJECT_INVALID', 'OBJECT_FIELDS_UNSUPPORTED', 'REQUEST_INVALID',
-                             'REQUEST_TOO_LARGE', 'OWNERSHIP_CONFLICT', 'PLACEMENT_CHANGED',
-                             'CREATION_OWNERSHIP_UNPROVEN', 'DEPENDENCIES_CHANGED',
-                             'OBJECT_GENERATION_CHANGED', 'EXTERNAL_FIELD_UPDATE',
-                             'PROTECTED_DEPENDENCY', 'REQUEST_NOT_FOUND',
-                             'AUTHENTICATION_REQUIRED', 'REQUEST_REFUSED','TOKEN_WRITE_REQUIRED','GUARD_AUDIT_PERMISSION_REQUIRED','GUARD_SOURCE_SCOPE_DENIED','GUARD_OBJECT_VIEW_DENIED'}
-                    refused = response.status_code in (400, 401, 403, 404, 409) and code in known
+
+                    refused = response.status_code in (400, 401, 403, 404, 409) and isinstance(code, str) and code in GUARD_CODES
                     raise GuardTransportError(code if refused else 'GUARD_RESPONSE_UNCONFIRMED',
-                                              uncertain=mutation and not refused)
+                                              uncertain=mutation and not refused, detail=dict(context, code=code))
                 return value
         except requests.exceptions.SSLError:
             raise GuardTransportError('GUARD_TLS_FAILED', uncertain=mutation) from None

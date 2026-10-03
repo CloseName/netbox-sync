@@ -41,6 +41,9 @@ def diagnostic(exc, stage):
     name = type(exc).__name__
     value = {'code':code,'stage':ERRORS[code]['stage'],'frames':frames[-8:],
              'exception_class': name if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,100}', name) else 'Exception'}
+    from .retirement_transport import safe_guard_detail
+    guard = safe_guard_detail(getattr(exc, 'guard_detail', None))
+    if guard: value['guard'] = guard
     http = _http(exc)
     if http: value['http'] = http
     return value
@@ -85,6 +88,9 @@ def safe_diagnostic(value, code):
     for key in ('duration_ms','returncode'):
         if type(value.get(key)) is int and -255 <= value[key] <= 86400000: result[key]=value[key]
     if value.get('termination') in ('timeout','exit','invalid_response','response_too_large'): result['termination']=value['termination']
+    from .retirement_transport import safe_guard_detail
+    guard = safe_guard_detail(value.get('guard'))
+    if guard: result['guard'] = guard
     http=value.get('http')
     if isinstance(http,dict) and type(http.get('status')) is int and 100<=http['status']<=599:
         from .scheduled_failure import _ENDPOINTS

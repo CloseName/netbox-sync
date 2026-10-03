@@ -440,3 +440,44 @@ def test_uncertain_outcome_arriving_after_prepare_blocks_apply_under_lock(monkey
     assert recorder.finished[0]['error_code']=='PLAN_BLOCKED'
     with pytest.raises(ApplyWorkerError, match='CONFIRMATION_INVALID'):
         supervisor.apply('pve-infra-test', token)
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason='real Unix peer credentials require Linux')
+def test_guard_refusal_event_correlates_real_socket_response_and_worker_log(tmp_path):
+    import logging
+    import multiprocessing
+    import os
+    import time
+    from netbox_sync.apply_worker import serve, _failure
+    from netbox_sync.retirement_transport import GuardTransportError
+    from netbox_sync.api.apply_client import ApplyWorkerClient, ApplyRequestError
+    path=str(tmp_path/'guard.sock'); logfile=tmp_path/'worker.log'
+    run='11111111-1111-4111-8111-111111111111'
+    nonce='22222222-2222-4222-8222-222222222222'
+    class Supervisor:
+        def apply(self,*args,**kwargs):
+            exc=GuardTransportError('OBJECT_INVALID',detail=dict(code='OBJECT_INVALID',
+                http_status=409,resource='vm',nonce=nonce,run_id=run))
+            error=ApplyWorkerError('OUTCOME_UNCERTAIN',diagnostic=_failure(exc,'apply'))
+            error.run_id=run
+            raise error
+    def child():
+        logger=logging.getLogger('netbox_sync.apply_worker')
+        logger.handlers=[logging.FileHandler(logfile)]
+        logger.propagate=False
+        serve(path,Supervisor(),os.getuid())
+    process=multiprocessing.get_context('fork').Process(target=child)
+    process.start()
+    try:
+        deadline=time.monotonic()+5
+        while not os.path.exists(path) and time.monotonic()<deadline: time.sleep(.01)
+        with pytest.raises(ApplyRequestError) as caught:
+            ApplyWorkerClient(path).apply('esxi-fixture','a'*64)
+        assert caught.value.code=='OUTCOME_UNCERTAIN'
+        events=[json.loads(line) for line in logfile.read_text().splitlines()]
+        detail=next(row for row in events if 'guard' in row)
+        assert detail['event_id']==caught.value.event_id
+        assert detail['run_id']==run
+        assert detail['guard']==dict(code='OBJECT_INVALID',http_status=409,resource='vm',nonce=nonce,run_id=run)
+    finally:
+        process.terminate();process.join(5)

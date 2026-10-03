@@ -155,3 +155,7 @@ values, foreign identities and missing exact creation claims remain rejected.
 Independent package installation is still owned by the NetBox operator; see the
 conditional upgrade instructions in the Sync upgrade runbook. No automatic NetBox
 container/image management was added to this repository.
+
+See [VM CREATE refusal diagnosis](../../docs/guard-vm-create-diagnostics-20261003.md) for
+closed Guard diagnostics and read-only validation of saved plan candidates. This
+does not authorize replay or resolve a partially applied run.

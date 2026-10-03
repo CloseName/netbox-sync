@@ -56,3 +56,30 @@ def test_optional_mode_does_not_claim_old_objects_and_requires_durable_run():
         for_run(api,config,instance=str(uuid4()),run_id=None,url='',token='')
     with pytest.raises(GuardTransportError,match='GUARD_PLACEMENT_REQUIRED'):
         for_run(api,config,instance=str(uuid4()),run_id=uuid4(),url='',token='')
+
+
+def test_partial_run_keeps_successful_host_and_failed_vm_nonce_without_retry():
+    from netbox_sync.worker_failure import diagnostic, safe_diagnostic
+    from netbox_sync.apply_worker import _failure, ApplyWorkerError
+    from netbox_sync.scheduled_failure import record, ExecutionEvidence
+    class Refused(Client):
+        def create(self,*args):
+            if args[2]=='vm':
+                self.calls.append(args)
+                raise GuardTransportError('OBJECT_INVALID',detail=dict(code='OBJECT_INVALID',http_status=409))
+            return super().create(*args)
+    client=Refused();run=uuid4()
+    facade=GuardedCreation(pynetbox.api('https://netbox.invalid'),client,'esxi-fixture',31,run)
+    assert facade.dcim.devices.create(name='host',cluster=31).id==19
+    with pytest.raises(GuardTransportError) as caught:
+        facade.virtualization.virtual_machines.create(name='private',cluster=31)
+    exc=caught.value
+    failure=ApplyWorkerError('OUTCOME_UNCERTAIN',diagnostic=_failure(exc,'apply'))
+    detail=safe_diagnostic(failure.diagnostic,failure.code)
+    assert detail['guard']['run_id']==str(run)
+    assert detail['guard']['nonce']==str(client.calls[-1][0])
+    assert detail['guard']['code']=='OBJECT_INVALID'
+    assert len(client.calls)==2 and client.calls[0][2]=='device'
+    scheduled=record(exc,ExecutionEvidence(stage='apply',writes_possible=True),run)
+    assert scheduled['write_outcome']=='MAY_HAVE_WRITTEN'
+    assert scheduled['guard']==detail['guard']

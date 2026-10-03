@@ -141,3 +141,42 @@ def test_namespace_state_malformed_response_never_admits(monkeypatch,value):
     monkeypatch.setattr(guard,'capabilities',lambda:{'source_namespace_state':True})
     with pytest.raises(GuardTransportError,match='GUARD_RESPONSE_INVALID'):
         guard.namespace_state('source-test')
+
+
+@pytest.mark.parametrize('code', ['OBJECT_INVALID', 'OBJECT_FIELDS_UNSUPPORTED', 'OWNERSHIP_CONFLICT',
+    'PLACEMENT_UNPROVEN','CREATED_OBJECT_NO_LONGER_OWNED','INVALID_CREATE_VALUE'])
+def test_creation_refusal_keeps_closed_context_through_worker_boundary(code):
+    from netbox_sync.worker_failure import diagnostic, safe_diagnostic
+    nonce=uuid4()
+    guard, session=client(Response(409, {'code':code, 'errors':{'secret':'never forwarded'}}))
+    with pytest.raises(GuardTransportError) as caught:
+        guard.create(nonce, 'source-test', 'vm', 31, {'name':'private VM','comments':'private description'})
+    assert not caught.value.uncertain  # This request only, not the enclosing apply.
+    detail=safe_diagnostic(diagnostic(caught.value,'planning'),'OUTCOME_UNCERTAIN')
+    assert detail['code']=='OUTCOME_UNCERTAIN'
+    assert detail['guard']==dict(code=code,http_status=409,resource='vm',nonce=str(nonce))
+    assert len(session.calls)==1
+    assert 'private' not in json.dumps(detail) and 'secret' not in json.dumps(detail)
+
+
+@pytest.mark.parametrize('remote', ['secret', ['OBJECT_INVALID'], {'code':'OBJECT_INVALID'}])
+def test_unknown_or_malformed_code_keeps_http_status_without_remote_content(remote):
+    guard,_=client(Response(409,{'code':remote}))
+    with pytest.raises(GuardTransportError) as caught:
+        guard.create(uuid4(),'source-test','vm',31,{'name':'private'})
+    assert caught.value.uncertain
+    assert caught.value.guard_detail['http_status']==409
+    assert 'code' not in caught.value.guard_detail
+
+
+@pytest.mark.parametrize('raw',[b'private proxy HTML',b'[]',b'x'*(MAX_RESPONSE+1)])
+def test_invalid_http_body_retains_status_but_no_response_content(raw):
+    response=Response(409,{})
+    response.body=raw
+    guard,_=client(response)
+    with pytest.raises(GuardTransportError) as caught:
+        guard.create(uuid4(),'source-test','vm',31,{})
+    assert caught.value.uncertain
+    assert caught.value.guard_detail['http_status']==409
+    assert caught.value.guard_detail['resource']=='vm'
+    assert 'private' not in json.dumps(caught.value.guard_detail)

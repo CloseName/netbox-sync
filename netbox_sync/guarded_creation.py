@@ -30,7 +30,11 @@ class CreationEndpoint:
         # payload at the same run/endpoint position conflicts with its receipt.
         self.sequence += 1
         nonce = uuid5(self.run, f'{self.source}:{self.path}:{self.sequence}')
-        result = self.client.create(nonce, self.source, RESOURCES[self.path], self.cluster, fields)
+        try:
+            result = self.client.create(nonce, self.source, RESOURCES[self.path], self.cluster, fields)
+        except GuardTransportError as exc:
+            exc.guard_detail.update(nonce=str(nonce), resource=RESOURCES[self.path], run_id=str(self.run))
+            raise
         return self.endpoint.return_obj(result, self.endpoint.api, self.endpoint)
 
 

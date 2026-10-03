@@ -91,6 +91,9 @@ def record(exc, evidence, run_id):
         if current is None or id(current) in seen:
             break
         seen.add(id(current))
+        from .retirement_transport import safe_guard_detail
+        guard = safe_guard_detail(getattr(current, 'guard_detail', None))
+        if guard: value['guard'] = guard
         details = _http(current)
         if details is not None:
             value['http'] = details
