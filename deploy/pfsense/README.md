@@ -121,3 +121,30 @@ scheduled collection. Neither VM names nor the string 'pfSense' identify an
 appliance. Use the selected source-scoped VM identity and verify MAC correspondence;
 duplicate/changed identities require review. Existing arbitrary VM names must be
 preserved. Do not infer authorization to configure all discovered VMs automatically.
+
+## Stage 5: reviewed manual Global IPv4 import
+
+`pfsense_ipam_apply.py` is intentionally scoped to VM 2609 and the six reviewed
+interface IDs/MACs and seven exact IPv4/prefix bindings in TEST_BINDINGS. Any changed
+binding requires a new review. It calls the neighboring `pfsense_ipam_preview.py`
+for conflict classification; copy both scripts into the same protected directory.
+Inside NetBox's shell, use `runpy.run_path(...)["import_test"](snapshot_path)` for
+preview, then pass `apply=True` for the operator-authorized import.
+
+New writes require a fresh snapshot (15 minutes, future tolerance 2 minutes).
+Apply uses one database transaction, locks the IP address table against concurrent
+writers (including when Global uniqueness is disabled), and locks the target VM,
+interfaces and MAC records. Lock wait timeout is five seconds. It validates all
+seven addresses before any writes and calls model full_clean before each create.
+Any error rolls back all creates. Exact existing assignments are no-ops; existing
+unassigned, foreign, duplicate or different-mask records stop the entire operation.
+No existing address is adopted, deleted, moved, or edited. IPv6, prefixes, VM primary
+addresses and interface names are untouched. Created records receive active status
+and a manual-observation description. No scheduler or continuing ownership/deletion
+policy is implied by this one-off import. The manual path has not been integrated
+with Sync's durable apply receipts; repeat execution verifies exact assignments.
+
+For deployment, pause the Sync timer and hold its shared apply lock around preview,
+apply and replay. Leave the timer stopped until the remaining manual tests finish.
+No Docker rebuild is required. Unit tests cover binding drift/freshness and planner
+conflicts; ORM transaction behavior must be verified on the actual NetBox server.
