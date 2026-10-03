@@ -54,12 +54,19 @@ def build_runtime_plan(nb_api, hosts, config):
         return review_plan
     planning_api = nb_api
     from .ip_observations import ObservationPrerequisiteError
+    from ..esxi_host_network import HostNetworkPrerequisiteError
     try:
         with measured_phase('netbox_simulation'):
             if config.source_type == 'proxmox':
                 apply_full_sync(planning_api, hosts, config.target, confirmed=True)
             else:
                 execute_esxi_runtime(planning_api, hosts, config, confirmed=True)
+    except HostNetworkPrerequisiteError:
+        from dataclasses import replace
+        return replace(review_plan, items=(*review_plan.items, SyncPlanItem(
+            object_kind='source', external_id=config.source_instance, name=config.name,
+            action=SyncAction.BLOCKED, reason_code='HOST_NETWORK_FIELD_REQUIRED',
+            reason='Prepare the ESXi host network field in NetBox settings before synchronization.')))
     except ObservationPrerequisiteError:
         from dataclasses import replace
         return replace(review_plan, items=(*review_plan.items, SyncPlanItem(

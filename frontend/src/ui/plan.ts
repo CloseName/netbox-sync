@@ -156,8 +156,9 @@ export function planReason(item:{reason_code:string;reason:string;action?:SyncAc
   MAC_OBSERVATION_ONLY:'Stored on NetBox interfaces for review; disputed MAC assignments are not synchronized.',
   NETWORK_SCOPE_REVIEW_REQUIRED:'Selected network scope changed or no longer exists. Review the source VRF mapping.',
   IP_OBSERVATION_ONLY:'Stored on NetBox interfaces for review; disputed IPAM assignments are not synchronized.',
+  HOST_NETWORK_FIELD_REQUIRED:'Prepare the ESXi host network field in NetBox settings before synchronization.',
   OBSERVATION_FIELD_REQUIRED:'Prepare the network observations field in NetBox settings before synchronization.',
-  ESXI_HOST_NETWORK_UNSUPPORTED:'ESXi host VMkernel/vSwitch networking is report-only; no host networking writes are supported.',
+  ESXI_HOST_NETWORK_UNSUPPORTED:'ESXi networking is report-only in a device snapshot; native host interfaces, cables and IP assignments are not created.',
   MANAGED_FIELD_UPDATE:'Update managed fields',
   EXECUTOR_CREATE_UNSUPPORTED:'No supported create operation was produced for this object.'
  };

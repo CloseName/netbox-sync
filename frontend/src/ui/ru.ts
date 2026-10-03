@@ -6,6 +6,7 @@ export const ru: Record<string,string> = {
   "Review inventory limitations": "Проверьте ограничения синхронизации",
   "The server has recorded this run as running. Waiting for its result; do not resubmit.": "Сервер зарегистрировал выполняющийся запуск. Ожидаем результат; не отправляйте запрос повторно.",
   "Stored on NetBox interfaces for review; disputed IPAM assignments are not synchronized.": "Сохраняется на интерфейсах NetBox для проверки; спорные назначения IPAM не синхронизируются.",
+  "Prepare the ESXi host network field in NetBox settings before synchronization.": "Подготовьте поле сети хоста ESXi в настройках NetBox перед синхронизацией.",
   "Prepare the network observations field in NetBox settings before synchronization.": "Подготовьте поле сетевых наблюдений в настройках NetBox перед синхронизацией.",
   "Inventory synchronized with address observations. Disputed IPAM assignments remain incomplete; review the NetBox interfaces.": "Инвентарь синхронизирован с наблюдениями адресов. Спорные назначения IPAM не выполнены; проверьте интерфейсы NetBox.",
   'Read-only discovery remains available for investigation. It does not resolve the unknown outcome or authorize synchronization.': 'Для проверки доступно чтение инвентаря. Оно не подтверждает результат прежней операции и не разрешает синхронизацию.',
@@ -83,7 +84,7 @@ export const ru: Record<string,string> = {
 
   "Settings": "Настройки",
   "Host networking": "Сеть хоста",
-  "ESXi host VMkernel/vSwitch networking is report-only; no host networking writes are supported.": "Сеть VMkernel/vSwitch хоста ESXi показывается только для сведения. Изменение сети хоста не поддерживается.",
+  "ESXi networking is report-only in a device snapshot; native host interfaces, cables and IP assignments are not created.": "Сеть ESXi отображается снимком в карточке устройства. Обычные интерфейсы, кабели и назначения IP не создаются.",
   "No supported create operation was produced for this object.": "Для этого объекта не сформирована поддерживаемая операция создания.",
   "Type the exact display name": "Введите точное название источника",
   "Enter the exact display name.": "Введите точное название источника.",

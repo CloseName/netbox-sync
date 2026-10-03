@@ -16,7 +16,9 @@ class Command(BaseCommand):
     @transaction.atomic
     def handle(self, *args, **options):
         get_template('netbox_guard/sync_details.html')
-        rows = list(CustomField.objects.select_for_update().filter(name__in=FIELD_LABELS))
+        get_template('netbox_guard/esxi_network.html')
+        names = [*FIELD_LABELS, 'esxi_host_network']
+        rows = list(CustomField.objects.select_for_update().filter(name__in=names))
         allowed = {'dcim.device', 'dcim.interface', 'virtualization.virtualmachine',
                    'virtualization.vminterface'}
         for field in rows:

@@ -194,7 +194,7 @@ def build_esxi_review(plan, config):
         if item.object_kind == 'host':
             items.append(ReviewItem('host_network', item.source_name, item.identity.external_id,
                 ReviewClassification.UNSUPPORTED, 'ESXI_HOST_NETWORK_UNSUPPORTED',
-                'ESXi host VMkernel/vSwitch networking is report-only; no host networking writes are supported.',
+                'ESXi networking is report-only in a device snapshot; native host interfaces, cables and IP assignments are not created.',
                 'none'))
     return DiscoveryReview(config.source_instance, config.source_type,
                            config.target.site_slug, config.target.cluster_name, tuple(items))

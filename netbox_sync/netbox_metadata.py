@@ -9,6 +9,7 @@ MANAGED_DEVICE_CUSTOM_FIELDS = (
     'cpu_threads',
     'memory_mb',
     'physical_disks',
+    'esxi_host_network',
 )
 
 from .source_identity import (
@@ -111,5 +112,9 @@ def build_device_custom_fields(
         'physical_disks':
             physical_disks,
     })
+
+    if host.source == 'esxi' and host.esxi_host_network is not None:
+        from copy import deepcopy
+        result['esxi_host_network'] = deepcopy(host.esxi_host_network)
 
     return result

@@ -128,12 +128,21 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False):
                 if item.classification == ObjectMigrationClassification.NEW
                 or (config.target.onboarding_mapping
                     and item.classification == ObjectMigrationClassification.MANAGED)}
+    network_host_ids = {item.external_id for item in plan.hosts
+                        if item.classification in (ObjectMigrationClassification.NEW,
+                                                   ObjectMigrationClassification.MANAGED)}
+    network_hosts = tuple(host for host in hosts if host.source_id in network_host_ids
+                          and host.esxi_host_network is not None)
+    from .esxi_host_network import require_host_network_field, apply_host_network_snapshots
+    if network_hosts:
+        require_host_network_field(nb_api)
     metadata_hosts = tuple(replace(host, interfaces=[], management_ip=None)
                            for host in hosts if host.source_id in host_ids)
 
     def stages(api):
         if metadata_hosts:
             apply_hosts(api, metadata_hosts, config.target, confirmed=True, host_networking=False)
+        apply_host_network_snapshots(api, network_hosts)
         apply_virtual_machines(api, filtered_hosts, config.target, confirmed=True)
         apply_vm_networks(api, filtered_hosts, config, confirmed=True)
 

@@ -26,3 +26,7 @@ test('structured reason takes priority over legacy mutation description',()=>{
  assert.match(planReason({reason,reason_code:'ESXI_HOST_NETWORK_UNSUPPORTED',action:'UNSUPPORTED'}),/report-only/);
  assert.equal(planReason({reason,reason_code:'GUARDED_EXECUTOR_ACTION',action:'CREATE'}),'Create managed object');
 });
+
+test('host network preparation has a specific operator instruction',()=>{
+ assert.match(planReason({reason:'generic',reason_code:'HOST_NETWORK_FIELD_REQUIRED',action:'BLOCKED'}),/Prepare the ESXi host network field/);
+});

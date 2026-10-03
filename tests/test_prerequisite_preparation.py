@@ -14,7 +14,7 @@ def row(name, index=1, **changes):return {**definition(name), 'id':index, 'statu
 
 
 def test_contract_all_models_and_status_constraints():
-    assert len(FIELDS)==17
+    assert len(FIELDS)==18
     rows=[row(name,i+1) for i,name in enumerate(FIELDS)]
     assert all(f['status']=='ready' for f in reconcile(rows))
     assert all(f['status']=='missing' for f in reconcile([]))
@@ -303,18 +303,23 @@ def test_conflict_evidence_reports_actual_models_and_type():
     assert 'dcim.device' in details['models']['expected']
 
 
-def test_completed_v1_upgrade_creates_only_network_observation_field(setup):
+@pytest.mark.parametrize('old_version,missing', [
+    (1, ['sync_network_observations', 'esxi_host_network']),
+    (2, ['esxi_host_network']),
+])
+def test_completed_upgrade_creates_only_missing_fields(setup, old_version, missing):
     store,remote,control=setup
-    remote.rows=[row(name,index+1) for index,name in enumerate(FIELDS) if name!='sync_network_observations']
+    remote.rows=[row(name,index+1) for index,name in enumerate(FIELDS) if name not in missing]
     old_rows=json.loads(json.dumps(remote.rows))
     value=store.read();value.update(completed=True,status='READY')
-    value['preparation']={'version':1,'status':'PREPARED','fields':reconcile(remote.rows)[:-1]}
+    value['preparation']={'version':old_version,'status':'PREPARED',
+                          'fields':[r for r in reconcile(remote.rows) if r['name'] not in missing]}
     store.write(value)
     before=store.read()
     payload=confirm(store,control)
     result=control.apply(payload)
-    assert result['completed'] is True and result['preparation']['version']==2
-    assert [c['name'] for c in remote.calls if c['action']=='create']==['sync_network_observations']
-    assert remote.rows[:-1]==old_rows
+    assert result['completed'] is True and result['preparation']['version']==3
+    assert [c['name'] for c in remote.calls if c['action']=='create']==missing
+    assert remote.rows[:len(old_rows)]==old_rows
     after=store.read()
     assert all(after[k]==before[k] for k in ('url','read_token','apply_token','completed'))

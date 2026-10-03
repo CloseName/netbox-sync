@@ -75,6 +75,7 @@ class DiscoveredHost:
     interfaces: list[DiscoveredHostInterface] = field(default_factory=list)
     virtual_machines: list['DiscoveredVirtualMachine'] = field(default_factory=list)
     containers: list['DiscoveredContainer'] = field(default_factory=list)
+    esxi_host_network: dict | None = None
 
 
 @dataclass

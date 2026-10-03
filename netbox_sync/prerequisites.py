@@ -3,7 +3,7 @@ import hashlib
 import json
 import re
 
-VERSION = 2
+VERSION = 3
 FIELDS = {
     'sync_identities': ('json', ('dcim.device','dcim.interface','virtualization.virtualmachine','virtualization.vminterface')),
     'sync_original_names': ('json', ('dcim.device','dcim.interface','virtualization.virtualmachine','virtualization.vminterface')),
@@ -19,9 +19,11 @@ FIELDS = {
     'source_bridge': ('text', ('virtualization.vminterface',)),
     'source_vlan_id': ('integer', ('virtualization.vminterface',)),
     'sync_network_observations': ('json', ('virtualization.vminterface',)),
+    'esxi_host_network': ('json', ('dcim.device',)),
 }
 
 LABELS = {
+    'esxi_host_network': ('ESXi host network', 'Сеть хоста ESXi'),
     'sync_network_observations': ('Network observations requiring review', 'Сетевые наблюдения, требующие проверки'),
     'sync_identities': ('Source identities', 'Идентификаторы источников'),
     'sync_original_names': ('Original source names', 'Исходные имена'),
@@ -41,6 +43,7 @@ LABELS = {
     'source_vlan_id': ('Source VLAN ID', 'VLAN ID источника'),
 }
 PURPOSES = {
+    'esxi_host_network': ('Observed ESXi adapters and standard switch topology; no network object writes.', 'Адаптеры и стандартные коммутаторы ESXi; без создания сетевых объектов.'),
     'sync_network_observations': ('Observed addresses and masks; does not imply IPAM assignment.', 'Обнаруженные адреса и маски; не подтверждают назначение в IPAM.'),
     'sync_identities': ('Stable, source-scoped ownership; never name adoption.', 'Стабильная принадлежность источнику; без присвоения по имени.'),
     'sync_original_names': ('Original names retained independently of display names.', 'Исходные имена отдельно от отображаемых.'),
