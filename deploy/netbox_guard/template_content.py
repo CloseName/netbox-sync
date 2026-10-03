@@ -40,4 +40,16 @@ class PfsenseNetworkDetails(PluginTemplateExtension):
         return self.render('netbox_guard/pfsense_network.html', extra_context={'network_panel': value})
 
 
-template_extensions = [SyncDetails, EsxiNetworkDetails, PfsenseNetworkDetails]
+class PfsenseInventoryDetails(PluginTemplateExtension):
+    models = ['virtualization.virtualmachine']
+
+    def full_width_page(self):
+        from .pfsense_inventory import panel
+        obj = self.context.get('object')
+        value = panel((getattr(obj, 'custom_field_data', {}) or {}).get('pfsense_inventory'))
+        if value is None:
+            return ''
+        return self.render('netbox_guard/pfsense_inventory.html', extra_context={'inventory': value})
+
+
+template_extensions = [SyncDetails, EsxiNetworkDetails, PfsenseNetworkDetails, PfsenseInventoryDetails]

@@ -1,0 +1,367 @@
+{
+  "firewall": {
+    "rules": [
+      "order",
+      "tracker",
+      "type",
+      "interface",
+      "floating",
+      "quick",
+      "direction",
+      "ipprotocol",
+      "protocol",
+      "disabled",
+      "log",
+      "descr",
+      "gateway",
+      "sched",
+      "source/any",
+      "source/not",
+      "source/network",
+      "source/address",
+      "source/port",
+      "destination/any",
+      "destination/not",
+      "destination/network",
+      "destination/address",
+      "destination/port"
+    ]
+  },
+  "nat": {
+    "mode": [
+      "order",
+      "mode"
+    ],
+    "port_forwards": [
+      "order",
+      "interface",
+      "ipprotocol",
+      "protocol",
+      "target",
+      "local-port",
+      "disabled",
+      "descr",
+      "associated-rule-id",
+      "natreflection",
+      "source/any",
+      "source/not",
+      "source/network",
+      "source/address",
+      "source/port",
+      "destination/any",
+      "destination/not",
+      "destination/network",
+      "destination/address",
+      "destination/port"
+    ],
+    "outbound": [
+      "order",
+      "interface",
+      "protocol",
+      "target",
+      "targetip",
+      "natport",
+      "staticnatport",
+      "nonat",
+      "disabled",
+      "descr",
+      "source/any",
+      "source/not",
+      "source/network",
+      "source/address",
+      "source/port",
+      "destination/any",
+      "destination/not",
+      "destination/network",
+      "destination/address",
+      "destination/port"
+    ],
+    "one_to_one": [
+      "order",
+      "interface",
+      "external",
+      "disabled",
+      "nobinat",
+      "descr",
+      "natreflection",
+      "source/any",
+      "source/not",
+      "source/network",
+      "source/address",
+      "source/port",
+      "destination/any",
+      "destination/not",
+      "destination/network",
+      "destination/address",
+      "destination/port"
+    ]
+  },
+  "aliases": {
+    "aliases": [
+      "order",
+      "name",
+      "type",
+      "descr",
+      "address",
+      "content_omitted"
+    ]
+  },
+  "schedules": {
+    "schedules": [
+      "order",
+      "name",
+      "descr"
+    ],
+    "ranges": [
+      "order",
+      "../name",
+      "month",
+      "day",
+      "position",
+      "hour",
+      "rangedescr"
+    ]
+  },
+  "routing": {
+    "defaults": [
+      "order",
+      "defaultgw4",
+      "defaultgw6"
+    ],
+    "gateways": [
+      "order",
+      "name",
+      "interface",
+      "gateway",
+      "ipprotocol",
+      "monitor",
+      "disabled",
+      "monitor_disable",
+      "descr"
+    ],
+    "groups": [
+      "order",
+      "name",
+      "item",
+      "trigger",
+      "descr"
+    ],
+    "static_routes": [
+      "order",
+      "network",
+      "gateway",
+      "disabled",
+      "descr"
+    ]
+  },
+  "openvpn": {
+    "servers": [
+      "order",
+      "vpnid",
+      "description",
+      "mode",
+      "protocol",
+      "dev_mode",
+      "interface",
+      "local_port",
+      "tunnel_network",
+      "tunnel_networkv6",
+      "local_network",
+      "local_networkv6",
+      "remote_network",
+      "remote_networkv6",
+      "disable",
+      "caref",
+      "certref"
+    ],
+    "clients": [
+      "order",
+      "vpnid",
+      "description",
+      "mode",
+      "protocol",
+      "dev_mode",
+      "interface",
+      "server_addr",
+      "server_port",
+      "tunnel_network",
+      "tunnel_networkv6",
+      "remote_network",
+      "remote_networkv6",
+      "disable",
+      "caref",
+      "certref"
+    ],
+    "client_overrides": [
+      "order",
+      "common_name",
+      "description",
+      "tunnel_network",
+      "tunnel_networkv6",
+      "local_network",
+      "remote_network",
+      "disable"
+    ]
+  },
+  "ipsec": {
+    "settings": [
+      "order",
+      "enable"
+    ],
+    "phase1": [
+      "order",
+      "ikeid",
+      "descr",
+      "disabled",
+      "interface",
+      "remote-gateway",
+      "iketype",
+      "mode",
+      "protocol",
+      "authentication_method",
+      "myid_type",
+      "peerid_type",
+      "certref",
+      "caref"
+    ],
+    "phase2": [
+      "order",
+      "ikeid",
+      "uniqid",
+      "descr",
+      "disabled",
+      "mode",
+      "protocol",
+      "localid/type",
+      "localid/address",
+      "localid/netbits",
+      "remoteid/type",
+      "remoteid/address",
+      "remoteid/netbits"
+    ]
+  },
+  "wireguard": {
+    "tunnels": [
+      "order",
+      "name",
+      "descr",
+      "enabled",
+      "listenport",
+      "addresses/item/address",
+      "addresses/item/mask"
+    ],
+    "peers": [
+      "order",
+      "descr",
+      "enabled",
+      "tun",
+      "endpoint",
+      "port",
+      "allowedips/item/address",
+      "allowedips/item/mask",
+      "persistentkeepalive"
+    ]
+  },
+  "haproxy": {
+    "settings": [
+      "order",
+      "enable"
+    ],
+    "frontends": [
+      "order",
+      "name",
+      "descr",
+      "status",
+      "type",
+      "secondary",
+      "primary_frontend",
+      "backend_serverpool",
+      "a_extaddr/item/extaddr",
+      "a_extaddr/item/extaddr_port",
+      "a_extaddr/item/extaddr_ssl"
+    ],
+    "backends": [
+      "order",
+      "name",
+      "mode",
+      "balance",
+      "check_type"
+    ],
+    "servers": [
+      "order",
+      "../../name",
+      "name",
+      "address",
+      "port",
+      "status",
+      "ssl"
+    ]
+  },
+  "dhcp": {
+    "ipv4": [
+      "order",
+      "enable",
+      "range/from",
+      "range/to",
+      "gateway",
+      "domain",
+      "dnsserver",
+      "interface"
+    ],
+    "ipv6": [
+      "order",
+      "enable",
+      "range/from",
+      "range/to",
+      "domain",
+      "dnsserver",
+      "interface"
+    ],
+    "static_ipv4": [
+      "order",
+      "mac",
+      "ipaddr",
+      "hostname",
+      "descr",
+      "interface"
+    ]
+  },
+  "dns_resolver": {
+    "settings": [
+      "order",
+      "enable",
+      "port",
+      "active_interface",
+      "outgoing_interface",
+      "forwarding"
+    ],
+    "hosts": [
+      "order",
+      "host",
+      "domain",
+      "ip",
+      "descr"
+    ],
+    "domains": [
+      "order",
+      "domain",
+      "ip",
+      "descr"
+    ]
+  },
+  "dns_forwarder": {
+    "settings": [
+      "order",
+      "enable",
+      "port",
+      "interface"
+    ],
+    "hosts": [
+      "order",
+      "host",
+      "domain",
+      "ip",
+      "descr"
+    ]
+  }
+}

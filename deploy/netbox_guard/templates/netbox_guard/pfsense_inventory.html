@@ -1,0 +1,39 @@
+<div class="card">
+  <h2 class="card-header">Firewall, VPN и сервисы pfSense</h2>
+  <div class="card-body">
+  {% if inventory.invalid %}
+    <p>Формат снимка не поддерживается.</p>
+  {% else %}
+    <p>Снимок от {{ inventory.collected_at }}. pfSense {{ inventory.version }}. Обновляется вручную.</p>
+    <p class="text-muted">Наличие настроек и процесса не подтверждает доступность сервиса или VPN-туннеля. Правила показаны из конфигурации; автоматически создаваемые правила и эффективная политика не собраны.</p>
+    <div class="table-responsive"><table class="table table-sm table-striped">
+      <thead><tr><th>Компонент</th><th>Наличие</th><th>Настройки</th><th>Чтение</th><th>Наблюдение процесса</th></tr></thead>
+      <tbody>{% for row in inventory.summary %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+    </table></div>
+    {% for component in inventory.details %}
+    <details class="mb-3"><summary>{{ component.name }}</summary>
+      {% for table in component.tables %}
+      <h3 class="h5 mt-3">{{ table.title }} ({{ table.count }})</h3>
+      {% if table.rows %}
+      <div class="table-responsive"><table class="table table-sm table-striped">
+        <thead><tr>{% for heading in table.columns %}<th scope="col">{{ heading }}</th>{% endfor %}</tr></thead>
+        <tbody>{% for row in table.rows %}<tr>{% for cell in row %}<td class="text-break">{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+      </table></div>
+      {% else %}<p class="text-muted">Записей нет.</p>{% endif %}
+      {% if table.truncated %}<p>Показаны первые 100 записей. Полный список сохранён в JSON-поле снимка.</p>{% endif %}
+      {% endfor %}
+    </details>
+    {% endfor %}
+    <details class="mb-3"><summary>Установленные пакеты pfSense — {{ inventory.package_state }}</summary>
+      <table class="table table-sm"><thead><tr><th>Пакет</th><th>Версия</th></tr></thead><tbody>
+      {% for package in inventory.packages %}<tr><td>{{ package.name }}</td><td>{{ package.version }}</td></tr>{% endfor %}
+      </tbody></table>
+    </details>
+    <details><summary>Фактические таблицы маршрутизации</summary>
+      {% for route in inventory.routes %}<h3 class="h5">{{ route.name }} — {{ route.state }}</h3><pre>{{ route.text }}</pre>
+      {% if route.truncated %}<p>Отображение сокращено; полный вывод сохранён в снимке.</p>{% endif %}{% endfor %}
+    </details>
+    <p class="text-muted mt-3">Секреты, содержимое URL aliases, пользовательские дополнительные директивы и выражения ACL HAProxy исключены. Состояние VPN-сессий и таблицы маршрутизации дополнительных FIB пока не собираются.</p>
+  {% endif %}
+  </div>
+</div>

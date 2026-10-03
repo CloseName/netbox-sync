@@ -148,3 +148,52 @@ For deployment, pause the Sync timer and hold its shared apply lock around previ
 apply and replay. Leave the timer stopped until the remaining manual tests finish.
 No Docker rebuild is required. Unit tests cover binding drift/freshness and planner
 conflicts; ORM transaction behavior must be verified on the actual NetBox server.
+
+## Stage 6: optional component inventory
+
+Install network-v1.php and inventory-v1.php together after running both PHP tests.
+The existing forced SSH command and key stay unchanged; the dispatcher now accepts
+exactly `netbox-sync-network-v1` and `netbox-sync-inventory-v1`. The original network
+schema remains compatible. No sudo, rc scripts, service control, pfctl mutation,
+VPN control sockets, generated configuration files or arbitrary command arguments
+are used. Fixed bounded commands collect ifconfig, default-FIB IPv4/IPv6 routes,
+pfSense package names/versions and process names (never process arguments).
+
+Inventory components are Firewall rules, NAT (forward/outbound/1:1), aliases,
+schedules, gateways/groups/static routes, OpenVPN, IPsec, WireGuard, HAProxy,
+DHCP, DNS Resolver and DNS Forwarder. Installation comes from the pkg database,
+not a leftover configuration node. Package lookup failure is unknown, not absent.
+Firewall and core services are built-in. An empty VPN section is not configured,
+not an error. Component extraction failures carry unknown configuration and an
+explicit error, while other sections continue. Process presence is a separate
+observation and never a health or tunnel-up claim. Arbitrary installed packages
+are listed with versions but do not receive guessed service-specific adapters.
+
+This first inventory adapter deliberately does not claim complete effective
+policy or all package settings. It excludes credential fields, certificate/key
+contents, URL alias contents, advanced/custom directives and HAProxy ACL expressions.
+It does not yet query VPN sessions, IPsec SAs, WireGuard handshakes, live firewall
+rules/states/counters, service health or extra FIBs. Tables preserve XML order and
+raw allowlisted values; an empty string in a presence flag differs from an absent
+field. Size/shape violations fail that section rather than silently truncating it.
+The whole snapshot is bounded to 8 MiB. Additional pfSense/package versions require
+validation on real targets before compatibility is asserted.
+
+`import_pfsense_inventory --vm ID --snapshot PATH [--apply]` validates the schema,
+freshness and core NIC-to-VM binding, and saves only `pfsense_inventory`. The network
+snapshot and IPAM assignments remain unchanged. A new NetBox template shows distinct
+presence, configuration, collection and process observations, then detailed tables,
+packages and routing output. Rendering limits are explicitly labeled; the stored
+bounded JSON retains all collected rows. Missing optional services remain visible.
+
+`activate-test-inventory.sh FULL_COMMIT` uses the same reviewed Compose deployment
+as stage 3. Install the collector on pfSense first. It builds on the current NetBox
+image, updates web and worker, holds the shared Sync apply lock, collects a fresh
+inventory and runs preview/apply/replay. It leaves the timer stopped and does not
+upgrade Sync. The test pfSense still needs no new SSH privileges or key changes.
+
+PHP fixture tests were executed locally using PHP 8.5; Python tests cover the cross-
+language empty fixture, statuses, failure isolation, schema rejection, freshness,
+row-order/render bounds and HTML escaping. The actual FreeBSD subprocesses and
+NetBox ORM import must be checked on the test server. PHP tests run again before
+collector installation on the target PHP version.

@@ -49,9 +49,19 @@ function ns_configuration(string $xml): array {
     }
 }
 
-function ns_ifconfig(): string {
+function ns_ifconfig(): string { return ns_command('ifconfig'); }
+
+function ns_command(string $name): string {
+    $commands = [
+        'ifconfig' => ['/sbin/ifconfig', '-a'],
+        'routes4' => ['/usr/bin/netstat', '-rn', '-f', 'inet'],
+        'routes6' => ['/usr/bin/netstat', '-rn', '-f', 'inet6'],
+        'packages' => ['/usr/local/sbin/pkg', 'query', '-a', '%n %v'],
+        'processes' => ['/bin/ps', '-axo', 'comm']
+    ];
+    if (!isset($commands[$name])) { throw new RuntimeException('unsupported command'); }
     // Fixed argv: no shell, no user-supplied commands, bounded output and runtime.
-    $process = proc_open(['/sbin/ifconfig', '-a'],
+    $process = proc_open($commands[$name],
         [0 => ['file', '/dev/null', 'r'], 1 => ['pipe', 'w'], 2 => ['file', '/dev/null', 'w']],
         $pipes, '/', ['PATH' => '/sbin:/bin:/usr/sbin:/usr/bin', 'LC_ALL' => 'C']);
     if (!is_resource($process)) { throw new RuntimeException('ifconfig unavailable'); }
@@ -86,6 +96,10 @@ function ns_ifconfig(): string {
 function ns_main(): int {
     // Do not honor SSH command text as code or pass it to a subprocess.
     $requested = getenv('SSH_ORIGINAL_COMMAND');
+    if ($requested === 'netbox-sync-inventory-v1') {
+        require_once __DIR__ . '/inventory-v1.php';
+        return nsi_main();
+    }
     if ($requested !== false && $requested !== 'netbox-sync-network-v1') {
         fwrite(STDERR, "Only netbox-sync-network-v1 is allowed.\n");
         return 64;

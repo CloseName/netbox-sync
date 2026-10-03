@@ -1,0 +1,135 @@
+{
+  "firewall": {
+    "presence": "built_in",
+    "collection": "ok",
+    "configuration": "not_configured",
+    "runtime": "not_collected",
+    "tables": {
+      "rules": []
+    }
+  },
+  "nat": {
+    "presence": "built_in",
+    "collection": "ok",
+    "configuration": "not_configured",
+    "runtime": "not_collected",
+    "tables": {
+      "mode": [],
+      "port_forwards": [],
+      "outbound": [],
+      "one_to_one": []
+    }
+  },
+  "aliases": {
+    "presence": "built_in",
+    "collection": "ok",
+    "configuration": "not_configured",
+    "runtime": "not_collected",
+    "tables": {
+      "aliases": []
+    }
+  },
+  "schedules": {
+    "presence": "built_in",
+    "collection": "ok",
+    "configuration": "not_configured",
+    "runtime": "not_collected",
+    "tables": {
+      "schedules": [],
+      "ranges": []
+    }
+  },
+  "routing": {
+    "presence": "built_in",
+    "collection": "ok",
+    "configuration": "not_configured",
+    "runtime": "not_collected",
+    "tables": {
+      "defaults": [],
+      "gateways": [],
+      "groups": [],
+      "static_routes": []
+    }
+  },
+  "openvpn": {
+    "presence": "built_in",
+    "collection": "ok",
+    "configuration": "not_configured",
+    "runtime": "not_collected",
+    "tables": {
+      "servers": [],
+      "clients": [],
+      "client_overrides": []
+    }
+  },
+  "ipsec": {
+    "presence": "built_in",
+    "collection": "ok",
+    "configuration": "not_configured",
+    "runtime": "not_collected",
+    "tables": {
+      "settings": [
+        {
+          "order": 1,
+          "enable": []
+        }
+      ],
+      "phase1": [],
+      "phase2": []
+    }
+  },
+  "wireguard": {
+    "presence": "not_installed",
+    "collection": "ok",
+    "configuration": "not_configured",
+    "runtime": "not_collected",
+    "tables": {
+      "tunnels": [],
+      "peers": []
+    }
+  },
+  "haproxy": {
+    "presence": "not_installed",
+    "collection": "ok",
+    "configuration": "not_configured",
+    "runtime": "not_collected",
+    "tables": {
+      "settings": [],
+      "frontends": [],
+      "backends": [],
+      "servers": []
+    }
+  },
+  "dhcp": {
+    "presence": "built_in",
+    "collection": "ok",
+    "configuration": "not_configured",
+    "runtime": "not_collected",
+    "tables": {
+      "ipv4": [],
+      "ipv6": [],
+      "static_ipv4": []
+    }
+  },
+  "dns_resolver": {
+    "presence": "built_in",
+    "collection": "ok",
+    "configuration": "not_configured",
+    "runtime": "not_collected",
+    "tables": {
+      "settings": [],
+      "hosts": [],
+      "domains": []
+    }
+  },
+  "dns_forwarder": {
+    "presence": "built_in",
+    "collection": "ok",
+    "configuration": "not_configured",
+    "runtime": "not_collected",
+    "tables": {
+      "settings": [],
+      "hosts": []
+    }
+  }
+}
