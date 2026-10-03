@@ -1,0 +1,18 @@
+<div class="card">
+  <h2 class="card-header">Сеть pfSense</h2>
+  <div class="card-body">
+    <p class="text-muted">{{ network_panel.message }}</p>
+    {% for note in network_panel.notes %}<p class="text-warning">{{ note }}</p>{% endfor %}
+    {% for table in network_panel.tables %}
+      <h3 class="h5">{{ table.title }}</h3>
+      {% if table.rows %}
+        <div class="table-responsive">
+          <table class="table table-sm table-striped">
+            <thead><tr>{% for heading in table.columns %}<th scope="col">{{ heading }}</th>{% endfor %}</tr></thead>
+            <tbody>{% for row in table.rows %}<tr>{% for value in row %}<td class="text-break">{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+          </table>
+        </div>
+      {% else %}<p class="text-muted">В снимке нет записей этой категории.</p>{% endif %}
+    {% endfor %}
+  </div>
+</div>

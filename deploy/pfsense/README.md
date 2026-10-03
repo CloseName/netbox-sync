@@ -65,3 +65,31 @@ preview['netbox_preview']('/tmp/pfsense-snapshot.json', 2609)
 
 A successful match does not create or rename interfaces or assign IP addresses.
 Use the actual fresh SSH output file, not a terminal copy with wrapped JSON lines.
+
+## Stage 3: VM snapshot field and panel
+
+The Guard image includes the shared parser and `import_pfsense_network` management
+command. By default the command previews; `--apply` creates the VM-only JSON
+custom field `pfsense_network` when absent and saves only that key on the locked VM.
+Incompatible existing field types/scopes fail closed. Missing or ambiguous NICs,
+unmatched NetBox interfaces, timestamps more than 15 minutes old or 2 minutes in
+the future prevent a new write. Replaying the exact stored value is a no-op;
+older/conflicting data cannot overwrite a newer snapshot. Existing custom fields,
+interface names, IP assignments and VM primary IPs are preserved.
+
+`activate-test-panel.sh FULL_COMMIT` is specific to the operator-confirmed test
+server layout: /netbox-test with docker-compose.yml and docker-compose.override.yml,
+VM 2609, SSH target 10.24.0.1:2233 and the existing dedicated key. It verifies web
+and worker image identity, layers onto that exact current image, and changes their
+image references in the existing override while retaining all other YAML values.
+YAML comments/formatting are not retained. It waits for the shared Sync apply lock
+before restarting web/worker, leaves the timer stopped, then collects a fresh
+snapshot, previews, applies, and repeats the same apply to verify no-op behavior.
+No Sync container update or NetBox version upgrade is required. On rollout failure,
+the script stops; inspect the error before repeating. The previous image remains
+available, but a failure after activation may leave the new image configured.
+
+The panel shows observations with collection time, not current live connectivity.
+No periodic SSH collection or UI apply workflow is introduced by this step.
+A NetBox ORM integration run and Docker build require the target server; local
+coverage tests parsing, snapshot policy, and presentation separately.
