@@ -1,3 +1,4 @@
+from .netbox_vm_name import netbox_vm_name
 from .netbox_vm_metadata import (
     MANAGED_VM_CUSTOM_FIELDS,
     build_vm_custom_fields,
@@ -238,7 +239,7 @@ def build_vm_create_fields(
             discovered_vm, None,
         )
     return {
-        'name': discovered_vm.original_name,
+        'name': netbox_vm_name(discovered_vm),
         'cluster': cluster.id,
         'status': _desired_status(discovered_vm),
         'vcpus': int(discovered_vm.vcpus),
@@ -263,10 +264,10 @@ def _vm_changes(
         changes['comments'] = discovered_vm.description
 
     if data.get('name') != (
-        discovered_vm.original_name
+        netbox_vm_name(discovered_vm)
     ):
         changes['name'] = (
-            discovered_vm.original_name
+            netbox_vm_name(discovered_vm)
         )
 
     if (
@@ -400,7 +401,7 @@ def _preflight_vm(
 
         conflicts = _name_matches(
             target_vms,
-            discovered_vm.original_name,
+            netbox_vm_name(discovered_vm),
             tenant_id=_tenant_id(existing),
             exclude_id=existing.id,
         )
@@ -418,7 +419,7 @@ def _preflight_vm(
         # tenant-less VMs in the target cluster.
         name_matches = _name_matches(
             target_vms,
-            discovered_vm.original_name,
+            netbox_vm_name(discovered_vm),
             tenant_id=None,
         )
 
@@ -534,7 +535,7 @@ def apply_virtual_machines(
         ).append(vm)
 
         names.setdefault(
-            vm.original_name.casefold(),
+            netbox_vm_name(vm).casefold(),
             [],
         ).append(vm)
 

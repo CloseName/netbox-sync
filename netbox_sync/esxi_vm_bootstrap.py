@@ -1,5 +1,7 @@
 """Explicit creation of ESXi VMs proven NEW by migration preflight."""
 
+from .netbox_vm_name import netbox_vm_name
+
 from .esxi_migration import (
     EsxiMigrationPlan,
     ObjectMigrationClassification,
@@ -150,8 +152,13 @@ def _validate_target_names(nb_api, cluster, selected_vms):
     existing_names = {}
     for record in existing:
         existing_names.setdefault(str(record.name).casefold(), []).append(record)
+    selected_names = set()
     for vm in selected_vms:
-        if existing_names.get(vm.original_name.casefold()):
+        name = netbox_vm_name(vm).casefold()
+        if name in selected_names:
+            raise EsxiNewVmBootstrapError("Duplicate VM names after truncation")
+        selected_names.add(name)
+        if existing_names.get(name):
             raise EsxiNewVmBootstrapError(
                 f'Desired VM name already exists: {vm.original_name}'
             )
@@ -174,7 +181,7 @@ def _preflight(nb_api, hosts, config, migration_plan):
     ordered = tuple(sorted(
         selected_vms,
         key=lambda vm: (
-            vm.original_name.casefold(),
+            netbox_vm_name(vm).casefold(),
             virtual_machine_source_identity(vm).external_id,
         ),
     ))

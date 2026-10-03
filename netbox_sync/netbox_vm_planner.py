@@ -1,3 +1,4 @@
+from .netbox_vm_name import netbox_vm_name
 import json
 
 from .netbox_vm_metadata import (
@@ -81,7 +82,7 @@ def _find_vm_match(
         for candidate in existing_vms
         if (
             candidate.name.casefold()
-            == discovered_vm.original_name.casefold()
+            == netbox_vm_name(discovered_vm).casefold()
             and getattr(
                 candidate,
                 'tenant',
