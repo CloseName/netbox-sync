@@ -5,14 +5,17 @@ require_once('/etc/inc/auth.inc');
     if ($ns_version !== '2.7.2-RELEASE') { throw new Exception('UNSUPPORTED_VERSION'); }
     if (!array_key_exists('enable', config_get_path('system/ssh', []))) { throw new Exception('SSH_DISABLED'); }
     $ns_name = $ns_input['username'];
-    if (!preg_match('/^nb-sync-[1-9][0-9]{0,9}$/D', $ns_name)) { throw new Exception('INVALID_USER'); }
+    if ($ns_name !== 'netbox-sync' && !preg_match('/^nb-sync-[1-9][0-9]{0,9}$/D', $ns_name)) { throw new Exception('INVALID_USER'); }
     $ns_users = config_get_path('system/user', []);
     $ns_existing = null;
     foreach ($ns_users as $ns_index => $ns_user) {
         if ($ns_user['name'] === $ns_name) { $ns_existing = $ns_index; break; }
     }
-    $ns_descr = 'NetBox Sync ' . $ns_input['owner'];
-    if ($ns_existing !== null && ($ns_users[$ns_existing]['descr'] ?? '') !== $ns_descr) {
+    $ns_descr = 'NetBox Sync';
+    $ns_owner_file = '/conf/netbox-sync-web/' . $ns_name . '/owner';
+    if (is_link($ns_owner_file)) { throw new Exception('PATH_CONFLICT'); }
+    $ns_owned = !is_link($ns_owner_file) && is_file($ns_owner_file) && fileowner($ns_owner_file) === 0 && trim(file_get_contents($ns_owner_file)) === $ns_input['owner'];
+    if ($ns_existing !== null && !$ns_owned && ($ns_users[$ns_existing]['descr'] ?? '') !== 'NetBox Sync ' . $ns_input['owner']) {
         throw new Exception('USER_CONFLICT');
     }
     $ns_dir = '/conf/netbox-sync-web';
@@ -47,6 +50,8 @@ require_once('/etc/inc/auth.inc');
         if (($ns_user['priv'] ?? []) !== ['user-shell-access'] || isset($ns_user['disabled'])
             || base64_decode($ns_user['authorizedkeys'] ?? '') !== $ns_authorized) { throw new Exception('USER_CONFLICT'); }
     }
+    if ($ns_existing !== null) { $ns_user['descr'] = $ns_descr; $ns_users[$ns_existing] = $ns_user; }
+    if (file_put_contents($ns_owner_file, $ns_input['owner'], LOCK_EX) === false || !chmod($ns_owner_file, 0600)) { throw new Exception('INSTALL_FAILED'); }
     config_set_path('system/user', $ns_users);
     write_config('NetBox Sync: provision restricted collector account');
     local_user_set($ns_user);

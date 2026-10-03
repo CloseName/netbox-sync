@@ -119,6 +119,7 @@ services:
     mem_limit: 192m
     pids_limit: 32
     volumes:
+      - netbox-sync-pfsense-policy:/run/netbox-sync-pfsense-policy
       - netbox-sync-auth-socket:/run/netbox-sync-auth
       - netbox-sync-auth-secrets-socket:/run/netbox-sync-auth-secrets:ro
       - ${NETBOX_SYNC_AUTH_SECRET_DIR:-./deploy/example-secrets/auth}:/var/lib/netbox-sync/auth-secrets:ro
@@ -199,6 +200,7 @@ services:
     networks: [netbox-sync-egress]
     cap_add: [SETUID, SETGID, CHOWN, KILL]
     volumes:
+      - netbox-sync-pfsense-policy:/run/netbox-sync-pfsense-policy:ro
       - ${NETBOX_SYNC_CA_DIR:-./deploy/example-secrets/ca}:/run/netbox-sync-ca:ro
       - netbox-sync-bootstrap-socket:/run/netbox-sync-bootstrap
       - netbox-sync-auth-socket:/run/netbox-sync-auth:ro
@@ -348,6 +350,7 @@ services:
     restart: "no"
 
 volumes:
+  netbox-sync-pfsense-policy:
   netbox-sync-auth-secrets-socket:
   netbox-sync-auth-socket:
   netbox-sync-probe-socket:

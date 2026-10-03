@@ -8,8 +8,8 @@ test('source categories and pfSense setup keep credentials out of repeated colle
  if(path==='/api/v1/sources')return route.fulfill({json:{sources:[{...source(),type:'esxi'},{...source(2),type:'proxmox'}]}});
  if(path==='/api/v1/pfsense')return route.fulfill({json:{count:1,items:[{id:2609,name:'Service-pfSense',cluster:'PVE-INFRA-TEST',site:'Selectel',address:'10.24.0.1',url:'https://nb.test/virtualization/virtual-machines/2609/'}]}});
  if(path==='/api/v1/policy')return route.fulfill({json:{revision:1}});
- if(path.endsWith('/status'))return route.fulfill({json:{status:'NOT_CONNECTED'}});
- if(path.endsWith('/connect')||path.endsWith('/collect')){calls.push(route.request().postDataJSON());return route.fulfill({json:{status:'CONNECTED',ssh_port:2233,collected_at:'2026-10-04T00:00:00Z'}});}
+ if(path.endsWith('/status'))return route.fulfill({json:calls.length?{status:'CONNECTED',ssh_port:2233}:{status:'NOT_CONNECTED'}});
+ if(path.endsWith('/connect')||path.endsWith('/collect')||path.endsWith('/schedule')){calls.push(route.request().postDataJSON());return route.fulfill({json:{status:'CONNECTED',ssh_port:2233,collected_at:'2026-10-04T00:00:00Z'}});}
  return route.fulfill({json:{}});
  });
  await page.goto('/sources/pfsense');
@@ -23,16 +23,24 @@ test('source categories and pfSense setup keep credentials out of repeated colle
  const overviewIcon=await page.getByRole('link',{name:'Overview',exact:true}).locator('svg').boundingBox();
  expect(sourceIcon!.x).toBe(overviewIcon!.x);
  await page.getByRole('button',{name:'Connection',exact:true}).click();
+ await page.screenshot({path:'test-results/pfsense-connection.png'});
  await page.getByLabel('Administrator (LDAP or local)',{exact:true}).fill('admin@example.test');
  await page.getByLabel('Password',{exact:true}).fill('not-a-real-password');
  await page.getByRole('button',{name:'Set up and collect',exact:true}).click();
- await expect(page.getByText('Connected',{exact:false})).toBeVisible();
+ await expect(page.getByRole('dialog')).not.toBeVisible();
+ await expect(page.getByRole('status')).toContainText('Collection completed');
+ await page.getByRole('button',{name:'Connection',exact:true}).click();
  await expect(page.getByLabel('Password',{exact:true})).toHaveValue('');
  await page.getByRole('button',{name:'Collect now',exact:true}).click();
  await expect.poll(()=>calls.length).toBe(2);
  expect(calls[0].username).toBe('admin@example.test');expect(calls[0].verify_tls).toBe(true);
  expect(calls[1]).toEqual({policy_revision:1});
- await page.getByRole('button',{name:'Close',exact:true}).click();
+ await page.getByRole('button',{name:'Connection',exact:true}).click();
+ await page.getByLabel('Collect automatically',{exact:true}).uncheck();
+ await page.getByRole('button',{name:'Save schedule',exact:true}).click();
+ await expect.poll(()=>calls.length).toBe(3);
+ expect(calls[2]).toEqual({sync_enabled:false,interval_minutes:60,policy_revision:1});
+ await expect(page.getByRole('dialog')).not.toBeVisible();
  await page.getByRole('link',{name:'Proxmox (1)',exact:true}).click();
  await expect(page).toHaveURL(/provider=proxmox/);
  await expect(selected).toHaveCount(1);

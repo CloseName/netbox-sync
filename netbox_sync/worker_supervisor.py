@@ -18,13 +18,13 @@ BASE_ENV = frozenset({'PATH','LANG','LC_ALL','HOME','PYTHONPATH','PYTHONDONTWRIT
 ROLE_ENV = {
     'discovery_worker': {'NETBOX_SYNC_DISCOVERY_REGISTRY_DSN','NETBOX_SYNC_DISCOVERY_NB_API_URL','NETBOX_SYNC_OPERATION_WRITER_DSN'},
     'apply_worker': {'NETBOX_SYNC_APPLY_REGISTRY_DSN','NETBOX_SYNC_APPLY_NB_API_URL','NETBOX_SYNC_RUN_WRITER_DSN'},
-    'bootstrap_worker': set(), 'retirement_worker': set(),
+    'pfsense_scheduler': set(), 'bootstrap_worker': set(), 'retirement_worker': set(),
 }
 
 
 def members(bundle):
     if bundle == 'netbox':
-        return [('bootstrap_worker', []), ('retirement_worker', [])]
+        return [('bootstrap_worker', []), ('retirement_worker', []), ('pfsense_scheduler', [])]
     common = ['--secret-root','/run/secrets/netbox-sync',
               '--source-secret-root','/run/secrets/netbox-sync-sources',
               '--api-uid','10001','--child-uid','10001','--child-gid','10001']

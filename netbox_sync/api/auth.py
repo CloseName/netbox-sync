@@ -14,6 +14,7 @@ ROUTES = (
     ('GET', r'/api/v1/pfsense/[0-9]+/status', 'source.read'),
     ('POST', r'/api/v1/pfsense/[0-9]+/connect', 'source.register'),
     ('POST', r'/api/v1/pfsense/[0-9]+/collect', 'source.apply'),
+    ('POST', r'/api/v1/pfsense/[0-9]+/schedule', 'source.apply'),
     ('POST', r'/api/v1/sources/lifecycle-review', 'source.remove'),
     ('POST', r'/api/v1/sources/identity-audit', 'source.remove'),
     ('POST', r'/api/v1/sources/[^/]+/(archive-check|archive-review|legacy-review|legacy-probe|legacy-confirm|retirement-context|inventory-review|identity-records|reconciliation-review|reconciliation-confirm|recovery-review|recover|recovery-abandon|recovery-status|identity-review|identity-confirm|removal-request|removal-status|retirement-review|retirement-status|retirement-resume|retire)', 'source.remove'),

@@ -62,6 +62,7 @@ class AuthPolicy(DirectoryAuth):
         self.audit.append({'action': action, 'actor': actor, 'at': self.now, **details})
 
     def root(self, action, payload):
+        if action == "pfsense.policy": return self.policy()
         if action == 'ldap.sync.due': return self.sync_directory(due=True)
         if action == 'status':
             return {'ready': True, 'enrolled': bool(self.state['principal'])}

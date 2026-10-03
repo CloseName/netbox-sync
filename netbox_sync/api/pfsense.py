@@ -10,6 +10,8 @@ class Connect(BaseModel):
     address: str = Field(min_length=1, max_length=253)
     port: int = Field(default=443, ge=1, le=65535)
     verify_tls: bool = True
+    sync_enabled: bool = True
+    interval_minutes: int = Field(default=60, ge=5, le=10080)
     username: str = Field(min_length=1, max_length=128)
     password: SecretStr = Field(min_length=1, max_length=1024)
     policy_revision: int = Field(ge=0)
@@ -17,6 +19,10 @@ class Connect(BaseModel):
 class Collect(BaseModel):
     model_config = ConfigDict(extra='forbid')
     policy_revision: int = Field(ge=0)
+
+class Schedule(Collect):
+    sync_enabled: bool
+    interval_minutes: int = Field(default=60, ge=5, le=10080)
 
 def routes(settings):
     router = APIRouter(prefix='/api/v1/pfsense')
@@ -37,4 +43,6 @@ def routes(settings):
         return call(vm_id,'connect',request,data)
     @router.post('/{vm_id}/collect')
     def collect(vm_id:int,payload:Collect,request:Request): return call(vm_id,'collect',request,payload.model_dump())
+    @router.post('/{vm_id}/schedule')
+    def schedule(vm_id:int,payload:Schedule,request:Request): return call(vm_id,'schedule',request,payload.model_dump())
     return router

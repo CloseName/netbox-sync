@@ -149,3 +149,16 @@ code {
 #source-subnavigation {padding-left:1.5rem;}
 .pfsense-connect {max-width:40rem;width:90vw;}
 .pfsense-connect label {display:block;margin:.8rem 0;}
+
+/* pfSense connection form */
+dialog.pfsense-connect {box-sizing:border-box;width:min(620px,calc(100vw - 32px));max-height:90vh;overflow:auto;padding:24px;border:1px solid var(--border);border-radius:12px;background:var(--surface, #182936);color:var(--text);box-shadow:0 20px 70px #0008;}
+dialog.pfsense-connect::backdrop {background:#0008;}
+.pfsense-connect h2 {margin-top:0;}
+.pfsense-connect form {display:grid;gap:10px;margin:12px 0;}
+.pfsense-connect form label {display:flex;flex-direction:column;gap:7px;margin:0;}
+.pfsense-connect form label:has(input[type=checkbox]) {flex-direction:row;align-items:center;}
+.pfsense-connect input:not([type=checkbox]) {box-sizing:border-box;width:100%;min-height:40px;}
+.pfsense-connect button {margin:4px 8px 4px 0;}
+.pfsense-connect [role=alert] {padding:12px;border-left:3px solid #e87989;background:#612939;}
+.pfsense-success {color:#90e1b5;background:#174436;padding:8px 12px;border-radius:6px;}
+.pfsense-row-status {display:grid;gap:6px;margin-bottom:8px;}

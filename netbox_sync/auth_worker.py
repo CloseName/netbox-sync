@@ -23,6 +23,13 @@ def admin():
     serve(ADMIN_SOCKET, lambda payload: store().call(payload, root=True), allowed_uid=0)
 
 
+def pfsense_policy():
+    def read(payload):
+        if payload != {"action":"policy"}: raise AuthError("AUTH_INVALID")
+        return store().call({"action":"pfsense.policy"},root=True)
+    serve("/run/netbox-sync-pfsense-policy/worker.sock", read, allowed_uid=0)
+
+
 def directory_sync():
     import time
     while True:
@@ -52,11 +59,15 @@ def main():
     signal.signal(signal.SIGTERM, stop)
     process = multiprocessing.Process(target=admin)
     process.start()
+    policy_process=multiprocessing.Process(target=pfsense_policy)
+    policy_process.start()
     sync_process=multiprocessing.Process(target=directory_sync)
     sync_process.start()
     try:
         serve(SOCKET, lambda payload: store().call(payload), allowed_uid=10001, additional_uids=(0,))
     finally:
+        policy_process.terminate()
+        policy_process.join(5)
         sync_process.terminate()
         sync_process.join(5)
         process.terminate()
