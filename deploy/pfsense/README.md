@@ -93,3 +93,31 @@ The panel shows observations with collection time, not current live connectivity
 No periodic SSH collection or UI apply workflow is introduced by this step.
 A NetBox ORM integration run and Docker build require the target server; local
 coverage tests parsing, snapshot policy, and presentation separately.
+
+## Stage 4: read-only IPAM plan
+
+Run `netbox_sync/pfsense_ipam_preview.py` with `runpy.run_path` in the NetBox shell,
+then call `netbox_ipam_preview(snapshot_path, vm_id)`. No image update is required.
+The installed Guard supplies the network parser. The report reads all same-host
+IP records across VRFs (including different masks), their assignments/status/role,
+and covering prefixes in one repeatable-read, read-only database transaction.
+
+Without an explicit interface-ID-to-VRF mapping, every candidate requires scope
+selection. `{'3169': None}` explicitly selects Global for interface 3169; a positive
+integer selects an existing VRF. Covering prefixes do not choose a routing domain.
+Foreign assignments, unassigned existing records requiring adoption review,
+duplicate records, duplicate observations and prefix-length conflicts are shown
+separately. IPv6 link-local addresses are excluded. This is evidence only: no apply
+operation is provided, and future apply must recheck freshness, ownership, scope,
+and concurrent changes. IPAM candidates are not evidence that a public address
+is safe to contact. No network probes are performed by this module.
+
+## Deferred automation requirements (operator agreed)
+
+Keep collection/import manual while validating the full data set. A future Sync
+panel should manage explicit appliance-to-VM binding, access preparation, dedicated
+keys, known-host fingerprint verification, collector installation/version and
+scheduled collection. Neither VM names nor the string 'pfSense' identify an
+appliance. Use the selected source-scoped VM identity and verify MAC correspondence;
+duplicate/changed identities require review. Existing arbitrary VM names must be
+preserved. Do not infer authorization to configure all discovered VMs automatically.
