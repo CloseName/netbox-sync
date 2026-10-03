@@ -188,3 +188,50 @@ def test_persisted_choice_and_old_bios_owner_are_ambiguous(fake_netbox):
     hosts[0].virtual_machines=hosts[0].virtual_machines[:1]
     hosts[0].virtual_machines[0].esxi_instance_uuid=None
     assert resolve_vm_identities(fake_netbox,hosts,_config())[1]
+
+
+def test_existing_moref_fallback_replans_with_unrelated_bios_owners(fake_netbox):
+    site, _, cluster, _ = add_target(fake_netbox)
+    hosts = inventory(3)
+    vm = hosts[0].virtual_machines[-1]
+    vm.esxi_instance_uuid = vm.esxi_bios_uuid = None
+    vm.external_id = vm.vmid = vm.provider_object_id = "202"
+    vm.source_id = "esxi:202"
+    vm.original_name = "/vmfs/volumes/" + "x" * 104
+    from netbox_sync.netbox_metadata import build_device_custom_fields
+    fake_netbox.dcim.devices.add(FakeRecord(id=5, name=hosts[0].original_name,
+        site=site, cluster=cluster, custom_fields=build_device_custom_fields(hosts[0])))
+    assert build_runtime_plan(fake_netbox, hosts, _config()).apply_allowed
+    execute_esxi_runtime(fake_netbox, hosts, _config(), confirmed=True)
+    before = {r.id: deepcopy(r.custom_fields) for r in fake_netbox.virtualization.virtual_machines.all()}
+    plan = build_runtime_plan(fake_netbox, hosts, _config())
+    assert plan.apply_allowed
+    assert not [i for i in plan.items if i.action.value in ("CREATE", "UPDATE")]
+    assert before == {r.id: r.custom_fields for r in fake_netbox.virtualization.virtual_machines.all()}
+
+
+@pytest.mark.parametrize("owners", [0, 2])
+def test_missing_uuid_fallback_without_unique_owner_still_blocks(fake_netbox, owners):
+    hosts = inventory(3)
+    resolved, _ = resolve_vm_identities(fake_netbox, hosts, _config())
+    persist(fake_netbox, resolved[0].virtual_machines[0], id=1)
+    vm = hosts[0].virtual_machines[-1]
+    vm.esxi_instance_uuid = vm.esxi_bios_uuid = None
+    vm.external_id = vm.vmid = vm.provider_object_id = "202"
+    vm.source_id = "esxi:202"
+    for i in range(owners):
+        persist(fake_netbox, vm, id=10+i)
+    assert resolve_vm_identities(fake_netbox, hosts, _config())[1]
+
+
+def test_existing_fallback_with_duplicate_provider_id_still_blocks(fake_netbox):
+    hosts = inventory(3)
+    resolved, _ = resolve_vm_identities(fake_netbox, hosts, _config())
+    persist(fake_netbox, resolved[0].virtual_machines[0], id=1)
+    vm = hosts[0].virtual_machines[-1]
+    vm.esxi_instance_uuid = vm.esxi_bios_uuid = None
+    vm.external_id = vm.vmid = vm.provider_object_id = "202"
+    vm.source_id = "esxi:202"
+    persist(fake_netbox, vm, id=2)
+    hosts[0].virtual_machines.append(deepcopy(vm))
+    assert resolve_vm_identities(fake_netbox, hosts, _config())[1]

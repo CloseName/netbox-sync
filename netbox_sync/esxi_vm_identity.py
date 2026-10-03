@@ -33,6 +33,7 @@ def resolve_vm_identities(api, hosts, config):
     result = deepcopy(list(hosts))
     vms = [vm for host in result for vm in host.virtual_machines]
     groups = defaultdict(list)
+    provider_counts = Counter(vm.provider_object_id for vm in vms if vm.provider_object_id)
     bios_counts = Counter(vm.esxi_bios_uuid for vm in vms if vm.esxi_bios_uuid)
     for vm in vms:
         if vm.source_instance != config.source_instance or vm.source != 'esxi':
@@ -100,7 +101,16 @@ def resolve_vm_identities(api, hosts, config):
     for vm in vms:
         if vm.esxi_instance_uuid:
             continue
-        if ((not vm.esxi_bios_uuid and tagged)
+        # An exact, uniquely owned fallback key already persisted for this VM
+        # can remain in use. Unrelated BIOS owners do not invalidate it. This
+        # does not adopt a lost BIOS identity or authorize a new fallback key.
+        existing_fallback = (
+            bool(vm.provider_object_id)
+            and vm.external_id == vm.provider_object_id
+            and provider_counts[vm.provider_object_id] == 1
+            and len(owned.get(vm.external_id, ())) == 1
+        )
+        if ((not vm.esxi_bios_uuid and tagged and not existing_fallback)
                 or (vm.provider_object_id != vm.external_id and owned.get(vm.provider_object_id))):
             block(str(vm.external_id or vm.vmid), [vm])
             continue
