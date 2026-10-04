@@ -54,6 +54,6 @@ def panel(value):
             tables=[dict(title='Интерфейсы', columns=['Назначение', 'pfSense', 'NetBox (на момент сбора)', 'MAC', 'MTU',
                 'Настройка', 'Линк', 'IPv4', 'IPv6', 'Режим IPv6'], rows=rows),
                 dict(title='VLAN в pfSense', columns=['Устройство', 'Родитель', 'VLAN ID', 'Описание'], rows=vlans)],
-            notes=['Обновляется вручную при импорте снимка. Link-local IPv6 показаны только для справки.'])
+            notes=[])
     except (KeyError, TypeError, AttributeError):
         return invalid

@@ -8,7 +8,7 @@
       {% if table.rows %}
         <div class="table-responsive">
           <table class="table table-sm table-striped">
-            <thead><tr>{% for heading in table.columns %}<th scope="col">{{ heading }}</th>{% endfor %}</tr></thead>
+            <thead><tr>{% for heading in table.columns %}<th scope="col"{% if heading == "IPv6" %} title="Link-local IPv6 показаны только для справки."{% endif %}>{{ heading }}</th>{% endfor %}</tr></thead>
             <tbody>{% for row in table.rows %}<tr>{% for value in row %}<td class="text-break">{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
           </table>
         </div>

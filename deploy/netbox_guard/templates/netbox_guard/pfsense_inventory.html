@@ -4,7 +4,7 @@
   {% if inventory.invalid %}
     <p>Формат снимка не поддерживается.</p>
   {% else %}
-    <p>Снимок от {{ inventory.collected_at }}. pfSense {{ inventory.version }}. Обновляется вручную.</p>
+    <p>Снимок от {{ inventory.collected_at }}. pfSense {{ inventory.version }}.</p>
     <p class="text-muted">Наличие настроек и процесса не подтверждает доступность сервиса или VPN-туннеля. Правила показаны из конфигурации; автоматически создаваемые правила и эффективная политика не собраны.</p>
     <div class="table-responsive"><table class="table table-sm table-striped">
       <thead><tr><th>Компонент</th><th>Наличие</th><th>Настройки</th><th>Чтение</th><th>Наблюдение процесса</th></tr></thead>
