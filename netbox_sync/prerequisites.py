@@ -3,7 +3,7 @@ import hashlib
 import json
 import re
 
-VERSION = 3
+VERSION = 4
 FIELDS = {
     'sync_identities': ('json', ('dcim.device','dcim.interface','virtualization.virtualmachine','virtualization.vminterface')),
     'sync_original_names': ('json', ('dcim.device','dcim.interface','virtualization.virtualmachine','virtualization.vminterface')),
@@ -68,7 +68,11 @@ def definition(name):
     kind, models = FIELDS[name]
     return {'name': name, 'type': kind, 'object_types': list(models),
             'label': LABELS[name][0], 'description': PURPOSES[name][0],
-            'group_name': 'NetBox Sync', 'required': False, 'unique': False}
+            'group_name': 'NetBox Sync', 'required': False, 'unique': False,
+            # Managed JSON is rendered by Guard panels, never duplicated as raw JSON.
+            # Scalar observations remain visible only when populated.
+            'ui_visible': 'hidden' if kind == 'json' else 'if-set',
+            'ui_editable': 'no'}
 
 
 def choice(value):

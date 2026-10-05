@@ -2,7 +2,7 @@
 import json
 import os
 import pytest
-from netbox_sync.prerequisites import FIELDS, definition, reconcile
+from netbox_sync.prerequisites import VERSION, FIELDS, definition, reconcile
 from netbox_sync.netbox_auth import authorization, token_key
 from netbox_sync.bootstrap_setup import Preparation
 from netbox_sync.bootstrap_state import BootstrapStore
@@ -318,8 +318,33 @@ def test_completed_upgrade_creates_only_missing_fields(setup, old_version, missi
     before=store.read()
     payload=confirm(store,control)
     result=control.apply(payload)
-    assert result['completed'] is True and result['preparation']['version']==3
+    assert result['completed'] is True and result['preparation']['version']==VERSION
     assert [c['name'] for c in remote.calls if c['action']=='create']==missing
     assert remote.rows[:len(old_rows)]==old_rows
     after=store.read()
     assert all(after[k]==before[k] for k in ('url','read_token','apply_token','completed'))
+
+
+def test_first_install_json_is_hidden_only_when_guard_has_a_panel():
+    from pathlib import Path
+    import importlib.util
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location('guard_display_contract', root / 'deploy/netbox_guard/display.py')
+    display = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(display)
+    rendered = set(display.FIELD_LABELS) | {'esxi_host_network'}
+    json_fields = {name for name, (kind, _) in FIELDS.items() if kind == 'json'}
+    assert json_fields == rendered
+    for name in FIELDS:
+        created = definition(name)
+        assert created['ui_visible'] == ('hidden' if name in rendered else 'if-set')
+        assert created['ui_editable'] == 'no'
+
+
+def test_existing_visible_fields_remain_compatible_without_recreating_data():
+    rows = [row(name, index, ui_visible='always', ui_editable='yes')
+            for index, name in enumerate(FIELDS, 1)]
+    from copy import deepcopy
+    before = deepcopy(rows)
+    assert all(field['status'] == 'ready' for field in reconcile(rows))
+    assert rows == before
