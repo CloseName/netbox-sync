@@ -722,14 +722,6 @@ def plan_hosts(
             f'{host.memory_bytes // 1024**2}'
         )
         print(
-            f'    physical_disk_count='
-            f'{len(host.disks)}'
-        )
-        print(
-            f'    physical_disk_raw_gib='
-            f'{sum(d.size_bytes for d in host.disks) / 1024**3:.2f}'
-        )
-        print(
             f'    hypervisor_version='
             f'{host.hypervisor_version or "-"}'
         )

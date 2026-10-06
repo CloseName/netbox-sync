@@ -8,7 +8,6 @@ MANAGED_DEVICE_CUSTOM_FIELDS = (
     'cpu_cores',
     'cpu_threads',
     'memory_mb',
-    'physical_disks',
     'esxi_host_network',
 )
 
@@ -64,21 +63,6 @@ def build_device_custom_fields(
         existing, desired_identity, host.original_name,
     )
 
-    physical_disks = []
-
-    for disk in sorted(
-        host.disks,
-        key=lambda item: item.path,
-    ):
-        physical_disks.append({
-            'path': disk.path,
-            'model': disk.model,
-            'serial': disk.serial,
-            'type': disk.disk_type,
-            'size_bytes': disk.size_bytes,
-            'health': disk.health,
-        })
-
     result = dict(existing)
 
     result.update({
@@ -109,8 +93,6 @@ def build_device_custom_fields(
         'memory_mb':
             host.memory_bytes // 1024**2,
 
-        'physical_disks':
-            physical_disks,
     })
 
     if host.source == 'esxi' and host.esxi_host_network is not None:

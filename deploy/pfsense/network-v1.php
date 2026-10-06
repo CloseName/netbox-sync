@@ -54,6 +54,7 @@ function ns_ifconfig(): string { return ns_command('ifconfig'); }
 function ns_command(string $name): string {
     $commands = [
         'ifconfig' => ['/sbin/ifconfig', '-a'],
+        'arp' => ['/usr/sbin/arp', '-an'],
         'routes4' => ['/usr/bin/netstat', '-rn', '-f', 'inet'],
         'routes6' => ['/usr/bin/netstat', '-rn', '-f', 'inet6'],
         'packages' => ['/usr/local/sbin/pkg', 'query', '-a', '%n %v'],

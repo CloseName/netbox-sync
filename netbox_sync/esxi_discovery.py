@@ -6,7 +6,6 @@ from .esxi_host_network import collect_host_network
 
 from .discovery import (
     DiscoveredCPU,
-    DiscoveredDisk,
     DiscoveredHost,
     DiscoveredHostInterface,
     DiscoveredInterface,
@@ -181,33 +180,6 @@ def _host_interfaces(host):
                 ),
                 mac_address=getattr(pnic, 'mac', None),
                 management=str(name) in management_pnics,
-            )
-        )
-    return result
-
-
-def _host_disks(host):
-    result = []
-    for lun in _items(_value(host, 'config.storageDevice.scsiLun', ())):
-        capacity = getattr(lun, 'capacity', None)
-        blocks = int(getattr(capacity, 'block', 0) or 0)
-        block_size = int(getattr(capacity, 'blockSize', 0) or 0)
-        operational = getattr(lun, 'operationalState', None)
-        result.append(
-            DiscoveredDisk(
-                path=str(
-                    getattr(lun, 'deviceName', None)
-                    or getattr(lun, 'canonicalName', '')
-                ),
-                model=getattr(lun, 'model', None),
-                serial=getattr(lun, 'serialNumber', None),
-                size_bytes=blocks * block_size,
-                disk_type=getattr(lun, 'deviceType', None),
-                health=(
-                    ','.join(str(item) for item in operational)
-                    if operational
-                    else None
-                ),
             )
         )
     return result
@@ -447,7 +419,6 @@ def _convert_hosts(hosts, source_config):
                     logical_cpus=int(getattr(cpu_info, 'numCpuThreads', 0) or 0),
                 ),
                 memory_bytes=int(_value(host, 'hardware.memorySize', 0) or 0),
-                disks=_host_disks(host),
                 storages=_datastores(host),
                 interfaces=_host_interfaces(host),
                 esxi_host_network=collect_host_network(host),

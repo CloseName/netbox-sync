@@ -15,6 +15,10 @@ needs Django/NetBox, not Sync runtime dependencies. It defines a creation-claim 
 intents and retirement receipts. Claims are invalidated on object deletion; the
 independent receipts remain for audit.
 
+## Source preparation and scoped IPAM pilot
+
+See [REQ-001–009 implementation and test-installation checks](../../docs/requirements-001-009-acceptance.md) (repository `docs/` directory). Guard migration 0005 adds confirmed LAN bindings and reservation receipts; post-migrate prepares compatible pfSense fields. Native IPAddress HTML writes share the existing NetBox API allocation lock through plugin middleware. This release remains pinned to NetBox 4.7.0.
+
 ## Implemented transaction service
 
 - `create_owned` creates a new allowed infrastructure object and a claim/receipt

@@ -31,9 +31,7 @@ def test_discovers_host_qemu_lxc_storage_disks_and_networks():
     assert host.cpu.logical_cpus == 16
     assert host.memory_bytes == 32 * 1024**3
 
-    assert len(host.disks) == 1
-    assert host.disks[0].serial == 'DISK-001'
-    assert host.disks[0].size_bytes == 512 * 1024**3
+    assert host.disks == []
     assert len(host.storages) == 1
     assert host.storages[0].name == 'local-lvm'
 
@@ -221,3 +219,12 @@ def test_v1_identity_changes_after_live_migration_current_bug():
     assert before.source_id == 'proxmox:node-a:100'
     assert after.source_id == 'proxmox:node-b:100'
     assert before.source_id != after.source_id
+
+
+def test_physical_disks_are_never_requested_but_vm_disks_remain():
+    responses = {k:v for k,v in proxmox_responses().items() if 'disks' not in k}
+    api = FakeProxmox(responses)
+    host = discover_hosts(api, sample_source_config())[0]
+    assert host.disks == []
+    assert host.virtual_machines[0].disks
+    assert not any('disks' in path for path, _ in api.calls)

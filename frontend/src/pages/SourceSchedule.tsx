@@ -6,7 +6,7 @@ import {
   updateSchedule,
   fetchSchedule,
 } from "../api/schedule";
-import type { Schedule } from "../api/schedule";
+import type { Schedule, CalendarSchedule } from "../api/schedule";
 import type { SourceDiagnostic } from "../api/diagnostics";
 import { Badge, Timestamp, Alert, LoadingState } from "../ui/primitives";
 import { interval } from "../ui/format";
@@ -39,7 +39,7 @@ export function ScheduleSummary({
       </div>
       <div>
         <dt>{tr("Frequency")}{" "}</dt>
-        <dd>{tr("Every")}{" "}{interval(schedule.sync_interval_seconds)}</dd>
+        <dd>{schedule.sync_calendar ? `${tr({daily:'Daily',weekly:'Weekly',monthly:'Monthly'}[schedule.sync_calendar.mode])} ${schedule.sync_calendar.day??''} · ${schedule.sync_calendar.time} MSK` : <>{tr("Every")} {interval(schedule.sync_interval_seconds)}</>}</dd>
       </div>
       <div>
         <dt>{tr("Scheduled activity")}{" "}</dt>
@@ -72,7 +72,7 @@ export function ScheduleSummary({
         <dt>{tr("Next expected")}{" "}</dt>
         <dd>
           {schedule.next_expected_at ? (
-            <Timestamp value={schedule.next_expected_at} />
+            <time dateTime={schedule.next_expected_at}>{new Intl.DateTimeFormat(undefined,{timeZone:"Europe/Moscow",dateStyle:"medium",timeStyle:"short",hour12:false}).format(new Date(schedule.next_expected_at))} MSK</time>
           ) : (
             tr("Not scheduled")
           )}
@@ -96,12 +96,15 @@ export function SourceSchedule({
 }) {
   const canSchedule = usePermission('source.schedule');
   const schedule = resource.data;
+  const [clockDifference,setClockDifference]=useState(false);
+  useEffect(()=>{setClockDifference(Boolean(schedule?.server_time && Math.abs(Date.now()-Date.parse(schedule.server_time))>120000));},[schedule]);
   const [phase, setPhase] = useState<
     "idle" | "editing" | "saving" | "saved" | "conflict" | "error"
   >("idle");
   const [baseline, setBaseline] = useState<Schedule | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [draft, setDraft] = useState(intervalDraft(600));
+  const [calendar, setCalendar] = useState<CalendarSchedule|null>(null);
   const [message, setMessage] = useState("");
   const [reloadPending, setReloadPending] = useState(false);
   const busy = useRef(false);
@@ -130,6 +133,7 @@ export function SourceSchedule({
       setBaseline(latest);
       setEnabled(latest.sync_enabled);
       setDraft(intervalDraft(latest.sync_interval_seconds));
+      setCalendar(latest.sync_calendar??null);
       setPhase("editing");
       setMessage("Latest schedule loaded. Review it before saving.");
     } catch {
@@ -145,7 +149,7 @@ export function SourceSchedule({
   }
   const editing = ["editing", "saving", "conflict", "error"].includes(phase);
   const seconds = intervalSeconds(draft);
-  const invalid = seconds === null;
+  const invalid = calendar ? (!/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(calendar.time) || (calendar.mode !== 'daily' && (!Number.isInteger(calendar.day) || calendar.day! < 1 || calendar.day! > (calendar.mode === 'weekly' ? 7 : 31)))) : seconds === null;
   async function save(event: React.FormEvent) {
     event.preventDefault();
     if (!canSchedule) return;
@@ -167,7 +171,9 @@ export function SourceSchedule({
         instance,
         {
           sync_enabled: enabled,
-          sync_interval_seconds: seconds!,
+          sync_interval_seconds: calendar ? 600 : seconds!,
+          sync_calendar: calendar,
+          expected_sync_calendar: baseline.sync_calendar??null,
           expected_sync_enabled: baseline.sync_enabled,
           expected_sync_interval_seconds: baseline.sync_interval_seconds,
         },
@@ -213,6 +219,7 @@ export function SourceSchedule({
           {!editing && (
             <>
               <ScheduleSummary schedule={schedule} evidence={evidence} />
+              {clockDifference && <p className="alert alert-warning">{tr("Server and browser clocks differ by more than two minutes. Verify server time synchronization before relying on the schedule.")}</p>}
               <div className="page-actions">
                 <button
                   disabled={!canSchedule || resource.loading || resource.error}
@@ -220,6 +227,7 @@ export function SourceSchedule({
                     setBaseline(schedule);
                     setEnabled(schedule.sync_enabled);
                     setDraft(intervalDraft(schedule.sync_interval_seconds));
+                    setCalendar(schedule.sync_calendar??null);
                     setMessage("");
                     setPhase("editing");
                   }}
@@ -247,6 +255,16 @@ export function SourceSchedule({
                     ? tr("After saving, this source can be picked up by the scheduler on a future scheduler cycle.")
                     : tr("Future automatic runs are disabled. A run that has already started is not cancelled.")}
                 </p>
+                <label className="schedule-calendar-field">{tr("Schedule mode")}<select value={calendar?.mode??'interval'} onChange={e=>{
+                  const mode=e.target.value as CalendarSchedule['mode']|'interval';
+                  setCalendar(mode==='interval'?null:{mode,time:calendar?.time??'00:00',timezone:'Europe/Moscow',...(mode==='daily'?{}:{day:1})});
+                }}><option value="interval">{tr("Interval")}</option><option value="daily">{tr("Daily")}</option><option value="weekly">{tr("Weekly")}</option><option value="monthly">{tr("Monthly")}</option></select></label>
+                {calendar ? <>
+                  <label className="schedule-calendar-field">{tr("Moscow time (MSK)")}<input type="time" value={calendar.time} onChange={e=>setCalendar({...calendar,time:e.target.value})}/></label>
+                  {calendar.mode==='weekly'&&<label className="schedule-calendar-field">{tr("Weekday")}<select value={calendar.day} onChange={e=>setCalendar({...calendar,day:Number(e.target.value)})}>{['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map((label,i)=><option key={i} value={i+1}>{tr(label)}</option>)}</select></label>}
+                  {calendar.mode==='monthly'&&<label className="schedule-calendar-field">{tr("Day of month")}<input type="number" min="1" max="31" value={calendar.day} onChange={e=>setCalendar({...calendar,day:Number(e.target.value)})}/></label>}
+                  <p>{tr("Europe/Moscow, independent of the server timezone. Missing month days use the last day. After downtime, one missed run is performed. Runs for this source never overlap.")}</p>
+                </> : <>
                 <label htmlFor="schedule-preset">{tr("Frequency")}{" "}</label>
                 <select
                   id="schedule-preset"
@@ -309,6 +327,7 @@ export function SourceSchedule({
                     ? tr("Enter an exact whole-second interval from 1 minute to 24 hours. The stored value has not been changed.")
                     : tr("Allowed: 1 minute to 24 hours, with exact whole-second precision.")}
                 </p>
+                </>}
                 {baseline &&
                   (baseline.sync_interval_seconds < 60 ||
                     baseline.sync_interval_seconds > 86400) && (

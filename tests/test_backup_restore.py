@@ -525,6 +525,8 @@ def test_fresh_database_restore_requires_live_maintenance_boundary(monkeypatch,
         'DROP TABLE IF EXISTS netbox_sync.source_archives; '
         'DROP TABLE IF EXISTS netbox_sync.schema_meta; '
         'DROP TABLE IF EXISTS netbox_sync.run_reconciliations; '
+        'DROP TABLE IF EXISTS netbox_sync.source_removal_requests; '
+        'DROP TABLE IF EXISTS netbox_sync.registration_jobs; '
         'DROP TABLE IF EXISTS netbox_sync.registration_intents; '
         'DROP TABLE IF EXISTS netbox_sync.host_reservations; '
         'DROP TABLE IF EXISTS netbox_sync.auth_state; '

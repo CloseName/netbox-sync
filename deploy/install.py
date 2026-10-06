@@ -415,6 +415,7 @@ def _configuration_values(root, image):
             'NETBOX_SYNC_APPLY_LOCK_DIR': '/run/netbox-sync',
             'NETBOX_SYNC_POSTGRES_VOLUME': 'netbox-sync-postgres-data',
             'NETBOX_SYNC_GUARD_INSTANCE': '',
+            'NETBOX_SYNC_PFSENSE_USER': 'netbox-sync',
         },
         'api.env': {
             **common, 'NETBOX_SYNC_REGISTRY_DSN': dsns['web_reader'],
@@ -955,6 +956,7 @@ def parse_args(argv=None):
                         help='Explicit ingress mode; fresh default standalone, existing setting preserved')
     from uuid import UUID
     parser.add_argument('--netbox-guard-instance',type=UUID,help='Explicit reviewed NetBox guard installation UUID; never inferred from URL')
+    parser.add_argument('--pfsense-user', choices=('netbox-sync','netbox-sync-test'), help='Separate pfSense collector account; preserved on upgrades')
     parser.add_argument('--public-url', help='Canonical https://FQDN, required for first HTTPS installation')
     parser.add_argument('--init-tls-layout', action='store_true', help='Create TLS/CA directories only; no certificates or deployment')
     parser.add_argument('--check-tls', action='store_true', help='Validate public URL and operator TLS/CA files only')
@@ -1019,6 +1021,9 @@ def main(argv=None):
         prepared = prepare_layout(root, args.source.resolve(), args.release_id, image)
         configure_tls(prepared,public_url,tls_settings)
         configure_ingress(prepared,mode)
+        if args.pfsense_user:
+            path=prepared.config/'compose.env'
+            _atomic_write(path,_merged_config(path,{'NETBOX_SYNC_PFSENSE_USER':args.pfsense_user},{'NETBOX_SYNC_PFSENSE_USER':args.pfsense_user}))
         if guard_instance:
             value=guard_instance
             path=prepared.config/'compose.env'

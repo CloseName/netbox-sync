@@ -154,6 +154,8 @@ class SourceConfig:
     verify_ssl: bool
     target: NetBoxTargetConfig
     credentials: SourceCredentials
+    sync_calendar: dict | None = None
+    schedule_changed_at: object | None = None
     legacy_identity_owner: bool = False
     settings: Mapping[str, object] = field(
         default_factory=dict
@@ -195,6 +197,9 @@ class SourceConfig:
                 'sync_interval_seconds must be '
                 'a positive integer'
             )
+
+        from .calendar_schedule import validate_calendar
+        validate_calendar(self.sync_calendar)
 
         if not isinstance(self.settings, Mapping):
             raise ValueError('settings must be a mapping')

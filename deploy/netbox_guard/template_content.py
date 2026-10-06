@@ -3,7 +3,7 @@ from .display import display_sections
 
 
 class SyncDetails(PluginTemplateExtension):
-    models = ['dcim.device', 'dcim.interface', 'virtualization.virtualmachine',
+    models = ['dcim.interface', 'virtualization.virtualmachine',
               'virtualization.vminterface']
 
     def right_page(self):
@@ -52,4 +52,13 @@ class PfsenseInventoryDetails(PluginTemplateExtension):
         return self.render('netbox_guard/pfsense_inventory.html', extra_context={'inventory': value})
 
 
-template_extensions = [SyncDetails, EsxiNetworkDetails, PfsenseNetworkDetails, PfsenseInventoryDetails]
+class NetworkLinks(PluginTemplateExtension):
+    models = ['dcim.device', 'virtualization.cluster']
+
+    def right_page(self):
+        obj = self.context['object']
+        return self.render('netbox_guard/network_link.html', extra_context={
+            'network_kind':'device' if obj._meta.model_name=='device' else 'cluster'})
+
+
+template_extensions = [NetworkLinks, SyncDetails, EsxiNetworkDetails, PfsenseNetworkDetails, PfsenseInventoryDetails]

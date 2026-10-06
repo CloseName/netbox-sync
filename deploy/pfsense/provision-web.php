@@ -1,17 +1,18 @@
 // Executed by the authenticated Diagnostics PHP runner on pfSense CE 2.7.2.
 require_once('/etc/inc/auth.inc');
+try {
 (function () use ($ns_input) {
     $ns_version = trim(file_get_contents('/etc/version'));
     if ($ns_version !== '2.7.2-RELEASE') { throw new Exception('UNSUPPORTED_VERSION'); }
     if (!array_key_exists('enable', config_get_path('system/ssh', []))) { throw new Exception('SSH_DISABLED'); }
     $ns_name = $ns_input['username'];
-    if ($ns_name !== 'netbox-sync' && !preg_match('/^nb-sync-[1-9][0-9]{0,9}$/D', $ns_name)) { throw new Exception('INVALID_USER'); }
+    if ($ns_name !== 'netbox-sync' && $ns_name !== 'netbox-sync-test' && !preg_match('/^nb-sync-[1-9][0-9]{0,9}$/D', $ns_name)) { throw new Exception('INVALID_USER'); }
     $ns_users = config_get_path('system/user', []);
     $ns_existing = null;
     foreach ($ns_users as $ns_index => $ns_user) {
         if ($ns_user['name'] === $ns_name) { $ns_existing = $ns_index; break; }
     }
-    $ns_descr = 'NetBox Sync';
+    $ns_descr = $ns_name === 'netbox-sync-test' ? 'NetBox Sync Test' : 'NetBox Sync';
     $ns_owner_file = '/conf/netbox-sync-web/' . $ns_name . '/owner';
     if (is_link($ns_owner_file)) { throw new Exception('PATH_CONFLICT'); }
     $ns_owned = !is_link($ns_owner_file) && is_file($ns_owner_file) && fileowner($ns_owner_file) === 0 && trim(file_get_contents($ns_owner_file)) === $ns_input['owner'];
@@ -57,3 +58,9 @@ require_once('/etc/inc/auth.inc');
     local_user_set($ns_user);
     echo 'NS_RESULT:' . base64_encode(json_encode(['installed'=>true]));
 })();
+
+} catch (Throwable $error) {
+    $code = $error->getMessage();
+    if (!in_array($code, ['USER_CONFLICT','PATH_CONFLICT','INSTALL_FAILED','INVALID_USER','INVALID_UID','SSH_DISABLED','UNSUPPORTED_VERSION'], true)) { $code = 'INSTALL_FAILED'; }
+    echo 'NS_RESULT:' . base64_encode(json_encode(['error'=>$code]));
+}

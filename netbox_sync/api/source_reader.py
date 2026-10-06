@@ -10,7 +10,7 @@ from ..source_registry import SCHEMA_NAME_PATTERN
 
 SOURCE_COLUMNS = (
     'source_instance', 'source_type', 'name', 'address', 'enabled', 'sync_enabled',
-    'verify_ssl', 'sync_interval_seconds', 'site_slug', 'cluster_name', 'platform_slug',
+    'verify_ssl', 'sync_interval_seconds', 'sync_calendar', 'schedule_changed_at', 'site_slug', 'cluster_name', 'platform_slug',
     'device_role_slug', 'device_type_slug', 'cluster_type_slug', 'legacy_identity_owner',
 )
 

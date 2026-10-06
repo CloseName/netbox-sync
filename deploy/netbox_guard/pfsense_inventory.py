@@ -94,7 +94,8 @@ def validate(value):
             raise ValueError('Invalid route observations')
         if item['collection']=='error' and item['text']:raise ValueError('Invalid failed route observations')
         runtime[name]=dict(collection=item['collection'],text=item['text'])
-    return dict(collected_at=value['collected_at'],version=value['version'],components=clean,
+    ipam=validate_ipam(value.get('ipam'), value.get('collection_interval_seconds',(value.get('ipam') or {}).get('interval_seconds',3600)))
+    return dict(ipam=ipam,collected_at=value['collected_at'],version=value['version'],components=clean,
                 packages=dict(collection=packages['collection'],items=pkg),runtime=runtime)
 
 
@@ -107,6 +108,12 @@ def snapshot_record(inventory, preview, previous=None, now=None):
     value.update(schema='netbox-sync.pfsense.inventory.snapshot.v1',vm_id=preview['vm_id'],
                  interface_bindings=[dict(id=r['match']['id'],mac=r['runtime']['mac']) for r in preview['interfaces']],
                  interface_labels={r['configuration']['id']: r['configuration']['name'] for r in preview['interfaces']})
+    if isinstance(previous,dict):
+        current={(r['interface'],r['start'],r['end']) for r in value['ipam']['entries']}
+        for old in (previous.get('ipam') or {}).get('entries',[]):
+            if old.get('kind') in ('arp','lease','historical') and (old['interface'],old['start'],old['end']) not in current:
+                value['ipam']['entries'].append({**old,'kind':'historical'})
+        value['ipam']=validate_ipam(value['ipam'],value['ipam']['interval_seconds'])
     if previous==value:return value
     stamp=datetime.fromisoformat(value['collected_at'].replace('Z','+00:00'))
     now=now or datetime.now(timezone.utc)
@@ -158,9 +165,40 @@ def panel(value):
                     tables.append(dict(title=title,columns=[COLUMNS.get(k,k) for k in columns],
                         rows=[[cell(r,k) for k in columns] for r in entries[:100]],
                         count=len(entries),truncated=len(entries)>100,grouped=grouped))
-            details.append(dict(name=LABELS[name],tables=tables))
+            details.append(dict(key=name,name=LABELS[name],tables=tables))
         routes=[dict(name='IPv4' if key=='routes4' else 'IPv6',state=STATE[v['collection']],
                      text=v['text'][:65536],truncated=len(v['text'])>65536) for key,v in clean['runtime'].items()]
         return dict(collected_at=clean['collected_at'],version=clean['version'],summary=summary,details=details,
             packages=clean['packages']['items'],package_state=STATE[clean['packages']['collection']],routes=routes)
     except (KeyError,TypeError,ValueError,AttributeError):return {'invalid':True}
+
+
+from ipaddress import IPv4Address
+import re
+
+
+def validate_ipam(value, interval):
+    if value is None:
+        return {'configuration':'error','leases':'error','arp':'error','entries':[], 'interval_seconds':interval}
+    if type(interval) is not int or not 300 <= interval <= 604800:
+        raise ValueError('Invalid collection interval')
+    if not isinstance(value,dict) or set(value) not in ({'configuration','leases','arp','entries'}, {'configuration','leases','arp','entries','interval_seconds'}):
+        raise ValueError('Invalid IPAM evidence')
+    if any(value[k] not in ('ok','error') for k in ('configuration','leases','arp')):
+        raise ValueError('Invalid IPAM completeness')
+    rows=value['entries']
+    if not isinstance(rows,list) or len(rows)>10000: raise ValueError('Too many IPAM observations')
+    clean=[]
+    for row in rows:
+        if not isinstance(row,dict) or set(row)!={'kind','interface','start','end','mac'}:
+            raise ValueError('Invalid address evidence')
+        if row['kind'] not in ('dhcp','static','vip','arp','lease','historical'):
+            raise ValueError('Unknown address evidence')
+        start,end=IPv4Address(row['start']),IPv4Address(row['end'])
+        if int(end)<int(start): raise ValueError('Invalid address range')
+        if not isinstance(row['interface'],str) or not re.fullmatch('[a-zA-Z0-9_.-]{0,64}',row['interface']):
+            raise ValueError('Invalid interface')
+        if not isinstance(row['mac'],str) or row['mac'] and not re.fullmatch('[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}',row['mac']):
+            raise ValueError('Invalid MAC')
+        clean.append({**row,'start':str(start),'end':str(end),'mac':row['mac'].lower()})
+    return {**value,'entries':clean,'interval_seconds':interval}

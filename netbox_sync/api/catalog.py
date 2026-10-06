@@ -4,9 +4,9 @@ from ..local_control import request,ControlError
 class CatalogError(Exception):
     def __init__(self,code): self.code=code
 
-def call(path,payload):
+def call(path,payload, *, prepare=False):
     if not path: raise CatalogError('UNAVAILABLE')
-    try: result=request(path,{'action':'catalog','query':payload},timeout=33)['result']
+    try: result=request(path,{'action':'catalog-prepare' if prepare else 'catalog','query':payload},timeout=93 if prepare else 33)['result']
     except ControlError: raise CatalogError('UNAVAILABLE') from None
     if 'error' in result: raise CatalogError(result['error'])
     return result

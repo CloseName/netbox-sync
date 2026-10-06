@@ -90,6 +90,7 @@ def setup(value, interfaces):
         code='$ns_input=json_decode(base64_decode("'+base64.b64encode(json.dumps(payload).encode()).decode()+'"), true);\n'
         code+=(ASSETS/'provision-web.php').read_text(encoding='utf-8')
         result=php(session,base,code)
+        if result.get('error') in {'USER_CONFLICT','PATH_CONFLICT','INSTALL_FAILED','INVALID_USER','INVALID_UID','SSH_DISABLED','UNSUPPORTED_VERSION'}:raise SetupError(result['error'])
         if result.get('installed') is not True:raise SetupError('INSTALL_FAILED')
         return probe
 
@@ -121,7 +122,7 @@ def collect(state,policy):
             return json.loads(raw)
         finally:client.close()
 
-def run(value):
+def run(value, progress=None):
     parsed=urlsplit(value['url']);host,address=EgressPolicy(allowed_hosts=(parsed.hostname,)).resolve(parsed.hostname,parsed.port or 443)
     with pinned_dns(host,address,parsed.port or 443),requests.Session() as session:
         configure_session(session)
@@ -130,10 +131,22 @@ def run(value):
         page=fetch(session,value['url']+'/api/virtualization/interfaces/?virtual_machine_id='+str(value['vm_id'])+'&limit=512',value['read_token'])
         if page.get('next') or page['count']!=len(page['results']):raise SetupError('VM_INTERFACES_INVALID')
         interfaces=[dict(id=r['id'],vm_id=value['vm_id'],name=r['name'],mac=(r.get('primary_mac_address') or {}).get('mac_address')) for r in page['results']]
+        response=session.post(value['url']+'/api/plugins/netbox-sync-guard/pfsense/preflight/',
+            json={'vm_id':value['vm_id']},headers={'Authorization':authorization(value['apply_token']),
+            'X-Netbox-Sync-Guard-Instance':value['guard_instance']},timeout=(5,15),allow_redirects=False)
+        if response.status_code==404:raise SetupError('GUARD_UPGRADE_REQUIRED')
+        if response.status_code!=200:
+            try:code=response.json().get('code')
+            except (ValueError,AttributeError):code=None
+            allowed={'PERMISSION_DENIED','TOKEN_WRITE_REQUIRED','GUARD_INSTANCE_CHANGED','PFSENSE_FIELDS_REQUIRED','PFSENSE_FIELDS_INCOMPATIBLE'}
+            raise SetupError(code if code in allowed else 'NETBOX_PREFLIGHT_FAILED')
+        if response.json().get('status')!='READY':raise SetupError('NETBOX_PREFLIGHT_FAILED')
     state=dict(value['state'])
     if value['operation']=='connect':state.update({k:v for k,v in setup(value,interfaces).items() if k in ('ssh_port','host_key')})
     if 'host_key' not in state:raise SetupError('CONNECT_REQUIRED')
+    if progress is not None:progress.update(ssh_port=state['ssh_port'],host_key=state['host_key'])
     snapshot=collect(state,value['policy'])
+    snapshot['collection_interval_seconds']=(value.get('data',{}).get('interval_minutes',state.get('interval_minutes',60)) if value['operation']=='connect' else state.get('interval_minutes',60))*60
     preview=build_preview(snapshot['network'],interfaces,value['vm_id'])
     if not preview['all_interfaces_matched'] or preview['unmatched_vm_interfaces']:raise SetupError('VM_IDENTITY_MISMATCH')
     with pinned_dns(host,address,parsed.port or 443),requests.Session() as session:
@@ -142,16 +155,21 @@ def run(value):
             json={'vm_id':value['vm_id'],'snapshot':snapshot},
             headers={'Authorization':authorization(value['apply_token']),'X-Netbox-Sync-Guard-Instance':value['guard_instance']},
             timeout=(5,15),allow_redirects=False)
-        if response.status_code!=200:raise SetupError('NETBOX_IMPORT_FAILED')
+        if response.status_code!=200:
+            try:code=response.json().get('code')
+            except (ValueError,AttributeError):code=None
+            allowed={'PERMISSION_DENIED','TOKEN_WRITE_REQUIRED','GUARD_INSTANCE_CHANGED','PFSENSE_FIELDS_REQUIRED','PFSENSE_FIELDS_INCOMPATIBLE','PFSENSE_SNAPSHOT_INVALID'}
+            raise SetupError(code if code in allowed else 'NETBOX_IMPORT_FAILED')
         result=response.json()
         if result.get('status') not in ('SAVED','UNCHANGED'):raise SetupError('NETBOX_IMPORT_FAILED')
     return dict(collected_at=snapshot['collected_at'],ssh_port=state['ssh_port'],host_key=state['host_key'])
 
 def main():
-    try:result=run(json.loads(sys.stdin.buffer.read(32769)))
+    progress={}
+    try:result=run(json.loads(sys.stdin.buffer.read(32769)),progress)
     except SetupError as error:result={'error':str(error)}
     except requests.exceptions.SSLError:result={'error':'TLS_FAILED'}
     except Exception:result={'error':'CONNECTION_FAILED'}
-    print(json.dumps(result))
+    print(json.dumps({**progress,**result}))
 
 if __name__=='__main__':main()

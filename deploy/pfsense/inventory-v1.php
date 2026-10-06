@@ -134,6 +134,68 @@ function nsi_configuration(string $xml, ?array $packages): array {
     return $components;
 }
 
+/** Additional IPv4 evidence. Failure is explicit and never means an empty network. */
+function nsi_ipam(string $xml, ?string $leaseFixture = null, ?string $arpFixture = null): array {
+    if (!defined('NETBOX_SYNC_COLLECTOR_TEST') && ($leaseFixture !== null || $arpFixture !== null)) { throw new RuntimeException('fixtures disabled'); }
+    $result = ['configuration'=>'error', 'leases'=>'error', 'arp'=>'error', 'entries'=>[]];
+    $isc = true; $dhcpEnabled = false;
+    try {
+        $root = simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NONET);
+        if ($root === false) { return $result; }
+        foreach ($root->xpath('//dhcpbackend') as $backend) { if (!in_array(strtolower(trim((string)$backend)), ['', 'isc'], true)) { $isc = false; } }
+        foreach (isset($root->dhcpd) ? $root->dhcpd->children() : [] as $id=>$dhcp) {
+            if (isset($dhcp->enable)) {
+                $dhcpEnabled = true;
+                foreach ($dhcp->xpath('range|pool/range') as $range) {
+                    $result['entries'][]=['kind'=>'dhcp','interface'=>(string)$id,'start'=>(string)$range->from,'end'=>(string)$range->to,'mac'=>''];
+                }
+            }
+            foreach ($dhcp->staticmap as $entry) {
+                if ((string)$entry->ipaddr !== '') { $result['entries'][]=['kind'=>'static','interface'=>(string)$id,'start'=>(string)$entry->ipaddr,'end'=>(string)$entry->ipaddr,'mac'=>strtolower((string)$entry->mac)]; }
+            }
+        }
+        foreach ($root->virtualip->vip ?? [] as $vip) {
+            if (filter_var((string)$vip->subnet, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                if ((string)$vip->mode === 'proxyarp' && (string)$vip->subnet_bits !== '32') { throw new RuntimeException('proxy ARP range requires review'); }
+                $result['entries'][]=['kind'=>'vip','interface'=>(string)$vip->interface,'start'=>(string)$vip->subnet,'end'=>(string)$vip->subnet,'mac'=>''];
+            }
+        }
+        $result['configuration']='ok';
+    } catch (Throwable $e) { $result['configuration']='error'; }
+    try {
+        if (!$isc) { throw new RuntimeException('unsupported DHCP lease backend'); }
+        $raw = $leaseFixture ?? (!$dhcpEnabled && !is_file('/var/dhcpd/var/db/dhcpd.leases') ? '' : file_get_contents('/var/dhcpd/var/db/dhcpd.leases', false, null, 0, 4*1024*1024+1));
+        if ($raw === false || strlen($raw)>4*1024*1024) { throw new RuntimeException('leases unavailable'); }
+        preg_match_all('/lease\s+([0-9.]+)\s*\{([^{}]*)\}/s', $raw, $matches, PREG_SET_ORDER);
+        if (count($matches)>10000 || count($matches)!==preg_match_all('/lease\s+[0-9.]+\s*\{/', $raw)) { throw new RuntimeException('unsupported leases'); }
+        $latest=[];
+        foreach ($matches as $match) { $latest[$match[1]]=$match[2]; }
+        foreach ($latest as $address=>$body) {
+            if (!preg_match('/binding state active;/', $body)) { continue; }
+            if (!preg_match('/ends (?:[0-6] ([0-9\/]+ [0-9:]+)|never);/', $body, $end)) { throw new RuntimeException('lease expiry unknown'); }
+            if (isset($end[1]) && $end[1] !== '') {
+                $expiry = strtotime($end[1].' UTC');
+                if ($expiry === false) { throw new RuntimeException('invalid lease expiry'); }
+                if ($expiry <= time()) { continue; }
+            }
+            preg_match('/hardware ethernet ([0-9a-f:]+);/i', $body, $mac);
+            $result['entries'][]=['kind'=>'lease','interface'=>'','start'=>$address,'end'=>$address,'mac'=>strtolower($mac[1]??'')];
+        }
+        $result['leases']='ok';
+    } catch (Throwable $e) { $result['leases']='error'; }
+    try {
+        $raw=$arpFixture ?? ns_command('arp');
+        foreach (preg_split('/\R/', $raw) as $line) {
+            if (preg_match('/\(([0-9.]+)\) at ([0-9a-f:]{17}) on ([a-zA-Z0-9_.-]+)/', $line, $row)) {
+                $result['entries'][]=['kind'=>'arp','interface'=>$row[3],'start'=>$row[1],'end'=>$row[1],'mac'=>strtolower($row[2])];
+            }
+        }
+        $result['arp']='ok';
+    } catch (Throwable $e) { $result['arp']='error'; }
+    if (count($result['entries'])>10000) { return ['configuration'=>'error','leases'=>'error','arp'=>'error','entries'=>[]]; }
+    return $result;
+}
+
 function nsi_main(): int {
     ini_set('display_errors','0'); ini_set('log_errors','0');
     set_error_handler(function () { throw new RuntimeException('inventory read failed'); });
@@ -171,7 +233,7 @@ function nsi_main(): int {
             'network'=>['schema'=>'netbox-sync.pfsense.network.v1','collected_at'=>$stamp,'version'=>$version,
                 'configuration'=>ns_configuration($xml),'runtime'=>['ifconfig'=>ns_ifconfig()]],
             'packages'=>['collection'=>$packages===null?'error':'ok','items'=>$packages??[]],
-            'components'=>$components,'runtime'=>$runtime,
+            'components'=>$components,'runtime'=>$runtime,'ipam'=>nsi_ipam($xml),
             'limitations'=>['Configuration inventory is not an effective firewall policy.',
                 'Process presence does not establish service health or tunnel connectivity.',
                 'Secrets, URL alias contents, custom/advanced directives and HAProxy ACL expressions are omitted.',

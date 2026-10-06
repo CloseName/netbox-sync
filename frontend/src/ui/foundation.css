@@ -1849,3 +1849,5 @@ input[aria-invalid=true],select[aria-invalid=true]{border:2px solid #b42318;}
 
 .sources-actions { display:flex; align-items:center; gap:1rem; margin:1rem 0; }
 .sources-actions > button:last-child { margin-left:auto; }
+
+.schedule-panel .schedule-calendar-field { display: grid; gap: .5rem; margin-block: 1rem; max-width: 24rem; }

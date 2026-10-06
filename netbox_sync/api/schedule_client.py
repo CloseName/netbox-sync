@@ -41,7 +41,8 @@ class ScheduleWorkerClient:
             raise ScheduleRequestError(code if code in allowed else 'CONTROL_REQUEST_FAILED')
         result = response.get('result')
         if (not isinstance(result, dict)
-                or set(result) != {'source_instance', 'sync_enabled', 'sync_interval_seconds'}
+                or set(result) not in ({'source_instance', 'sync_enabled', 'sync_interval_seconds'},
+                    {'source_instance', 'sync_enabled', 'sync_interval_seconds', 'sync_calendar', 'schedule_changed_at'})
                 or result.get('source_instance') != source_instance
                 or not isinstance(result.get('sync_enabled'), bool)
                 or not isinstance(result.get('sync_interval_seconds'), int)

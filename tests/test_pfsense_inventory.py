@@ -105,3 +105,15 @@ def test_firewall_groups_preserve_rules_and_remove_interface_column():
     assert all('Интерфейс' not in t['columns'] and t['grouped'] for t in tables)
     del record['interface_labels']
     assert m.panel(record)['details'][0]['tables'][1]['title'] == 'LAN'
+
+
+def test_expired_lease_or_missing_arp_does_not_automatically_release_observed_address():
+    from datetime import timedelta
+    value,preview=fixture()
+    value['ipam']={'configuration':'ok','leases':'ok','arp':'ok','entries':[{'kind':'arp','interface':'lan','start':'10.0.0.90','end':'10.0.0.90','mac':''}]}
+    before=m.snapshot_record(value,preview,now=NOW)
+    value['ipam']['entries']=[]
+    value['collected_at']=preview['collected_at']=(NOW+timedelta(seconds=30)).isoformat()
+    after=m.snapshot_record(value,preview,before,now=NOW+timedelta(seconds=30))
+    assert after['ipam']['entries'][0]['kind']=='historical'
+    assert after['ipam']['entries'][0]['start']=='10.0.0.90'

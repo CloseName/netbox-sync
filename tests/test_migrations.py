@@ -140,7 +140,9 @@ def test_ui6_revisions_form_one_forward_only_chain():
 
 def test_retirement_revision_extends_identity_proof_without_forks():
     head=_revision('head')
-    assert head.revision=='0013_source_archives'
+    assert head.revision=='0017_calendar_schedule'
+    assert head.down_revision=='0016_removal_queue'
+    head=_revision('0013_source_archives')
     assert head.down_revision=='0012_run_reconciliation'
     assert _revision('0012_run_reconciliation').down_revision=='0011_registration_requests'
     assert _revision('0011_registration_requests').down_revision=='0010_source_retirements'

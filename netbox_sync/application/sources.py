@@ -36,6 +36,8 @@ class SourceView:
     cluster_type_slug: str
     legacy_identity_owner: bool
     status: str
+    sync_calendar: dict | None = None
+    schedule_changed_at: object | None = None
 
 
 def source_view(row):
@@ -71,10 +73,13 @@ def source_view(row):
         status = 'disabled' if not row['enabled'] else (
             'enabled' if row['sync_enabled'] else 'sync_disabled'
         )
+        from ..calendar_schedule import validate_calendar
+        calendar = validate_calendar(row.get('sync_calendar'))
         return SourceView(
             **{name: row[name] for name in fields},
             **{name: row[name] for name in flags},
             type=row['source_type'], sync_interval_seconds=interval, status=status,
+            sync_calendar=calendar, schedule_changed_at=row.get('schedule_changed_at'),
         )
     except (KeyError, TypeError, ValueError):
         raise SourceReadError(ErrorCode.SOURCE_DATA_INVALID) from None

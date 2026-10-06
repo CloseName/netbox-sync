@@ -55,3 +55,21 @@ def test_scheduler_policy_is_not_a_public_action():
     service,session,_=enrolled()
     assert service.root('pfsense.policy',{})['effective']==service.policy()['effective']
     with pytest.raises(Exception): call(service,session,'pfsense.policy')
+
+
+def test_test_installation_only_schedules_its_own_state(tmp_path, monkeypatch):
+    from netbox_sync.pfsense_control import collector_username, state_root
+    root = tmp_path / 'pfsense'; root.mkdir()
+    (root / '1.json').write_text('{}')
+    (root / 'test').mkdir(); (root / 'test' / '2.json').write_text('{}')
+    monkeypatch.setenv('NETBOX_SYNC_PFSENSE_USER', 'netbox-sync-test')
+    assert collector_username() == 'netbox-sync-test'
+    assert state_root(SimpleNamespace(root=tmp_path)) == root / 'test'
+    calls=[]
+    monkeypatch.setattr(scheduler, 'request', lambda *a: {'result': {'effective': {}}})
+    monkeypatch.setattr(scheduler, 'handle', lambda store, lock, payload, **kw: calls.append(payload['vm_id']))
+    scheduler.tick(SimpleNamespace(root=tmp_path), 'lock')
+    assert calls == [2]
+    monkeypatch.setenv('NETBOX_SYNC_PFSENSE_USER', 'netbox-sync')
+    calls.clear(); scheduler.tick(SimpleNamespace(root=tmp_path), 'lock')
+    assert calls == [1]

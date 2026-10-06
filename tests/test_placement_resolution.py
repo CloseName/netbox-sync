@@ -105,3 +105,12 @@ def test_manual_type_requires_fresh_lookup():
     payload['host_types']={'uuid-a':project('device_type',rows['device_type'][0])}
     with pytest.raises(ProbeError,match='SELECTION_REQUIRED'):
         resolve(payload,listing,project)
+
+
+@pytest.mark.parametrize('missing', ['site', 'cluster_type'])
+def test_missing_dependencies_are_not_name_conflicts(missing):
+    rows, payload, listing = fixture()
+    rows[missing] = []
+    result = resolve(payload, listing, project)
+    assert any(i['kind'] == missing for i in result['issues'])
+    assert not any(i['kind'] == 'cluster' for i in result['issues'])

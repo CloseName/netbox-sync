@@ -225,6 +225,8 @@ class SourceRegistry:
             enabled=row['enabled'],
             sync_enabled=row['sync_enabled'],
             sync_interval_seconds=row['sync_interval_seconds'],
+            sync_calendar=row.get('sync_calendar'),
+            schedule_changed_at=row.get('schedule_changed_at') if row.get('sync_calendar') else None,
             verify_ssl=row['verify_ssl'],
             target=NetBoxTargetConfig(
                 site_slug=row['site_slug'],
