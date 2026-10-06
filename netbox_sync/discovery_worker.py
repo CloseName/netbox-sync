@@ -187,6 +187,7 @@ def execute_child(payload):
     from .esxi_client import EsxiClient
     from .esxi_discovery import discover_hosts as discover_esxi
     from .proxmox_discovery import discover_hosts as discover_proxmox
+    from .host_primary_ip import select_endpoint
     source = dict(payload['source'])
     credentials = payload['credentials']
     source['username'] = credentials['username']
@@ -202,7 +203,7 @@ def execute_child(payload):
                                   token_value=credentials['token_secret'], verify_ssl=config.verify_ssl, port=config.api_port)
             from .source_tls import configure_proxmox
             configure_proxmox(provider, config.verify_ssl)
-            hosts = discover_proxmox(provider, config)
+            hosts = select_endpoint(discover_proxmox(provider, config), config)
         if payload.get('operation') != 'plan':
             review = _comparison(lambda: build_proxmox_review(nb_api, hosts, config), hosts, config)
     elif config.source_type == 'esxi':
@@ -213,7 +214,7 @@ def execute_child(payload):
                 return credentials['token_secret']
         with failure_stage('provider'):
             with EsxiClient(resolver=Resolved()).session(config) as service:
-                hosts = discover_esxi(service, config)
+                hosts = select_endpoint(discover_esxi(service, config), config)
         if payload.get('operation') != 'plan':
             from .esxi_vm_identity import resolve_vm_identities
             hosts, _ = resolve_vm_identities(nb_api, hosts, config)

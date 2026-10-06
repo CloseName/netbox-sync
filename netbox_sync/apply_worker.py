@@ -59,6 +59,7 @@ def _discover(payload):
     from .esxi_client import EsxiClient
     from .esxi_discovery import discover_hosts as discover_esxi
     from .proxmox_discovery import discover_hosts as discover_proxmox
+    from .host_primary_ip import select_endpoint
     source = dict(payload['source'])
     credentials = payload['credentials']
     source['username'] = credentials['username']
@@ -70,13 +71,13 @@ def _discover(payload):
             token_value=credentials['token_secret'], verify_ssl=config.verify_ssl, port=config.api_port)
         from .source_tls import configure_proxmox
         configure_proxmox(provider, config.verify_ssl)
-        return config, discover_proxmox(provider, config)
+        return config, select_endpoint(discover_proxmox(provider, config), config)
     if config.source_type == 'esxi':
         class Resolved:
             def resolve(self, _reference):
                 return credentials['token_secret']
         with EsxiClient(resolver=Resolved()).session(config) as service:
-            return config, discover_esxi(service, config)
+            return config, select_endpoint(discover_esxi(service, config), config)
     raise ApplyWorkerError('SOURCE_UNSUPPORTED')
 
 

@@ -76,6 +76,7 @@ class DiscoveredHost:
     virtual_machines: list['DiscoveredVirtualMachine'] = field(default_factory=list)
     containers: list['DiscoveredContainer'] = field(default_factory=list)
     esxi_host_network: dict | None = None
+    connection_management: dict | None = None
 
 
 @dataclass

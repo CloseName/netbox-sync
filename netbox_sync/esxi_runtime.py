@@ -87,7 +87,7 @@ def _print_plan(plan):
                 f'name={item.discovered_name!r} external_id={item.external_id!r} '
                 'action=REPORT_ONLY'
             )
-    print('host_networking=UNSUPPORTED_REPORT_ONLY')
+    print('host_networking=UNSUPPORTED_REPORT_ONLY; confirmed endpoint management IP is synchronized')
     print('disappearance=RETAIN_ONLY')
 
 
@@ -143,6 +143,8 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False):
         if metadata_hosts:
             apply_hosts(api, metadata_hosts, config.target, confirmed=True, host_networking=False)
         apply_host_network_snapshots(api, network_hosts)
+        from .host_primary_ip import apply_esxi_primary
+        apply_esxi_primary(api, network_hosts)
         apply_virtual_machines(api, filtered_hosts, config.target, confirmed=True)
         apply_vm_networks(api, filtered_hosts, config, confirmed=True)
 

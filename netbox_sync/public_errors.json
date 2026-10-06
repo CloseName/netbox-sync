@@ -383,5 +383,16 @@
       "en": "No registration was changed. Review the inventory size with the administrator.",
       "ru": "Регистрации не изменены. Проверьте размер инвентаря с администратором."
     }
+  },
+  "HOST_PRIMARY_IP_CONFLICT": {
+    "stage": "planning",
+    "message": {
+      "en": "The host management IPv4 conflicts with an existing NetBox assignment.",
+      "ru": "IPv4 управления хостом конфликтует с существующим назначением в NetBox."
+    },
+    "action": {
+      "en": "Review the device primary IPv4, interface ownership, IP assignment, prefix and VRF before retrying. Existing assignments have not been replaced.",
+      "ru": "Проверьте Primary IPv4 устройства, принадлежность интерфейса, назначение IP, маску и VRF. Существующие назначения не были заменены."
+    }
   }
 }
