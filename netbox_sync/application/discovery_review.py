@@ -194,7 +194,7 @@ def build_esxi_review(plan, config):
         if item.object_kind == 'host':
             items.append(ReviewItem('host_network', item.source_name, item.identity.external_id,
                 ReviewClassification.UNSUPPORTED, 'ESXI_HOST_NETWORK_UNSUPPORTED',
-                'ESXi networking is report-only in a device snapshot; native host interfaces, cables and IP assignments are not created.',
+                'ESXi topology is stored in a device snapshot. A verified connection IPv4 is synchronized separately as a native VMkernel interface/IP and device Primary IPv4; other host networking remains report-only.',
                 'none'))
     return DiscoveryReview(config.source_instance, config.source_type,
                            config.target.site_slug, config.target.cluster_name, tuple(items))

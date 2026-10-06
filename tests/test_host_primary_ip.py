@@ -116,3 +116,74 @@ def test_conflict_has_actionable_public_diagnostic():
     from netbox_sync.host_primary_ip import HostPrimaryIPConflict
     from netbox_sync.worker_failure import classify
     assert classify(HostPrimaryIPConflict('internal detail'), 'planning') == 'HOST_PRIMARY_IP_CONFLICT'
+
+
+@pytest.mark.parametrize("use_hostname", [False, True])
+def test_scheduled_esxi_executor_selects_endpoint_before_reconciliation(fake_netbox, monkeypatch, use_hostname):
+    from contextlib import contextmanager
+    from netbox_sync import esxi_executor
+    hosts, config = prepared(fake_netbox)
+    hosts[0].connection_management = None
+    if use_hostname:
+        config = replace(config, address='esxi.internal.test')
+        monkeypatch.setattr(socket, 'getaddrinfo', lambda *args:
+            [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('198.51.100.10', 443))])
+    class Client:
+        @contextmanager
+        def session(self, config):
+            yield object()
+    monkeypatch.setattr(esxi_executor, 'discover_hosts', lambda *args: hosts)
+    def reconcile(config, discovered, mode):
+        assert discovered[0].connection_management['address'] == '198.51.100.10/25'
+        execute_esxi_runtime(fake_netbox, discovered, config, confirmed=True)
+        device = fake_netbox.dcim.devices.all()[0]
+        assert fake_netbox.ipam.ip_addresses.get(id=device.primary_ip4).address == '198.51.100.10/25'
+    esxi_executor.execute_esxi_source(config, 'apply', reconcile, client=Client())
+
+
+def test_scheduled_proxmox_executor_selects_endpoint(monkeypatch, fake_netbox):
+    import netbox_sync as runtime
+    from types import SimpleNamespace
+    hosts, config = prepared(fake_netbox)
+    host = hosts[0]
+    host.source = 'proxmox'
+    host.management_ip = '10.0.0.2'
+    host.interfaces = [DiscoveredHostInterface(name='vmbr0', addresses=['198.51.100.10/25'])]
+    monkeypatch.setattr(runtime.FileSecretResolver, 'resolve_credentials', lambda *args:
+        SimpleNamespace(username='sync@pve', token_id='sync', token_secret='test'))
+    monkeypatch.setattr(runtime, 'ProxmoxAPI', lambda **kwargs: object())
+    monkeypatch.setattr('netbox_sync.source_tls.configure_proxmox', lambda *args: None)
+    monkeypatch.setattr(runtime, 'discover_hosts', lambda *args: hosts)
+    seen = []
+    monkeypatch.setattr(runtime, 'execute_discovered_source', lambda config, hosts, mode, **kwargs:
+        seen.append(hosts[0].management_ip))
+    runtime.execute_proxmox_source(replace(config, source_type='proxmox'), 'apply')
+    assert seen == ['198.51.100.10']
+
+
+@pytest.mark.parametrize('names', [('AM - Docker 14', 'AM - Docker 14'),
+    ('Same', 'same'), ('x' * 64 + 'A', 'x' * 64 + 'B')])
+def test_duplicate_vm_names_have_blocked_plan_without_writes(fake_netbox, names):
+    from tests.test_esxi_runtime import _inventory
+    from tests.test_first_sync import target
+    hosts = _inventory(2)
+    config = target(fake_netbox, _config())
+    for vm, name in zip(hosts[0].virtual_machines, names):
+        vm.original_name = name
+        vm.normalized_name = name
+    plan = build_runtime_plan(fake_netbox, hosts, config)
+    assert not plan.apply_allowed
+    assert plan.items[0].reason_code == 'DUPLICATE_VM_NAME'
+    assert fake_netbox.mutations == []
+
+
+def test_duplicate_names_reproduce_native_writer_failure(fake_netbox):
+    from tests.test_esxi_runtime import _inventory
+    from tests.test_first_sync import target
+    hosts = _inventory(2)
+    config = target(fake_netbox, _config())
+    for vm in hosts[0].virtual_machines:
+        vm.original_name = vm.normalized_name = 'AM - Docker 14'
+    with pytest.raises(RuntimeError, match='Duplicate discovered VM names'):
+        execute_esxi_runtime(fake_netbox, hosts, config, confirmed=True)
+    assert fake_netbox.mutations == []

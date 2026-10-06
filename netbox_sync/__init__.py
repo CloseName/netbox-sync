@@ -840,7 +840,8 @@ def execute_proxmox_source(
 
     from .source_tls import configure_proxmox
     configure_proxmox(pve_api, source_config.verify_ssl)
-    hosts = discover_hosts(pve_api, source_config)
+    from .host_primary_ip import select_endpoint
+    hosts = select_endpoint(discover_hosts(pve_api, source_config), source_config)
     return execute_discovered_source(
         source_config,
         hosts,

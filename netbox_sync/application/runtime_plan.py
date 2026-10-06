@@ -41,6 +41,26 @@ def build_runtime_plan(nb_api, hosts, config):
                 name=config.name, action=SyncAction.BLOCKED, reason_code=c.kind,
                 reason='Inventory conflict. Resolve the ambiguity and build a new plan.')
                 for c in conflicts))
+    # The native VM writer requires unique display names in the target cluster.
+    # Surface the conflict in the review instead of a generic simulation failure.
+    from ..netbox_vm_name import netbox_vm_name
+    by_name = {}
+    for host in hosts:
+        for vm in host.virtual_machines:
+            by_name.setdefault(netbox_vm_name(vm).casefold(), []).append(vm)
+    duplicate_names = {name: vms for name, vms in by_name.items() if len(vms) > 1}
+    if duplicate_names:
+        return SyncPlan(
+            source_instance=config.source_instance, source_id=config.id,
+            source_type=config.source_type, source_fingerprint=safe_source_fingerprint(config),
+            target_fingerprint=target_fingerprint(config),
+            provider_fingerprint=stable_fingerprint(sorted(duplicate_names)),
+            netbox_fingerprint=stable_fingerprint(None),
+            items=tuple(SyncPlanItem(object_kind='virtual_machine', external_id=name,
+                name=netbox_vm_name(vms[0]), action=SyncAction.BLOCKED,
+                reason_code='DUPLICATE_VM_NAME',
+                reason='Multiple source VMs have the same NetBox name (case-insensitive, first 64 characters). Rename them in the source and build a new plan.')
+                for name, vms in sorted(duplicate_names.items())))
     # Reuse exact remote reads within one plan; prepare/apply reads afresh.
     from ..host_mapping import validate
     from ..child_process import measured_phase

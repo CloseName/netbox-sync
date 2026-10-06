@@ -1,6 +1,6 @@
 # Host connection IPv4
 
-Web discovery resolves the configured source endpoint to a single IPv4 address.
+Manual and scheduled discovery resolve the configured source endpoint to a single IPv4 address.
 The address is selected only when it matches exactly one discovered host interface
 with a valid prefix. Multiple DNS A records, unresolved names, and addresses of NAT
 or reverse proxies are not evidence that an address belongs to a host interface.

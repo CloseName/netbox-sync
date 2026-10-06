@@ -21,4 +21,6 @@ def execute_esxi_source(
     api_client = client or EsxiClient()
     with api_client.session(source_config) as service_instance:
         hosts = discover_hosts(service_instance, source_config)
+    from .host_primary_ip import select_endpoint
+    hosts = select_endpoint(hosts, source_config)
     return reconcile(source_config, hosts, sync_mode)
