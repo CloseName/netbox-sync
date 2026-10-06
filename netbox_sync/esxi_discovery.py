@@ -254,10 +254,13 @@ def _vm_disks_and_interfaces(vm, host):
         label = str(_value(device, 'deviceInfo.label', ''))
         key = getattr(device, 'key', None)
         if hasattr(device, 'capacityInKB'):
+            if key is None or not str(key).strip():
+                raise ValueError('ESXi VM disk has no stable device key')
             datastore = _value(device, 'backing.datastore.name')
             disks.append(
                 DiscoveredVirtualDisk(
                     name=label or f'disk-{key}',
+                    external_id=str(key),
                     storage=str(datastore) if datastore else None,
                     size_bytes=int(getattr(device, 'capacityInKB', 0) or 0) * 1024,
                 )

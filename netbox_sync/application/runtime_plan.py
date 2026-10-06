@@ -75,12 +75,22 @@ def build_runtime_plan(nb_api, hosts, config):
     planning_api = nb_api
     from .ip_observations import ObservationPrerequisiteError
     from ..esxi_host_network import HostNetworkPrerequisiteError
+    from ..netbox_vm_network_apply import ManagedMACConflict
     try:
         with measured_phase('netbox_simulation'):
             if config.source_type == 'proxmox':
                 apply_full_sync(planning_api, hosts, config.target, confirmed=True)
             else:
                 execute_esxi_runtime(planning_api, hosts, config, confirmed=True)
+    except ManagedMACConflict as conflict:
+        from dataclasses import replace
+        return replace(review_plan, items=(*review_plan.items, SyncPlanItem(
+            object_kind='vminterface', external_id=conflict.mac,
+            name=f'{conflict.vm_name} / {conflict.nic_name}', action=SyncAction.BLOCKED,
+            reason_code='MAC_IDENTITY_AMBIGUOUS' if conflict.duplicate else 'MAC_ASSIGNED_ELSEWHERE',
+            reason=('Several NetBox MAC records match the desired address.' if conflict.duplicate
+                    else 'The desired MAC belongs to another interface. Its assignment was preserved.'),
+            after=(('mac_address',conflict.mac),))))
     except HostNetworkPrerequisiteError:
         from dataclasses import replace
         return replace(review_plan, items=(*review_plan.items, SyncPlanItem(

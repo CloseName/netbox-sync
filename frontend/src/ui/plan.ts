@@ -158,7 +158,7 @@ export function planReason(item:{reason_code:string;reason:string;action?:SyncAc
   IP_OBSERVATION_ONLY:'Stored on NetBox interfaces for review; disputed IPAM assignments are not synchronized.',
   HOST_NETWORK_FIELD_REQUIRED:'Prepare the ESXi host network field in NetBox settings before synchronization.',
   OBSERVATION_FIELD_REQUIRED:'Prepare the network observations field in NetBox settings before synchronization.',
-  ESXI_HOST_NETWORK_UNSUPPORTED:'ESXi networking is report-only in a device snapshot; native host interfaces, cables and IP assignments are not created.',
+  ESXI_HOST_NETWORK_UNSUPPORTED:'ESXi topology is stored in a device snapshot. The verified connection IPv4 and its VMkernel interface are synchronized separately; other host networking remains report-only.',
   MANAGED_FIELD_UPDATE:'Update managed fields',
   EXECUTOR_CREATE_UNSUPPORTED:'No supported create operation was produced for this object.'
  };

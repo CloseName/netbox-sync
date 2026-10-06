@@ -1,6 +1,14 @@
 """Disposable real NetBox checks for prerequisites, panels and reservations."""
 import runpy
 from pathlib import Path
+# The production Dockerfile copies this shared parser into the plugin. A source
+# mount used by the disposable model test needs the equivalent module mapping.
+import importlib.util
+import sys
+spec=importlib.util.spec_from_file_location('netbox_guard.pfsense_preview',Path(__file__).parents[1]/'netbox_sync/pfsense_preview.py')
+parser=importlib.util.module_from_spec(spec)
+sys.modules[spec.name]=parser
+spec.loader.exec_module(parser)
 runpy.run_path(str(Path(__file__).with_name('netbox_model_scope_scenario.py')))
 from django.conf import settings
 settings.ALLOWED_HOSTS=['testserver']
@@ -151,3 +159,62 @@ except PermissionDenied: pass
 else: raise AssertionError('Object-constrained add permission bypassed')
 assert not IPAddress.objects.filter(vrf=vrf,address__net_host='10.24.0.8').exists()
 print('PASS: constrained add permission rolls back address and receipt')
+
+# Common read model and prefix-free IP search, against actual NetBox models.
+from dcim.models import Device, DeviceType, Manufacturer, DeviceRole, Site
+from netbox_guard.infrastructure import read_networks, document
+from netbox_guard.network_views import networks
+from netbox_guard.template_content import template_extensions, NetworkLinks
+from virtualization.models import VirtualDisk
+site=Site.objects.create(name='backlog-'+suffix,slug='backlog-'+suffix)
+maker=Manufacturer.objects.create(name='backlog-'+suffix,slug='backlog-'+suffix)
+dtype=DeviceType.objects.create(manufacturer=maker,model='backlog-'+suffix,slug='backlog-'+suffix)
+role=DeviceRole.objects.create(name='backlog-'+suffix,slug='backlog-'+suffix)
+host=Device.objects.create(name='backlog-'+suffix,site=site,device_type=dtype,role=role,cluster=cluster)
+vm.device=host
+vm.custom_field_data['pfsense_inventory']['collected_at']=timezone.now().isoformat()
+vm.save()
+interface.custom_field_data={'source_bridge':'vmbr2','source_vlan_id':265,'sync_identities':[{'instance':'model-test'}]}
+interface.save()
+binding.delete()
+guests=VirtualMachine.objects.filter(pk=vm.pk)
+nets=read_networks(user,guests)
+assert len(nets)==1 and nets[0]['cidr']=='10.24.0.0/24'
+assert any(r['state']=='candidate' for r in nets[0]['rows'])
+graph=document(user,'cluster',cluster.pk)
+assert any(e['kind']=='hosted_on' and e['target']==f'device:{host.pk}' for e in graph['edges'])
+assert any(e['kind']=='connected_to' for e in graph['edges'])
+req=factory.get('/networks/',{'ip':'10.24.0.100'});req.user=user
+page=networks(req,'cluster',cluster.pk)
+assert page.status_code==200 and 'DHCP-пул'.encode() in page.content
+req=factory.get('/networks/',{'ip':'10.25.0.2'});req.user=user
+assert 'не относится к известным сетям'.encode() in networks(req,'cluster',cluster.pk).content
+assert SyncDetails not in template_extensions
+assert 'virtualization.virtualmachine' in NetworkLinks.models
+assert read_networks(limited,guests)==[]  # No permission to view the matched NIC.
+assert CustomField.objects.get(name='sync_disk_identity').type=='json'
+VirtualDisk.objects.create(virtual_machine=vm,name='disk-test',size=1024,custom_field_data={'sync_disk_identity':{'external_id':'test'}})
+vm.refresh_from_db();assert vm.disk==1024
+print('PASS: prefix-free subnet search; graph host/NIC edges; hidden source panel; object permissions; native VirtualDisk aggregate')
+
+from netbox_guard.api.infrastructure import Infrastructure, FirewallInventory
+req=APIRequestFactory().get('/infrastructure/');force_authenticate(req,user=user)
+response=Infrastructure.as_view()(req,kind='cluster',pk=cluster.pk)
+assert response.status_code==200 and response.data['schema']=='netbox-sync.infrastructure.v1'
+assert any(node['kind']=='site' for node in response.data['nodes'])
+assert len({node['id'] for node in response.data['nodes']})==len(response.data['nodes'])
+req=APIRequestFactory().get('/infrastructure/');force_authenticate(req,user=limited)
+assert Infrastructure.as_view()(req,kind='cluster',pk=cluster.pk).status_code==404
+import json
+vm.custom_field_data['pfsense_inventory'].update(schema='netbox-sync.pfsense.inventory.snapshot.v1',vm_id=vm.pk,
+    version='2.7.2',components=json.loads((Path(__file__).parent/'fixtures/pfsense_empty_components.json').read_text()),
+    packages={'collection':'ok','items':[]},runtime={k:{'collection':'ok','text':''} for k in ('routes4','routes6','pf_filter','pf_nat')})
+vm.save()
+req=APIRequestFactory().get('/firewall/');force_authenticate(req,user=user)
+response=FirewallInventory.as_view()(req,pk=vm.pk)
+assert response.status_code==200 and response.data['runtime']['pf_filter']['collection']=='ok'
+print('PASS: infrastructure API permissions, unique node IDs, firewall runtime evidence')
+client=Client();client.force_login(user)
+assert client.get(vm.get_absolute_url()).status_code==200
+assert client.get(host.get_absolute_url()).status_code==200
+print('PASS: native VM and Device pages render with the common network panel')

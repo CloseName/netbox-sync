@@ -113,37 +113,32 @@ def checked_binding(request, pk):
 
 @login_required
 @never_cache
-@require_http_methods(['GET','POST'])
+@require_http_methods(['GET'])
 def networks(request, kind, pk):
-    if kind not in ('device','cluster'): raise PermissionDenied
-    obj=get_object_or_404(visible(Device if kind=='device' else Cluster,request.user),pk=pk)
-    cluster_id=obj.cluster_id if kind=='device' else obj.pk
-    vms=visible(VirtualMachine,request.user).filter(cluster_id=cluster_id,name__icontains='pfsense') if cluster_id else VirtualMachine.objects.none()
-    error=None
-    if request.method=='POST':
+    from .infrastructure import context, read_networks
+    from .network_projection import search_networks
+    try: obj, guests = context(request.user, kind, pk)
+    except ValueError: raise PermissionDenied
+    rows = read_networks(request.user, guests)
+    search = request.GET.get('ip','').strip()
+    selected = request.GET.get('network','')
+    state = request.GET.get('state','')
+    error = None
+    if search:
         try:
-            vm=get_object_or_404(vms,pk=int(request.POST['vm_id']))
-            prefix=get_object_or_404(visible(Prefix,request.user),pk=int(request.POST['prefix_id']))
-            if not request.user.has_perm('ipam.change_prefix',prefix): raise PermissionDenied
-            key=request.POST['interface_key']
-            options=snapshot_interfaces(vm)
-            option=next(r for r in options if r['configuration']['id']==key)
-            draft=NetworkBinding(vm=vm,prefix=prefix,interface_key=key,interface_id=option['match']['id'])
-            interface(draft)
-            snapshot=(vm.custom_field_data or {}).get('pfsense_inventory',{})
-            observation=snapshot.get('ipam',{})
-            if not freshness(snapshot.get('collected_at'),observation.get('interval_seconds'),True): raise ValueError('Stale binding')
-            with transaction.atomic():
-                NetworkBinding.objects.update_or_create(vm=vm,prefix=prefix,interface_key=key,defaults={'interface_id':draft.interface_id})
-            return redirect(request.path)
-        except (ValueError, KeyError, StopIteration, ValidationError): error='Проверьте выбранные pfSense, интерфейс и подсеть. Подсеть должна совпадать со свежим снимком интерфейса.'
-    options=[]
-    for vm in vms:
-        for row in snapshot_interfaces(vm):
-            options.append(dict(vm=vm,key=row['configuration']['id'],name=row['configuration']['name']))
-    bindings=NetworkBinding.objects.filter(vm__in=vms,prefix__in=visible(Prefix,request.user)).select_related('vm','prefix','prefix__vrf')
-    return render(request,'netbox_guard/networks.html',dict(object=obj,bindings=bindings,options=options,
-        prefixes=visible(Prefix,request.user)[:500],error=error))
+            rows = search_networks(rows, search)
+            if not rows: error = 'Адрес не относится к известным сетям этого ресурса.'
+            elif len(rows)>1: error = 'Адрес найден в нескольких сетевых контекстах. Проверьте каждый результат.'
+            for row in rows:
+                address = ip_address(search)
+                row['rows'] = [r for r in row['rows'] if ip_address(r['start']) <= address <= ip_address(r['end'])]
+        except ValueError: rows=[]; error='Введите корректный IP-адрес.'
+    if selected: rows = [r for r in rows if r['id']==selected]
+    for row in rows:
+        if state == 'excluded': row['rows']=[r for r in row['rows'] if r['state'] in ('unusable','gateway','reserved','dhcp')]
+        elif state == 'occupied': row['rows']=[r for r in row['rows'] if r['state'] in ('assigned','observed','conflict')]
+        elif state: row['rows']=[r for r in row['rows'] if r['state']==state]
+    return render(request,'netbox_guard/networks.html',dict(object=obj,networks=rows,search=search,state=state,selected=selected,error=error))
 
 
 @login_required

@@ -9,9 +9,11 @@ export function PfSenseConnect({vm}:{vm:PfSenseVM}){
  const dialog=useRef<HTMLDialogElement>(null),[language]=useLanguage(),t=(en:string,ru:string)=>language==='ru'?ru:en;
  const allowed=usePermission('source.register'),canCollect=usePermission('source.apply');
  const [address,setAddress]=useState(vm.address),[port,setPort]=useState(443),[verify,setVerify]=useState(true),[username,setUsername]=useState(''),[password,setPassword]=useState('');
+ const [refreshing,setRefreshing]=useState(false);
+ const refreshLock=useRef(false);
  const [busy,setBusy]=useState(false),[status,setStatus]=useState<Record<string,unknown>|null>(null),[failure,setFailure]=useState('');
  useEffect(()=>{void refresh();const timer=window.setInterval(()=>{if(!dialog.current?.open)void refresh();},30000);return ()=>window.clearInterval(timer);},[vm.id]);
- async function refresh(){try{const r=await fetch(`/api/v1/pfsense/${vm.id}/status`,{cache:'no-store'});if(!r.ok)throw Error();const value=await r.json();setStatus(value);setEnabled(value.sync_enabled??true);setIntervalMinutes(value.interval_minutes??60);setFailure(value.error?(errors[value.error]||String(value.error)):'');if(value.address){setAddress(value.address);setPort(value.port);setVerify(value.verify_tls);}}catch{setFailure(t('Status unavailable','Состояние недоступно'));}}
+ async function refresh(){if(refreshLock.current)return;refreshLock.current=true;setRefreshing(true);try{const r=await fetch(`/api/v1/pfsense/${vm.id}/status`,{cache:'no-store',signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error();const value=await r.json();setStatus(value);setEnabled(value.sync_enabled??true);setIntervalMinutes(value.interval_minutes??60);setFailure(value.error?(errors[value.error]||String(value.error)):'');if(value.address){setAddress(value.address);setPort(value.port);setVerify(value.verify_tls);}}catch{setFailure(t('Status unavailable. Try again.','Состояние недоступно. Повторите обновление.'));}finally{refreshLock.current=false;setRefreshing(false);}}
  async function run(operation:'connect'|'collect'|'schedule'){
  setBusy(true);setFailure('');setSuccess('');
  const credential=password;setPassword('');
@@ -38,5 +40,5 @@ export function PfSenseConnect({vm}:{vm:PfSenseVM}){
  <button className="primary" disabled={busy}>{busy?t('Working…','Выполняется…'):t('Set up and collect','Подключить и собрать')}</button></form>}
  {canCollect&&!!status?.ssh_port&&<button disabled={busy} onClick={()=>void run('schedule')}>{t('Save schedule','Сохранить расписание')}</button>}
  {canCollect&&<button disabled={busy||!status?.ssh_port} onClick={()=>void run('collect')}>{t('Collect now','Собрать сейчас')}</button>}
- <button disabled={busy} onClick={()=>void refresh()}>{t('Refresh status','Обновить состояние')}</button><button disabled={busy} onClick={()=>dialog.current?.close()}>{t('Close','Закрыть')}</button></dialog></>;
+ <button type="button" disabled={refreshing} onClick={()=>void refresh()}>{refreshing?t('Refreshing…','Обновляем…'):t('Refresh status','Обновить состояние')}</button><button type="button" onClick={()=>dialog.current?.close()}>{t('Close','Закрыть')}</button></dialog></>;
 }

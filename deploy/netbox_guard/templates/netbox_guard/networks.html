@@ -1,11 +1,16 @@
 {% extends 'base/layout.html' %}
 {% block title %}Сети — {{ object }}{% endblock %}
-{% block content %}<h1>Сети — {{ object }}</h1>
-<p>Выберите подтверждённую сеть. Одинаковые адреса в разных VRF рассматриваются отдельно.</p>
+{% block content %}
+<h1>Сети — {{ object }}</h1>
+<p>Подсети определены по адресам и маскам интерфейсов pfSense. Одинаковые адреса независимых сетей рассматриваются отдельно.</p>
+<form method="get" class="d-flex gap-3 my-3"><label>Проверить IP-адрес<input class="form-control" name="ip" value="{{ search }}" placeholder="Например, 10.24.1.21"></label><label>Показать<select class="form-select" name="state"><option value="">Все состояния</option><option value="occupied" {% if state == 'occupied' %}selected{% endif %}>Занятые / наблюдавшиеся</option><option value="excluded" {% if state == 'excluded' %}selected{% endif %}>Исключённые из выдачи</option><option value="candidate" {% if state == 'candidate' %}selected{% endif %}>Кандидаты для выдачи</option><option value="unknown" {% if state == 'unknown' %}selected{% endif %}>Недостаточно данных</option></select></label><button class="btn btn-primary align-self-end">Найти</button><a class="align-self-end" href="?">Все сети</a></form>
 {% if error %}<div class="alert alert-warning">{{ error }}</div>{% endif %}
-<table class="table"><thead><tr><th>pfSense</th><th>LAN</th><th>Подсеть</th><th>VRF</th></tr></thead><tbody>
-{% for binding in bindings %}<tr><td>{{ binding.vm }}</td><td>{{ binding.interface_key }}</td><td><a href="{% url 'plugins:netbox_guard:subnet' pk=binding.pk %}">{{ binding.prefix.prefix }}</a></td><td>{{ binding.prefix.vrf|default:'Global' }}</td></tr>{% empty %}<tr><td colspan="4">Подтверждённых сетей пока нет.</td></tr>{% endfor %}</tbody></table>
-<details><summary>Подтвердить связь LAN с подсетью</summary><p>Требуется право изменения выбранной подсети. Подсеть заранее создаётся в IPAM с правильной VRF. Не объединяйте независимые сети из-за совпадающих адресов.</p>
-{% for option in options %}<form method="post" class="card p-3 my-3">{% csrf_token %}<input type="hidden" name="vm_id" value="{{ option.vm.pk }}"><input type="hidden" name="interface_key" value="{{ option.key }}"><h3>{{ option.vm }} · {{ option.name }} ({{ option.key }})</h3>
-<label>Подсеть и сетевой контекст<select class="form-select" name="prefix_id" required><option value="">Выберите подсеть</option>{% for prefix in prefixes %}<option value="{{ prefix.pk }}">{{ prefix.prefix }} · {{ prefix.vrf|default:'Global' }} · {{ prefix.description }}</option>{% endfor %}</select></label><button class="btn btn-primary mt-3">Подтвердить связь</button></form>{% empty %}<p>Для этого кластера нет доступного снимка pfSense.</p>{% endfor %}</details>
+<p>Кандидат — адрес без известных назначений в доступных свежих данных. Это не гарантия отсутствия выключенной или неучтённой машины. Здесь показана занятость адресов, а не разрешения firewall.</p>
+{% for network in networks %}
+<section class="card mb-3"><h2 class="card-header"><a href="{{ network.vm_url }}">{{ network.vm_name }}</a> · {{ network.name }} ({{ network.key }}) · {{ network.cidr }}</h2><div class="card-body">
+<p>Адрес интерфейса: {{ network.addresses|join:', ' }}. Диапазон: {{ network.start }} — {{ network.end }}. Снимок: {{ network.collected_at|default:'нет данных' }}.</p>
+{% if not network.fresh %}<p class="alert alert-warning">Недостаточно свежих полных данных или не подтверждена связь с хостом. Неизвестные адреса не считаются кандидатами.</p>{% endif %}
+<a href="?network={{ network.id|urlencode }}">Открыть только эту сеть</a>
+<table class="table table-striped"><thead><tr><th>IP / диапазон</th><th>Состояние</th><th>Основание</th></tr></thead><tbody>{% for row in network.rows %}<tr><td>{{ row.start }}{% if row.start != row.end %} — {{ row.end }}{% endif %}</td><td>{{ row.label }}</td><td>{{ row.owners|join:'; ' }}</td></tr>{% empty %}<tr><td colspan="3">Нет адресов выбранного состояния.</td></tr>{% endfor %}</tbody></table>
+</div></section>{% empty %}<p>Подходящих сетей нет. Нужен доступный снимок pfSense с адресами и масками интерфейсов.</p>{% endfor %}
 {% endblock %}

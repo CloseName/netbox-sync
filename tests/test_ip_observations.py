@@ -97,7 +97,7 @@ def test_strict_mode_never_overwrites_saved_observations():
 
 def test_prerequisite_upgrade_only_adds_observation_field():
     from netbox_sync.prerequisites import FIELDS, VERSION, definition, reconcile
-    assert VERSION == 5
+    assert VERSION == 6
     old = [dict(definition(name), id=index+1) for index, name in enumerate(FIELDS) if name != 'sync_network_observations']
     before = deepcopy(old)
     result = reconcile(old)

@@ -1,3 +1,4 @@
+import {SourcesBulkActions} from '../components/SourcesBulkActions';
 import {LifecycleResolution} from '../components/LifecycleResolution';
 import {useEffect,useState,useRef} from 'react';
 import {TeamEditor,useTeams} from '../components/SourceTeams';
@@ -24,6 +25,7 @@ import { composeSources, querySources } from "../ui/operations";
 import { sourcePath, runPath } from "../ui/routes";
 import { staleEvidence } from "../ui/runEvidence";
 export function SourcesListPage() {
+  const [selected,setSelected]=useState<Set<string>>(new Set());
   const teams=useTeams();const [language]=useLanguage(),t=(en:string,ru:string)=>language==='ru'?ru:en;
   const canRegister = usePermission('source.register'),canManage=usePermission('source.configure');
   const teamDialog=useRef<HTMLDialogElement>(null);
@@ -43,11 +45,13 @@ export function SourcesListPage() {
   // Browser history changes before React commits a navigation transition.
   // Read that URL so rapid filter edits cannot resurrect a just-cleared query.
   const change = (key: string, value: string) => {
+    setSelected(new Set());
     const next = new URLSearchParams(window.location.search);
     value ? next.set(key, value) : next.delete(key);
     if (key !== "page") next.delete("page");
     setParams(next, { replace: key === "q" });
   };
+  useEffect(()=>setSelected(new Set()),[location.search]);
   const refresh = () => {
     sources.refresh();
     diagnostics.refresh();
@@ -109,6 +113,7 @@ export function SourcesListPage() {
       {(Object.keys(teams.data?.teams??{}).length>0||params.has('team'))&&<label>{t('Team','Команда')}<select value={params.get('team')??''} disabled={!teams.data} onChange={e=>change('team',e.target.value)}><option value="">{t('All teams','Все команды')}</option><option value="none">{t('No team','Без команды')}</option>{Object.values(teams.data?.teams??{}).map(team=><option key={team.id} value={team.id}>{team.name}</option>)}</select></label>}
       {teams.error&&<p role="status">{t('Team filter unavailable','Фильтр команд недоступен')}</p>}
       {canManage&&<><button type="button" onClick={()=>teamDialog.current?.showModal()}>{t('Manage teams','Управление командами')}</button><dialog ref={teamDialog} onClose={teams.refresh}><h2>{t('Teams','Команды')}</h2><TeamEditor/><button onClick={()=>teamDialog.current?.close()}>{t('Close','Закрыть')}</button></dialog></>}
+      <SourcesBulkActions selected={result.rows.map(r=>r.source).filter(s=>selected.has(s.source_instance))} refresh={refresh}/>
       <SourceFilters
         query={result.query}
         sites={(sources.data ?? []).map((source) => source.site_slug)}
@@ -140,6 +145,7 @@ export function SourcesListPage() {
                   {tr("Registered sources with configuration and diagnostic evidence")}{" "}</caption>
                 <thead>
                   <tr>
+                    <th scope="col"><input type="checkbox" aria-label={t("Select this page","Выбрать эту страницу")} checked={result.rows.length>0&&result.rows.every(r=>selected.has(r.source.source_instance))} onChange={e=>setSelected(new Set(e.target.checked?result.rows.map(r=>r.source.source_instance):[]))}/></th>
                     {heading("Source", "name")}
 
                     <th scope="col">{tr("Target")}{" "}</th>
@@ -152,7 +158,7 @@ export function SourcesListPage() {
                 <tbody>
                   {result.rows.map(
                     ({ source: s, diagnostic: d, attention: a }) => (
-                      <tr key={s.source_instance}>
+                      <tr key={s.source_instance}><td><input type="checkbox" aria-label={t("Select ","Выбрать ")+s.name} checked={selected.has(s.source_instance)} onChange={e=>setSelected(before=>{const next=new Set(before);e.target.checked?next.add(s.source_instance):next.delete(s.source_instance);return next;})}/></td>
                         <th scope="row">
                           <Link
                             to={sourcePath(s.source_instance)}

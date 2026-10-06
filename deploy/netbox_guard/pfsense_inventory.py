@@ -88,11 +88,12 @@ def validate(value):
     if packages['collection']=='error' and packages['items']:raise ValueError('Invalid failed package inventory')
     pkg=[dict(name=string(p['name'],256),version=string(p['version'],256)) for p in packages['items']]
     runtime={}
-    for name in ('routes4','routes6'):
-        item=value['runtime'][name]
-        if item['collection'] not in ('ok','error') or not isinstance(item['text'],str) or len(item['text'])>1024*1024:
+    for name in ('routes4','routes6','pf_filter','pf_nat'):
+        item=value['runtime'].get(name,dict(collection='not_collected',text='')) if name.startswith('pf_') else value['runtime'][name]
+        states=('ok','error','not_collected') if name.startswith('pf_') else ('ok','error')
+        if item['collection'] not in states or not isinstance(item['text'],str) or len(item['text'])>1024*1024:
             raise ValueError('Invalid route observations')
-        if item['collection']=='error' and item['text']:raise ValueError('Invalid failed route observations')
+        if item['collection']!='ok' and item['text']:raise ValueError('Invalid failed runtime observations')
         runtime[name]=dict(collection=item['collection'],text=item['text'])
     ipam=validate_ipam(value.get('ipam'), value.get('collection_interval_seconds',(value.get('ipam') or {}).get('interval_seconds',3600)))
     return dict(ipam=ipam,collected_at=value['collected_at'],version=value['version'],components=clean,
@@ -161,13 +162,23 @@ def panel(value):
                         title = ('Floating — ' + (names or 'Все интерфейсы')) if floating else (names or 'Интерфейс не указан')
                         groups.append((title, entries))
                     columns = [k for k in columns if k != 'interface']
+                if name == 'dhcp' and 'interface' in columns:
+                    labels = value.get('interface_labels', {})
+                    buckets = {}
+                    for row in rows:
+                        key = tuple(row['interface'])
+                        buckets.setdefault(key, []).append(row)
+                    groups = [(str(', '.join(labels.get(i, i) for i in ids) or 'Интерфейс не указан') + ' · ' + TITLES.get(table, table), entries)
+                              for ids, entries in buckets.items()]
+                    columns = [k for k in columns if k != 'interface']
                 for title, entries in groups:
                     tables.append(dict(title=title,columns=[COLUMNS.get(k,k) for k in columns],
-                        rows=[[cell(r,k) for k in columns] for r in entries[:100]],
-                        count=len(entries),truncated=len(entries)>100,grouped=grouped))
-            details.append(dict(key=name,name=LABELS[name],tables=tables))
-        routes=[dict(name='IPv4' if key=='routes4' else 'IPv6',state=STATE[v['collection']],
-                     text=v['text'][:65536],truncated=len(v['text'])>65536) for key,v in clean['runtime'].items()]
+                        rows=[[cell(r,k) for k in columns] for r in entries],
+                        count=len(entries),truncated=False,grouped=grouped))
+            details.append(dict(key=name,name=LABELS[name],tables=tables,collection=part['collection']))
+        titles={'routes4':'Маршруты IPv4','routes6':'Маршруты IPv6','pf_filter':'Фактические правила PF','pf_nat':'Фактические правила NAT'}
+        routes=[dict(name=titles[key],state=STATE[v['collection']],
+                     text=v['text'],truncated=False) for key,v in clean['runtime'].items()]
         return dict(collected_at=clean['collected_at'],version=clean['version'],summary=summary,details=details,
             packages=clean['packages']['items'],package_state=STATE[clean['packages']['collection']],routes=routes)
     except (KeyError,TypeError,ValueError,AttributeError):return {'invalid':True}

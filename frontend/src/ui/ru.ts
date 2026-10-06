@@ -101,7 +101,7 @@ export const ru: Record<string,string> = {
 
   "Settings": "Настройки",
   "Host networking": "Сеть хоста",
-  "ESXi networking is report-only in a device snapshot; native host interfaces, cables and IP assignments are not created.": "Сеть ESXi отображается снимком в карточке устройства. Обычные интерфейсы, кабели и назначения IP не создаются.",
+  "ESXi topology is stored in a device snapshot. The verified connection IPv4 and its VMkernel interface are synchronized separately; other host networking remains report-only.": "Топология ESXi хранится в снимке устройства. Проверенный IPv4 подключения и его VMkernel-интерфейс переносятся отдельно; остальная сеть доступна для просмотра в снимке.",
   "No supported create operation was produced for this object.": "Для этого объекта не сформирована поддерживаемая операция создания.",
   "Type the exact display name": "Введите точное название источника",
   "Enter the exact display name.": "Введите точное название источника.",

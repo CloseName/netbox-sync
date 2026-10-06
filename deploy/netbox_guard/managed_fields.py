@@ -4,7 +4,7 @@ from django.db import transaction
 from extras.models import CustomField
 
 LOGGER = logging.getLogger(__name__)
-FIELDS = {'cpu_cores': ('integer', ('dcim.device',)),
+FIELDS = {'sync_disk_identity': ('json', ('virtualization.virtualdisk',)),'cpu_cores': ('integer', ('dcim.device',)),
  'cpu_model': ('text', ('dcim.device',)),
  'cpu_sockets': ('integer', ('dcim.device',)),
  'cpu_threads': ('integer', ('dcim.device',)),
@@ -48,14 +48,14 @@ def configure_managed_fields(using='default'):
         field = CustomField.objects.using(using).select_for_update().filter(name=name).first()
         if field is None:
             # pfSense prerequisites belong to Guard; other fields belong to Sync setup.
-            if name not in ('pfsense_inventory', 'pfsense_network'):
+            if name not in ('pfsense_inventory', 'pfsense_network', 'sync_disk_identity'):
                 continue
             field = CustomField(name=name, type=kind, group_name='NetBox Sync',
                                 required=False, ui_visible='hidden', ui_editable='no')
             field.full_clean()
             field.save(using=using)
             field.object_types.add(field.object_types.model.objects.using(using).get(
-                app_label='virtualization', model='virtualmachine'))
+                app_label='virtualization', model='virtualdisk' if name=='sync_disk_identity' else 'virtualmachine'))
         if not compatible(field, kind, models):
             LOGGER.warning('NetBox Sync: incompatible custom field %s; unchanged', name)
             continue

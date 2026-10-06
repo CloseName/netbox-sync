@@ -1851,3 +1851,6 @@ input[aria-invalid=true],select[aria-invalid=true]{border:2px solid #b42318;}
 .sources-actions > button:last-child { margin-left:auto; }
 
 .schedule-panel .schedule-calendar-field { display: grid; gap: .5rem; margin-block: 1rem; max-width: 24rem; }
+
+.bulk-schedule-form { display: grid; gap: 1rem; }
+.bulk-schedule-form label { display: grid; gap: .4rem; }

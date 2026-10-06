@@ -14,7 +14,7 @@ def row(name, index=1, **changes):return {**definition(name), 'id':index, 'statu
 
 
 def test_contract_all_models_and_status_constraints():
-    assert len(FIELDS)==19
+    assert len(FIELDS)==20
     rows=[row(name,i+1) for i,name in enumerate(FIELDS)]
     assert all(f['status']=='ready' for f in reconcile(rows))
     assert all(f['status']=='missing' for f in reconcile([]))
@@ -296,7 +296,7 @@ def test_pre_post_observation_failure_is_not_uncertain_post(setup):
 
 
 def test_conflict_evidence_reports_actual_models_and_type():
-    field=reconcile([row('sync_identities',type='text',object_types=['ipam.prefix'])])[0]
+    field=next(f for f in reconcile([row('sync_identities',type='text',object_types=['ipam.prefix'])]) if f['name']=='sync_identities')
     details={item['property']:item for item in field['mismatch_details']}
     assert details['type']=={'property':'type','expected':'json','actual':'text'}
     assert details['models']['actual']=='ipam.prefix'
@@ -332,7 +332,7 @@ def test_first_install_json_is_hidden_only_when_guard_has_a_panel():
     spec = importlib.util.spec_from_file_location('guard_display_contract', root / 'deploy/netbox_guard/display.py')
     display = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(display)
-    rendered = (set(display.FIELD_LABELS) - {'physical_disks'}) | {'esxi_host_network', 'pfsense_inventory', 'pfsense_network'}
+    rendered = (set(display.FIELD_LABELS) - {'physical_disks'}) | {'esxi_host_network', 'pfsense_inventory', 'pfsense_network', 'sync_disk_identity'}
     json_fields = {name for name, (kind, _) in FIELDS.items() if kind == 'json'}
     assert json_fields == rendered
     for name in FIELDS:

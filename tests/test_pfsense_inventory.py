@@ -32,6 +32,20 @@ def test_absence_is_not_error_and_firewall_is_builtin():
     assert m.snapshot_record(value,preview,result,now=NOW)==result
 
 
+def test_runtime_rules_preserve_complete_output_and_old_snapshots_are_explicit():
+    value,preview=fixture()
+    old=m.snapshot_record(value,preview,now=NOW)
+    assert old['runtime']['pf_filter']==dict(collection='not_collected',text='')
+    rules='block drop all\n'*6000
+    value['runtime']['pf_filter']=dict(collection='ok',text=rules)
+    value['runtime']['pf_nat']=dict(collection='ok',text='')
+    result=m.snapshot_record(value,preview,now=NOW)
+    assert result['runtime']['pf_filter']['text']==rules
+    assert next(r for r in m.panel(result)['routes'] if r['name']=='Фактические правила PF')['text']==rules
+    value['runtime']['pf_filter']['collection']='error'
+    with pytest.raises(ValueError): m.validate(value)
+
+
 def test_section_failure_does_not_hide_other_components():
     value,preview=fixture()
     value['components']['openvpn'].update(collection='error',configuration='unknown',tables={})
@@ -41,6 +55,7 @@ def test_section_failure_does_not_hide_other_components():
     assert result['components']['openvpn']['collection']=='error'
     assert result['components']['firewall']['collection']=='ok'
     assert m.panel(result)['summary']
+    assert next(p for p in m.panel(result)['details'] if p['key']=='openvpn')['collection']=='error'
 
 
 @pytest.mark.parametrize('case',['column','missing','error_empty','runtime','oversize','stale','binding'])
@@ -60,7 +75,7 @@ def test_malformed_or_stale_inventory_rejected(case):
     with pytest.raises((ValueError,KeyError)):m.snapshot_record(value,preview,now=NOW)
 
 
-def test_display_retains_order_and_caps_only_rendered_rows():
+def test_display_retains_all_rules_and_order():
     value,preview=fixture()
     columns=m.SCHEMA['firewall']['rules']
     rows=[]
@@ -72,7 +87,7 @@ def test_display_retains_order_and_caps_only_rendered_rows():
     display=m.panel(result)
     assert len(result['components']['firewall']['tables']['rules'])==101
     table=display['details'][0]['tables'][0]
-    assert len(table['rows'])==100 and table['truncated']
+    assert len(table['rows'])==101 and not table['truncated']
     # Template autoescaping is tested separately when Django is available.
     assert m.panel({'schema':'unknown'})=={'invalid':True}
 
