@@ -85,7 +85,7 @@ def setup(value, interfaces):
         if state.get('host_key') and state['host_key']!=probe['host_key']:raise SetupError('SSH_HOST_KEY_CHANGED')
         if not 1<=probe['ssh_port']<=65535 or not probe['host_key'].startswith('ssh-ed25519 '):raise SetupError('SSH_CONFIGURATION_INVALID')
         files={name:base64.b64encode((ASSETS/name).read_bytes()).decode()
-               for name in ('network-v1.php','inventory-v1.php')}
+               for name in ('network-v1.php','inventory-v1.php','pf-runtime-v1.php')}
         payload=dict(username=state['username'],owner=state['owner'],public_key=state['public_key'],files=files)
         code='$ns_input=json_decode(base64_decode("'+base64.b64encode(json.dumps(payload).encode()).decode()+'"), true);\n'
         code+=(ASSETS/'provision-web.php').read_text(encoding='utf-8')

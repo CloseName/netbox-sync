@@ -74,4 +74,4 @@ class NetworkLinks(PluginTemplateExtension):
             'host_facts':(obj.custom_field_data or {}) if kind=='device' else {}})
 
 
-template_extensions = [NetworkLinks, EsxiNetworkDetails, PfsenseNetworkDetails, PfsenseInventoryDetails]
+template_extensions = [NetworkLinks, EsxiNetworkDetails, PfsenseInventoryDetails]

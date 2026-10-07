@@ -27,7 +27,7 @@ try {
     if (is_link($ns_dir)) { throw new Exception('PATH_CONFLICT'); }
     if (!is_dir($ns_dir) && !mkdir($ns_dir, 0755)) { throw new Exception('INSTALL_FAILED'); }
     if (fileowner($ns_dir) !== 0 || (fileperms($ns_dir) & 0022)) { throw new Exception('PATH_CONFLICT'); }
-    foreach (['network-v1.php', 'inventory-v1.php'] as $ns_file) {
+    foreach (['network-v1.php', 'inventory-v1.php', 'pf-runtime-v1.php'] as $ns_file) {
         $ns_bytes = base64_decode($ns_input['files'][$ns_file], true);
         if ($ns_bytes === false || strlen($ns_bytes) > 262144) { throw new Exception('INSTALL_FAILED'); }
         $ns_temp = tempnam($ns_dir, '.install-');
@@ -56,11 +56,18 @@ try {
     config_set_path('system/user', $ns_users);
     write_config('NetBox Sync: provision restricted collector account');
     local_user_set($ns_user);
-    echo 'NS_RESULT:' . base64_encode(json_encode(['installed'=>true]));
+    // Persistent, per-account job. Only the fixed root-owned producer touches PF.
+    require_once('/etc/inc/services.inc');
+    $ns_command = '/usr/local/bin/php -f ' . $ns_dir . '/pf-runtime-v1.php';
+    install_cron_job($ns_command, true, '*', '*', '*', '*', '*', 'root');
+    $ns_process = proc_open(['/usr/local/bin/php', '-f', $ns_dir . '/pf-runtime-v1.php'],
+        [0=>['file','/dev/null','r'],1=>['file','/dev/null','w'],2=>['file','/dev/null','w']], $ns_pipes);
+    if (!is_resource($ns_process) || proc_close($ns_process) !== 0) { throw new Exception('INSTALL_FAILED'); }
+    echo 'NS_RESULT:'  . base64_encode(json_encode(['installed'=>true]));
 })();
 
 } catch (Throwable $error) {
     $code = $error->getMessage();
     if (!in_array($code, ['USER_CONFLICT','PATH_CONFLICT','INSTALL_FAILED','INVALID_USER','INVALID_UID','SSH_DISABLED','UNSUPPORTED_VERSION'], true)) { $code = 'INSTALL_FAILED'; }
-    echo 'NS_RESULT:' . base64_encode(json_encode(['error'=>$code]));
+    echo 'NS_RESULT:'  . base64_encode(json_encode(['error'=>$code]));
 }

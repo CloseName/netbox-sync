@@ -63,3 +63,43 @@ def address_rows(network, extra_evidence=(), complete=True):
 def search_networks(networks, text):
     address = ip_address(text)
     return [n for n in networks if address in ip_network(n['cidr'])]
+
+
+def network_page(networks, selected='', search='', state=''):
+    """Keep the chosen network through every filter, including empty searches."""
+    from copy import deepcopy
+    all_rows = deepcopy(networks)
+    rows = [n for n in all_rows if n['id'] == selected] if selected else all_rows
+    error = None
+    alternatives = []
+    if selected and not rows:
+        error = 'Выбранная сеть недоступна или отсутствует в текущем снимке.'
+    if search:
+        try:
+            address = ip_address(search)
+            matches = search_networks(all_rows, search)
+            if selected:
+                if rows and address not in ip_network(rows[0]['cidr']):
+                    alternatives = matches
+                    error = ('Адрес относится к другой подсети.' if matches else
+                             'Адрес не относится к известным сетям этого ресурса.')
+                    for row in rows:
+                        row['rows'] = []
+                else:
+                    for row in rows:
+                        row['rows'] = [r for r in row['rows'] if ip_address(r['start']) <= address <= ip_address(r['end'])]
+            else:
+                rows = matches
+                if not rows: error = 'Адрес не относится к известным сетям этого ресурса.'
+                elif len(rows) > 1: error = 'Адрес найден в нескольких сетевых контекстах. Выберите сеть.'
+                for row in rows:
+                    row['rows'] = [r for r in row['rows'] if ip_address(r['start']) <= address <= ip_address(r['end'])]
+        except ValueError:
+            error = 'Введите корректный IP-адрес.'
+            for row in rows: row['rows'] = []
+    states = {'excluded': ('unusable','gateway','reserved','dhcp'),
+              'occupied': ('assigned','observed','conflict')}
+    if state:
+        for row in rows:
+            row['rows'] = [r for r in row['rows'] if r['state'] in states.get(state, (state,))]
+    return rows, error, alternatives

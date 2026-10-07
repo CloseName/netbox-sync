@@ -1,14 +1,16 @@
-<div class="card">
+<div class="card pf-inventory">
   <h2 class="card-header">Firewall, VPN и сервисы pfSense</h2>
   <div class="card-body">
   {% if inventory.invalid %}
     <p>Формат снимка не поддерживается.</p>
   {% else %}
     <p>Снимок от {{ inventory.collected_at }}. pfSense {{ inventory.version }}.</p>
-    <p class="text-muted">Наличие настроек и процесса не подтверждает доступность сервиса или VPN-туннеля. Таблицы показывают конфигурацию; фактические правила PF/NAT доступны ниже, если сбор поддерживается. Вложенные anchors и содержимое динамических таблиц не собраны; эффективная политика не вычисляется.</p>
+    <p class="text-muted">Наличие настроек и процесса не подтверждает доступность сервиса или VPN-туннеля. Таблицы показывают конфигурацию; фактические правила PF/NAT доступны в отдельной вкладке, если сбор поддерживается. Вложенные anchors и содержимое динамических таблиц не собраны; эффективная политика не вычисляется.</p>
     <ul class="nav nav-tabs mb-3" role="tablist" aria-label="Разделы pfSense">
       <li class="nav-item" role="presentation"><button class="nav-link active" id="pf-{{ object.pk }}-summary-tab" data-bs-toggle="tab" data-bs-target="#pf-{{ object.pk }}-summary" type="button" role="tab" aria-controls="pf-{{ object.pk }}-summary" aria-selected="true">Обзор</button></li>
       {% for component in inventory.details %}<li class="nav-item" role="presentation"><button class="nav-link" id="pf-{{ object.pk }}-{{ component.key }}-tab" data-bs-toggle="tab" data-bs-target="#pf-{{ object.pk }}-{{ component.key }}" type="button" role="tab" aria-controls="pf-{{ object.pk }}-{{ component.key }}" aria-selected="false">{{ component.name }}</button></li>{% endfor %}
+      <li class="nav-item" role="presentation"><button class="nav-link" id="pf-{{ object.pk }}-runtime-tab" data-bs-toggle="tab" data-bs-target="#pf-{{ object.pk }}-runtime" type="button" role="tab" aria-controls="pf-{{ object.pk }}-runtime" aria-selected="false">Фактические маршруты и правила</button></li>
+      <li class="nav-item" role="presentation"><button class="nav-link" id="pf-{{ object.pk }}-packages-tab" data-bs-toggle="tab" data-bs-target="#pf-{{ object.pk }}-packages" type="button" role="tab" aria-controls="pf-{{ object.pk }}-packages" aria-selected="false">Установленные пакеты</button></li>
     </ul>
     <div class="tab-content">
     <div class="tab-pane show active" id="pf-{{ object.pk }}-summary" role="tabpanel" aria-labelledby="pf-{{ object.pk }}-summary-tab" tabindex="0">
@@ -30,7 +32,7 @@
       {% if table.rows %}
       <div class="table-responsive"><table class="table table-sm table-striped">
         <thead><tr>{% for heading in table.columns %}<th scope="col" class="p-2">{{ heading }}</th>{% endfor %}</tr></thead>
-        <tbody>{% for row in table.rows %}<tr>{% for cell in row %}<td class="p-2 text-break">{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+        <tbody>{% for row in table.rows %}<tr>{% for cell in row %}<td class="p-2 text-nowrap">{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody>
       </table></div>
       {% else %}<p class="text-muted">Записей нет.</p>{% endif %}
       </div>
@@ -40,16 +42,25 @@
       {% endif %}
     </div>
     {% endfor %}
+    <div class="tab-pane" id="pf-{{ object.pk }}-runtime" role="tabpanel" aria-labelledby="pf-{{ object.pk }}-runtime-tab" tabindex="0">
+      <ul class="nav nav-tabs mb-3" role="tablist" aria-label="Фактические данные pfSense">
+      {% for route in inventory.routes %}<li class="nav-item" role="presentation"><button class="nav-link{% if forloop.first %} active{% endif %}" id="pf-{{ object.pk }}-{{ route.key }}-tab" data-bs-toggle="tab" data-bs-target="#pf-{{ object.pk }}-{{ route.key }}" type="button" role="tab" aria-controls="pf-{{ object.pk }}-{{ route.key }}" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">{{ route.name }}</button></li>{% endfor %}
+      </ul>
+      <div class="tab-content">{% for route in inventory.routes %}
+        <div class="tab-pane{% if forloop.first %} show active{% endif %}" id="pf-{{ object.pk }}-{{ route.key }}" role="tabpanel" aria-labelledby="pf-{{ object.pk }}-{{ route.key }}-tab" tabindex="0">
+          <p>{{ route.name }} — {{ route.state }}</p>
+          {% if route.rows %}<div class="table-responsive"><table class="table table-sm table-striped"><thead><tr>{% for column in route.columns %}<th class="text-nowrap">{{ column }}</th>{% endfor %}</tr></thead><tbody>{% for row in route.rows %}<tr>{% for cell in row %}<td class="text-nowrap">{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
+          <details><summary>Исходный вывод</summary><pre>{{ route.text }}</pre></details>{% endif %}
+        </div>
+      {% endfor %}</div>
     </div>
-    <details class="mb-3"><summary>Установленные пакеты pfSense — {{ inventory.package_state }}</summary>
-      <table class="table table-sm"><thead><tr><th>Пакет</th><th>Версия</th></tr></thead><tbody>
-      {% for package in inventory.packages %}<tr><td>{{ package.name }}</td><td>{{ package.version }}</td></tr>{% endfor %}
-      </tbody></table>
-    </details>
-    <details><summary>Фактические маршруты и правила PF / NAT</summary>
-      {% for route in inventory.routes %}<h3 class="h5">{{ route.name }} — {{ route.state }}</h3><pre>{{ route.text }}</pre>
-      {% if route.truncated %}<p>Отображение сокращено; полный вывод сохранён в снимке.</p>{% endif %}{% endfor %}
-    </details>
+    <div class="tab-pane" id="pf-{{ object.pk }}-packages" role="tabpanel" aria-labelledby="pf-{{ object.pk }}-packages-tab" tabindex="0">
+      <p>Установленные пакеты pfSense — {{ inventory.package_state }}</p>
+      <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Пакет</th><th>Версия</th></tr></thead><tbody>
+      {% for package in inventory.packages %}<tr><td class="text-nowrap">{{ package.name }}</td><td class="text-nowrap">{{ package.version }}</td></tr>{% endfor %}
+      </tbody></table></div>
+    </div>
+    </div>
     <p class="text-muted mt-3">Секреты, содержимое URL aliases, пользовательские дополнительные директивы и выражения ACL HAProxy исключены. Состояние VPN-сессий и таблицы маршрутизации дополнительных FIB пока не собираются.</p>
   {% endif %}
   </div>

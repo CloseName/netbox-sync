@@ -51,7 +51,32 @@ function ns_configuration(string $xml): array {
 
 function ns_ifconfig(): string { return ns_command('ifconfig'); }
 
+function ns_pf_cached(string $name): string {
+    $directory = '/var/run/netbox-sync-pf';
+    if (is_link($directory) || !is_dir($directory) || fileowner($directory) !== 0
+        || (fileperms($directory) & 0022)) { throw new RuntimeException('PF snapshot unavailable'); }
+    $path = $directory . '/' . basename(__DIR__) . '.json';
+    if (is_link($path) || !is_file($path) || fileowner($path) !== 0 || (fileperms($path) & 0022)
+        || filesize($path) > 3 * 1024 * 1024) { throw new RuntimeException('PF snapshot unavailable'); }
+    return ns_pf_snapshot_value(file_get_contents($path), $name, time());
+}
+
+function ns_pf_snapshot_value(string $json, string $name, int $now): string {
+    $value = json_decode($json, true);
+    if (!is_array($value) || !is_int($value['collected_at'] ?? null)
+        || $now - $value['collected_at'] > 150 || $now < $value['collected_at']) {
+        throw new RuntimeException('PF snapshot stale');
+    }
+    $part = $value[$name] ?? null;
+    if (!is_array($part) || ($part['collection'] ?? '') !== 'ok' || !is_string($part['text'] ?? null)
+        || strlen($part['text']) > 1024 * 1024) { throw new RuntimeException('PF snapshot failed'); }
+    return $part['text'];
+}
+
 function ns_command(string $name): string {
+    if (in_array($name, ['pf_filter','pf_nat'], true) && posix_geteuid() !== 0) {
+        return ns_pf_cached($name);
+    }
     $commands = [
         'ifconfig' => ['/sbin/ifconfig', '-a'],
         'arp' => ['/usr/sbin/arp', '-an'],

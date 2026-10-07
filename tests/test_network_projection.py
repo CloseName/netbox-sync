@@ -57,3 +57,41 @@ def test_incomplete_permissions_never_mark_unknown_address_available():
     net=discovered_networks(1,snapshot,inventory,interfaces)[0]
     rows=address_rows(net,complete=False)
     assert not any(r['state']=='candidate' for r in rows)
+
+
+def test_network_page_keeps_scope_with_empty_search_and_state_filter():
+    nets = [dict(id='lan1', cidr='10.24.1.0/24', rows=[dict(start='10.24.1.20', end='10.24.1.20', state='reserved')]),
+            dict(id='lan2', cidr='10.24.2.0/24', rows=[dict(start='10.24.2.20', end='10.24.2.20', state='assigned')])]
+    for state in ('', 'excluded', 'candidate'):
+        rows, error, alternatives = m.network_page(nets, 'lan2', '', state)
+        assert [r['id'] for r in rows] == ['lan2']
+        assert error is None and alternatives == []
+    rows, error, alternatives = m.network_page(nets, 'lan2', '10.24.1.20')
+    assert [r['id'] for r in rows] == ['lan2'] and rows[0]['rows'] == []
+    assert error and [r['id'] for r in alternatives] == ['lan1']
+    assert len(nets[1]['rows']) == 1  # No mutation of cached evidence.
+    for search in ('1.1.1.1', 'invalid'):
+        rows, error, alternatives = m.network_page(nets, 'lan2', search)
+        assert error and not alternatives and rows[0]['rows'] == []
+    rows, error, alternatives = m.network_page(nets, 'missing', '')
+    assert not rows and error and not alternatives
+    rows, error, alternatives = m.network_page(nets, 'lan2', '10.24.2.20')
+    assert len(rows[0]['rows']) == 1 and not error
+
+
+def test_search_form_submits_selected_network_and_escapes_links():
+    import pytest
+    pytest.importorskip('django')
+    from django.template import Engine, Context
+    from html.parser import HTMLParser
+    class Inputs(HTMLParser):
+        fields = []
+        def handle_starttag(self, tag, attrs):
+            if tag == 'input': self.fields.append(dict(attrs))
+    engine = Engine(loaders=[('django.template.loaders.locmem.Loader', {'base/layout.html':'{% block content %}{% endblock %}'})])
+    template = (root/'templates/netbox_guard/networks.html').read_text(encoding='utf-8')
+    selected = 'pfsense:2609:opt3:10.24.2.0/24'
+    rendered = engine.from_string(template).render(Context(dict(selected=selected, networks=[], search='', state='candidate'), use_l10n=False))
+    parser = Inputs(); parser.feed(rendered)
+    assert any(field.get('name') == 'network' and field.get('value') == selected for field in parser.fields)
+    assert 'Все сети' not in rendered

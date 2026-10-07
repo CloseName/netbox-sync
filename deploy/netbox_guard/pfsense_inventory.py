@@ -177,8 +177,8 @@ def panel(value):
                         count=len(entries),truncated=False,grouped=grouped))
             details.append(dict(key=name,name=LABELS[name],tables=tables,collection=part['collection']))
         titles={'routes4':'Маршруты IPv4','routes6':'Маршруты IPv6','pf_filter':'Фактические правила PF','pf_nat':'Фактические правила NAT'}
-        routes=[dict(name=titles[key],state=STATE[v['collection']],
-                     text=v['text'],truncated=False) for key,v in clean['runtime'].items()]
+        routes=[dict(key=key,name=titles[key],state=STATE[v['collection']],
+                     text=v['text'],truncated=False,**runtime_table(key,v['text'])) for key,v in clean['runtime'].items()]
         return dict(collected_at=clean['collected_at'],version=clean['version'],summary=summary,details=details,
             packages=clean['packages']['items'],package_state=STATE[clean['packages']['collection']],routes=routes)
     except (KeyError,TypeError,ValueError,AttributeError):return {'invalid':True}
@@ -213,3 +213,22 @@ def validate_ipam(value, interval):
             raise ValueError('Invalid MAC')
         clean.append({**row,'start':str(start),'end':str(end),'mac':row['mac'].lower()})
     return {**value,'entries':clean,'interval_seconds':interval}
+
+
+def runtime_table(key, text):
+    """Display every runtime line, preserving unfamiliar formats without guessing."""
+    lines = [line for line in text.splitlines() if line.strip()]
+    if key in ('routes4', 'routes6'):
+        header = next((i for i,line in enumerate(lines) if line.split()[:2] == ['Destination','Gateway']), None)
+        if header is not None:
+            columns = lines[header].split()
+            rows = []
+            for line in lines[header+1:]:
+                cells = line.split()
+                if len(cells) <= len(columns):
+                    rows.append(cells + ['—'] * (len(columns)-len(cells)))
+                else:
+                    return dict(columns=['Вывод'], rows=[[line] for line in lines])
+            return dict(columns=columns, rows=rows)
+    return dict(columns=['№', 'Правило' if key in ('pf_filter','pf_nat') else 'Вывод'],
+                rows=[[i,line] for i,line in enumerate(lines,1)])

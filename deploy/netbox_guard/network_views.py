@@ -116,29 +116,15 @@ def checked_binding(request, pk):
 @require_http_methods(['GET'])
 def networks(request, kind, pk):
     from .infrastructure import context, read_networks
-    from .network_projection import search_networks
     try: obj, guests = context(request.user, kind, pk)
     except ValueError: raise PermissionDenied
     rows = read_networks(request.user, guests)
     search = request.GET.get('ip','').strip()
     selected = request.GET.get('network','')
     state = request.GET.get('state','')
-    error = None
-    if search:
-        try:
-            rows = search_networks(rows, search)
-            if not rows: error = 'Адрес не относится к известным сетям этого ресурса.'
-            elif len(rows)>1: error = 'Адрес найден в нескольких сетевых контекстах. Проверьте каждый результат.'
-            for row in rows:
-                address = ip_address(search)
-                row['rows'] = [r for r in row['rows'] if ip_address(r['start']) <= address <= ip_address(r['end'])]
-        except ValueError: rows=[]; error='Введите корректный IP-адрес.'
-    if selected: rows = [r for r in rows if r['id']==selected]
-    for row in rows:
-        if state == 'excluded': row['rows']=[r for r in row['rows'] if r['state'] in ('unusable','gateway','reserved','dhcp')]
-        elif state == 'occupied': row['rows']=[r for r in row['rows'] if r['state'] in ('assigned','observed','conflict')]
-        elif state: row['rows']=[r for r in row['rows'] if r['state']==state]
-    return render(request,'netbox_guard/networks.html',dict(object=obj,networks=rows,search=search,state=state,selected=selected,error=error))
+    from .network_projection import network_page
+    rows, error, alternatives = network_page(rows, selected, search, state)
+    return render(request,'netbox_guard/networks.html',dict(object=obj,networks=rows,search=search,state=state,selected=selected,error=error,alternatives=alternatives))
 
 
 @login_required

@@ -1814,7 +1814,7 @@ body, .setup-workspace { font-family: Inter, system-ui, sans-serif; }
 .auth-panel button svg{margin-right:.35rem;vertical-align:middle}
 
 .extra-filters {min-width:14rem}.extra-filters[open] {display:flex;flex-wrap:wrap;gap:.8rem}.extra-filters summary {cursor:pointer}
-.source-list-table table {table-layout:fixed;min-width:0;width:100%}.source-list-table th,.source-list-table td {overflow-wrap:anywhere;white-space:normal;padding:.65rem}.source-list-table th:first-child {width:18%}.source-list-table th:last-child {width:10%}
+.source-list-table table {table-layout:fixed;min-width:0;width:100%}.source-list-table th,.source-list-table td {overflow-wrap:anywhere;white-space:normal;padding:.65rem}.source-list-table th:first-child {width:2.75rem}.source-list-table th:nth-child(2) {width:18%}.source-list-table th:last-child {width:10%}
 @media(max-width:760px){.source-list-table table {min-width:650px}}
 
 .catalog-options [aria-disabled="true"]{opacity:.65;cursor:not-allowed}

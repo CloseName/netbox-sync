@@ -27,6 +27,8 @@ test('bulk schedules preserve selection scope and current settings',async({page}
  await page.getByRole('checkbox',{name:'Select this page',exact:true}).check();
  await page.getByRole('button',{name:'Set schedule',exact:true}).click();
  const dialog=page.getByRole('dialog');
+ await expect(dialog.getByRole('combobox',{name:'Frequency',exact:true})).toHaveValue('600');
+ await expect(dialog.getByRole('spinbutton',{name:'Seconds',exact:true})).toHaveCount(0);
  await dialog.getByRole('combobox',{name:'Mode',exact:true}).selectOption('weekly');
  await dialog.getByLabel('MSK',{exact:true}).fill('21:05');
  await dialog.getByLabel('Weekday (1 = Monday)',{exact:true}).fill('5');
@@ -61,11 +63,14 @@ test('bulk removal requires reviewed confirmation and reports partial failures',
  await page.goto('/sources');await page.getByRole('checkbox',{name:'Select this page',exact:true}).check();
  await page.getByRole('button',{name:'Delete resources',exact:true}).click();
  const dialog=page.getByRole('dialog');
- await expect(dialog.getByRole('button',{name:'Yes, delete',exact:true})).toBeEnabled();
- await expect(dialog.getByText('vm:10',{exact:true})).toHaveCount(2);
+ await expect(dialog.getByRole('button',{name:'Yes, delete',exact:true})).toBeDisabled();
+ await expect(dialog.getByText('vm:10',{exact:true})).toHaveCount(0);
  expect(writes).toHaveLength(0);
  await dialog.getByRole('button',{name:'Cancel / Close',exact:true}).click();expect(writes).toHaveLength(0);
  await page.getByRole('button',{name:'Delete resources',exact:true}).click();
+ await dialog.getByLabel('Confirm source Source 001',{exact:true}).fill('Source 001');
+ await expect(dialog.getByRole('button',{name:'Yes, delete',exact:true})).toBeDisabled();
+ await dialog.getByLabel('Confirm source Source 002',{exact:true}).fill('Source 002');
  await dialog.getByRole('button',{name:'Yes, delete',exact:true}).click();
  await expect.poll(()=>writes.length).toBe(2);
  await expect(dialog.getByRole('button',{name:'Yes, delete',exact:true})).toBeDisabled();

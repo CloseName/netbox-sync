@@ -132,3 +132,13 @@ def test_expired_lease_or_missing_arp_does_not_automatically_release_observed_ad
     after=m.snapshot_record(value,preview,before,now=NOW+timedelta(seconds=30))
     assert after['ipam']['entries'][0]['kind']=='historical'
     assert after['ipam']['entries'][0]['start']=='10.0.0.90'
+
+
+def test_runtime_tables_preserve_rules_and_route_columns():
+    routes = m.runtime_table('routes4', 'Routing tables\nInternet:\nDestination Gateway Flags Netif Expire\ndefault 10.0.0.1 UGS em0\n')
+    assert routes['columns'] == ['Destination', 'Gateway', 'Flags', 'Netif', 'Expire']
+    assert routes['rows'][0][:4] == ['default', '10.0.0.1', 'UGS', 'em0']
+    rules = 'pass in quick on em0 from any to any\n  label "test"\n'
+    assert [row[1] for row in m.runtime_table('pf_filter', rules)['rows']] == rules.splitlines()
+    unknown = m.runtime_table('routes6', 'unrecognized format')
+    assert unknown['rows'][0][1] == 'unrecognized format'
