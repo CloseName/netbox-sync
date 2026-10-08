@@ -135,7 +135,13 @@ def query(value,session_factory=requests.Session):
             from .placement_resolution import resolve
             def listing(kind,search):
                 return get(kind,'?'+urlencode(dict(q=search,limit=20,ordering='id')))
-            resolved=resolve(payload,listing,project,lambda kind, identifier:get(kind,str(identifier)+'/'))
+            preparation_issues=[]
+            ensure=None
+            if value.get('apply_token'):
+                from .automatic_catalog import ensure_factory
+                ensure=ensure_factory(session,value['url'],value['read_token'],value['apply_token'],preparation_issues)
+            resolved=resolve(payload,listing,project,lambda kind, identifier:get(kind,str(identifier)+'/'),ensure)
+            resolved['issues'].extend(preparation_issues)
             cluster=resolved['references'].get('cluster')
             if cluster:
                 # Existing inventory is not proof of ownership by this new source.

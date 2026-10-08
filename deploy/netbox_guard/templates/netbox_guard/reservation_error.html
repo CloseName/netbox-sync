@@ -1,0 +1,1 @@
+{% extends 'base/layout.html' %}{% block title %}Адрес не зарезервирован{% endblock %}{% block content %}<div class="alert alert-warning">Адрес занят, данные изменились или повторный запрос отличается от первоначального. Резервирование не выполнено.</div><a href="{% url 'plugins:netbox_guard:subnet' pk=binding.pk %}">Обновить сведения сети</a>{% endblock %}

@@ -609,6 +609,12 @@ def apply_virtual_machines(
             )
         )
 
+    native_disk_parents = {_object_id(d.serialize().get('virtual_machine')) for d in nb_api.virtualization.virtual_disks.all()}
+    for context in contexts:
+        existing_vm = context.get('existing')
+        if existing_vm is not None and existing_vm.id in native_disk_parents:
+            context.get('changes', {}).pop('disk', None)
+
     print(
         '=== VM APPLY PRECHECK ==='
     )

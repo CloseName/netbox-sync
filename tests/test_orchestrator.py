@@ -266,3 +266,14 @@ def test_uncertain_history_blocks_scheduled_execution_without_provider_calls():
     assert result.failed==1 and not calls
     assert recorder.finished[0][1] is RunStatus.BLOCKED
     assert recorder.finished[0][2]['error_code']=='PLAN_BLOCKED'
+
+def test_planning_failure_records_no_writes_and_apply_failure_remains_uncertain():
+    from netbox_sync.scheduled_failure import mark
+    for stage, expected in [('planning',RunStatus.FAILED_BEFORE_WRITE),('apply',RunStatus.OUTCOME_UNCERTAIN)]:
+        recorder=RunRecorder()
+        def execute(_):
+            mark(stage)
+            raise RuntimeError('private provider error')
+        run_sources((source('pve-a'),),execute,run_repository=recorder)
+        assert recorder.finished[0][1] is expected
+        assert 'private provider error' not in str(recorder.finished)

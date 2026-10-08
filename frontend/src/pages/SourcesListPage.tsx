@@ -1,6 +1,6 @@
-import {LifecycleResolution} from '../components/LifecycleResolution';
-import {useEffect,useState,useRef} from 'react';
-import {TeamEditor,useTeams} from '../components/SourceTeams';
+import {SourcesBulkActions} from '../components/SourcesBulkActions';
+import {RefreshControl} from '../ui/RefreshControl';
+import {useEffect,useState} from 'react';
 import {useLanguage} from '../ui/language';
 import {usePermission} from '../AuthGate';
 import {tr} from "../ui/i18n";
@@ -24,9 +24,9 @@ import { composeSources, querySources } from "../ui/operations";
 import { sourcePath, runPath } from "../ui/routes";
 import { staleEvidence } from "../ui/runEvidence";
 export function SourcesListPage() {
-  const teams=useTeams();const [language]=useLanguage(),t=(en:string,ru:string)=>language==='ru'?ru:en;
-  const canRegister = usePermission('source.register'),canManage=usePermission('source.configure');
-  const teamDialog=useRef<HTMLDialogElement>(null);
+  const [selected,setSelected]=useState<Set<string>>(new Set());
+  const [language]=useLanguage(),t=(en:string,ru:string)=>language==='ru'?ru:en;
+  const canRegister = usePermission('source.register');
   const sources = useResource(fetchSources),
     diagnostics = useResource(fetchDiagnostics);
   const [params, setParams] = useSearchParams();
@@ -36,18 +36,20 @@ export function SourcesListPage() {
   useEffect(()=>{if(!added)return;const timer=setTimeout(()=>setAdded(null),10000);return()=>clearTimeout(timer);},[added]);
   useEffect(()=>{if(location.state?.addedSource)navigate(location.pathname+location.search,{replace:true,state:null});},[location,navigate]);
   const result = querySources(
-    composeSources((sources.data ?? []).filter(row=>!params.get('team')||(!!teams.data&&(params.get('team')==='none'?!teams.data?.assignments[row.source_instance]:teams.data?.assignments[row.source_instance]===params.get('team')))), diagnostics.data),
-    params,
+    composeSources(sources.data ?? [], diagnostics.data),
+    new URLSearchParams([...params].filter(([key])=>!["team","schedule","attention","site"].includes(key))),
   );
   useEffect(()=>{if(!sources.data||diagnostics.loading)return;try{const offset=Number(sessionStorage.getItem("sources-scroll:"+location.search)||0);if(offset>0)requestAnimationFrame(()=>window.scrollTo(0,offset));}catch{/* Optional browser storage. */}},[!!sources.data,diagnostics.loading]);
   // Browser history changes before React commits a navigation transition.
   // Read that URL so rapid filter edits cannot resurrect a just-cleared query.
   const change = (key: string, value: string) => {
+    setSelected(new Set());
     const next = new URLSearchParams(window.location.search);
     value ? next.set(key, value) : next.delete(key);
     if (key !== "page") next.delete("page");
     setParams(next, { replace: key === "q" });
   };
+  useEffect(()=>setSelected(new Set()),[location.search]);
   const refresh = () => {
     sources.refresh();
     diagnostics.refresh();
@@ -87,13 +89,12 @@ export function SourcesListPage() {
   );
   return (
     <main>
-      <LifecycleResolution/>
       {typeof location.state?.removedSource==='string'&&<p role="status">{language==='ru'?'Источник удалён. Его данные в Sync очищены; общие и чужие объекты сохранены.':'Source removed. Its Sync data is cleared; shared and foreign objects are preserved.'} <strong>{location.state.removedSource}</strong></p>}
       <PageHeader
         title={tr("Sources")}
         description={tr("Source configuration and synchronization evidence.")}
       />
-      <div className="sources-actions">{canRegister&&<Link className="button primary" to="/sources/add">{tr("Add Source")}</Link>}<button disabled={sources.loading||diagnostics.loading} onClick={refresh}>{tr("Refresh")}</button></div>
+      <div className="sources-actions">{canRegister&&<Link className="button primary" to="/sources/add">{tr("Add Source")}</Link>}<RefreshControl loading={sources.loading||diagnostics.loading} error={sources.error||diagnostics.error} received={sources.received} refresh={refresh}/></div>
       {teamWarning&&<p role="alert" className="source-error">{t('Source added, but team assignment is unconfirmed. Check the source team before retrying assignment.','Источник добавлен, но назначение команды не подтверждено. Проверьте команду источника перед повторным назначением.')} <button type="button" onClick={()=>setTeamWarning(false)}>{t('Dismiss','Закрыть')}</button></p>}
       {added&&<div className="source-added-notice" role="status" aria-live="polite"><span>{t('Source ','Источник ')}<strong>{added.name}</strong>{t(' added',' добавлен')}</span><button type="button" aria-label={t('Dismiss notification','Закрыть уведомление')} onClick={()=>setAdded(null)}>×</button></div>}
       <ResourceNotice
@@ -106,14 +107,10 @@ export function SourcesListPage() {
         name="Diagnostics"
         retry={diagnostics.refresh}
       />
-      {(Object.keys(teams.data?.teams??{}).length>0||params.has('team'))&&<label>{t('Team','Команда')}<select value={params.get('team')??''} disabled={!teams.data} onChange={e=>change('team',e.target.value)}><option value="">{t('All teams','Все команды')}</option><option value="none">{t('No team','Без команды')}</option>{Object.values(teams.data?.teams??{}).map(team=><option key={team.id} value={team.id}>{team.name}</option>)}</select></label>}
-      {teams.error&&<p role="status">{t('Team filter unavailable','Фильтр команд недоступен')}</p>}
-      {canManage&&<><button type="button" onClick={()=>teamDialog.current?.showModal()}>{t('Manage teams','Управление командами')}</button><dialog ref={teamDialog} onClose={teams.refresh}><h2>{t('Teams','Команды')}</h2><TeamEditor/><button onClick={()=>teamDialog.current?.close()}>{t('Close','Закрыть')}</button></dialog></>}
+      <SourcesBulkActions selected={result.rows.map(r=>r.source).filter(s=>selected.has(s.source_instance))} refresh={refresh}/>
       <SourceFilters
         query={result.query}
-        sites={(sources.data ?? []).map((source) => source.site_slug)}
         change={change}
-        clear={() => setParams({})}
       />
       {sources.loading && !sources.data ? (
         <LoadingState table label={tr("Loading sources…")} />
@@ -125,7 +122,7 @@ export function SourcesListPage() {
           </EmptyState>
         ) : result.total === 0 ? (
           <EmptyState title={tr("No sources match these filters.")}>
-            <button onClick={() => setParams({})}>{tr("Clear filters")}{" "}</button>
+            <p>{t("Change the search or sync status.","Измените поиск или статус синхронизации.")}</p>
           </EmptyState>
         ) : (
           <>
@@ -140,6 +137,7 @@ export function SourcesListPage() {
                   {tr("Registered sources with configuration and diagnostic evidence")}{" "}</caption>
                 <thead>
                   <tr>
+                    <th scope="col"><input type="checkbox" aria-label={t("Select this page","Выбрать эту страницу")} checked={result.rows.length>0&&result.rows.every(r=>selected.has(r.source.source_instance))} onChange={e=>setSelected(new Set(e.target.checked?result.rows.map(r=>r.source.source_instance):[]))}/></th>
                     {heading("Source", "name")}
 
                     <th scope="col">{tr("Target")}{" "}</th>
@@ -152,7 +150,7 @@ export function SourcesListPage() {
                 <tbody>
                   {result.rows.map(
                     ({ source: s, diagnostic: d, attention: a }) => (
-                      <tr key={s.source_instance}>
+                      <tr key={s.source_instance}><td><input type="checkbox" aria-label={t("Select ","Выбрать ")+s.name} checked={selected.has(s.source_instance)} onChange={e=>setSelected(before=>{const next=new Set(before);e.target.checked?next.add(s.source_instance):next.delete(s.source_instance);return next;})}/></td>
                         <th scope="row">
                           <Link
                             to={sourcePath(s.source_instance)}

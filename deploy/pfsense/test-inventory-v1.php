@@ -32,5 +32,14 @@ foreach (['<broken>', '<!DOCTYPE pfsense [<!ENTITY x SYSTEM "file:///conf/config
     try { nsi_configuration($bad, []); } catch (Throwable $error) { $rejected = true; }
     verify_inventory($rejected);
 }
+$lease='lease 192.0.2.3 { binding state active; ends never; hardware ethernet 00:11:22:33:44:55; }';
+$evidence=nsi_ipam($xml,$lease,'? (192.0.2.90) at 00:11:22:33:44:66 on vtnet1');
+verify_inventory($evidence['configuration']==='ok' && $evidence['leases']==='ok' && $evidence['arp']==='ok');
+verify_inventory(count($evidence['entries'])===4);
+verify_inventory(strpos(json_encode($evidence),'SECRET_CANARY')===false);
+$broken=nsi_ipam($xml,'lease 192.0.2.4 { binding state active; }','');
+verify_inventory($broken['leases']==='error');
+$proxy=nsi_ipam('<pfsense><virtualip><vip><mode>proxyarp</mode><subnet>192.0.2.0</subnet><subnet_bits>24</subnet_bits></vip></virtualip></pfsense>','','');
+verify_inventory($proxy['configuration']==='error');
 restore_error_handler();
 echo "INVENTORY TESTS: OK\n";

@@ -83,6 +83,10 @@ def evaluate_schedule(source, latest_scheduled, latest_running, now, stale_secon
         return ScheduleDecision(source.source_instance, SchedulerState.DISABLED, reference, None)
     next_expected = (reference + timedelta(seconds=source.sync_interval_seconds)
                      if reference else now)
+    if source.sync_calendar is not None:
+        from ..calendar_schedule import next_slot
+        anchor = source.schedule_changed_at or now
+        next_expected = next_slot(source.sync_calendar, max(reference, anchor) if reference else anchor)
     if (latest_running is not None
             and (now - latest_running.started_at).total_seconds() <= stale_seconds):
         return ScheduleDecision(source.source_instance, SchedulerState.RUNNING,

@@ -705,8 +705,10 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         auth_client.call('receipt.check',session=http.cookies.get(COOKIE),receipt=payload.onboarding_token)
         preview=onboarding_service.preview(payload.onboarding_token)
         if not preview:raise CatalogError('SELECTION_REQUIRED')
+        if payload.prepare:
+            auth_client.call('authorize',session=http.cookies.get(COOKIE),permission='catalog.create',audit=True)
         resolved=call(settings.bootstrap_socket,dict(action='resolve-placement',provider=preview['provider'],
-            hosts=preview['hosts'],name=payload.name,site_id=payload.site_id,default_site_slug=settings.default_site_slug,host_types=payload.host_types))
+            hosts=preview['hosts'],name=payload.name,site_id=payload.site_id,default_site_slug=settings.default_site_slug,host_types=payload.host_types),prepare=payload.prepare)
         site=resolved.get('references',{}).get('site',{})
         if site.get('slug'):onboarding_service.check_placement(site['slug'],payload.name)
         return resolved

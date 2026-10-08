@@ -54,7 +54,7 @@ class Worker:
 def source(instance='pve-test', source_type='proxmox', enabled=True, sync_enabled=True,
            interval=600):
     return SimpleNamespace(source_instance=instance, type=source_type, enabled=enabled,
-                           sync_enabled=sync_enabled, sync_interval_seconds=interval)
+                           sync_enabled=sync_enabled, sync_interval_seconds=interval, sync_calendar=None, schedule_changed_at=None)
 
 
 def run(instance='pve-test', source_type='proxmox', status=RunStatus.SUCCEEDED,

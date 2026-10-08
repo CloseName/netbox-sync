@@ -1,3 +1,4 @@
+import {exactTime} from '../ui/format';
 import {readSourceDraft,saveSourceDraft} from '../ui/sourceDraft';
 import {usePrincipal} from '../AuthGate';
 import {LifecycleResolution} from '../components/LifecycleResolution';
@@ -229,7 +230,7 @@ export function AddSourcePage() {
       </section>}
       {error&&existingSource&&legacyReview&&<LifecycleResolution key={existingSource} source={existingSource}/>}
       {error&&existingSource&&!removedSource&&<p><Link to={sourcePath(existingSource)}>{t('Open existing source','Открыть существующий источник')}</Link></p>}
-      {step>1&&expiresAt&&<p className="muted">{t('Connection check valid until: ','Проверка подключения действует до: ')}{new Date(expiresAt).toLocaleTimeString(language)}</p>}
+      {step>1&&expiresAt&&<p className="muted">{t('Connection check valid until: ','Проверка подключения действует до: ')}{exactTime(new Date(expiresAt).toISOString())}</p>}
       {notice&&<p role="status">{notice}</p>}
       {error && (
         <p role="alert" tabIndex={-1} className="source-error">

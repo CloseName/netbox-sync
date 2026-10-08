@@ -147,6 +147,10 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False):
         apply_esxi_primary(api, network_hosts)
         apply_virtual_machines(api, filtered_hosts, config.target, confirmed=True)
         apply_vm_networks(api, filtered_hosts, config, confirmed=True)
+        from .guest_placement import apply_guest_placement
+        apply_guest_placement(api, filtered_hosts, config, confirmed=True)
+        from .virtual_disks import apply_virtual_disks
+        apply_virtual_disks(api, filtered_hosts, config, confirmed=True)
 
     # Simulate dependent creates and every network ownership check before writes.
     stages(PlanningNetBox(nb_api))

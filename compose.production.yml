@@ -194,6 +194,7 @@ services:
     <<: *app
     environment:
       NETBOX_SYNC_GUARD_INSTANCE: ${NETBOX_SYNC_GUARD_INSTANCE:-}
+      NETBOX_SYNC_PFSENSE_USER: ${NETBOX_SYNC_PFSENSE_USER:-netbox-sync}
       NETBOX_SYNC_NETBOX_CONFIG_FILE: /var/lib/netbox-sync/netbox/bootstrap.json
     user: "0:0"
     command: [python, -m, netbox_sync.worker_supervisor, netbox]

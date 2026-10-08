@@ -157,3 +157,12 @@ def test_vm_metadata_rejects_malformed_non_null_identity_fields(
 
     with pytest.raises(ValueError, match=message):
         build_vm_custom_fields(vm, {field_name: value})
+
+
+def test_retired_physical_disks_are_preserved_without_new_writes():
+    host, _, _ = _objects()
+    assert 'physical_disks' not in build_device_custom_fields(host)
+    old = [{'serial': 'historical'}]
+    result = build_device_custom_fields(host, {'physical_disks': old})
+    assert result['physical_disks'] == old
+    assert matches_sync_identity(result, host)

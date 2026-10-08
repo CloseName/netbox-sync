@@ -398,3 +398,39 @@ def test_unconfirmed_bootstrap_writes_nothing(fake_netbox):
             fake_netbox, hosts, _config(), plan,
         )
     assert fake_netbox.mutations == []
+
+
+@pytest.mark.parametrize('reuse', [False, True])
+def test_managed_nic_mac_change_preserves_old_record_and_is_idempotent(fake_netbox, reuse):
+    _, _, hosts, records, _ = _managed_setup(fake_netbox)
+    vm = hosts[0].virtual_machines[0]
+    interface, old_mac, _ = _network_records(fake_netbox, records[0], vm)
+    old_value = old_mac.mac_address
+    vm.interfaces[0].mac_address = '00:50:56:AA:CC:DD'
+    if reuse:
+        fake_netbox.dcim.mac_addresses.add(FakeRecord(id=9000,
+            mac_address=vm.interfaces[0].mac_address,
+            assigned_object_type=None, assigned_object_id=None))
+    apply_vm_networks(fake_netbox, hosts, _config(), confirmed=True)
+    assert interface.primary_mac_address != old_mac.id
+    assert old_mac.mac_address == old_value
+    assert old_mac.assigned_object_id == interface.id
+    assert len(fake_netbox.dcim.mac_addresses.all()) == 2
+    fake_netbox.clear_mutations()
+    apply_vm_networks(fake_netbox, hosts, _config(), confirmed=True)
+    assert fake_netbox.mutations == []
+
+
+def test_changed_mac_cannot_take_another_interfaces_assignment(fake_netbox):
+    _, _, hosts, records, _ = _managed_setup(fake_netbox)
+    vm = hosts[0].virtual_machines[0]
+    interface, old_mac, _ = _network_records(fake_netbox, records[0], vm)
+    vm.interfaces[0].mac_address = '00:50:56:AA:CC:DD'
+    fake_netbox.dcim.mac_addresses.add(FakeRecord(id=9000,
+        mac_address=vm.interfaces[0].mac_address,
+        assigned_object_type='virtualization.vminterface', assigned_object_id=999))
+    fake_netbox.clear_mutations()
+    with pytest.raises(VMNetworkApplyError, match='already assigned'):
+        apply_vm_networks(fake_netbox, hosts, _config(), confirmed=True)
+    assert fake_netbox.mutations == []
+    assert interface.primary_mac_address == old_mac

@@ -32,6 +32,16 @@ def test_absence_is_not_error_and_firewall_is_builtin():
     assert m.snapshot_record(value,preview,result,now=NOW)==result
 
 
+def test_old_pf_is_ignored_and_new_snapshots_do_not_contain_it():
+    value,preview=fixture()
+    value['runtime']['pf_filter']={'collection':'error','text':'legacy data ignored'}
+    value['runtime']['pf_nat']={'collection':'ok','text':'nat on em0 inet from any to any -> 192.0.2.1'}
+    result=m.snapshot_record(value,preview,now=NOW)
+    assert 'pf_filter' not in result['runtime']
+    assert [r['key'] for r in m.panel(result)['routes']]==['routes4','routes6','pf_nat']
+    assert result['runtime']['pf_nat']['text']==value['runtime']['pf_nat']['text']
+
+
 def test_section_failure_does_not_hide_other_components():
     value,preview=fixture()
     value['components']['openvpn'].update(collection='error',configuration='unknown',tables={})
@@ -41,6 +51,7 @@ def test_section_failure_does_not_hide_other_components():
     assert result['components']['openvpn']['collection']=='error'
     assert result['components']['firewall']['collection']=='ok'
     assert m.panel(result)['summary']
+    assert next(p for p in m.panel(result)['details'] if p['key']=='openvpn')['collection']=='error'
 
 
 @pytest.mark.parametrize('case',['column','missing','error_empty','runtime','oversize','stale','binding'])
@@ -60,7 +71,7 @@ def test_malformed_or_stale_inventory_rejected(case):
     with pytest.raises((ValueError,KeyError)):m.snapshot_record(value,preview,now=NOW)
 
 
-def test_display_retains_order_and_caps_only_rendered_rows():
+def test_display_retains_all_rules_and_order():
     value,preview=fixture()
     columns=m.SCHEMA['firewall']['rules']
     rows=[]
@@ -72,7 +83,7 @@ def test_display_retains_order_and_caps_only_rendered_rows():
     display=m.panel(result)
     assert len(result['components']['firewall']['tables']['rules'])==101
     table=display['details'][0]['tables'][0]
-    assert len(table['rows'])==100 and table['truncated']
+    assert len(table['rows'])==101 and not table['truncated']
     # Template autoescaping is tested separately when Django is available.
     assert m.panel({'schema':'unknown'})=={'invalid':True}
 
@@ -105,3 +116,63 @@ def test_firewall_groups_preserve_rules_and_remove_interface_column():
     assert all('Интерфейс' not in t['columns'] and t['grouped'] for t in tables)
     del record['interface_labels']
     assert m.panel(record)['details'][0]['tables'][1]['title'] == 'LAN'
+
+
+def test_expired_lease_or_missing_arp_does_not_automatically_release_observed_address():
+    from datetime import timedelta
+    value,preview=fixture()
+    value['ipam']={'configuration':'ok','leases':'ok','arp':'ok','entries':[{'kind':'arp','interface':'lan','start':'10.0.0.90','end':'10.0.0.90','mac':''}]}
+    before=m.snapshot_record(value,preview,now=NOW)
+    value['ipam']['entries']=[]
+    value['collected_at']=preview['collected_at']=(NOW+timedelta(seconds=30)).isoformat()
+    after=m.snapshot_record(value,preview,before,now=NOW+timedelta(seconds=30))
+    assert after['ipam']['entries'][0]['kind']=='historical'
+    assert after['ipam']['entries'][0]['start']=='10.0.0.90'
+
+
+def test_runtime_tables_preserve_rules_and_route_columns():
+    routes = m.runtime_table('routes4', 'Routing tables\nInternet:\nDestination Gateway Flags Netif Expire\ndefault 10.0.0.1 UGS em0\n')
+    assert routes['columns'] == ['Destination', 'Gateway', 'Flags', 'Netif', 'Expire']
+    assert routes['rows'][0][:4] == ['default', '10.0.0.1', 'UGS', 'em0']
+    rules = 'pass in quick on em0 from any to any\n  label "test"\n'
+    assert [row[1] for row in m.runtime_table('pf_filter', rules)['rows']] == rules.splitlines()
+    unknown = m.runtime_table('routes6', 'unrecognized format')
+    assert unknown['rows'][0][1] == 'unrecognized format'
+
+
+def test_nat_groups_and_translation_are_not_guessed():
+    text = '\n'.join([
+        'nat on vtnet0 inet from <tonatsubnets> to any -> 95.213.250.249 port 1024:65535',
+        'rdr on vtnet0 inet proto tcp from any to 95.213.250.243 port = 3151 -> 10.24.1.22',
+        'binat on vtnet0 inet from 10.24.2.23 to any -> 95.213.250.250',
+        'nat on vtnet0 inet from any to any port = isakmp -> (vtnet0) round-robin static-port',
+        'no nat proto carp all', 'nat-anchor "natrules/*" all',
+        'nat on em0 from any to any -> 192.0.2.1 unknown-modifier',
+    ])
+    groups={g['title']:g for g in m.nat_table(text)['groups']}
+    assert sum(g['count'] for g in groups.values())==7
+    assert groups['Исходящий NAT']['count']==2
+    fields=dict(groups['Проброс портов']['records'][0]['fields'])
+    assert fields['Источник']=='Любой'
+    assert fields['Назначение']=='95.213.250.243 · порт 3151'
+    assert fields['Адрес после преобразования']=='10.24.1.22'
+    assert groups['Нераспознанные записи']['count']==1
+    assert 'unknown-modifier' not in str(groups)
+    assert 'Сохранять исходный порт' in str(groups['Исходящий NAT'])
+
+
+def test_display_moscow_across_date_boundary_without_modifying_snapshot():
+    assert m.moscow_time('2026-10-07T14:52:11Z')=='07.10.2026 17:52:11 МСК'
+    assert m.moscow_time('2026-10-07T23:52:11Z')=='08.10.2026 02:52:11 МСК'
+    assert m.moscow_time('2026-10-08T02:52:11+03:00')=='08.10.2026 02:52:11 МСК'
+    value,preview=fixture()
+    snapshot=m.snapshot_record(value,preview,now=NOW)
+    original=deepcopy(snapshot)
+    assert m.panel(snapshot)['collected_at'].endswith('МСК')
+    assert snapshot==original
+
+
+def test_collectors_do_not_execute_or_collect_pf_filter():
+    for name in ['network-v1.php','inventory-v1.php','pf-runtime-v1.php']:
+        source=(ROOT/'deploy/pfsense'/name).read_text()
+        assert 'pf_filter' not in source and "'-sr'" not in source

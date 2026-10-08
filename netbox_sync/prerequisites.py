@@ -3,7 +3,7 @@ import hashlib
 import json
 import re
 
-VERSION = 4
+VERSION = 6
 FIELDS = {
     'sync_identities': ('json', ('dcim.device','dcim.interface','virtualization.virtualmachine','virtualization.vminterface')),
     'sync_original_names': ('json', ('dcim.device','dcim.interface','virtualization.virtualmachine','virtualization.vminterface')),
@@ -11,7 +11,8 @@ FIELDS = {
     'cpu_model': ('text', ('dcim.device',)), 'cpu_vendor': ('text', ('dcim.device',)),
     'cpu_sockets': ('integer', ('dcim.device',)), 'cpu_cores': ('integer', ('dcim.device',)),
     'cpu_threads': ('integer', ('dcim.device',)), 'memory_mb': ('integer', ('dcim.device',)),
-    'physical_disks': ('json', ('dcim.device',)),
+    'pfsense_inventory': ('json', ('virtualization.virtualmachine',)),
+    'pfsense_network': ('json', ('virtualization.virtualmachine',)),
     'guest_kind': ('text', ('virtualization.virtualmachine',)),
     'guest_architecture': ('text', ('virtualization.virtualmachine',)),
     'guest_os_type': ('text', ('virtualization.virtualmachine',)),
@@ -20,9 +21,13 @@ FIELDS = {
     'source_vlan_id': ('integer', ('virtualization.vminterface',)),
     'sync_network_observations': ('json', ('virtualization.vminterface',)),
     'esxi_host_network': ('json', ('dcim.device',)),
+    'sync_disk_identity': ('json', ('virtualization.virtualdisk',)),
 }
 
 LABELS = {
+    'sync_disk_identity': ('Disk source identity', 'Идентификатор диска источника'),
+    'pfsense_inventory': ('pfSense services and rules', 'Сервисы и правила pfSense'),
+    'pfsense_network': ('pfSense network', 'Сеть pfSense'),
     'esxi_host_network': ('ESXi host network', 'Сеть хоста ESXi'),
     'sync_network_observations': ('Network observations requiring review', 'Сетевые наблюдения, требующие проверки'),
     'sync_identities': ('Source identities', 'Идентификаторы источников'),
@@ -43,6 +48,9 @@ LABELS = {
     'source_vlan_id': ('Source VLAN ID', 'VLAN ID источника'),
 }
 PURPOSES = {
+    'sync_disk_identity': ('Stable provider disk identity.', 'Устойчивый идентификатор диска провайдера.'),
+    'pfsense_inventory': ('Collected pfSense configuration.', 'Собранная конфигурация pfSense.'),
+    'pfsense_network': ('Observed pfSense interfaces.', 'Обнаруженные интерфейсы pfSense.'),
     'esxi_host_network': ('Observed ESXi adapters and standard switch topology; no network object writes.', 'Адаптеры и стандартные коммутаторы ESXi; без создания сетевых объектов.'),
     'sync_network_observations': ('Observed addresses and masks; does not imply IPAM assignment.', 'Обнаруженные адреса и маски; не подтверждают назначение в IPAM.'),
     'sync_identities': ('Stable, source-scoped ownership; never name adoption.', 'Стабильная принадлежность источнику; без присвоения по имени.'),

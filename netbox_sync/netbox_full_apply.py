@@ -1,3 +1,5 @@
+from .guest_placement import apply_guest_placement
+from .virtual_disks import apply_virtual_disks
 from .netbox_apply import apply_hosts
 from .netbox_vm_apply import apply_virtual_machines
 from .netbox_vm_network_apply import apply_vm_networks
@@ -29,6 +31,8 @@ STAGES = (
         'LXC NETWORK',
         apply_lxc_networks,
     ),
+    ('GUEST PLACEMENT', apply_guest_placement),
+    ('VM DISKS', apply_virtual_disks),
 )
 
 

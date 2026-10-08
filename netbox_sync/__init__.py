@@ -135,18 +135,6 @@ def _run_inventory(
         print(f'  cpu_cores:          {host.cpu.cores}')
         print(f'  logical_cpus:       {host.cpu.logical_cpus}')
         print(f'  memory_mib:         {host.memory_bytes // 1024**2}')
-        print(f'  physical_disks:     {len(host.disks)}')
-
-        for disk in host.disks:
-            print(
-                f'    DISK path={disk.path} '
-                f'model={disk.model or "-"} '
-                f'serial={disk.serial or "-"} '
-                f'type={disk.disk_type or "-"} '
-                f'size_gib={disk.size_bytes / 1024**3:.2f} '
-                f'health={disk.health or "-"}'
-            )
-
         print(f'  storages:           {len(host.storages)}')
 
         for storage in host.storages:

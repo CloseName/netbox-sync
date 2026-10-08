@@ -16,7 +16,7 @@ def test_scheduled_after_manual_does_not_load_legacy_catalog(monkeypatch):
     config=target(seed,replace(sample_source_config(),legacy_identity_owner=False))
     hosts=discover_hosts(FakeProxmox(proxmox_responses()),config)
     requests=[]
-    with netbox_http(seed,requests=requests,behavior={'deny_reads': ['virtualization.virtual_disks']}) as (api,rows,writes):
+    with netbox_http(seed,requests=requests,behavior={}) as (api,rows,writes):
         plan=build_runtime_plan(api,hosts,config)
         assert plan.apply_allowed
         apply_full_sync(api,hosts,config.target,confirmed=True)
@@ -31,7 +31,7 @@ def test_scheduled_after_manual_does_not_load_legacy_catalog(monkeypatch):
         result=execute_discovered_source(config,hosts,'apply')
         assert result.digest and not [i for i in result.items if i.action.value in ('CREATE','UPDATE')]
         assert not writes
-        assert not any('/virtual-disks/' in path for _,path in requests)
+        assert any('/virtual-disks/' in path for _,path in requests)  # Native VM disks are now reconciled.
 
 
 def test_scheduled_write_refusal_keeps_plan_and_does_not_retry(monkeypatch,capsys):

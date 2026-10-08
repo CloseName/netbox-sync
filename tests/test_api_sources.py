@@ -90,7 +90,7 @@ def test_source_list_detail_safe_mapping_and_select_only(caplog):
     assert listed.status_code == detail.status_code == 200
     assert listed.json()['sources'] == [detail.json()]
     assert detail.json()['status'] == 'enabled'
-    assert set(detail.json()) == (set(SOURCE_COLUMNS) - {'source_type'}) | {'type', 'status'}
+    assert set(detail.json()) == (set(SOURCE_COLUMNS) - {'source_type', 'sync_calendar', 'schedule_changed_at'}) | {'type', 'status'}
     assert SECRET not in listed.text + detail.text + caplog.text
     assert connection.queries[-1][1] == ('pve-test',)
     assert 'pve-test' not in connection.queries[-1][0]

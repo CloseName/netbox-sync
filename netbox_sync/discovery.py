@@ -84,6 +84,7 @@ class DiscoveredVirtualDisk:
     name: str
     storage: Optional[str]
     size_bytes: int
+    external_id: Optional[str] = None
 
 
 @dataclass

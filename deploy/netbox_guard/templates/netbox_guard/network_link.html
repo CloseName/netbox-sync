@@ -1,0 +1,10 @@
+<div class="card"><h2 class="card-header">Сети и IP-адреса</h2><div class="card-body">
+{% for network in linked_networks %}<p><a href="{% url 'plugins:netbox_guard:networks' kind=network_kind pk=object.pk %}?network={{ network.id|urlencode }}">{{ network.vm_name }} · {{ network.name }} ({{ network.key }}) · {{ network.cidr }}</a></p>{% endfor %}
+</div></div>
+{% if network_kind == 'device' %}<div class="card"><h2 class="card-header">Гипервизор и виртуальные машины</h2><div class="card-body">
+{% if host_facts.cpu_model %}<p>CPU: {{ host_facts.cpu_model }}</p>{% endif %}
+{% if host_facts.memory_mb %}<p>Физическая память: {{ host_facts.memory_mb }} MiB</p>{% endif %}
+{% if host_facts.hypervisor_version %}<p>Гипервизор: {{ host_facts.hypervisor_version }}</p>{% endif %}
+<p>Ресурсы ниже выделены VM и не обозначают текущую загрузку хоста.</p>
+<table class="table"><thead><tr><th>VM</th><th>vCPU</th><th>Память (MB)</th><th>Диск (MB)</th></tr></thead><tbody>{% for vm in host_guests %}<tr><td><a href="{{ vm.get_absolute_url }}">{{ vm.name }}</a></td><td>{{ vm.vcpus|default:'—' }}</td><td>{{ vm.memory|default:'—' }}</td><td>{{ vm.disk|default:'—' }}</td></tr>{% empty %}<tr><td colspan="4">Подтверждённых связей с VM пока нет. Обновите синхронизацию.</td></tr>{% endfor %}</tbody></table>
+</div></div>{% endif %}

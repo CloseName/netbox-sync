@@ -1,10 +1,10 @@
 """Explicit public DTOs; no ORM/configuration objects are exposed."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import field_validator, BaseModel, ConfigDict, Field
 
 from ..application.health import HealthStatus
 from ..application.diagnostics import DiagnosticStatus
@@ -245,6 +245,15 @@ class SourceListDTO(PublicModel):
 class ScheduleUpdateDTO(PublicModel):
     """Optimistic update of only automatic synchronization fields."""
 
+    sync_calendar: dict | None = None
+    expected_sync_calendar: dict | None = None
+
+    @field_validator('sync_calendar', 'expected_sync_calendar')
+    @classmethod
+    def calendar(cls, value):
+        from ..calendar_schedule import validate_calendar
+        return validate_calendar(value)
+
     sync_enabled: bool
     sync_interval_seconds: int = Field(strict=True, ge=60, le=86400)
     expected_sync_enabled: bool
@@ -254,6 +263,9 @@ class ScheduleUpdateDTO(PublicModel):
 class ScheduleDTO(PublicModel):
     """Public derived schedule state."""
 
+    server_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    sync_calendar: dict | None = None
     source_instance: str
     sync_enabled: bool
     sync_interval_seconds: int

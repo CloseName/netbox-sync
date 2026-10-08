@@ -6,7 +6,6 @@ from .esxi_host_network import collect_host_network
 
 from .discovery import (
     DiscoveredCPU,
-    DiscoveredDisk,
     DiscoveredHost,
     DiscoveredHostInterface,
     DiscoveredInterface,
@@ -186,33 +185,6 @@ def _host_interfaces(host):
     return result
 
 
-def _host_disks(host):
-    result = []
-    for lun in _items(_value(host, 'config.storageDevice.scsiLun', ())):
-        capacity = getattr(lun, 'capacity', None)
-        blocks = int(getattr(capacity, 'block', 0) or 0)
-        block_size = int(getattr(capacity, 'blockSize', 0) or 0)
-        operational = getattr(lun, 'operationalState', None)
-        result.append(
-            DiscoveredDisk(
-                path=str(
-                    getattr(lun, 'deviceName', None)
-                    or getattr(lun, 'canonicalName', '')
-                ),
-                model=getattr(lun, 'model', None),
-                serial=getattr(lun, 'serialNumber', None),
-                size_bytes=blocks * block_size,
-                disk_type=getattr(lun, 'deviceType', None),
-                health=(
-                    ','.join(str(item) for item in operational)
-                    if operational
-                    else None
-                ),
-            )
-        )
-    return result
-
-
 def _datastores(host):
     result = []
     for datastore in _items(getattr(host, 'datastore', ())):
@@ -272,6 +244,15 @@ def _guest_addresses(vm):
     return by_key, by_mac
 
 
+def _disk_size_bytes(device):
+    """Prefer the byte-precision capacity, falling back to legacy KiB."""
+    for field, multiplier in (('capacityInBytes', 1), ('capacityInKB', 1024)):
+        value = getattr(device, field, None)
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            return value * multiplier
+    return 0
+
+
 def _vm_disks_and_interfaces(vm, host):
     disks = []
     interfaces = []
@@ -281,13 +262,16 @@ def _vm_disks_and_interfaces(vm, host):
     for device in _items(_value(vm, 'config.hardware.device', ())):
         label = str(_value(device, 'deviceInfo.label', ''))
         key = getattr(device, 'key', None)
-        if hasattr(device, 'capacityInKB'):
+        if hasattr(device, 'capacityInKB') or hasattr(device, 'capacityInBytes'):
+            if key is None or not str(key).strip():
+                raise ValueError('ESXi VM disk has no stable device key')
             datastore = _value(device, 'backing.datastore.name')
             disks.append(
                 DiscoveredVirtualDisk(
                     name=label or f'disk-{key}',
+                    external_id=str(key),
                     storage=str(datastore) if datastore else None,
-                    size_bytes=int(getattr(device, 'capacityInKB', 0) or 0) * 1024,
+                    size_bytes=_disk_size_bytes(device),
                 )
             )
             continue
@@ -447,7 +431,6 @@ def _convert_hosts(hosts, source_config):
                     logical_cpus=int(getattr(cpu_info, 'numCpuThreads', 0) or 0),
                 ),
                 memory_bytes=int(_value(host, 'hardware.memorySize', 0) or 0),
-                disks=_host_disks(host),
                 storages=_datastores(host),
                 interfaces=_host_interfaces(host),
                 esxi_host_network=collect_host_network(host),
@@ -481,7 +464,7 @@ def discover_hosts(service_instance, source_config):
                     getattr(datastore, 'name', None)
             for vm in vms:
                 for device in _items(_value(vm, 'config.hardware.device', ())):
-                    if hasattr(device, 'capacityInKB'):
+                    if hasattr(device, 'capacityInKB') or hasattr(device, 'capacityInBytes'):
                         _value(device, 'backing.datastore.name')
             stats['objects'] = len(hosts)
         with stage('esxi_conversion', reads) as stats:
