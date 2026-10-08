@@ -76,12 +76,20 @@ def build_runtime_plan(nb_api, hosts, config):
     from .ip_observations import ObservationPrerequisiteError
     from ..esxi_host_network import HostNetworkPrerequisiteError
     from ..netbox_vm_network_apply import ManagedMACConflict
+    from ..virtual_disks import DiskSizeUnknown
     try:
         with measured_phase('netbox_simulation'):
             if config.source_type == 'proxmox':
                 apply_full_sync(planning_api, hosts, config.target, confirmed=True)
             else:
                 execute_esxi_runtime(planning_api, hosts, config, confirmed=True)
+    except DiskSizeUnknown as problem:
+        from dataclasses import replace
+        return replace(review_plan, items=(*review_plan.items, SyncPlanItem(
+            object_kind='virtualization.virtual_disks', external_id=problem.external_id,
+            name=f'{problem.vm_name} / {problem.disk_name}', action=SyncAction.BLOCKED,
+            reason_code='DISK_SIZE_UNKNOWN',
+            reason='The source did not report a positive disk capacity. Check this disk in the hypervisor and build a new plan. Existing NetBox data is preserved.')))
     except ManagedMACConflict as conflict:
         from dataclasses import replace
         return replace(review_plan, items=(*review_plan.items, SyncPlanItem(

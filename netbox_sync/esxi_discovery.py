@@ -244,6 +244,15 @@ def _guest_addresses(vm):
     return by_key, by_mac
 
 
+def _disk_size_bytes(device):
+    """Prefer the byte-precision capacity, falling back to legacy KiB."""
+    for field, multiplier in (('capacityInBytes', 1), ('capacityInKB', 1024)):
+        value = getattr(device, field, None)
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            return value * multiplier
+    return 0
+
+
 def _vm_disks_and_interfaces(vm, host):
     disks = []
     interfaces = []
@@ -253,7 +262,7 @@ def _vm_disks_and_interfaces(vm, host):
     for device in _items(_value(vm, 'config.hardware.device', ())):
         label = str(_value(device, 'deviceInfo.label', ''))
         key = getattr(device, 'key', None)
-        if hasattr(device, 'capacityInKB'):
+        if hasattr(device, 'capacityInKB') or hasattr(device, 'capacityInBytes'):
             if key is None or not str(key).strip():
                 raise ValueError('ESXi VM disk has no stable device key')
             datastore = _value(device, 'backing.datastore.name')
@@ -262,7 +271,7 @@ def _vm_disks_and_interfaces(vm, host):
                     name=label or f'disk-{key}',
                     external_id=str(key),
                     storage=str(datastore) if datastore else None,
-                    size_bytes=int(getattr(device, 'capacityInKB', 0) or 0) * 1024,
+                    size_bytes=_disk_size_bytes(device),
                 )
             )
             continue
@@ -455,7 +464,7 @@ def discover_hosts(service_instance, source_config):
                     getattr(datastore, 'name', None)
             for vm in vms:
                 for device in _items(_value(vm, 'config.hardware.device', ())):
-                    if hasattr(device, 'capacityInKB'):
+                    if hasattr(device, 'capacityInKB') or hasattr(device, 'capacityInBytes'):
                         _value(device, 'backing.datastore.name')
             stats['objects'] = len(hosts)
         with stage('esxi_conversion', reads) as stats:

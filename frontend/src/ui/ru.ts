@@ -790,4 +790,5 @@ export const ru: Record<string,string> = {
   'Hypervisor version': 'Версия гипервизора',
   'Show more': 'Показать ещё',
   'Planned object': 'Планируемый объект',
+  'The source did not report a positive disk capacity. Check this disk in the hypervisor and build a new plan. Existing NetBox data is preserved.': 'Источник не сообщил положительный размер диска. Проверьте этот диск в гипервизоре и постройте новый план. Существующие данные NetBox сохранены.',
 };

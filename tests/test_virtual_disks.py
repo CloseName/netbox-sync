@@ -4,6 +4,45 @@ from netbox_sync.virtual_disks import apply_virtual_disks
 import pytest
 
 
+@pytest.mark.parametrize('byte_size,kib,expected', [(2049, 2, 2049), (None, 2, 2048), (0, 2, 2048), (0, 0, 0), (-1, None, 0)])
+def test_esxi_capacity_uses_bytes_then_legacy_kib(byte_size, kib, expected):
+    from types import SimpleNamespace
+    from netbox_sync.esxi_discovery import _disk_size_bytes
+    assert _disk_size_bytes(SimpleNamespace(capacityInBytes=byte_size,capacityInKB=kib)) == expected
+
+
+def test_unknown_disk_size_preserves_all_existing_disks(fake_netbox):
+    from netbox_sync.virtual_disks import DiskSizeUnknown
+    _,config,hosts,_,_=_managed_setup(fake_netbox, count=2)
+    apply_virtual_disks(fake_netbox,hosts,config,confirmed=True)
+    hosts[0].virtual_machines[0].disks[0].size_bytes += 1000000
+    vm=hosts[0].virtual_machines[1]
+    vm.disks[0].size_bytes=0
+    fake_netbox.clear_mutations()
+    with pytest.raises(DiskSizeUnknown) as caught:
+        apply_virtual_disks(fake_netbox,hosts,config,confirmed=True)
+    assert caught.value.vm_name==vm.original_name
+    assert caught.value.disk_name==vm.disks[0].name
+    assert fake_netbox.mutations==[]
+
+
+def test_unknown_size_is_a_named_blocked_plan_without_writes(fake_netbox):
+    from tests.test_esxi_host_network import target
+    from tests.test_esxi_network_bootstrap import _config
+    from tests.fakes.esxi import fake_esxi_service
+    from netbox_sync.esxi_discovery import discover_hosts
+    from netbox_sync.application.runtime_plan import build_runtime_plan
+    config=target(fake_netbox,_config())
+    hosts=discover_hosts(fake_esxi_service(),config)
+    vm=hosts[0].virtual_machines[0]
+    vm.disks[0].size_bytes=0
+    plan=build_runtime_plan(fake_netbox,hosts,config)
+    assert not plan.apply_allowed
+    row=next(r for r in plan.items if r.reason_code=='DISK_SIZE_UNKNOWN')
+    assert row.name==f'{vm.original_name} / {vm.disks[0].name}'
+    assert fake_netbox.mutations==[]
+
+
 def test_disk_create_resize_rename_and_second_run(fake_netbox):
     _, config, hosts, records, _ = _managed_setup(fake_netbox)
     disk=hosts[0].virtual_machines[0].disks[0]
@@ -40,3 +79,15 @@ def test_missing_disks_are_retained(fake_netbox):
     apply_virtual_disks(fake_netbox,hosts,config,confirmed=True)
     assert len(fake_netbox.virtualization.virtual_disks.all())==count
     assert fake_netbox.mutations==[]
+
+
+def test_esxi_collector_accepts_byte_only_disk_capacity():
+    from tests.fakes.esxi import fake_esxi_service
+    from tests.test_esxi_network_bootstrap import _config
+    from netbox_sync.esxi_discovery import discover_hosts
+    service=fake_esxi_service()
+    disk=service.host.vm[0].config.hardware.device[0]
+    del disk.capacityInKB
+    disk.capacityInBytes=123456789
+    hosts=discover_hosts(service,_config())
+    assert hosts[0].virtual_machines[0].disks[0].size_bytes==123456789

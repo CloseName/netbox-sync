@@ -156,6 +156,7 @@ export function planReason(item:{reason_code:string;reason:string;action?:SyncAc
   MAC_OBSERVATION_ONLY:'Stored on NetBox interfaces for review; disputed MAC assignments are not synchronized.',
   NETWORK_SCOPE_REVIEW_REQUIRED:'Selected network scope changed or no longer exists. Review the source VRF mapping.',
   IP_OBSERVATION_ONLY:'Stored on NetBox interfaces for review; disputed IPAM assignments are not synchronized.',
+  DISK_SIZE_UNKNOWN:'The source did not report a positive disk capacity. Check this disk in the hypervisor and build a new plan. Existing NetBox data is preserved.',
   HOST_NETWORK_FIELD_REQUIRED:'Prepare the ESXi host network field in NetBox settings before synchronization.',
   OBSERVATION_FIELD_REQUIRED:'Prepare the network observations field in NetBox settings before synchronization.',
   ESXI_HOST_NETWORK_UNSUPPORTED:'ESXi topology is stored in a device snapshot. The verified connection IPv4 and its VMkernel interface are synchronized separately; other host networking remains report-only.',
