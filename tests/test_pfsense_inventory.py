@@ -32,18 +32,14 @@ def test_absence_is_not_error_and_firewall_is_builtin():
     assert m.snapshot_record(value,preview,result,now=NOW)==result
 
 
-def test_runtime_rules_preserve_complete_output_and_old_snapshots_are_explicit():
+def test_old_pf_is_ignored_and_new_snapshots_do_not_contain_it():
     value,preview=fixture()
-    old=m.snapshot_record(value,preview,now=NOW)
-    assert old['runtime']['pf_filter']==dict(collection='not_collected',text='')
-    rules='block drop all\n'*6000
-    value['runtime']['pf_filter']=dict(collection='ok',text=rules)
-    value['runtime']['pf_nat']=dict(collection='ok',text='')
+    value['runtime']['pf_filter']={'collection':'error','text':'legacy data ignored'}
+    value['runtime']['pf_nat']={'collection':'ok','text':'nat on em0 inet from any to any -> 192.0.2.1'}
     result=m.snapshot_record(value,preview,now=NOW)
-    assert result['runtime']['pf_filter']['text']==rules
-    assert next(r for r in m.panel(result)['routes'] if r['name']=='Фактические правила PF')['text']==rules
-    value['runtime']['pf_filter']['collection']='error'
-    with pytest.raises(ValueError): m.validate(value)
+    assert 'pf_filter' not in result['runtime']
+    assert [r['key'] for r in m.panel(result)['routes']]==['routes4','routes6','pf_nat']
+    assert result['runtime']['pf_nat']['text']==value['runtime']['pf_nat']['text']
 
 
 def test_section_failure_does_not_hide_other_components():
@@ -142,3 +138,41 @@ def test_runtime_tables_preserve_rules_and_route_columns():
     assert [row[1] for row in m.runtime_table('pf_filter', rules)['rows']] == rules.splitlines()
     unknown = m.runtime_table('routes6', 'unrecognized format')
     assert unknown['rows'][0][1] == 'unrecognized format'
+
+
+def test_nat_groups_and_translation_are_not_guessed():
+    text = '\n'.join([
+        'nat on vtnet0 inet from <tonatsubnets> to any -> 95.213.250.249 port 1024:65535',
+        'rdr on vtnet0 inet proto tcp from any to 95.213.250.243 port = 3151 -> 10.24.1.22',
+        'binat on vtnet0 inet from 10.24.2.23 to any -> 95.213.250.250',
+        'nat on vtnet0 inet from any to any port = isakmp -> (vtnet0) round-robin static-port',
+        'no nat proto carp all', 'nat-anchor "natrules/*" all',
+        'nat on em0 from any to any -> 192.0.2.1 unknown-modifier',
+    ])
+    groups={g['title']:g for g in m.nat_table(text)['groups']}
+    assert sum(g['count'] for g in groups.values())==7
+    assert groups['Исходящий NAT']['count']==2
+    fields=dict(groups['Проброс портов']['records'][0]['fields'])
+    assert fields['Источник']=='Любой'
+    assert fields['Назначение']=='95.213.250.243 · порт 3151'
+    assert fields['Адрес после преобразования']=='10.24.1.22'
+    assert groups['Нераспознанные записи']['count']==1
+    assert 'unknown-modifier' not in str(groups)
+    assert 'Сохранять исходный порт' in str(groups['Исходящий NAT'])
+
+
+def test_display_moscow_across_date_boundary_without_modifying_snapshot():
+    assert m.moscow_time('2026-10-07T14:52:11Z')=='07.10.2026 17:52:11 МСК'
+    assert m.moscow_time('2026-10-07T23:52:11Z')=='08.10.2026 02:52:11 МСК'
+    assert m.moscow_time('2026-10-08T02:52:11+03:00')=='08.10.2026 02:52:11 МСК'
+    value,preview=fixture()
+    snapshot=m.snapshot_record(value,preview,now=NOW)
+    original=deepcopy(snapshot)
+    assert m.panel(snapshot)['collected_at'].endswith('МСК')
+    assert snapshot==original
+
+
+def test_collectors_do_not_execute_or_collect_pf_filter():
+    for name in ['network-v1.php','inventory-v1.php','pf-runtime-v1.php']:
+        source=(ROOT/'deploy/pfsense'/name).read_text()
+        assert 'pf_filter' not in source and "'-sr'" not in source

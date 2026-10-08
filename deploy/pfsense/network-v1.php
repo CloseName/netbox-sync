@@ -74,7 +74,7 @@ function ns_pf_snapshot_value(string $json, string $name, int $now): string {
 }
 
 function ns_command(string $name): string {
-    if (in_array($name, ['pf_filter','pf_nat'], true) && posix_geteuid() !== 0) {
+    if (in_array($name, ['pf_nat'], true) && posix_geteuid() !== 0) {
         return ns_pf_cached($name);
     }
     $commands = [
@@ -82,7 +82,6 @@ function ns_command(string $name): string {
         'arp' => ['/usr/sbin/arp', '-an'],
         'routes4' => ['/usr/bin/netstat', '-rn', '-f', 'inet'],
         'routes6' => ['/usr/bin/netstat', '-rn', '-f', 'inet6'],
-        'pf_filter' => ['/sbin/pfctl', '-sr'],
         'pf_nat' => ['/sbin/pfctl', '-sn'],
         'packages' => ['/usr/local/sbin/pkg', 'query', '-a', '%n %v'],
         'processes' => ['/bin/ps', '-axo', 'comm']
@@ -106,7 +105,7 @@ function ns_command(string $name): string {
             $status = proc_get_status($process);
             if (!$status['running']) {
                 $output .= stream_get_contents($pipes[1]);
-                if ($status['exitcode'] !== 0 || strlen($output) > 1024 * 1024 || (trim($output) === '' && !in_array($name, ['pf_filter','pf_nat'], true))) {
+                if ($status['exitcode'] !== 0 || strlen($output) > 1024 * 1024 || (trim($output) === '' && !in_array($name, ['pf_nat'], true))) {
                     throw new RuntimeException('ifconfig failed');
                 }
                 return $output;

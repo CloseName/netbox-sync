@@ -199,7 +199,7 @@ NetBox ORM import must be checked on the test server. PHP tests run again before
 collector installation on the target PHP version.
 
 
-## PF/NAT runtime snapshots (7 October 2026)
+## NAT runtime snapshots (8 October 2026)
 
 The GUI provisioning flow now installs `pf-runtime-v1.php` beside the two collectors
 in the root-owned `/conf/netbox-sync-web/<account>` directory. A persistent pfSense
@@ -207,7 +207,7 @@ cron entry runs its fixed PHP path as root every minute; provisioning also runs 
 once immediately. Repeat **Connect and collect** to update an existing installation.
 The SSH account remains restricted and receives neither sudo nor `/dev/pf` access.
 
-The producer executes only fixed `pfctl -sr` and `pfctl -sn` commands with bounded
+The producer executes only the fixed `pfctl -sn` command with bounded
 output and runtime. It atomically publishes a root-owned read-only snapshot under
 `/var/run/netbox-sync-pf/<account>.json`. Readers reject snapshots older than 150
 seconds, future timestamps, failed sections and invalid data. Empty successful
@@ -218,7 +218,9 @@ mechanism; copying only network-v1.php does not install its producer.
 
 Validate with `php test-pf-runtime-v1.php` in addition to the existing network and
 inventory tests. Acceptance on pfSense: collect immediately, collect after two
-minutes, then repeat after reboot; both PF and NAT must report a successful read.
+minutes, then repeat after reboot; NAT must report a successful read.
 To retire this remote collector, an administrator should remove its exact cron
 entry before removing its root-owned scripts. Disconnecting Sync does not remove
 remote accounts or configuration automatically.
+
+Actual PF filter rules are no longer collected. Repeat Connect and collect after this upgrade to replace the remote producer and collector; ordinary collection does not install new scripts. Old snapshots containing pf_filter remain readable, but that field is discarded.

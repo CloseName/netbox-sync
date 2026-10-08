@@ -21,7 +21,7 @@ if (is_link($lockpath)) { exit(65); }
 $lock = fopen($lockpath, 'c');
 if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) { exit(0); }
 $value = ['collected_at' => time()];
-foreach (['pf_filter', 'pf_nat'] as $key) {
+foreach (['pf_nat'] as $key) {
     try { $value[$key] = ['collection'=>'ok', 'text'=>ns_command($key)]; }
     catch (Throwable $error) { $value[$key] = ['collection'=>'error', 'text'=>'']; }
 }

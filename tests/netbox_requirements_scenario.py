@@ -212,7 +212,7 @@ vm.custom_field_data['pfsense_inventory'].update(schema='netbox-sync.pfsense.inv
 vm.save()
 req=APIRequestFactory().get('/firewall/');force_authenticate(req,user=user)
 response=FirewallInventory.as_view()(req,pk=vm.pk)
-assert response.status_code==200 and response.data['runtime']['pf_filter']['collection']=='ok'
+assert response.status_code==200 and 'pf_filter' not in response.data['runtime']
 print('PASS: infrastructure API permissions, unique node IDs, firewall runtime evidence')
 client=Client();client.force_login(user)
 assert client.get(vm.get_absolute_url()).status_code==200

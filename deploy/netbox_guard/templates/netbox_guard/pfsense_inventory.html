@@ -5,7 +5,7 @@
     <p>Формат снимка не поддерживается.</p>
   {% else %}
     <p>Снимок от {{ inventory.collected_at }}. pfSense {{ inventory.version }}.</p>
-    <p class="text-muted">Наличие настроек и процесса не подтверждает доступность сервиса или VPN-туннеля. Таблицы показывают конфигурацию; фактические правила PF/NAT доступны в отдельной вкладке, если сбор поддерживается. Вложенные anchors и содержимое динамических таблиц не собраны; эффективная политика не вычисляется.</p>
+    <p class="text-muted">Наличие настроек и процесса не подтверждает доступность сервиса или VPN-туннеля. Таблицы показывают конфигурацию; фактические правила NAT доступны в отдельной вкладке, если сбор поддерживается. Вложенные anchors и содержимое динамических таблиц не собраны; эффективная политика не вычисляется.</p>
     <ul class="nav nav-tabs mb-3" role="tablist" aria-label="Разделы pfSense">
       <li class="nav-item" role="presentation"><button class="nav-link active" id="pf-{{ object.pk }}-summary-tab" data-bs-toggle="tab" data-bs-target="#pf-{{ object.pk }}-summary" type="button" role="tab" aria-controls="pf-{{ object.pk }}-summary" aria-selected="true">Обзор</button></li>
       {% for component in inventory.details %}<li class="nav-item" role="presentation"><button class="nav-link" id="pf-{{ object.pk }}-{{ component.key }}-tab" data-bs-toggle="tab" data-bs-target="#pf-{{ object.pk }}-{{ component.key }}" type="button" role="tab" aria-controls="pf-{{ object.pk }}-{{ component.key }}" aria-selected="false">{{ component.name }}</button></li>{% endfor %}
@@ -31,8 +31,8 @@
       <div class="tab-pane{% if forloop.first %} show active{% endif %}" id="pf-{{ object.pk }}-{{ component.key }}-sub-{{ forloop.counter }}" role="tabpanel" aria-labelledby="pf-{{ object.pk }}-{{ component.key }}-sub-{{ forloop.counter }}-tab" tabindex="0">
       {% if table.rows %}
       <div class="table-responsive"><table class="table table-sm table-striped">
-        <thead><tr>{% for heading in table.columns %}<th scope="col" class="p-2">{{ heading }}</th>{% endfor %}</tr></thead>
-        <tbody>{% for row in table.rows %}<tr>{% for cell in row %}<td class="p-2 text-nowrap">{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+        <thead><tr>{% for heading in table.columns %}<th scope="col" class="p-2">{{ heading }}</th>{% endfor %}<th>Подробности</th></tr></thead>
+        <tbody>{% for row in table.records %}<tr>{% for cell in row.cells %}<td class="p-2 text-nowrap">{{ cell }}</td>{% endfor %}<td>{% if row.fields %}<details><summary>Подробности</summary><dl>{% for label, value in row.fields %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl></details>{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
       </table></div>
       {% else %}<p class="text-muted">Записей нет.</p>{% endif %}
       </div>
@@ -49,8 +49,10 @@
       <div class="tab-content">{% for route in inventory.routes %}
         <div class="tab-pane{% if forloop.first %} show active{% endif %}" id="pf-{{ object.pk }}-{{ route.key }}" role="tabpanel" aria-labelledby="pf-{{ object.pk }}-{{ route.key }}-tab" tabindex="0">
           <p>{{ route.name }} — {{ route.state }}</p>
+          {% if route.key == 'pf_nat' %}<p class="text-muted">Загруженные преобразования на момент снимка. Описание и соответствие сохранённой конфигурации не определяются. Имена в &lt;скобках&gt; обозначают таблицы адресов; их содержимое не собрано.</p>
+          {% for group in route.groups %}<h4 class="h6">{{ group.title }} ({{ group.count }})</h4><div class="row row-cols-1 row-cols-xl-2 g-3 mb-3">{% for record in group.records %}<div class="col"><article class="card h-100"><div class="card-header">{{ group.title }} · № {{ record.number }}</div><div class="card-body"><dl class="row mb-0">{% for label, value in record.fields %}<dt class="col-sm-5">{{ label }}</dt><dd class="col-sm-7 text-break">{{ value }}</dd>{% endfor %}</dl></div></article></div>{% endfor %}</div>{% empty %}{% if route.state == 'Собрано' %}<p>Правил NAT нет.</p>{% endif %}{% endfor %}{% endif %}
           {% if route.rows %}<div class="table-responsive"><table class="table table-sm table-striped"><thead><tr>{% for column in route.columns %}<th class="text-nowrap">{{ column }}</th>{% endfor %}</tr></thead><tbody>{% for row in route.rows %}<tr>{% for cell in row %}<td class="text-nowrap">{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
-          <details><summary>Исходный вывод</summary><pre>{{ route.text }}</pre></details>{% endif %}
+          {% endif %}
         </div>
       {% endfor %}</div>
     </div>

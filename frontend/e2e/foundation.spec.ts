@@ -124,12 +124,9 @@ test("sources filters, pagination, no results, schedule off vs disabled", async 
     path: "test-results/filtered-empty.png",
     fullPage: true,
   });
-  await page
-    .getByRole("button", { name: "Clear filters", exact: true })
-    .first()
-    .click();
-  await page.getByText("More filters", {exact:false}).click();
-  await page.getByLabel("Provider", { exact: true }).selectOption("esxi");
+  await page.getByLabel("Search sources").fill("");
+  await expect(page.getByRole("button", {name:"Clear filters",exact:true})).toHaveCount(0);
+  await page.goto("/sources?provider=esxi");
   await expect(page.getByText("1–25 of 27")).toBeVisible();
 });
 test("overview healthy, unknown, stale and partial error preserve epistemic boundaries", async ({

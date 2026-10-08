@@ -1,3 +1,4 @@
+import {exactTime} from '../ui/format';
 import {usePermission} from '../AuthGate';
 import {tr} from "../ui/i18n";
 import { useEffect, useRef, useState } from "react";
@@ -72,7 +73,7 @@ export function ScheduleSummary({
         <dt>{tr("Next expected")}{" "}</dt>
         <dd>
           {schedule.next_expected_at ? (
-            <time dateTime={schedule.next_expected_at}>{new Intl.DateTimeFormat(undefined,{timeZone:"Europe/Moscow",dateStyle:"medium",timeStyle:"short",hour12:false}).format(new Date(schedule.next_expected_at))} MSK</time>
+            <time dateTime={schedule.next_expected_at}>{exactTime(schedule.next_expected_at)}</time>
           ) : (
             tr("Not scheduled")
           )}

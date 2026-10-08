@@ -1,4 +1,5 @@
 """Authenticated native NetBox IPAM views for confirmed pfSense networks."""
+from .pfsense_inventory import moscow_time
 from ipaddress import ip_address, ip_network, ip_interface
 from uuid import UUID, uuid4
 from django.contrib.auth.decorators import login_required
@@ -124,7 +125,9 @@ def networks(request, kind, pk):
     state = request.GET.get('state','')
     from .network_projection import network_page
     rows, error, alternatives = network_page(rows, selected, search, state)
-    return render(request,'netbox_guard/networks.html',dict(object=obj,networks=rows,search=search,state=state,selected=selected,error=error,alternatives=alternatives))
+    for row in rows: row['collected_at'] = moscow_time(row.get('collected_at'))
+    empty_search = 'ip' in request.GET and not search
+    return render(request,'netbox_guard/networks.html',dict(object=obj,networks=rows,search=search,state=state,selected=selected,error=error,alternatives=alternatives,empty_search=empty_search))
 
 
 @login_required
@@ -143,7 +146,7 @@ def subnet(request, pk):
             rows=[r for r in rows if ip_address(r['start'])<=target<=ip_address(r['end'])]
         except ValueError: rows=[];error='Введите IP-адрес внутри выбранной сети.'
     if state:rows=[r for r in rows if r['state']==state]
-    return render(request,'netbox_guard/subnet.html',dict(binding=binding,rows=rows,stamp=stamp,fresh=fresh,error=error,
+    return render(request,'netbox_guard/subnet.html',dict(binding=binding,rows=rows,stamp=moscow_time(stamp),fresh=fresh,error=error,
         search=search,nonce=uuid4(),can_reserve=request.user.has_perm('ipam.add_ipaddress')))
 
 

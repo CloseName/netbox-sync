@@ -216,7 +216,7 @@ function nsi_main(): int {
         $version = ns_text(trim(file_get_contents('/etc/version',false,null,0,256)));
         $components = nsi_configuration($xml, $packages);
         $runtime = [];
-        foreach (['routes4','routes6','pf_filter','pf_nat'] as $name) {
+        foreach (['routes4','routes6','pf_nat'] as $name) {
             try { $runtime[$name] = ['collection'=>'ok','text'=>ns_command($name)]; }
             catch (Throwable $error) { $runtime[$name] = ['collection'=>'error','text'=>'']; }
         }

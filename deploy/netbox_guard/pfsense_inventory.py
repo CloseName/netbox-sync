@@ -20,7 +20,7 @@ TITLES = {'rules':'Правила', 'mode':'Режим', 'port_forwards':'Про
           'servers':'Серверы', 'clients':'Клиенты', 'client_overrides':'Параметры клиентов', 'settings':'Настройки',
           'phase1':'Phase 1', 'phase2':'Phase 2', 'tunnels':'Туннели', 'peers':'Пиры', 'frontends':'Frontend', 'backends':'Backend',
           'ipv4':'IPv4', 'ipv6':'IPv6', 'static_ipv4':'Статические назначения IPv4', 'hosts':'Имена хостов', 'domains':'Домены'}
-COLUMNS = {'order':'№', 'name':'Имя', 'descr':'Описание', 'description':'Описание', 'interface':'Интерфейс',
+COLUMNS = {'source':'Источник / порт','destination':'Назначение / порт','target':'Адрес преобразования','external':'Внешний адрес','local-port':'Внутренний порт','natport':'Порт NAT','tracker':'Идентификатор','ipprotocol':'Семейство IP','direction':'Направление','sched':'Расписание','log':'Журнал','quick':'Первое совпадение','floating':'Floating','staticnatport':'Сохранение порта','nonat':'Без NAT','nobinat':'Без NAT 1:1','source/any':'Любой источник','source/not':'Исключить источник','source/network':'Сеть источника','destination/any':'Любое назначение','destination/not':'Исключить назначение','destination/network':'Сеть назначения','order':'№', 'name':'Имя', 'descr':'Описание', 'description':'Описание', 'interface':'Интерфейс',
            'type':'Тип', 'protocol':'Протокол', 'disabled':'Отключено', 'disable':'Отключено', 'enable':'Включено',
            'enabled':'Включено', 'gateway':'Шлюз', 'network':'Сеть', 'address':'Адрес', 'port':'Порт',
            'source/address':'Источник', 'destination/address':'Назначение', 'source/port':'Порт источника',
@@ -88,7 +88,7 @@ def validate(value):
     if packages['collection']=='error' and packages['items']:raise ValueError('Invalid failed package inventory')
     pkg=[dict(name=string(p['name'],256),version=string(p['version'],256)) for p in packages['items']]
     runtime={}
-    for name in ('routes4','routes6','pf_filter','pf_nat'):
+    for name in ('routes4','routes6','pf_nat'):
         item=value['runtime'].get(name,dict(collection='not_collected',text='')) if name.startswith('pf_') else value['runtime'][name]
         states=('ok','error','not_collected') if name.startswith('pf_') else ('ok','error')
         if item['collection'] not in states or not isinstance(item['text'],str) or len(item['text'])>1024*1024:
@@ -139,6 +139,11 @@ def panel(value):
             for table,rows in part['tables'].items():
                 columns=SCHEMA[name][table]
                 def cell(row,key):
+                    if key in ('source','destination'):
+                        base = ', '.join(row.get(key+'/address',[]) or row.get(key+'/network',[])) or ('Любой' if row.get(key+'/any') else 'Не указан')
+                        if row.get(key+'/not'): base = 'Кроме ' + base
+                        ports = ', '.join(row.get(key+'/port',[]))
+                        return base + (' · порт ' + ports if ports else '')
                     if key=='order':return row[key]
                     values=row[key]
                     if key in FLAGS:
@@ -171,15 +176,26 @@ def panel(value):
                     groups = [(str(', '.join(labels.get(i, i) for i in ids) or 'Интерфейс не указан') + ' · ' + TITLES.get(table, table), entries)
                               for ids, entries in buckets.items()]
                     columns = [k for k in columns if k != 'interface']
+                full_columns = list(columns)
+                preferred = ['order','type','interface','protocol','source/address','source/network','destination/address','destination/network','target','external','descr','name','address','network','gateway','port','description','enable','disabled']
+                columns = [k for k in preferred if k in full_columns and (k == 'order' or any(r[k] for r in rows))][:8]
+                if len(columns) < 2: columns = full_columns[:6]
+                if name in ('firewall','nat') and 'source/address' in full_columns:
+                    columns = [k for k in ('order','disabled','type','interface','protocol','source','destination','target','external','descr') if k in full_columns or k in ('source','destination')]
+                    if grouped: columns = [k for k in columns if k != 'interface']
                 for title, entries in groups:
+                    records = []
+                    for row in entries:
+                        fields = [(COLUMNS.get(k,k),cell(row,k)) for k in full_columns if k not in columns and (k == 'order' or row[k])]
+                        records.append(dict(cells=[cell(row,k) for k in columns], fields=fields))
                     tables.append(dict(title=title,columns=[COLUMNS.get(k,k) for k in columns],
                         rows=[[cell(r,k) for k in columns] for r in entries],
-                        count=len(entries),truncated=False,grouped=grouped))
+                        records=records,count=len(entries),truncated=False,grouped=grouped))
             details.append(dict(key=name,name=LABELS[name],tables=tables,collection=part['collection']))
-        titles={'routes4':'Маршруты IPv4','routes6':'Маршруты IPv6','pf_filter':'Фактические правила PF','pf_nat':'Фактические правила NAT'}
+        titles={'routes4':'Маршруты IPv4','routes6':'Маршруты IPv6','pf_nat':'Фактические правила NAT'}
         routes=[dict(key=key,name=titles[key],state=STATE[v['collection']],
-                     text=v['text'],truncated=False,**runtime_table(key,v['text'])) for key,v in clean['runtime'].items()]
-        return dict(collected_at=clean['collected_at'],version=clean['version'],summary=summary,details=details,
+                     truncated=False,**runtime_table(key,v['text'])) for key,v in clean['runtime'].items()]
+        return dict(collected_at=moscow_time(clean['collected_at']),version=clean['version'],summary=summary,details=details,
             packages=clean['packages']['items'],package_state=STATE[clean['packages']['collection']],routes=routes)
     except (KeyError,TypeError,ValueError,AttributeError):return {'invalid':True}
 
@@ -217,6 +233,7 @@ def validate_ipam(value, interval):
 
 def runtime_table(key, text):
     """Display every runtime line, preserving unfamiliar formats without guessing."""
+    if key == 'pf_nat': return nat_table(text)
     lines = [line for line in text.splitlines() if line.strip()]
     if key in ('routes4', 'routes6'):
         header = next((i for i,line in enumerate(lines) if line.split()[:2] == ['Destination','Gateway']), None)
@@ -230,5 +247,44 @@ def runtime_table(key, text):
                 else:
                     return dict(columns=['Вывод'], rows=[[line] for line in lines])
             return dict(columns=columns, rows=rows)
-    return dict(columns=['№', 'Правило' if key in ('pf_filter','pf_nat') else 'Вывод'],
+    return dict(columns=['№', 'Вывод'],
                 rows=[[i,line] for i,line in enumerate(lines,1)])
+
+
+def moscow_time(value):
+    """Presentation only; timestamps stored in snapshots remain unchanged."""
+    from zoneinfo import ZoneInfo
+    try:
+        stamp = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        if stamp.tzinfo is None: return 'Время без часового пояса'
+        return stamp.astimezone(ZoneInfo('Europe/Moscow')).strftime('%d.%m.%Y %H:%M:%S МСК')
+    except (ValueError, TypeError):
+        return '—'
+
+
+def nat_table(text):
+    """Parse a conservative subset of pfctl -sn; never infer missing translations."""
+    groups = {key: [] for key in ('Проброс портов', 'Исходящий NAT', 'NAT 1:1', 'Служебные записи', 'Нераспознанные записи')}
+    atom = r'(?:!?<[^>]+>|!?\([^)]*\)|!?\{[^}]*\}|[^\s]+)'
+    endpoint = atom + r'(?: port (?:[=!<>]+ )?' + atom + r')?'
+    pattern = re.compile(r'^(nat|rdr|binat) on ('+atom+r')(?: (inet6?))?(?: proto ('+atom+r'))? from ('+endpoint+r') to ('+endpoint+r') -> ('+atom+r')(?: port ('+atom+r'))?((?: (?:static-port|round-robin|random|source-hash|sticky-address))*)$')
+    def friendly(value):
+        if value == 'any': return 'Любой'
+        return value.replace(' port = ', ' · порт ').replace(' port ', ' · порт ')
+    for number, line in enumerate(text.splitlines(), 1):
+        line = line.strip()
+        if not line: continue
+        match = pattern.fullmatch(line)
+        if match:
+            kind, interface, family, protocol, source, destination, target, port, options = match.groups()
+            group = {'nat':'Исходящий NAT','rdr':'Проброс портов','binat':'NAT 1:1'}[kind]
+            option_labels = {'static-port':'Сохранять исходный порт','round-robin':'Поочерёдный выбор адреса','random':'Случайный выбор адреса','source-hash':'Выбор по хешу источника','sticky-address':'Закрепление адреса'}
+            fields = [('Интерфейс',interface),('Семейство',{'inet':'IPv4','inet6':'IPv6'}.get(family,'Не указано')),('Протокол',protocol or 'Любой'),('Источник',friendly(source)),('Назначение',friendly(destination)),('Адрес после преобразования',target),('Порт после преобразования',port or 'Не указан'),('Параметры',', '.join(option_labels[x] for x in options.split()) or '—')]
+        elif re.fullmatch(r'(?:nat-anchor|rdr-anchor|binat-anchor) "[^"\n]+"(?: all)?',line):
+            group='Служебные записи';fields=[('Назначение','Подключение вложенной группы правил'),('Группа',line.split('"')[1]),('Содержимое','Не собирается')]
+        elif re.fullmatch(r'no (?:nat|rdr|binat) proto [a-zA-Z0-9]+ all',line):
+            group='Служебные записи';fields=[('Назначение','Исключение из преобразования'),('Протокол',line.split()[3])]
+        else:
+            group='Нераспознанные записи';fields=[('Состояние','Формат записи не поддерживается. Преобразование не определено.')]
+        groups[group].append(dict(number=number,fields=fields))
+    return dict(columns=[],rows=[],groups=[dict(title=title,records=records,count=len(records)) for title,records in groups.items() if records])
