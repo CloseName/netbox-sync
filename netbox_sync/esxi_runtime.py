@@ -91,7 +91,7 @@ def _print_plan(plan):
     print('disappearance=RETAIN_ONLY')
 
 
-def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False):
+def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write=None):
     """Reconcile managed and genuinely new objects; legacy candidates stay separate."""
     from .application.inventory_order import canonical_hosts
     hosts = canonical_hosts(hosts)
@@ -157,5 +157,7 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False):
     if not confirmed:
         print('ESXi runtime preflight completed. No changes were written to NetBox.')
         return plan
+    if before_write is not None:
+        before_write()
     stages(nb_api)
     return plan

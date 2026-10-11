@@ -925,13 +925,17 @@ def execute_discovered_source(
         from .scheduled_failure import current_run_id
         nb_api = for_run(nb_api, source_config, instance=os.environ.get('NETBOX_SYNC_GUARD_INSTANCE'),
                          run_id=current_run_id(), url=netbox_url, token=netbox_token)
-        _scheduled_stage('apply', history_plan)
+        # Executors repeat read-only preflight before reaching actual writes.
+        # A read failure there must not create a permanent uncertain-write gate.
+        before_write = lambda: _scheduled_stage('apply', history_plan)
         if source_config.source_type == 'esxi':
             execute_esxi_runtime(nb_api, hosts, source_config,
-                                 confirmed=os.getenv('APPLY_CONFIRM', '') == 'FULL_WRITE')
+                                 confirmed=os.getenv('APPLY_CONFIRM', '') == 'FULL_WRITE',
+                                 before_write=before_write)
         else:
             apply_full_sync(nb_api, hosts, source_config.target,
-                            confirmed=os.getenv('APPLY_CONFIRM', '') == 'FULL_WRITE')
+                            confirmed=os.getenv('APPLY_CONFIRM', '') == 'FULL_WRITE',
+                            before_write=before_write)
         return history_plan
 
     if source_config.source_type == 'esxi' and sync_mode == 'apply':

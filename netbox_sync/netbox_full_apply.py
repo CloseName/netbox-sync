@@ -71,6 +71,7 @@ def apply_full_sync(
     config,
     *,
     confirmed=False,
+    before_write=None,
 ):
     from .application.inventory_order import canonical_hosts
     hosts = canonical_hosts(hosts)
@@ -152,6 +153,9 @@ def apply_full_sync(
             'to NetBox.'
         )
         return
+
+    if before_write is not None:
+        before_write()
 
     print()
     print(

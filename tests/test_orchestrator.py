@@ -265,7 +265,8 @@ def test_uncertain_history_blocks_scheduled_execution_without_provider_calls():
     result=run_sources((source('pve-a'),),lambda config:calls.append(config),run_repository=recorder)
     assert result.failed==1 and not calls
     assert recorder.finished[0][1] is RunStatus.BLOCKED
-    assert recorder.finished[0][2]['error_code']=='PLAN_BLOCKED'
+    assert recorder.finished[0][2]['error_code']=='SOURCE_RECONCILIATION_REQUIRED'
+    assert 'No new plan was built' in recorder.finished[0][2]['error_message_safe']
 
 def test_planning_failure_records_no_writes_and_apply_failure_remains_uncertain():
     from netbox_sync.scheduled_failure import mark

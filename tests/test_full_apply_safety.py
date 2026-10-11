@@ -141,3 +141,24 @@ def test_failed_full_precheck_prevents_every_write(
         ('precheck', 'second'),
     ]
     assert fake_netbox.mutations == []
+
+
+@pytest.mark.parametrize('confirmed,fail_precheck', [(False, False), (True, True), (True, False)])
+def test_write_callback_follows_all_prechecks(monkeypatch, fake_netbox, confirmed, fail_precheck):
+    events = []
+    monkeypatch.setattr(netbox_full_apply, 'STAGES', (
+        ('ONE', _recording_stage('one', events, fake_netbox, fail_precheck=fail_precheck)),))
+    monkeypatch.setattr(netbox_full_apply, 'report_missing_managed_objects', lambda *args: None)
+    def invoke():
+        netbox_full_apply.apply_full_sync(fake_netbox, [], object(), confirmed=confirmed,
+            before_write=lambda: events.append(('boundary', 'write')))
+    if fail_precheck:
+        with pytest.raises(RuntimeError):
+            invoke()
+    else:
+        invoke()
+    if confirmed and not fail_precheck:
+        assert events == [('precheck', 'one'), ('boundary', 'write'), ('write', 'one')]
+    else:
+        assert ('boundary', 'write') not in events
+        assert fake_netbox.mutations == []

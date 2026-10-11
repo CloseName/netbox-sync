@@ -24,7 +24,7 @@ HISTORY_UNAVAILABLE = 'RUN_HISTORY_UNAVAILABLE'
 
 
 class SourceReconciliationRequired(RuntimeError):
-    code = 'PLAN_BLOCKED'
+    code = 'SOURCE_RECONCILIATION_REQUIRED'
 
 
 
