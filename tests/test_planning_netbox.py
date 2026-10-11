@@ -230,3 +230,72 @@ def test_snapshot_does_not_cache_partial_iteration_or_hide_errors():
         with pytest.raises(RuntimeError, match='fixture page failure'):
             facade.dcim.devices.filter(site_id=1)
     assert not facade.dcim.devices._reads
+
+
+def test_bulk_inventory_avoids_per_vm_gets_across_nested_planners():
+    from tests.fakes.netbox_http import netbox_http
+    seed = FakeNetBox()
+    for index in range(1, 280):
+        seed.virtualization.virtual_machines.add(FakeRecord(
+            id=index, name=f'vm-{index}', custom_fields={'snapshot': ['payload'] * 30}))
+    requests = []
+    with netbox_http(seed, requests=requests) as (api, rows, writes):
+        outer = PlanningNetBox(api)
+        assert len(outer.virtualization.virtual_machines.all()) == 279
+        inner = PlanningNetBox(outer)
+        for index in range(1, 280):
+            assert inner.virtualization.virtual_machines.get(id=index).id == index
+        assert len(requests) == 1
+        inner.virtualization.virtual_machines.get(1).update({'name': 'inner'})
+        assert outer.virtualization.virtual_machines.get(1).name == 'vm-1'
+        assert not writes
+        # New plans must read fresh evidence, and unknown IDs must still query.
+        PlanningNetBox(api).virtualization.virtual_machines.get(1)
+        outer.virtualization.virtual_machines.get(9999)
+        assert len(requests) == 3
+
+
+def test_filter_compares_fields_without_copying_unrelated_snapshots():
+    api = FakeNetBox()
+    api.dcim.devices.add(FakeRecord(id=1, name='one', custom_fields={'large': [1] * 1000}))
+    endpoint = PlanningNetBox(api).dcim.devices
+    record = endpoint.all()[0]
+    def forbidden():
+        raise AssertionError('filter copied complete snapshot')
+    # Bypass attribute routing to detect any complete serialization during matching.
+    object.__setattr__(record, 'serialize', forbidden)
+    assert endpoint.filter(name='one') == [record]
+
+
+def test_simulation_phase_reports_only_bounded_read_metrics(monkeypatch):
+    from netbox_sync import child_process
+    reports = []
+    monkeypatch.setattr(child_process, 'phase_progress',
+                        lambda *args, **kwargs: reports.append((args, kwargs)))
+    api = FakeNetBox()
+    api.dcim.devices.add(FakeRecord(id=1, name='PRIVATE_NAME'))
+    with child_process.measured_phase('simulation_vms'):
+        endpoint = PlanningNetBox(api).dcim.devices
+        endpoint.all()
+        endpoint.get(1)
+        endpoint.all()
+    assert reports[-1][1] == {'failed': False, 'requests': 1, 'objects': 1}
+    assert 'PRIVATE_NAME' not in str(reports)
+
+
+def test_failed_simulation_stage_retains_failure_and_recent_timeout_evidence(monkeypatch):
+    import pytest
+    from netbox_sync import child_process
+    from netbox_sync.worker_failure import safe_diagnostic
+    reports = []
+    monkeypatch.setattr(child_process, 'phase_progress',
+                        lambda *args, **kwargs: reports.append((args, kwargs)))
+    with pytest.raises(RuntimeError, match='original failure'):
+        with child_process.measured_phase('simulation_disks'):
+            with child_process.planning_read():
+                raise RuntimeError('original failure')
+    assert reports[-1][1] == {'failed': True, 'requests': 1, 'objects': 0}
+    phases = [{'phase': 'simulation_vms', 'state': 'finished'}] * 40
+    phases.append({'phase': 'simulation_disks', 'state': 'started'})
+    result = safe_diagnostic({'phases': phases}, 'DISCOVERY_TIMEOUT')
+    assert result['phases'][-1] == phases[-1]
