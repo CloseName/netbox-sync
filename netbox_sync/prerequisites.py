@@ -3,7 +3,7 @@ import hashlib
 import json
 import re
 
-VERSION = 6
+VERSION = 7
 FIELDS = {
     'sync_identities': ('json', ('dcim.device','dcim.interface','virtualization.virtualmachine','virtualization.vminterface')),
     'sync_original_names': ('json', ('dcim.device','dcim.interface','virtualization.virtualmachine','virtualization.vminterface')),
@@ -22,9 +22,11 @@ FIELDS = {
     'sync_network_observations': ('json', ('virtualization.vminterface',)),
     'esxi_host_network': ('json', ('dcim.device',)),
     'sync_disk_identity': ('json', ('virtualization.virtualdisk',)),
+    'esxi_events': ('json', ('dcim.device',)),
 }
 
 LABELS = {
+    'esxi_events': ('ESXi events for alerting', 'События ESXi для оповещений'),
     'sync_disk_identity': ('Disk source identity', 'Идентификатор диска источника'),
     'pfsense_inventory': ('pfSense services and rules', 'Сервисы и правила pfSense'),
     'pfsense_network': ('pfSense network', 'Сеть pfSense'),
@@ -48,6 +50,7 @@ LABELS = {
     'source_vlan_id': ('Source VLAN ID', 'VLAN ID источника'),
 }
 PURPOSES = {
+    'esxi_events': ('Bounded source events with observed actors; not a complete audit archive.', 'События с автором из источника; не полный архив аудита.'),
     'sync_disk_identity': ('Stable provider disk identity.', 'Устойчивый идентификатор диска провайдера.'),
     'pfsense_inventory': ('Collected pfSense configuration.', 'Собранная конфигурация pfSense.'),
     'pfsense_network': ('Observed pfSense interfaces.', 'Обнаруженные интерфейсы pfSense.'),
@@ -77,7 +80,7 @@ def definition(name):
     return {'name': name, 'type': kind, 'object_types': list(models),
             'label': LABELS[name][0], 'description': PURPOSES[name][0],
             'group_name': 'NetBox Sync', 'required': False, 'unique': False,
-            # Managed JSON is rendered by Guard panels, never duplicated as raw JSON.
+            # Managed JSON is rendered by Guard panels or intentionally API-only (events).
             # Scalar observations remain visible only when populated.
             'ui_visible': 'hidden' if kind == 'json' else 'if-set',
             'ui_editable': 'no'}

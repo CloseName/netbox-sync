@@ -152,3 +152,8 @@ MAC crm-bpm обновлён; синхронизация Proxmox и ESXi зав�
 - Маркер перенесён после успешной симуляции для ESXi и Proxmox. Сбои до записи не создают неопределённый результат; после начала записи защита сохранена. 45 целевых тестов прошли. Причина HTTP 502 на стороне NetBox/прокси пока не установлена. Историческая блокировка автоматически не снимается.
 - ESXi VM 551 сообщает instanceUuid=524321f4-15fc-02e9-d1e9-ca87e1d6a44d и BIOS UUID=564da147-e490-bb32-0441-aa17d8f8490e. Сборщик читает актуальный instanceUuid; сохранённый NetBox external_id отличается от обоих UUID. История изменения VM пока неизвестна, перепривязка не выполнена.
 - Повторный SQL с ролью netbox_sync_bootstrap выполнен: один OUTCOME_UNCERTAIN у ESXI-DEV-BA2, recovery_schedule_blocks пуст. Инциденты остаются открыты до восстановления синхронизации и проверки production.
+
+
+## ESXi event evidence for alerting
+
+Implemented for standalone ESXi sources: host-scoped bounded event collection, reported actor and UTC event time, optional CPU/memory/device details, stable event IDs, quiet initial baseline and API-only NetBox Device JSON field esxi_events. Provider permission/read failures do not invalidate inventory; previous event evidence is retained. Documentation: docs/esxi-event-alerting.md. Production installation and live DEV-BA/DEV-BA2 acceptance remain pending. Existing n8n/chat workflow is not changed or enabled by this commit.

@@ -143,6 +143,8 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write
         if metadata_hosts:
             apply_hosts(api, metadata_hosts, config.target, confirmed=True, host_networking=False)
         apply_host_network_snapshots(api, network_hosts)
+        from .esxi_events import apply_event_snapshots
+        apply_event_snapshots(api, hosts)
         from .host_primary_ip import apply_esxi_primary
         apply_esxi_primary(api, network_hosts)
         apply_virtual_machines(api, filtered_hosts, config.target, confirmed=True)

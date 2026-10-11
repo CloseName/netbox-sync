@@ -470,4 +470,8 @@ def discover_hosts(service_instance, source_config):
         with stage('esxi_conversion', reads) as stats:
             result = _convert_hosts(hosts, source_config)
             stats['objects'] = sum(1+len(host.virtual_machines) for host in result)
-            return result
+        from .esxi_events import collect_events
+        with stage('esxi_events', reads):
+            for raw_host, host in zip(hosts, result):
+                host.esxi_events = collect_events(content, raw_host, host.source_instance, host.source_id)
+        return result

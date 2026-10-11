@@ -89,7 +89,8 @@ def test_representative_inventory_request_count_and_exact_equivalence(tmp_path,m
             previous=len(calls);calls.clear()
             result=discover_hosts(service,config)
             current=len(calls)
-            assert [asdict(h) for h in result]==[asdict(h) for h in baseline]
+            assert all(h.esxi_events == {'status': 'unsupported', 'events': []} for h in result)
+            assert [{k:v for k,v in asdict(h).items() if k != 'esxi_events'} for h in result]==[{k:v for k,v in asdict(h).items() if k != 'esxi_events'} for h in baseline]
             assert len(result[0].virtual_machines)==147
             assert all(vm.description=='Notes\n'*80 for vm in result[0].virtual_machines)
             assert all(vm.interfaces[0].ip_addresses==['10.20.40.42/24'] for vm in result[0].virtual_machines)
