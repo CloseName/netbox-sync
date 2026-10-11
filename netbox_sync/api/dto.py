@@ -465,7 +465,7 @@ class SyncRunDTO(PublicModel):
     plan_digest: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
     planner_version: str | None = Field(default=None, max_length=128)
     actions: RunActionSummaryDTO
-    error_code: Literal['APPLY_LOCKED', 'PLAN_BLOCKED', 'PLAN_STALE',
+    error_code: Literal['APPLY_LOCKED', 'PLAN_BLOCKED', 'SOURCE_RECONCILIATION_REQUIRED', 'PLAN_STALE',
                         'CONFIRMATION_EXPIRED', 'CONFIRMATION_INVALID',
                         'CONFIRMATION_SOURCE_MISMATCH', 'FAILED_BEFORE_WRITE',
                         'PARTIALLY_APPLIED', 'OUTCOME_UNCERTAIN', 'APPLY_FAILED'] | None
