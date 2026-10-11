@@ -27,6 +27,12 @@ def history_database():
     with engine.connect() as connection:
         config.attributes['connection'] = connection
         command.upgrade(config, 'head')
+    from dataclasses import replace
+    from netbox_sync.source_registry import SourceRegistry
+    from tests.sample_data import sample_source_config
+    registry = SourceRegistry(connect, schema)
+    for name in ('pve-test', 'pve-a', 'esxi-b', 'esxi-test'):
+        registry.create_source(replace(sample_source_config(), id=name, source_instance=name))
     try:
         yield RunRepository(connect, schema), dsn
     finally:

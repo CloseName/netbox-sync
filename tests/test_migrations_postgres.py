@@ -59,7 +59,7 @@ def test_existing_populated_registry_is_preserved(migration_database):
         marker = sa.Table('alembic_version', sa.MetaData(), schema=registry.schema,
                           autoload_with=connection)
         assert connection.execute(sa.select(marker.c.version_num)).scalar_one() == (
-            '0017_calendar_schedule')
+            '0018_reconciliation_code')
         inspector = sa.inspect(connection)
         assert inspector.has_table('sync_runs', schema=registry.schema)
         assert inspector.get_foreign_keys('sync_runs', schema=registry.schema) == []
@@ -143,3 +143,33 @@ def test_0012_history_upgrade_never_invents_archive_proof(migration_database):
         assert c.execute(sql.SQL('SELECT count(*) FROM {}').format(table('source_archives'))).fetchone()['count']==0
         assert c.execute(sql.SQL('SELECT released_at FROM {}').format(table('host_reservations'))).fetchone()['released_at'] is None
     assert registry.get_source(before.id)==before
+
+
+def test_0018_allows_reconciliation_result_and_preserves_running_row(migration_database):
+    from netbox_sync.run_history import RunRepository, RunStatus, safe_error_message
+    registry, engine = migration_database
+    config = Config('alembic.ini')
+    config.attributes['schema'] = registry.schema
+    with engine.connect() as connection:
+        config.attributes['connection'] = connection
+        command.upgrade(config, '0017_calendar_schedule')
+    registry.create_source(sample_source_config())
+    history = RunRepository(registry._connect, registry.schema)
+    run = history.start_run('pve-infra-test', 'proxmox', 'scheduled', 'system/scheduler')
+    code = 'SOURCE_RECONCILIATION_REQUIRED'
+    with pytest.raises(psycopg.errors.CheckViolation):
+        history.finish_run(run.run_id, RunStatus.BLOCKED,
+                           error_code=code, error_message_safe=safe_error_message(code))
+    assert history.get_run(run.run_id).status is RunStatus.RUNNING
+    _upgrade(registry, engine)
+    _upgrade(registry, engine)
+    assert history.get_run(run.run_id).status is RunStatus.RUNNING
+    result = history.finish_run(run.run_id, RunStatus.BLOCKED,
+                                error_code=code, error_message_safe=safe_error_message(code))
+    assert result.status is RunStatus.BLOCKED
+    assert result.finished_at is not None
+    with pytest.raises(psycopg.errors.CheckViolation):
+        with registry._connect() as connection:
+            connection.execute(sql.SQL('UPDATE {} SET error_code=%s WHERE run_id=%s').format(
+                sql.Identifier(registry.schema, 'sync_runs')), ('UNRECOGNIZED_CODE', run.run_id))
+    assert history.get_run(run.run_id).status is RunStatus.BLOCKED
