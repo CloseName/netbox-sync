@@ -5,7 +5,6 @@ import re
 
 from .discovery import (
     DiscoveredCPU,
-    DiscoveredDisk,
     DiscoveredHost,
     DiscoveredStorage,
     DiscoveredHostInterface,
@@ -149,20 +148,6 @@ def discover_hosts(pve_api, source_config) -> list[DiscoveredHost]:
             logical_cpus=int(cpu_info.get('cpus', 0)),
         )
 
-        disks = []
-
-        for disk in pve_api.nodes(node_name).disks.list.get():
-            disks.append(
-                DiscoveredDisk(
-                    path=disk.get('devpath', disk.get('path', '')),
-                    model=disk.get('model'),
-                    serial=disk.get('serial'),
-                    size_bytes=int(disk.get('size', 0)),
-                    disk_type=disk.get('type'),
-                    health=disk.get('health'),
-                )
-            )
-
         storages = []
 
         for storage in pve_api.nodes(node_name).storage.get():
@@ -200,7 +185,6 @@ def discover_hosts(pve_api, source_config) -> list[DiscoveredHost]:
                 hypervisor_version=pve_version,
                 cpu=cpu,
                 memory_bytes=int(memory.get('total', 0)),
-                disks=disks,
                 storages=storages,
                 virtual_machines=_discover_virtual_machines(
                     pve_api,

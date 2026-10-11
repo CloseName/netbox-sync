@@ -77,3 +77,27 @@ def test_run_history_unavailable_is_safe_and_hides_database_exception():
     assert not any(secret in str((listed.json(), detailed.json())) for secret in (
         'FAKE_DATABASE_DETAIL_MUST_NOT_APPEAR', 'raw database exception',
     ))
+
+
+def test_all_persisted_safe_error_codes_are_readable_in_list_and_detail():
+    from dataclasses import replace
+    from netbox_sync.run_history import SAFE_ERROR_MESSAGES, ERROR_STATUS
+
+    for code, message in SAFE_ERROR_MESSAGES.items():
+        record = replace(RUN, error_code=code, error_message_safe=message,
+                         status=ERROR_STATUS.get(code, RunStatus.BLOCKED))
+
+        class ErrorReader:
+            def list_runs(self, **filters):
+                return (record,)
+
+            def get_run(self, run_id):
+                return record
+
+        with client(ErrorReader()) as api:
+            listed = api.get('/api/v1/runs')
+            detail = api.get('/api/v1/runs/' + str(record.run_id))
+        assert listed.status_code == detail.status_code == 200, code
+        assert listed.json()['runs'][0] == detail.json()
+        assert detail.json()['error_code'] == code
+        assert detail.json()['error_message_safe'] == message

@@ -153,7 +153,8 @@ def test_resolution_uses_server_preview_and_permission(monkeypatch,role):
     token=onboarding.accept_checked_credentials(credentials('esxi'),preview)
     policy.call(dict(action='receipt.issue',session=session,receipt=token,provider='esxi',destination='source.test',revision=0)) if role!='viewer' else None
     seen=[]
-    def read(path,payload):
+    def read(path,payload,prepare=False):
+        assert prepare is False
         seen.append(payload)
         return {'references':{},'host_types':{},'issues':[{'kind':'site','code':'MISSING'}],'sites':[],'create_cluster':False}
     monkeypatch.setattr(catalog,'call',read)

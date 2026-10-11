@@ -12,6 +12,8 @@ from pathlib import Path
 import psycopg
 from psycopg import sql
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
+from .calendar_schedule import validate_calendar
 
 from .application.scheduling import validate_interval
 from .source_config import SOURCE_INSTANCE_PATTERN
@@ -45,13 +47,15 @@ class ScheduleStore:
                 connection.row_factory = dict_row
                 with connection.cursor() as cursor:
                     cursor.execute(sql.SQL('''UPDATE {} SET sync_enabled=%s,
-                        sync_interval_seconds=%s
+                        sync_interval_seconds=%s, sync_calendar=%s, schedule_changed_at=clock_timestamp()
                         WHERE source_instance=%s AND sync_enabled=%s
-                        AND sync_interval_seconds=%s
-                        RETURNING source_instance, sync_enabled, sync_interval_seconds''').format(table), (
+                        AND sync_interval_seconds=%s AND sync_calendar IS NOT DISTINCT FROM %s
+                        RETURNING source_instance, sync_enabled, sync_interval_seconds, sync_calendar, schedule_changed_at''').format(table), (
                             request['sync_enabled'], request['sync_interval_seconds'],
+                            Jsonb(request['sync_calendar']) if request.get('sync_calendar') is not None else None,
                             request['source_instance'], request['expected_sync_enabled'],
-                            request['expected_sync_interval_seconds']))
+                            request['expected_sync_interval_seconds'],
+                            Jsonb(request['expected_sync_calendar']) if request.get('expected_sync_calendar') is not None else None))
                     row = cursor.fetchone()
                     if row is None:
                         cursor.execute(sql.SQL(
@@ -86,13 +90,15 @@ def _receive(connection):
         return request
     expected = {'operation', 'source_instance', 'sync_enabled', 'sync_interval_seconds',
                 'expected_sync_enabled', 'expected_sync_interval_seconds'}
-    if (not isinstance(request, dict) or set(request) != expected
+    if (not isinstance(request, dict) or set(request) not in (expected, expected | {'sync_calendar', 'expected_sync_calendar'})
             or request.get('operation') != 'update_schedule'
             or not SOURCE_INSTANCE_PATTERN.fullmatch(request.get('source_instance', ''))
             or not isinstance(request.get('sync_enabled'), bool)
             or not isinstance(request.get('expected_sync_enabled'), bool)):
         raise ScheduleWorkerError('SCHEDULE_INVALID')
     try:
+        validate_calendar(request.get('sync_calendar'))
+        validate_calendar(request.get('expected_sync_calendar'))
         validate_interval(request['sync_interval_seconds'])
         validate_interval(request['expected_sync_interval_seconds'], current=True)
     except ValueError:
@@ -136,7 +142,7 @@ def serve(socket_path, store, allowed_uid):
                     response = {'ok': False, 'error': exc.code}
                 except Exception:  # pylint: disable=broad-exception-caught
                     response = {'ok': False, 'error': 'CONTROL_REQUEST_FAILED'}
-                connection.sendall(json.dumps(response).encode())
+                connection.sendall(json.dumps(response, default=lambda value: value.isoformat()).encode())
 
 
 def main():

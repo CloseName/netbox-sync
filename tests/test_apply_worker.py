@@ -481,3 +481,39 @@ def test_guard_refusal_event_correlates_real_socket_response_and_worker_log(tmp_
         assert detail['guard']==dict(code='OBJECT_INVALID',http_status=409,resource='vm',nonce=nonce,run_id=run)
     finally:
         process.terminate();process.join(5)
+
+
+@pytest.mark.parametrize('provider', ['esxi', 'proxmox'])
+@pytest.mark.parametrize('failure', ['preflight', 'write', None])
+def test_child_runs_executor_once_and_classifies_actual_write_boundary(monkeypatch, provider, failure):
+    from netbox_sync import apply_worker
+    config = SimpleNamespace(source_type=provider, target=object())
+    plan = SimpleNamespace(apply_allowed=True, digest='a' * 64,
+        planner_version='fixture', items=[SimpleNamespace(
+            action=SimpleNamespace(value='UPDATE'), reason_code=None)])
+    monkeypatch.setattr(apply_worker, '_discover', lambda _: (config, []))
+    monkeypatch.setattr(apply_worker, '_plan', lambda *_: plan)
+    api = SimpleNamespace(http_session=object())
+    monkeypatch.setattr('pynetbox.api', lambda *args, **kwargs: api)
+    monkeypatch.setattr('netbox_sync.netbox_tls.configure_session', lambda _: None)
+    monkeypatch.setattr('netbox_sync.guarded_creation.for_run', lambda api, *args, **kw: api)
+    calls = []
+    def executor(*args, confirmed=False, before_write=None):
+        calls.append(confirmed)
+        assert confirmed and before_write is not None
+        if failure == 'preflight':
+            raise RuntimeError('read failed')
+        before_write()
+        if failure == 'write':
+            raise RuntimeError('write failed')
+    monkeypatch.setattr('netbox_sync.esxi_runtime.execute_esxi_runtime', executor)
+    monkeypatch.setattr('netbox_sync.netbox_full_apply.apply_full_sync', executor)
+    payload = dict(operation='apply', netbox_url='fixture', netbox_token='fixture',
+                   expected_digest=plan.digest)
+    if failure:
+        code = 'FAILED_BEFORE_WRITE' if failure == 'preflight' else 'OUTCOME_UNCERTAIN'
+        with pytest.raises(ApplyWorkerError, match=code):
+            apply_worker.execute_child(payload)
+    else:
+        assert apply_worker.execute_child(payload)['status'] == 'SUCCEEDED'
+    assert calls == [True]

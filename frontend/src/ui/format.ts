@@ -13,7 +13,8 @@ export function duration(ms: number | null): string {
   return ms === null ? (language()==="ru"?"Не записано":"Not recorded") : interval(Math.round(ms / 1000));
 }
 export function exactTime(value: string): string {
-  return new Date(value).toLocaleString(language(), { timeZoneName: "short" });
+  const date=new Date(value);
+  return Number.isNaN(date.getTime())?"—":date.toLocaleString(language(), { timeZone: "Europe/Moscow", hour12:false })+" МСК";
 }
 export function relativeTime(value: string, now = Date.now()): string {
   const seconds = Math.round((new Date(value).getTime() - now) / 1000);

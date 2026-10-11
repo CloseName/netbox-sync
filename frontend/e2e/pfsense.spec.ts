@@ -52,3 +52,19 @@ test('source categories and pfSense setup keep credentials out of repeated colle
  await expect(selected).toHaveCount(1);
  await expect(selected).toHaveText('Overview');
 });
+
+test('connection dialog closes while status request is pending',async({page})=>{
+ await page.route('**/api/v1/**',route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(path==='/api/v1/bootstrap')return route.fulfill({json:{status:'READY',completed:true,revision:1,url:'https://nb.test',read_token_present:true,apply_token_present:true,safe_code:null,checks:[],validated_at:1}});
+  if(path==='/api/v1/sources')return route.fulfill({json:{sources:[]}});
+  if(path==='/api/v1/pfsense')return route.fulfill({json:{count:1,items:[{id:2609,name:'Service-pfSense',cluster:'PVE-INFRA-TEST',site:'Selectel',address:'10.24.0.1',url:'https://nb.test/virtualization/virtual-machines/2609/'}]}});
+  if(path.endsWith('/status'))return; // Intentionally pending; no server mutation.
+  return route.fulfill({json:{}});
+ });
+ await page.goto('/sources/pfsense');
+ await page.getByRole('button',{name:'Connection',exact:true}).click();
+ await expect(page.getByRole('dialog').getByRole('button',{name:'Refreshing…',exact:true})).toBeDisabled();
+ await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();
+ await expect(page.getByRole('dialog')).not.toBeVisible();
+});

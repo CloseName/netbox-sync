@@ -24,7 +24,7 @@ HISTORY_UNAVAILABLE = 'RUN_HISTORY_UNAVAILABLE'
 
 
 class SourceReconciliationRequired(RuntimeError):
-    code = 'PLAN_BLOCKED'
+    code = 'SOURCE_RECONCILIATION_REQUIRED'
 
 
 
@@ -124,6 +124,10 @@ def run_sources(sources, execute_source, clock=None, run_repository=None):
         except (Exception, SystemExit) as exc:  # pylint: disable=broad-exception-caught
             scheduled_failure.emit(exc, evidence, run.run_id if run else None)
             code = safe_error_code(getattr(exc, 'code', None))
+            if code == 'APPLY_FAILED' and evidence.writes_possible:
+                code = 'OUTCOME_UNCERTAIN'
+            elif code == 'APPLY_FAILED' and evidence.stage == 'planning':
+                code = 'FAILED_BEFORE_WRITE'
             if run:
                 try:
                     run_repository.finish_run(

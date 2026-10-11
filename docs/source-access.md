@@ -26,6 +26,10 @@ turning on synchronization. Narrower ACL scope intentionally limits inventory.
 | QEMU `agent/network-get-interfaces` | Current API: `VM.GuestAgent.Audit`; older API revisions require broader `VM.Monitor` |
 | ESXi RetrieveContent and rootFolder/hostFolder/childEntity traversal; host hardware, config.network/storageDevice/autoStart properties; datastore and VM config/hardware/guest.net/runtime properties (`esxi_discovery.py`) | Built-in **Read-only**, assigned to Host with propagation to child objects (`System.Anonymous`, `System.View`, `System.Read`) |
 
+Optional VM event evidence uses host-scoped EventManager queries with System.View
+through the same Read-only role. Denied event access is reported separately and
+does not invalidate inventory. See [ESXi event alerting](esxi-event-alerting.md).
+
 The ESXi adapter does not change host configuration, power VMs, upload files,
 execute guest commands or browse datastore file contents. Host.Config.* privileges
 attached to configuration-changing methods are not needed just to read inventory

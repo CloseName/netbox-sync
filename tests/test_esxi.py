@@ -77,7 +77,7 @@ def test_esxi_host_vm_datastore_disk_nic_and_tools_ip_mapping():
     assert (host.cpu.sockets, host.cpu.cores, host.cpu.logical_cpus) == (2, 16, 32)
     assert host.memory_bytes == 128 * 1024**3
     assert host.interfaces[0].name == 'vmnic0'
-    assert host.disks[0].serial == 'FAKE-SERIAL'
+    assert host.disks == []
     assert host.storages[0].name == 'datastore1'
     assert host.storages[0].used_bytes == 300 * 1024**3
     assert vm.status == 'running'
@@ -552,3 +552,17 @@ def test_mixed_source_failure_isolation(failing_type):
     assert calls == ['esxi-a', 'pve-a']
     assert result.succeeded == 1
     assert result.failed == 1
+
+
+def test_host_storage_device_is_not_read():
+    service = fake_esxi_service()
+    class ConfigWithoutDiskAccess:
+        def __getattr__(self, key):
+            if key == 'storageDevice':
+                raise AssertionError('Physical disk inventory must not be read')
+            return getattr(original, key)
+    original = service.host.config
+    service.host.config = ConfigWithoutDiskAccess()
+    host = discover_hosts(service, esxi_config())[0]
+    assert not host.disks
+    assert host.virtual_machines[0].disks

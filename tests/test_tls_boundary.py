@@ -73,14 +73,14 @@ def test_tls_settings_are_explicit_and_existing_authority_is_preserved(tmp_path)
 def test_compose_proxy_and_mount_boundaries():
     text=(ROOT/'compose.production.yml').read_text()
     proxy=text.split('  netbox-sync-proxy:',1)[1].split('  netbox-sync-http-init:',1)[0]
-    api=text.split('  netbox-sync-api:',1)[1].split('  netbox-sync-secret-broker:',1)[0]
+    api=text.split('  netbox-sync-api:',1)[1].split('  netbox-sync-auth-worker:',1)[0]
     broker=text.split('  netbox-sync-secret-broker:',1)[1].split('  netbox-sync-lifecycle-worker:',1)[0]
     assert '"80:8080"' in proxy and '"443:8443"' in proxy
     assert 'user: "10001:10001"' in proxy and 'cap_drop: [ALL]' in proxy
     assert '/run/netbox-sync-tls:ro' in proxy and '/run/netbox-sync-http:ro' in proxy
     assert 'ports:' not in api and 'network_mode: none' in broker
     assert 'CA_DIR' not in api+broker+proxy
-    assert text.count('/run/netbox-sync-ca:ro')==5
+    assert text.count('/run/netbox-sync-ca:ro')==6
     assert 'docker.sock' not in text
     assert 'proxy_headers=False' in (ROOT/'netbox_sync/web_runtime.py').read_text()
 

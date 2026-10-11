@@ -60,3 +60,27 @@ class SourceClosure(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     class Meta:
         default_permissions = ()
+
+
+class NetworkBinding(models.Model):
+    """Operator-confirmed LAN identity; never inferred from a name or MAC globally."""
+    vm = models.ForeignKey('virtualization.VirtualMachine', on_delete=models.CASCADE)
+    interface_key = models.CharField(max_length=64)
+    interface_id = models.PositiveBigIntegerField()
+    prefix = models.ForeignKey('ipam.Prefix', on_delete=models.PROTECT)
+    confirmed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=('vm','interface_key','prefix'), name='guard_network_binding')]
+        default_permissions = ()
+
+
+class AddressReservation(models.Model):
+    nonce = models.UUIDField(primary_key=True)
+    binding = models.ForeignKey(NetworkBinding, on_delete=models.CASCADE)
+    address = models.OneToOneField('ipam.IPAddress', on_delete=models.SET_NULL, null=True)
+    actor_id = models.PositiveBigIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        default_permissions = ()

@@ -165,6 +165,6 @@ export async function checkDestination(input:{source_type:'esxi'|'proxmox';addre
 }
 
 
-export async function resolvePlacement(input:{onboarding_token:string;name:string;site_id?:number;host_types?:Record<string,CatalogItem>}):Promise<any>{
+export async function resolvePlacement(input:{prepare?:boolean;onboarding_token:string;name:string;site_id?:number;host_types?:Record<string,CatalogItem>}):Promise<any>{
  return post('/api/v1/sources/resolve-placement',input);
 }

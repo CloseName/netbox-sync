@@ -1,41 +1,68 @@
-<div class="card">
+<div class="card pf-inventory">
   <h2 class="card-header">Firewall, VPN и сервисы pfSense</h2>
   <div class="card-body">
   {% if inventory.invalid %}
     <p>Формат снимка не поддерживается.</p>
   {% else %}
     <p>Снимок от {{ inventory.collected_at }}. pfSense {{ inventory.version }}.</p>
-    <p class="text-muted">Наличие настроек и процесса не подтверждает доступность сервиса или VPN-туннеля. Правила показаны из конфигурации; автоматически создаваемые правила и эффективная политика не собраны.</p>
+    <p class="text-muted">Наличие настроек и процесса не подтверждает доступность сервиса или VPN-туннеля. Таблицы показывают конфигурацию; фактические правила NAT доступны в отдельной вкладке, если сбор поддерживается. Вложенные anchors и содержимое динамических таблиц не собраны; эффективная политика не вычисляется.</p>
+    <ul class="nav nav-tabs mb-3" role="tablist" aria-label="Разделы pfSense">
+      <li class="nav-item" role="presentation"><button class="nav-link active" id="pf-{{ object.pk }}-summary-tab" data-bs-toggle="tab" data-bs-target="#pf-{{ object.pk }}-summary" type="button" role="tab" aria-controls="pf-{{ object.pk }}-summary" aria-selected="true">Обзор</button></li>
+      {% for component in inventory.details %}<li class="nav-item" role="presentation"><button class="nav-link" id="pf-{{ object.pk }}-{{ component.key }}-tab" data-bs-toggle="tab" data-bs-target="#pf-{{ object.pk }}-{{ component.key }}" type="button" role="tab" aria-controls="pf-{{ object.pk }}-{{ component.key }}" aria-selected="false">{{ component.name }}</button></li>{% endfor %}
+      <li class="nav-item" role="presentation"><button class="nav-link" id="pf-{{ object.pk }}-runtime-tab" data-bs-toggle="tab" data-bs-target="#pf-{{ object.pk }}-runtime" type="button" role="tab" aria-controls="pf-{{ object.pk }}-runtime" aria-selected="false">Фактические маршруты и правила</button></li>
+      <li class="nav-item" role="presentation"><button class="nav-link" id="pf-{{ object.pk }}-packages-tab" data-bs-toggle="tab" data-bs-target="#pf-{{ object.pk }}-packages" type="button" role="tab" aria-controls="pf-{{ object.pk }}-packages" aria-selected="false">Установленные пакеты</button></li>
+    </ul>
+    <div class="tab-content">
+    <div class="tab-pane show active" id="pf-{{ object.pk }}-summary" role="tabpanel" aria-labelledby="pf-{{ object.pk }}-summary-tab" tabindex="0">
     <div class="table-responsive"><table class="table table-sm table-striped">
       <thead><tr><th>Компонент</th><th>Наличие</th><th>Настройки</th><th>Чтение</th><th>Наблюдение процесса</th></tr></thead>
       <tbody>{% for row in inventory.summary %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody>
     </table></div>
+    </div>
     {% for component in inventory.details %}
-    <details class="mb-3"><summary>{{ component.name }}</summary>
+    <div class="tab-pane" id="pf-{{ object.pk }}-{{ component.key }}" role="tabpanel" aria-labelledby="pf-{{ object.pk }}-{{ component.key }}-tab" tabindex="0">
+    <h3 class="h5">{{ component.name }}</h3>
+      {% if component.collection == 'error' %}<p class="alert alert-warning">Не удалось собрать этот раздел. Отсутствие строк не означает отсутствие настроек.</p>{% else %}
+      <ul class="nav nav-tabs mb-3" role="tablist" aria-label="Подразделы {{ component.name }}">
+      {% for table in component.tables %}<li class="nav-item" role="presentation"><button class="nav-link{% if forloop.first %} active{% endif %}" id="pf-{{ object.pk }}-{{ component.key }}-sub-{{ forloop.counter }}-tab" data-bs-toggle="tab" data-bs-target="#pf-{{ object.pk }}-{{ component.key }}-sub-{{ forloop.counter }}" type="button" role="tab" aria-controls="pf-{{ object.pk }}-{{ component.key }}-sub-{{ forloop.counter }}" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">{{ table.title }} ({{ table.count }})</button></li>{% endfor %}
+      </ul>
+      <div class="tab-content">
       {% for table in component.tables %}
-      {% if table.grouped %}<details class="mt-3"><summary>{{ table.title }} ({{ table.count }})</summary>
-      {% else %}<h3 class="h5 mt-3">{{ table.title }} ({{ table.count }})</h3>{% endif %}
+      <div class="tab-pane{% if forloop.first %} show active{% endif %}" id="pf-{{ object.pk }}-{{ component.key }}-sub-{{ forloop.counter }}" role="tabpanel" aria-labelledby="pf-{{ object.pk }}-{{ component.key }}-sub-{{ forloop.counter }}-tab" tabindex="0">
       {% if table.rows %}
       <div class="table-responsive"><table class="table table-sm table-striped">
-        <thead><tr>{% for heading in table.columns %}<th scope="col" class="text-nowrap">{{ heading }}</th>{% endfor %}</tr></thead>
-        <tbody>{% for row in table.rows %}<tr>{% for cell in row %}<td class="text-nowrap">{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+        <thead><tr>{% for heading in table.columns %}<th scope="col" class="p-2">{{ heading }}</th>{% endfor %}<th>Подробности</th></tr></thead>
+        <tbody>{% for row in table.records %}<tr>{% for cell in row.cells %}<td class="p-2 text-nowrap">{{ cell }}</td>{% endfor %}<td>{% if row.fields %}<details><summary>Подробности</summary><dl>{% for label, value in row.fields %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl></details>{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
       </table></div>
       {% else %}<p class="text-muted">Записей нет.</p>{% endif %}
-      {% if table.truncated %}<p>Показаны первые 100 записей. Полный список сохранён в JSON-поле снимка.</p>{% endif %}
-      {% if table.grouped %}</details>{% endif %}
+      </div>
       {% empty %}<p class="text-muted">Записей нет.</p>
       {% endfor %}
-    </details>
+      </div>
+      {% endif %}
+    </div>
     {% endfor %}
-    <details class="mb-3"><summary>Установленные пакеты pfSense — {{ inventory.package_state }}</summary>
-      <table class="table table-sm"><thead><tr><th>Пакет</th><th>Версия</th></tr></thead><tbody>
-      {% for package in inventory.packages %}<tr><td>{{ package.name }}</td><td>{{ package.version }}</td></tr>{% endfor %}
-      </tbody></table>
-    </details>
-    <details><summary>Фактические таблицы маршрутизации</summary>
-      {% for route in inventory.routes %}<h3 class="h5">{{ route.name }} — {{ route.state }}</h3><pre>{{ route.text }}</pre>
-      {% if route.truncated %}<p>Отображение сокращено; полный вывод сохранён в снимке.</p>{% endif %}{% endfor %}
-    </details>
+    <div class="tab-pane" id="pf-{{ object.pk }}-runtime" role="tabpanel" aria-labelledby="pf-{{ object.pk }}-runtime-tab" tabindex="0">
+      <ul class="nav nav-tabs mb-3" role="tablist" aria-label="Фактические данные pfSense">
+      {% for route in inventory.routes %}<li class="nav-item" role="presentation"><button class="nav-link{% if forloop.first %} active{% endif %}" id="pf-{{ object.pk }}-{{ route.key }}-tab" data-bs-toggle="tab" data-bs-target="#pf-{{ object.pk }}-{{ route.key }}" type="button" role="tab" aria-controls="pf-{{ object.pk }}-{{ route.key }}" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">{{ route.name }}</button></li>{% endfor %}
+      </ul>
+      <div class="tab-content">{% for route in inventory.routes %}
+        <div class="tab-pane{% if forloop.first %} show active{% endif %}" id="pf-{{ object.pk }}-{{ route.key }}" role="tabpanel" aria-labelledby="pf-{{ object.pk }}-{{ route.key }}-tab" tabindex="0">
+          <p>{{ route.name }} — {{ route.state }}</p>
+          {% if route.key == 'pf_nat' %}<p class="text-muted">Загруженные преобразования на момент снимка. Описание и соответствие сохранённой конфигурации не определяются. Имена в &lt;скобках&gt; обозначают таблицы адресов; их содержимое не собрано.</p>
+          {% for group in route.groups %}<h4 class="h6">{{ group.title }} ({{ group.count }})</h4><div class="row row-cols-1 row-cols-xl-2 g-3 mb-3">{% for record in group.records %}<div class="col"><article class="card h-100"><div class="card-header">{{ group.title }} · № {{ record.number }}</div><div class="card-body"><dl class="row mb-0">{% for label, value in record.fields %}<dt class="col-sm-5">{{ label }}</dt><dd class="col-sm-7 text-break">{{ value }}</dd>{% endfor %}</dl></div></article></div>{% endfor %}</div>{% empty %}{% if route.state == 'Собрано' %}<p>Правил NAT нет.</p>{% endif %}{% endfor %}{% endif %}
+          {% if route.rows %}<div class="table-responsive"><table class="table table-sm table-striped"><thead><tr>{% for column in route.columns %}<th class="text-nowrap">{{ column }}</th>{% endfor %}</tr></thead><tbody>{% for row in route.rows %}<tr>{% for cell in row %}<td class="text-nowrap">{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
+          {% endif %}
+        </div>
+      {% endfor %}</div>
+    </div>
+    <div class="tab-pane" id="pf-{{ object.pk }}-packages" role="tabpanel" aria-labelledby="pf-{{ object.pk }}-packages-tab" tabindex="0">
+      <p>Установленные пакеты pfSense — {{ inventory.package_state }}</p>
+      <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Пакет</th><th>Версия</th></tr></thead><tbody>
+      {% for package in inventory.packages %}<tr><td class="text-nowrap">{{ package.name }}</td><td class="text-nowrap">{{ package.version }}</td></tr>{% endfor %}
+      </tbody></table></div>
+    </div>
+    </div>
     <p class="text-muted mt-3">Секреты, содержимое URL aliases, пользовательские дополнительные директивы и выражения ACL HAProxy исключены. Состояние VPN-сессий и таблицы маршрутизации дополнительных FIB пока не собираются.</p>
   {% endif %}
   </div>

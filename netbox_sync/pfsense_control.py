@@ -29,6 +29,18 @@ def collection_due(state, now):
                 and state.get('next_attempt',0)<=now)
 
 
+def collector_username():
+    value = os.environ.get('NETBOX_SYNC_PFSENSE_USER', 'netbox-sync')
+    if value not in ('netbox-sync', 'netbox-sync-test'):
+        raise ControlError('CONTROL_REQUEST_INVALID')
+    return value
+
+
+def state_root(store):
+    base = store.root / 'pfsense'
+    return base if collector_username() == 'netbox-sync' else base / 'test'
+
+
 def handle(store,lock_path,payload, *, scheduled_policy=None):
     from .api.auth import AuthClient
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -39,7 +51,9 @@ def handle(store,lock_path,payload, *, scheduled_policy=None):
     if operation not in ('status','connect','collect','schedule'):raise ControlError('CONTROL_REQUEST_INVALID')
     auth=AuthClient('/run/netbox-sync-auth/worker.sock')
     if scheduled_policy is None: auth.call('authorize',session=payload['session'],permission={'status':'source.read','connect':'source.register','collect':'source.apply','schedule':'source.apply'}[operation],audit=operation!='status')
-    root=store.root/'pfsense';root.mkdir(mode=0o700,exist_ok=True)
+    base=store.root/'pfsense';base.mkdir(mode=0o700,exist_ok=True)
+    if base.is_symlink() or base.stat().st_uid!=0 or base.stat().st_mode&0o077:raise ControlError('CONTROL_DIRECTORY_INVALID')
+    root=state_root(store);root.mkdir(mode=0o700,exist_ok=True)
     if root.is_symlink() or root.stat().st_uid!=0 or root.stat().st_mode&0o077:raise ControlError('CONTROL_DIRECTORY_INVALID')
     path=root/(str(vm)+'.json')
     def read():
@@ -68,7 +82,7 @@ def handle(store,lock_path,payload, *, scheduled_policy=None):
                 key=Ed25519PrivateKey.generate()
                 state.update(key=key.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.OpenSSH,serialization.NoEncryption()).decode(),
                     public_key=key.public_key().public_bytes(serialization.Encoding.OpenSSH,serialization.PublicFormat.OpenSSH).decode(),
-                    owner=secrets.token_hex(16),username='netbox-sync',**endpoint)
+                    owner=secrets.token_hex(16),username=collector_username(),**endpoint)
             state.update(endpoint)
         elif 'key' not in state:return {'error':'NOT_CONNECTED'}
         if operation=='schedule':
@@ -85,7 +99,6 @@ def handle(store,lock_path,payload, *, scheduled_policy=None):
         _,apply_token=runtime_netbox(store.path,'apply')
         value=dict(vm_id=vm,operation=operation,state=state,data=data,policy=policy,url=url,
             read_token=read_token,apply_token=apply_token,guard_instance=os.environ.get('NETBOX_SYNC_GUARD_INSTANCE',''))
-        if operation=='connect': value['state']={**state, 'username':'netbox-sync'}
         try:
             with child_process(subprocess.Popen,[sys.executable,'-B','-m','netbox_sync.pfsense_connect'],
                 stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
@@ -96,10 +109,13 @@ def handle(store,lock_path,payload, *, scheduled_policy=None):
             if process.returncode or len(output)>8192:raise ValueError()
             result=json.loads(output)
         except Exception:result={'error':'OUTCOME_UNKNOWN'}
+        # Retain successful SSH preparation even if collection/import fails.
+        if type(result.get('ssh_port')) is int and 1 <= result['ssh_port'] <= 65535 and isinstance(result.get('host_key'), str) and result['host_key'].startswith('ssh-ed25519 '):
+            state.update(ssh_port=result['ssh_port'],host_key=result['host_key'])
         if result.get('error'):
             state.update(status='ATTENTION',error=result['error'])
         else:
-            if operation=='connect': state.update(username='netbox-sync',sync_enabled=data['sync_enabled'],interval_minutes=data['interval_minutes'])
+            if operation=='connect': state.update(sync_enabled=data['sync_enabled'],interval_minutes=data['interval_minutes'])
             state['next_attempt']=time.time()+state.get('interval_minutes',60)*60
             state.update(status='CONNECTED',error=None,**{k:result[k] for k in ('collected_at','ssh_port','host_key')})
         atomic(path,state)
