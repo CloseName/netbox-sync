@@ -94,15 +94,16 @@ def _print_plan(plan):
 def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write=None):
     """Reconcile managed and genuinely new objects; legacy candidates stay separate."""
     from .child_process import measured_phase
+    read_api = PlanningNetBox(nb_api)
     with measured_phase('simulation_preflight'):
         from .application.inventory_order import canonical_hosts
         hosts = canonical_hosts(hosts)
         from .esxi_vm_identity import resolve_vm_identities
-        hosts, identity_conflicts = resolve_vm_identities(nb_api, hosts, config)
+        hosts, identity_conflicts = resolve_vm_identities(read_api, hosts, config)
         if identity_conflicts:
             raise EsxiRuntimeError("ESXi VM identity requires review; no writes allowed")
         from .application.ip_observations import executable_inventory
-        hosts, _ = executable_inventory(nb_api, hosts, config)
+        hosts, _ = executable_inventory(read_api, hosts, config)
 
         if config.source_type != 'esxi':
             raise EsxiRuntimeError('ESXi runtime requires source_type=esxi')
@@ -110,9 +111,9 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write
             raise TypeError('confirmed must be a boolean')
 
         from .host_mapping import validate
-        validate(nb_api,config.target,hosts)
+        validate(read_api,config.target,hosts)
         try:
-            plan = build_esxi_migration_plan(nb_api, hosts, config)
+            plan = build_esxi_migration_plan(read_api, hosts, config)
             managed_ids = _managed_vm_ids(plan)
             filtered_hosts = _filtered_hosts(hosts, config, managed_ids)
         except EsxiHostIdentityChanged:
@@ -137,7 +138,7 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write
                               and host.esxi_host_network is not None)
         from .esxi_host_network import require_host_network_field, apply_host_network_snapshots
         if network_hosts:
-            require_host_network_field(nb_api)
+            require_host_network_field(read_api)
         metadata_hosts = tuple(replace(host, interfaces=[], management_ip=None)
                                for host in hosts if host.source_id in host_ids)
 
@@ -147,10 +148,10 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write
         from .host_primary_ip import apply_esxi_primary
         from .guest_placement import apply_guest_placement
         from .virtual_disks import apply_virtual_disks
-        from contextlib import nullcontext
 
         def phase(name):
-            return measured_phase(name) if isinstance(api, PlanningNetBox) else nullcontext()
+            return measured_phase(name if isinstance(api, PlanningNetBox)
+                                  else name.replace('simulation_', 'apply_', 1))
 
         with phase('simulation_host_metadata'):
             if metadata_hosts:
@@ -171,7 +172,7 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write
             apply_virtual_disks(api, filtered_hosts, config, confirmed=True)
 
     # Simulate dependent creates and every network ownership check before writes.
-    stages(PlanningNetBox(nb_api))
+    stages(PlanningNetBox(read_api))
     if not confirmed:
         print('ESXi runtime preflight completed. No changes were written to NetBox.')
         return plan

@@ -62,6 +62,9 @@ PHASES = ('provider', 'netbox', 'planning', 'preflight', 'apply', 'esxi_connect'
           'esxi_events', 'simulation_preflight', 'simulation_host_metadata', 'simulation_host_network',
           'simulation_events', 'simulation_primary_ip', 'simulation_vms',
           'simulation_vm_networks', 'simulation_placement', 'simulation_disks')
+PHASES += ('write_boundary',) + tuple(
+    phase.replace('simulation_', 'apply_', 1) for phase in PHASES
+    if phase.startswith('simulation_') and phase != 'simulation_preflight')
 
 
 def phase_progress(stage, elapsed=None, *, failed=False, requests=None, objects=None):

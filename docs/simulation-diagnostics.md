@@ -22,3 +22,16 @@ before the fix and one afterward. This does not measure full production runtime.
 Validate ESXI-AM-QA2 by building a fresh plan, inspecting CHILD_PHASES or timeout
 phases, then reviewing and applying normally. Confirm a subsequent no-change plan.
 If still slow, retain the phase metadata before making further changes.
+
+
+Manual apply now invokes the confirmed executor once after digest revalidation.
+Its internal complete dry-run remains mandatory; before_write marks write_boundary.
+Exceptions before that callback are FAILED_BEFORE_WRITE; afterward they remain
+OUTCOME_UNCERTAIN. A killed child still retains conservative uncertainty: absence
+of a best-effort progress marker is not proof that no writes occurred.
+ESXi preflight uses a fresh invocation-local read facade, shared with its dry-run,
+so bulk-read records can satisfy later ID lookups. Real writes use the original
+guarded API, never the planning cache. Real ESXi stages emit apply_* timings.
+Production evidence motivating this change: plan 73s, then repeated runtime
+preflights of 77.7s and 79.4s plus dry-runs exhausted the 300s apply budget.
+Historical uncertain runs still require object/journal reconciliation.
