@@ -65,6 +65,42 @@ class ProviderInventoryImport(models.Model):
         default_permissions = ()
 
 
+class ProviderIPAMObject(models.Model):
+    """Accepted provider identity and immutable native identity fields, not a CF."""
+    key = models.CharField(max_length=512, unique=True)
+    kind = models.CharField(max_length=16)
+    object_id = models.PositiveBigIntegerField()
+    object_created = models.DateTimeField()
+    claims = models.JSONField()
+
+    class Meta:
+        default_permissions = ()
+        constraints = [models.UniqueConstraint(fields=('kind', 'object_id'), name='guard_provider_ipam_target')]
+
+
+class ProviderNetworkLink(models.Model):
+    """Allocation/segment/port attachment; never an inferred interface or cable."""
+    binding = models.ForeignKey(ProviderBinding, on_delete=models.PROTECT)
+    native = models.ForeignKey(ProviderIPAMObject, on_delete=models.PROTECT)
+    relation = models.CharField(max_length=16)
+    evidence = models.JSONField()
+
+    class Meta:
+        default_permissions = ()
+        constraints = [models.UniqueConstraint(fields=('binding', 'native', 'relation'), name='guard_provider_network_link')]
+
+
+class ProviderIPAMReceipt(models.Model):
+    nonce = models.UUIDField(primary_key=True)
+    actor = models.CharField(max_length=128)
+    digest = models.CharField(max_length=64)
+    result = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        default_permissions = ()
+
+
 class CreationClaim(models.Model):
     resource = models.CharField(max_length=16)
     object_id = models.PositiveBigIntegerField()

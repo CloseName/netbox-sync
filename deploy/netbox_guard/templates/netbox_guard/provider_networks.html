@@ -1,0 +1,20 @@
+<div class="card">
+  <h2 class="card-header">Selectel · сети провайдера</h2>
+  <div class="card-body">
+    <p class="text-muted">Выделение адреса серверу и фактическое назначение интерфейсу показаны отдельно. Адрес управления сохраняется.</p>
+    <div class="table-responsive"><table class="table table-hover">
+      <thead><tr><th>Связь</th><th>Объект IPAM</th><th>Сервер</th><th>Подсеть / VLAN</th><th>Фактическое назначение</th></tr></thead>
+      <tbody>{% for link in provider_networks.links %}<tr>
+        <td>{% if link.relation == 'allocation' %}Выделенный IP{% elif link.relation == 'subnet' %}Сегмент провайдера{% else %}Подключение к сети{% endif %}</td>
+        <td><a href="{{ link.native.url }}">{{ link.native.label }}</a></td>
+        <td><a href="{{ link.device.url }}">{{ link.device.label }}</a></td>
+        <td>{% if link.prefix %}<a href="{{ link.prefix.url }}">{{ link.prefix.label }}</a>{% endif %}
+            {% if link.vlan %}<a href="{{ link.vlan.url }}">{{ link.vlan.label }}</a>{% endif %}</td>
+        <td>{% if link.assignment %}<a href="{{ link.assignment.url }}">{{ link.assignment.label }}</a>
+            {% elif link.relation == 'allocation' %}Не подтверждено / недоступно
+            {% elif link.relation == 'attachment' %}{% for port in link.provider_ports %}Порт провайдера: {{ port.port_name }}{% if not forloop.last %}; {% endif %}{% endfor %}. Интерфейс хоста не сопоставлен.
+            {% else %}—{% endif %}</td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+</div>

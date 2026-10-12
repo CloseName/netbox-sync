@@ -74,4 +74,16 @@ class NetworkLinks(PluginTemplateExtension):
             'host_facts':(obj.custom_field_data or {}) if kind=='device' else {}})
 
 
-template_extensions = [NetworkLinks, EsxiNetworkDetails, PfsenseInventoryDetails]
+class ProviderNetworks(PluginTemplateExtension):
+    models = ['dcim.device', 'ipam.ipaddress', 'ipam.prefix', 'ipam.vlan']
+
+    def full_width_page(self):
+        from .provider_network_display import document
+        obj = self.context['object']
+        value = document(self.context['request'].user, obj._meta.model_name, obj.pk)
+        if not value['links']:
+            return ''
+        return self.render('netbox_guard/provider_networks.html', extra_context={'provider_networks': value})
+
+
+template_extensions = [NetworkLinks, EsxiNetworkDetails, PfsenseInventoryDetails, ProviderNetworks]

@@ -19,7 +19,9 @@ class ProviderWriteConflict(MiddlewareMixin):
             diagnostic = getattr(cause, 'diag', None)
             code = getattr(diagnostic, 'message_primary', '')
             if getattr(cause, 'sqlstate', None) == '23514' and code in {
-                    'PROVIDER_FIELD_OWNED', 'PROVIDER_PROJECTION_UNCLAIMED', 'PROVIDER_BINDING_DELETE_BLOCKED'}:
+                    'PROVIDER_FIELD_OWNED', 'PROVIDER_PROJECTION_UNCLAIMED', 'PROVIDER_BINDING_DELETE_BLOCKED',
+                    'PROVIDER_IPAM_DELETE_BLOCKED', 'PROVIDER_IPAM_FIELD_OWNED',
+                    'PROVIDER_IPAM_DUPLICATE', 'PROVIDER_IPAM_RECORD_IMMUTABLE'}:
                 return JsonResponse({'code': code}, status=409)
         return None
 

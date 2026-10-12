@@ -37,6 +37,8 @@ check_schema()
 with connection.cursor() as c:
     c.execute("SELECT pg_get_functiondef('netbox_guard_provider_write()'::regprocedure)")
     assert 'selectel_inventory' in c.fetchone()[0]
+    c.execute("SELECT count(*) FROM pg_trigger WHERE tgname = 'guard_provider_ipam' AND NOT tgisinternal")
+    assert c.fetchone()[0] == 4
 print('OK: inventory schema, protection and existing bindings:', ProviderBinding.objects.count())
 PY
 for container in netbox netbox-worker; do
@@ -45,4 +47,5 @@ for container in netbox netbox-worker; do
 done
 docker compose ps netbox netbox-worker
 echo "TEST Guard ready: $RELEASE. Log: $LOG"
-echo "Next: bash $REPO/deploy/collect-selectel-test.sh 29916"
+echo "Existing registry to native IPAM: bash $REPO/deploy/project-selectel-ipam-test.sh"
+echo "Fresh provider inventory (optional): bash $REPO/deploy/collect-selectel-test.sh 29916"

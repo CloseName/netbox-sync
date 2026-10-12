@@ -1,9 +1,10 @@
 from django.urls import path
 from .views import Capabilities, CreateOwned, Review, Retire, Receipt, ReviewSource, RetireSource, CreationProof, SourceAudit, ArchiveReview, ArchiveExecute, SourceNamespaceState
 from .pfsense import PfSenseImport, PfSensePreflight
-from .infrastructure import Infrastructure, FirewallInventory
+from .infrastructure import Infrastructure, FirewallInventory, ProviderNetworks
 from .provider import ProviderReview, ProviderApply
 urlpatterns = [
+    path('providers/networks/v1/<str:kind>/<int:pk>/', ProviderNetworks.as_view()),
     path('providers/review/', ProviderReview.as_view()),
     path('providers/apply/', ProviderApply.as_view()),
     path('infrastructure/v1/<str:kind>/<int:pk>/', Infrastructure.as_view()),
