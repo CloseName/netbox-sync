@@ -202,6 +202,10 @@ def apply(user, nonce, request, fingerprint):
             obj = model(**fields, description='Selectel provider allocation' if op['kind'] != 'vlangroup' else '')
             obj.full_clean()
             obj.save()
+            # Enforce constrained object permissions against the actual created
+            # row too; failure rolls back the entire transaction.
+            permission(user, obj, 'add')
+            permission(user, obj, 'view')
         else:
             obj = model.objects.get(pk=op['id'])
             if op['updates']:

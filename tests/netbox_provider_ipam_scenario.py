@@ -117,3 +117,17 @@ apply(admin, uuid4(), request, last['fingerprint'])
 IPAddress.objects.filter(address='8.8.8.9/32', vrf=None).update(description='allowed')
 assert prepare(admin, request)['changes'] == 0
 print('Native IPAM: scoped adoption, guest assignments, shared prefix, masks, permissions, rollback, replay, SQL guards, HTML and no-op OK')
+
+# Exercise the same command and saved-review path used by the operator script.
+import io
+import json
+import tempfile
+work = Path(tempfile.mkdtemp(prefix='guard-ipam-cli-'))
+(work / 'request.json').write_text(json.dumps(request), encoding='utf-8')
+call_command('selectel_ipam', request=str(work / 'request.json'), actor=admin.username,
+             output=str(work / 'review.json'), stdout=io.StringIO())
+assert json.loads((work / 'review.json').read_text())['changes'] == 0
+bad_request = copy.deepcopy(request)
+bad_request['targets'][0]['provider_key'] = 'wrong-resource'
+rejected(lambda: prepare(admin, bad_request), (ValueError,))
+print('Operator native IPAM command, review export and target pinning OK')

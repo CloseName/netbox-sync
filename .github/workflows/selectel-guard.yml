@@ -37,12 +37,13 @@ jobs:
           exit 1
       - name: Test actual NetBox and SQL triggers
         run: |
+          docker build -f deploy/Dockerfile.netbox-guard -t provider-guard:test .
           docker run --rm --network container:provider-test-pg \
             --mount type=bind,src="$PWD",dst=/app,readonly \
             --mount type=bind,src="$PWD/tests/netbox_guard_plugins.py",dst=/etc/netbox/config/plugins.py,readonly \
-            -e PYTHONPATH=/app/deploy -e NETBOX_SYNC_ISOLATED_MODEL_TEST=1 \
+            -e NETBOX_SYNC_ISOLATED_MODEL_TEST=1 \
             -e NETBOX_SYNC_MODEL_DB=netbox_sync_guard_test \
-            --entrypoint /opt/netbox/venv/bin/python netboxcommunity/netbox:v4.7.0 \
+            --entrypoint /opt/netbox/venv/bin/python provider-guard:test \
             /app/tests/netbox_provider_binding_scenario.py
       - name: Remove disposable database container
         if: always()
