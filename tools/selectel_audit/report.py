@@ -5,23 +5,46 @@ import os
 from pathlib import Path
 
 from .review import inventory, match_candidates
+from .contextual_review import contextual_review
+from .coverage import summarize, resource_counts
 
 
 def html_report(document, rows):
     esc = lambda x: html.escape(str(x), quote=True)
     coverage = document['coverage']
-    bad = sum(x['status'] != 'collected' for x in coverage)
+    overview = summarize(coverage)
+    bad = overview['requires_attention']
     tr = []
     for row in rows:
         details = '<br>'.join(esc(f"{c['type']} #{c['id']} {c['name']}: " +
             ', '.join(x['type'] + (' ' + x['address'] if 'address' in x else '')
-                      for x in c['evidence'])) for c in row['candidates']) or '—'
+                      for x in c['evidence'])) for c in row.get('proposed_candidates', row['candidates'])) or '—'
+        if row.get('related_vms'):
+            details += '<br>Связанные гостевые VM: ' + esc(', '.join(str(x['id']) + ' ' + x['name'] for x in row['related_vms']))
+        if row.get('unscoped_ip_matches'):
+            details += '<br>Совпадения частных IP без карты сетей: ' + esc(', '.join(x['name'] for x in row['unscoped_ip_matches']))
         tr.append('<tr>' + ''.join('<td>' + esc(row[k]) + '</td>' for k in
             ('kind', 'name', 'project', 'region', 'provider_id')) +
             '<td>' + '<br>'.join(map(esc, row['addresses'])) + '</td><td><span class="badge">' +
-            esc(row['match_status']) + '</span><br>' + details + '</td></tr>')
-    ct = ''.join('<tr>' + ''.join('<td>' + esc(x.get(k, '')) + '</td>' for k in
-                 ('service', 'kind', 'project', 'region', 'status', 'count')) + '</tr>' for x in coverage)
+            esc(row.get('analysis_status', row['match_status'])) + '</span><br>' + details + '</td></tr>')
+    names = {p['id']: p.get('name', p['id']) for p in document['projects']}
+    ct = ''.join('<tr>' + ''.join('<td>' + esc(v) + '</td>' for v in
+                 (x['service'], names.get(x['project'], x['project']), x['region'],
+                  ', '.join(f'{k}: {v}' for k, v in x['categories'].items()),
+                  ', '.join(f'{k}: {v}' for k, v in x['statuses'].items()))) + '</tr>' for x in overview['scopes'])
+    category_labels = {'collected': 'Прочитано', 'partial': 'Частично прочитано',
+        'access_denied': 'Отказ доступа', 'unavailable': 'API недоступен (404)',
+        'unsupported': 'Не реализовано', 'skipped': 'Повтор / старая версия пропущены',
+        'blocked_endpoint': 'Адрес не разрешён', 'not_in_catalog': 'Нет в каталоге', 'error': 'Ошибка'}
+    category_html = '<ul>' + ''.join('<li>' + esc(category_labels.get(k, k)) + ': ' + str(v) + '</li>'
+        for k, v in overview['categories'].items()) + '</ul>'
+    nb = document.get('netbox')
+    nb_state = document.get('netbox_read', {}).get('status', 'collected' if nb else 'not_requested')
+    nb_html = '<p>Чтение NetBox: <b>' + esc(nb_state) + '</b></p>'
+    if nb:
+        nb_html += '<ul>' + ''.join('<li>' + esc(f"{x['kind']}: {x['status']}, {x['count']}") + '</li>' for x in nb['coverage']) + '</ul>'
+        bindings = sum(x.get('source_bindings', {}).get('status') == 'exported' for k in ('devices', 'vms') for x in nb['datasets'].get(k, []))
+        nb_html += '<p>Объектов с прочитанным полем sync_identities: ' + str(bindings) + '. Идентификаторы сохранены в inventory.json; привязка автоматически не выполняется.</p>'
     return '''<!doctype html><html lang="ru"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'none'; connect-src 'none'">
@@ -46,8 +69,9 @@ h2{margin-top:30px}.muted{color:#53657b}footer{margin-top:24px;color:#53657b}
 Ни одна запись NetBox не создана и не изменена.</div>
 <h2>Ресурсы и кандидаты NetBox</h2><input id="search" placeholder="Имя, адрес, проект или статус" aria-label="Поиск">
 <div class="table"><table id="resources"><thead><tr><th>Тип</th><th>Имя</th><th>Проект</th><th>Регион</th><th>ID Selectel</th><th>IP</th><th>Сопоставление</th></tr></thead><tbody>''' + ''.join(tr) + '''</tbody></table></div>
-<details open><summary>Покрытие сбора</summary><p class="muted">collected — запросы раздела завершены; HTTP_403 — нет прав; NOT_IN_CATALOG — нет в каталоге; UNSUPPORTED_SERVICE — адаптер ещё не реализован. Это не доказательство отсутствия услуги.</p>
-<div class="table"><table><thead><tr><th>API</th><th>Раздел</th><th>Проект</th><th>Регион</th><th>Результат</th><th>Записей</th></tr></thead><tbody>''' + ct + '''</tbody></table></div></details>
+<h2>NetBox</h2>''' + nb_html + '''
+<details open><summary>Покрытие сбора по продуктам, проектам и регионам</summary>''' + category_html + '''<p class="muted">Неподдержанный сервис в каталоге не означает купленную услугу. Успешный ответ не доказывает полноту аккаунта. Полный журнал разделов — в summary.json.</p>
+<div class="table"><table><thead><tr><th>API</th><th>Проект</th><th>Регион</th><th>Категории</th><th>Результаты разделов</th></tr></thead><tbody>''' + ct + '''</tbody></table></div></details>
 <footer>Поля и типы значений: fields.json. Все собранные разделы: inventory.json. Выгрузка содержит внутреннюю инфраструктурную информацию.</footer>
 </main><script>document.getElementById('search').addEventListener('input',function(){const q=this.value.toLocaleLowerCase();document.querySelectorAll('#resources tbody tr').forEach(r=>r.hidden=!r.textContent.toLocaleLowerCase().includes(q));});</script></html>'''
 
@@ -58,6 +82,7 @@ def write_report(document, directory, netbox=None):
     rows = inventory(document)
     if netbox:
         match_candidates(rows, netbox)
+        rows = contextual_review(rows, netbox)
     document['review'] = rows
     if netbox:
         document['netbox'] = netbox
@@ -74,7 +99,11 @@ def write_report(document, directory, netbox=None):
         'account': document['account'], 'account_verified': document.get('account_verified', False),
         'account_completeness': 'not_proven', 'projects_visible': len(document['projects']),
         'resources_in_review': len(rows), 'coverage': document['coverage'],
-        'netbox_coverage': netbox['coverage'] if netbox else 'not_requested',
+        'collector_version': document.get('collector_version', 'unknown'),
+        'coverage_summary': summarize(document['coverage']),
+        'resource_counts': resource_counts(document),
+        'netbox_read': document.get('netbox_read', {'requested': bool(netbox), 'status': 'provided_snapshot' if netbox else 'not_requested'}),
+        'netbox_coverage': netbox['coverage'] if netbox else document.get('netbox_read', {}).get('status', 'not_requested'),
         'limitations': document['limitations'],
     }
     write('summary.json', json.dumps(summary, ensure_ascii=False, indent=2))

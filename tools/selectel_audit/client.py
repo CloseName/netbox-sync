@@ -43,7 +43,13 @@ def query_url(url, **values):
     return urlunsplit(parts._replace(query=urlencode(query)))
 
 
-def next_url(current, href, collection):
+def next_url(current, href, collection, mode='links'):
+    # Glance behind Selectel's /image proxy returns a service-root relative link.
+    # Rewrite ONLY this exact known collection, never an arbitrary host or path.
+    h, base = urlsplit(href), urlsplit(collection)
+    if (mode == 'glance' and not h.scheme and not h.netloc and not h.fragment
+            and h.path == '/v2/images' and base.path == '/image/v2/images'):
+        href = urlunsplit(h._replace(path=base.path))
     result = urljoin(current, href)
     a, b = urlsplit(result), urlsplit(collection)
     # Pagination must not escape the original collection, even within Selectel.
@@ -65,7 +71,7 @@ class Client:
         validate_url(url, self.netbox_origin)
         if payload is not None and (self.netbox_origin is not None or url != IDENTITY + '/auth/tokens'):
             raise AuditError('WRITE_REFUSED')
-        headers = {'Accept': 'application/json', 'User-Agent': 'netbox-sync-selectel-audit/0.1'}
+        headers = {'Accept': 'application/json', 'User-Agent': 'netbox-sync-selectel-audit/0.2'}
         if token:
             headers['Authorization' if self.netbox_origin else 'X-Auth-Token'] = (
                 'Token ' + token if self.netbox_origin else token)
@@ -96,8 +102,13 @@ class Client:
                     time.sleep(2 ** attempt)
                     continue
                 raise AuditError(f'HTTP_{code}') from None
-            except (URLError, TimeoutError, OSError):
-                raise AuditError('TLS_OR_CONNECTION_FAILED') from None
+            except ssl.SSLCertVerificationError:
+                raise AuditError('TLS_CERTIFICATE_FAILED') from None
+            except URLError as exc:
+                code = 'TLS_CERTIFICATE_FAILED' if isinstance(exc.reason, ssl.SSLCertVerificationError) else 'CONNECTION_FAILED'
+                raise AuditError(code) from None
+            except (TimeoutError, OSError):
+                raise AuditError('CONNECTION_FAILED') from None
             except (ValueError, UnicodeError):
                 raise AuditError('INVALID_JSON') from None
         raise AuditError('RETRY_EXHAUSTED')
@@ -113,7 +124,7 @@ def get_items(data, key):
 def read_collection(client, url, token, key, mode='links', max_pages=500):
     """Return retained pages plus explicit failure; partial inventory is never empty success."""
     items, pages, seen_urls, seen_pages = [], [], set(), set()
-    current = query_url(url, limit=PAGE_SIZE) if mode in ('links', 'page', 'offset', 'swift', 'netbox') else url
+    current = query_url(url, limit=PAGE_SIZE) if mode in ('links', 'glance', 'page', 'offset', 'swift', 'netbox') else url
     if mode == 'page':
         current = query_url(current, page=1)
     if mode == 'offset':
@@ -146,7 +157,7 @@ def read_collection(client, url, token, key, mode='links', max_pages=500):
                 elif isinstance(links, list):
                     href = href or next((x.get('href') for x in links if x.get('rel') == 'next'), None)
             if href:
-                current = next_url(current, href, url)
+                current = next_url(current, href, url, mode)
                 continue
             if mode == 'netbox':
                 if not isinstance(data.get('count'), int) or len(items) != data['count']:
@@ -169,7 +180,7 @@ def read_collection(client, url, token, key, mode='links', max_pages=500):
                     return items, pages, 'collected'
                 current = query_url(url, limit=PAGE_SIZE, page=page + 1)
                 continue
-            if mode in ('links', 'swift') and len(batch) >= PAGE_SIZE:
+            if mode in ('links', 'glance', 'swift') and len(batch) >= PAGE_SIZE:
                 marker = batch[-1].get('name' if mode == 'swift' else 'id')
                 if not marker:
                     raise AuditError('PAGINATION_UNRESOLVED')

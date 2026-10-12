@@ -144,3 +144,49 @@ portable tar.gz как artifact. Успех локальных тестов не
   [Neutron](https://docs.openstack.org/api-ref/network/v2/),
   [Cinder](https://docs.openstack.org/api-ref/block-storage/v3/),
   [Swift](https://docs.openstack.org/api-ref/object-store/).
+# Audit 0.2.0: follow-up to the first inventory
+
+This remains an isolated **read-only audit**, not a synchronization provider.
+No live database migrations, NetBox writes, or changes to the installed Sync services.
+
+- Glance pagination preserves Selectel's `/image` proxy prefix for the exact
+  service-root link `/v2/images?...`; host/path restrictions remain enforced.
+- Cinder v3 (including the catalog's `volume` alias) is collected once per
+  endpoint/region. Legacy v2 is skipped only when an allowed v3 endpoint exists
+  in that region; failures of v3 remain visible, never treated as an empty inventory.
+- Coverage separates collected, partial, access denied, unavailable, unsupported,
+  skipped, missing catalog and blocked endpoint categories. Product/project/region
+  summaries and the original per-section log are both retained. Unsupported
+  technical catalog entries are never contacted. No additional endpoint domains
+  or ports are trusted by this revision.
+- Resource counters distinguish project-owned networks from visible provider
+  networks, and Swift containers from names carrying a multipart-upload suffix.
+  A suffix is a classification hint, not proof of a user-visible S3 bucket count.
+- `--with-netbox` requires the hidden NetBox token prompt; `--without-netbox`
+  explicitly skips it. Unrecognized interactive answers are retried. Summary and
+  HTML distinguish a failed requested read from an intentional skip.
+- NetBox records include a narrow `source_bindings` projection of `sync_identities`
+  (schema/type/instance/kind/external_id only). Other custom fields remain excluded.
+  Missing identity data is explicit; existing bindings are not modified/adopted.
+- Review distinguishes public IPs on guest VMs from physical host identity.
+  An explicit VM → Device relation suggests a host candidate requiring review.
+  Private IPs without mapped network scopes are kept as separate hints. The original
+  matcher result and the contextual analysis are both retained; `auto_apply` stays false.
+- `--account 29916` can select a non-secret account number. Each run creates its own
+  timestamped output directory. A second account still requires its own token.
+
+Offline regression checks:
+
+```bash
+python -m unittest discover -s tools/selectel_audit -t . -p 'test_*.py' -v
+```
+
+The synthetic tests contain no production snapshots. Validation against local
+operator snapshots is read-only and those snapshots must not be committed.
+Online acceptance still requires a new run: check image pagination, Cinder v3,
+NetBox identity export and all partial/denied scopes. Account-wide completeness
+remains `not_proven`; unsupported products and hidden resources are not ruled out.
+
+API references: [Glance v2](https://docs.openstack.org/api-ref/image/v2/),
+[Cinder v3](https://docs.openstack.org/api-ref/block-storage/v3/).
+

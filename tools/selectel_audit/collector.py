@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 
 from .client import (AuditError, Client, IDENTITY, read_collection, sanitize,
                      field_shapes, validate_url)
+from . import VERSION
 
 DEDICATED = 'https://api.selectel.ru/servers/v2'
 PROJECTS = 'https://api.selectel.ru/iam/v1/projects'
@@ -96,7 +97,7 @@ class Collector:
         self.client = client or Client()
         self.progress = progress
         self.document = {
-            'schema': 'selectel-audit-v1', 'started_at': stamp(),
+            'schema': 'selectel-audit-v1', 'collector_version': VERSION, 'started_at': stamp(),
             'account': credentials.account, 'mode': 'read_only',
             'scope': 'resources_visible_to_supplied_identity',
             'account_completeness': 'not_proven',
@@ -161,33 +162,56 @@ class Collector:
 
     def collect_catalog(self, token, catalog, project):
         seen, types = set(), set()
+        modern_regions = set()
         for service in catalog:
-            typ = service.get('type', '')
+            if service.get('type') not in ('volumev3', 'volume'):
+                continue
+            for ep in service.get('endpoints', []):
+                if ep.get('interface') == 'public' and '/v3/' in ep.get('url', ''):
+                    try:
+                        validate_url(ep['url'])
+                    except (AuditError, ValueError):
+                        continue
+                    modern_regions.add(ep.get('region_id') or ep.get('region') or '')
+        for service in catalog:
+            catalog_type = service.get('type', '')
             for endpoint in service.get('endpoints', []):
                 if endpoint.get('interface') != 'public':
                     continue
                 url = endpoint.get('url', '')
                 region = endpoint.get('region_id') or endpoint.get('region') or ''
+                typ = 'volumev3' if catalog_type == 'volume' and '/v3/' in url else catalog_type
                 context = dict(service=typ, project=project, region=region, endpoint=url)
                 if (typ, region, url) in seen:
+                    self.document['coverage'].append({**context, 'kind': 'catalog',
+                        'status': 'SKIPPED_DUPLICATE_ENDPOINT', 'count': 0})
                     continue
                 seen.add((typ, region, url))
                 types.add(typ)
-                self.document['catalog'].append(context)
+                self.document['catalog'].append({**context, 'catalog_type': catalog_type})
+                if typ == 'volumev2' and region in modern_regions:
+                    self.document['coverage'].append({**context, 'kind': 'catalog',
+                        'status': 'SKIPPED_LEGACY_API', 'count': 0})
+                    continue
+                if typ == 'dnsv2':
+                    self.document['coverage'].append({**context, 'kind': 'catalog',
+                        'status': 'DELEGATED_TO_PROJECT_ADAPTER', 'count': 0})
+                    continue
+                # Classify unsupported technical endpoints as unsupported; no request is made.
+                if typ not in SERVICES:
+                    self.document['coverage'].append({**context, 'kind': 'catalog',
+                        'status': 'UNSUPPORTED_SERVICE', 'count': 0})
+                    continue
                 try:
                     validate_url(url)
                 except (AuditError, ValueError):
                     self.document['coverage'].append({**context, 'kind': 'catalog',
                         'status': 'UNTRUSTED_OR_INVALID_ENDPOINT', 'count': 0})
                     continue
-                if typ not in SERVICES:
-                    self.document['coverage'].append({**context, 'kind': 'catalog',
-                        'status': 'UNSUPPORTED_SERVICE', 'count': 0})
-                    continue
                 for kind, path, key in SERVICES[typ]:
                     actual_key = key.replace('-', '_') if key else None
                     self.collect(typ, kind, child_url(url, path), token, actual_key,
-                                 mode='swift' if typ == 'object-store' else 'links',
+                                 mode='swift' if typ == 'object-store' else 'glance' if typ == 'image' else 'links',
                                  project=project, region=region)
         for typ in ('compute', 'network', 'volumev3', 'object-store'):
             if typ not in types and not (typ == 'volumev3' and 'volumev2' in types):
@@ -237,6 +261,26 @@ class Collector:
         return sanitize(self.document, self.credentials.secrets)
 
 
+def source_bindings(obj):
+    """Export a narrow identity projection, never arbitrary custom fields."""
+    fields = obj.get('custom_fields') or {}
+    if not isinstance(fields, dict):
+        return {'status': 'invalid_custom_fields_shape'}
+    raw = fields.get('sync_identities')
+    if raw is None:
+        return {'status': 'not_present_in_response', 'identities': []}
+    if not isinstance(raw, list):
+        return {'status': 'invalid_identities_shape'}
+    identities = []
+    for value in raw:
+        if not isinstance(value, dict):
+            return {'status': 'invalid_identity_entry'}
+        identities.append({key: value[key] for key in
+            ('schema', 'type', 'instance', 'kind', 'external_id')
+            if isinstance(value.get(key), (str, int))})
+    return {'status': 'exported', 'identities': identities}
+
+
 def collect_netbox(url, token, ca_file=None, progress=print):
     parts = urlsplit(url.rstrip('/'))
     if parts.path not in ('', '/') or parts.query:
@@ -258,6 +302,7 @@ def collect_netbox(url, token, ca_file=None, progress=print):
         keep = ('id', 'name', 'display', 'serial', 'asset_tag', 'status', 'site', 'cluster',
                 'device', 'virtual_machine', 'primary_ip4', 'primary_ip6', 'address', 'vrf',
                 'assigned_object_type', 'assigned_object_id', 'mac_address', 'primary_mac_address')
-        result['datasets'][kind] = [sanitize({k: x[k] for k in keep if k in x}, [token]) for x in items]
+        result['datasets'][kind] = [sanitize({**{k: x[k] for k in keep if k in x},
+            'source_bindings': source_bindings(x)}, [token]) for x in items]
         result['coverage'].append(dict(kind=kind, status=status, count=len(items)))
     return result
