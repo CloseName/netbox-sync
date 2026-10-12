@@ -94,6 +94,12 @@ def _parent_owner(resource, obj, source):
 
 
 def _claims(snapshot, source, cluster, check_budget=None):
+    from .models import ProviderBinding
+    # Refuse before any retirement writes; the SQL trigger is the final barrier.
+    for kind in ('device', 'vm'):
+        targets = [int(key.split(':')[1]) for key, _ in snapshot.objects if key.startswith(kind + ':')]
+        if targets and ProviderBinding.objects.filter(resource=kind, object_id__in=targets).exists():
+            raise DependencyGuardBlocked('PROVIDER_BOUND_OBJECT')
     for key, _ in snapshot.objects:
         if check_budget is not None: check_budget()
         resource, identifier = key.split(':')

@@ -4,6 +4,7 @@ import runpy
 from pathlib import Path
 from uuid import uuid4
 from unittest.mock import patch
+from types import SimpleNamespace
 
 runpy.run_path(str(Path(__file__).with_name('netbox_model_scope_scenario.py')))
 from django.db import connection, transaction, IntegrityError
@@ -17,6 +18,7 @@ from netbox_guard.models import ProviderBinding, ProviderFieldClaim, ProviderBin
 from netbox_guard.provider_schema import configure_provider_fields
 from netbox_guard.provider_service import review_binding, apply_binding
 from netbox_guard.dependencies import DependencyGuardBlocked
+from netbox_guard.service import _claims
 
 assert connection.settings_dict['NAME'] == 'netbox_sync_guard_test'
 call_command('makemigrations', 'netbox_guard', check=True, dry_run=True, verbosity=0)
@@ -68,6 +70,8 @@ with transaction.atomic():
     rejected(lambda: Device.objects.filter(pk=obj.pk).update(serial='old-hypervisor-value'))
     rejected(lambda: Device.objects.filter(pk=obj.pk).update(custom_field_data={}))
     rejected(lambda: Device.objects.filter(pk=obj.pk).delete())
+    rejected(lambda: _claims(SimpleNamespace(objects=((f'device:{obj.pk}', {}),)), 'fixture', 1),
+             (DependencyGuardBlocked,))
     # Unclaimed fields and a matching full-object update remain valid.
     Device.objects.filter(pk=obj.pk).update(name='same-object-new-name', serial='SN123')
     obj.refresh_from_db()
@@ -101,7 +105,7 @@ with transaction.atomic():
     assert ProviderFieldClaim.objects.get(field='serial').value == 'SN456'
     assert ProviderBindingChange.objects.count() == before_count
     rejected(lambda: Device.objects.filter(pk=duplicate.pk).update(custom_field_data={'selectel_summary': 'forged'}))
-    vm = VirtualMachine.objects.create(name='cloud-fixture')
+    vm = VirtualMachine.objects.create(name='cloud-fixture', site=site)
     vm_spec = dict(payload, resource='vm', object_id=vm.pk, serial=None,
                   identity={'account': 'fixture', 'kind': 'cloud_vm', 'native_id': 'vm-a', 'project': 'p', 'region': 'r'})
     vm_preview = review_binding(admin, vm_spec)
