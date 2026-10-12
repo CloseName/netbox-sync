@@ -90,6 +90,7 @@ class PortProbe:
             if self.exhausted or len(self.records) >= 4000:
                 raise AuditError('REQUEST_BUDGET_EXCEEDED')
             response, _ = self.client.request(DEDICATED + path, self.token)
+            response = sanitize(response, self.credentials.secrets)
             if not isinstance(response, dict):
                 raise AuditError('UNEXPECTED_RESPONSE_SHAPE')
             if str(response.get('status', '')).lower() in ('error', 'failed', 'failure'):
@@ -141,6 +142,7 @@ class PortProbe:
             raise AuditError('ACCOUNT_IAM_TOKEN_REQUIRED')
         self.token, _ = self.credentials.authenticate(self.client)
         rows, _, code = read_collection(self.client, DEDICATED + '/resource', self.token, 'result', 'page')
+        rows = sanitize(rows, self.credentials.secrets)
         resources = [fields(r, RESOURCE) for r in rows if r.get('service_type') in SERVER_TYPES]
         notes, hardware, ports = [], set(), set()
         if len(resources) > 1000:

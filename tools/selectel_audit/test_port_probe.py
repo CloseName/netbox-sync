@@ -123,6 +123,15 @@ class PortProbeTests(unittest.TestCase):
         self.assertIn('AUX_RESPONSE_ID_MISMATCH:' + uid(1), doc['notes'])
         self.assertNotIn(DEDICATED + '/network/port/' + uid(3), client.calls)
 
+    def test_secret_is_removed_before_string_truncation(self):
+        secret = 'sensitive-' * 100
+        client = Routes(routes={'/aux': {'result': {'ports': [{'uuid': uid(3),
+            'aux_network_info': {'peer_name': secret}}]}}})
+        probe = PortProbe(Credentials('12345', token=secret), client)
+        result = probe.get('/aux', 'auxiliary')
+        self.assertNotIn('sensitive-', json.dumps(result))
+        self.assertEqual(result['data']['ports'][0]['aux_network_info']['peer_name'], '[REDACTED]')
+
 
 if __name__ == '__main__':
     unittest.main()
