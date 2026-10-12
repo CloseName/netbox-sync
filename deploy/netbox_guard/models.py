@@ -41,6 +41,30 @@ class ProviderBindingChange(models.Model):
     class Meta:
         default_permissions = ()
 
+class ProviderInventory(models.Model):
+    """Server registry including resources awaiting an explicit NetBox binding."""
+    provider_key = models.CharField(max_length=512, primary_key=True)
+    account = models.CharField(max_length=128, db_index=True)
+    snapshot = models.JSONField()
+    observed_at = models.DateTimeField()
+    evidence_digest = models.CharField(max_length=64)
+
+    class Meta:
+        default_permissions = ()
+
+
+class ProviderInventoryImport(models.Model):
+    nonce = models.UUIDField(primary_key=True)
+    account = models.CharField(max_length=128, db_index=True)
+    actor = models.CharField(max_length=128)
+    digest = models.CharField(max_length=64)
+    result = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        default_permissions = ()
+
+
 class CreationClaim(models.Model):
     resource = models.CharField(max_length=16)
     object_id = models.PositiveBigIntegerField()

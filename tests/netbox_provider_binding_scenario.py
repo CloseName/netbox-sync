@@ -112,5 +112,57 @@ with transaction.atomic():
     apply_binding(admin, uuid4(), vm_spec, vm_preview['fingerprint'])
     rejected(lambda: VirtualMachine.objects.filter(pk=vm.pk).update(custom_field_data={}))
     rejected(lambda: VirtualMachine.objects.filter(pk=vm.pk).delete())
+    # Full inventory uses accepted bindings only, with a registry for unbound servers.
+    from netbox_guard.inventory_service import review_inventory, apply_inventory
+    from netbox_guard.models import ProviderInventory, ProviderInventoryImport
+    fixture = runpy.run_path(str(Path(__file__).with_name('selectel_inventory_fixture.py')))['fixture']
+    document = fixture()
+    unbound = copy.deepcopy(document['datasets'][0]['items'][0])
+    unbound['uuid'] = 'unbound-server'
+    document['datasets'][0]['items'].append(unbound)
+    rejected(lambda: review_inventory(unprivileged, document, 'b' * 64), (DependencyGuardBlocked,))
+    inv_review = review_inventory(admin, document, 'b' * 64)
+    assert inv_review['server_count'] == 3 and inv_review['bound_count'] == 2
+    obj.refresh_from_db()
+    original = {f.attname: copy.deepcopy(getattr(obj, f.attname)) for f in obj._meta.concrete_fields
+                if f.attname not in ('custom_field_data', 'last_updated', '_config_context_data', '_config_context_generation')}
+    original_cf = copy.deepcopy(obj.custom_field_data)
+    import_nonce = uuid4()
+    imported = apply_inventory(admin, import_nonce, document, 'b' * 64, inv_review['fingerprint'])
+    assert len(imported['targets_updated']) == 2 and imported['unmatched_count'] == 1
+    assert ProviderInventory.objects.count() == 3
+    assert apply_inventory(admin, import_nonce, document, 'b' * 64, inv_review['fingerprint'])['replayed']
+    obj.refresh_from_db()
+    for name, value in original.items():
+        assert getattr(obj, name) == value, name
+    for name, value in original_cf.items():
+        if name not in ('selectel_inventory', 'selectel_location', 'selectel_configuration', 'selectel_os',
+                        'selectel_networks', 'selectel_collection_status'):
+            assert obj.custom_field_data[name] == value, name
+    assert obj.custom_field_data['selectel_location'] == 'SPB-3'
+    assert obj.custom_field_data['selectel_networks'] == '192.0.2.2'
+    assert 'never-export' not in str(obj.custom_field_data)
+    changed_cf = dict(obj.custom_field_data, selectel_location='forged')
+    rejected(lambda: Device.objects.filter(pk=obj.pk).update(custom_field_data=changed_cf))
+    rejected(lambda: Device.objects.filter(pk=duplicate.pk).update(custom_field_data={'selectel_inventory': {}}))
+    # Repeat fresh review is a no-op, not an endless sequence of object updates.
+    again = review_inventory(admin, document, 'b' * 64)
+    assert not any(x['projection_changed'] for x in again['resources'])
+    assert not apply_inventory(admin, uuid4(), document, 'b' * 64, again['fingerprint'])['writes_performed']
+    # Failure of one projection rolls back registry, claims, revisions and journals for the whole batch.
+    newer = copy.deepcopy(document)
+    newer['finished_at'] = '2026-10-12T14:00:00Z'
+    newer_review = review_inventory(admin, newer, 'c' * 64)
+    receipts = ProviderInventoryImport.objects.count()
+    with patch.object(VirtualMachine, 'save', side_effect=ValidationError('fixture refusal')):
+        rejected(lambda: apply_inventory(admin, uuid4(), newer, 'c' * 64, newer_review['fingerprint']), (ValidationError,))
+    assert ProviderInventoryImport.objects.count() == receipts
+    assert set(ProviderInventory.objects.values_list('evidence_digest', flat=True)) == {'b' * 64}
+    # An intervening host change invalidates the review, even on an unrelated field.
+    Device.objects.filter(pk=obj.pk).update(name='concurrent-host-change')
+    rejected(lambda: apply_inventory(admin, uuid4(), newer, 'c' * 64, newer_review['fingerprint']), (ValueError,))
+    newer_review = review_inventory(admin, newer, 'c' * 64)
+    apply_inventory(admin, uuid4(), newer, 'c' * 64, newer_review['fingerprint'])
+    rejected(lambda: review_inventory(admin, document, 'b' * 64), (ValueError,))
     transaction.set_rollback(True)
-print('Provider schema, bindings, stale review, replay, permission and PostgreSQL overwrite/delete protection OK; fixtures rolled back')
+print('Provider schema, server inventory, atomic rollback, stale review, replay, permissions and PostgreSQL protection OK; fixtures rolled back')
