@@ -164,7 +164,7 @@ def build_proxmox_review(nb_api, hosts, config):
                 ReviewClassification.UNSUPPORTED, 'PROXMOX_NETWORK_REFERENCES_MISSING',
                 'Network API omitted referenced interfaces: ' + ', '.join(names) +
                 '. Check configuration and bridge permissions; insufficient permissions are not confirmed.',
-                'review', properties={'missing_references': missing}))
+                'review'))
         items.extend(_generic_item(vm, 'qemu', virtual_machine_source_identity(vm), vms, target_vms)
                      for vm in host.virtual_machines)
         items.extend(_generic_item(lxc, 'lxc', lxc_source_identity(lxc), vms, target_vms)

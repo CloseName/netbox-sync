@@ -60,7 +60,11 @@ def test_proxmox_identity_name_and_new_classification():
     assert review.items[0].classification.value == 'MANAGED'
     assert review.items[1].reason_code == 'PROXMOX_NETWORK_REFERENCES_MISSING'
     assert review.items[1].classification.value == 'UNSUPPORTED'
-    assert review.items[1].properties['missing_references'][0]['target'] == 'customer-bridge'
+    assert 'customer-bridge' in review.items[1].reason
+    from dataclasses import asdict
+    from netbox_sync.api.dto import DiscoveryResultDTO
+    public = DiscoveryResultDTO.model_validate(asdict(review))
+    assert public.items[1].reason_code == 'PROXMOX_NETWORK_REFERENCES_MISSING'
 
 
 def test_proxmox_management_ip_is_review_evidence_not_ownership():
