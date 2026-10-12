@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Uses the existing accepted bindings and imported registry. No credentials/API calls.
 set -Eeuo pipefail
+[[ $# -eq 0 || ( $# -eq 1 && $1 == --apply ) ]] || { echo 'Usage: project-selectel-ipam-test.sh [--apply]' >&2; exit 1; }
 [[ $EUID -eq 0 && $(hostname -s) == netbox-test ]] || { echo 'Run as root on netbox-test only.' >&2; exit 1; }
 REPO=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 RELEASE=$(git -C "$REPO" rev-parse HEAD)
@@ -35,11 +36,15 @@ NONCE=$(python3 -c 'import uuid; print(uuid.uuid4())')
     '[[ $(docker image inspect "$IMAGE" --format '\''{{index .Config.Labels "org.opencontainers.image.revision"}}'\'') == "$EXPECTED_RELEASE" ]]'
   printf 'docker exec netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py selectel_ipam --actor admin --request %q --apply --fingerprint %q --nonce %q\n' \
     "$CONTAINER_WORK/request.json" "$FINGERPRINT" "$NONCE"
-  printf 'docker exec netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py selectel_ipam --actor admin --request %q --output %q\n' \
-    "$CONTAINER_WORK/request.json" "$CONTAINER_WORK/verify-$NONCE.json"
-  printf 'docker cp %q %q\n' "netbox:$CONTAINER_WORK/verify-$NONCE.json" "$WORK/verify.json"
+  printf '%s\n' 'VERIFY_DIR=$(docker exec netbox mktemp -d /tmp/selectel-ipam-verify.XXXXXX)'
+  printf 'docker exec netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py selectel_ipam --actor admin --request %q --output "$VERIFY_DIR/verify.json"\n' \
+    "$CONTAINER_WORK/request.json"
+  printf 'docker cp "netbox:$VERIFY_DIR/verify.json" %q\n' "$WORK/verify.json"
   printf 'python3 -c %q %q\n' 'import json,sys; r=json.load(open(sys.argv[1])); assert r["changes"] == 0, "Repeat plan has changes"; print("OK: repeat plan has no changes; management IPs preserved")' "$WORK/verify.json"
 } > "$WORK/apply.sh"
 chmod 700 "$WORK/apply.sh"
 echo "Review saved: $WORK/review.json"
 echo "Apply this reviewed plan: bash $WORK/apply.sh"
+if [[ ${1:-} == --apply ]]; then
+  bash "$WORK/apply.sh"
+fi

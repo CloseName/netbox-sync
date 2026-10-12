@@ -13,7 +13,11 @@ BEGIN
       END IF;
       candidate := to_jsonb(NEW);
       FOR field_name, expected IN SELECT * FROM jsonb_each(record_claim.claims) LOOP
-        IF candidate -> field_name IS DISTINCT FROM expected THEN
+        IF field_name = 'address' AND TG_ARGV[0] = 'ipaddress' THEN
+          IF (candidate->>'address')::inet IS DISTINCT FROM (expected #>> '{}')::inet THEN
+            RAISE EXCEPTION 'PROVIDER_IPAM_FIELD_OWNED' USING ERRCODE = '23514';
+          END IF;
+        ELSIF candidate -> field_name IS DISTINCT FROM expected THEN
           RAISE EXCEPTION 'PROVIDER_IPAM_FIELD_OWNED' USING ERRCODE = '23514';
         END IF;
       END LOOP;

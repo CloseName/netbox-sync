@@ -27,10 +27,14 @@ guest = VirtualMachine.objects.create(name='firewall', device=host2, site=site)
 wan = VMInterface.objects.create(virtual_machine=guest, name='WAN')
 existing2 = IPAddress.objects.create(address='8.8.4.6/29', assigned_object=wan)
 mgmt = IPAddress.objects.create(address='10.24.0.2/24')
+obj.refresh_from_db()
+host2.refresh_from_db()
 obj.primary_ip4 = existing1
-obj.save()
+obj.save(update_fields=['primary_ip4', 'last_updated'])
 host2.primary_ip4 = mgmt
-host2.save()
+host2.save(update_fields=['primary_ip4', 'last_updated'])
+for baseline in (obj, host2, existing1, existing2):
+    baseline.refresh_from_db()
 old_hosts = [state(obj), state(host2)]
 old_ips = [state(existing1), state(existing2)]
 rejected(lambda: prepare(unprivileged, request), (DependencyGuardBlocked,))
@@ -102,5 +106,14 @@ assert created.assigned_object_id is None and created.nat_inside_id is None
 assert Prefix.objects.filter(prefix='8.8.8.8/32').count() == 1
 host2.refresh_from_db()
 assert host2.primary_ip4_id == mgmt.pk
+assert prepare(admin, request)['changes'] == 0
+# PostgreSQL inet's /32 display must not make a harmless update fail the guard.
+s2['sections']['public_ips']['data'].append({'uuid': 'ip-d', 'resource_uuid': 'server-b', 'ip': '8.8.8.9',
+    'subnet_uuid': 'subnet-d', 'subnet': '8.8.8.9/32', 'network_uuid': 'unreported', 'netmask': '255.255.255.255'})
+s2['sections']['public_subnets']['data'].append({'uuid': 'subnet-d', 'subnet': '8.8.8.9/32', 'network_uuid': 'unreported'})
+ProviderInventory.objects.filter(pk=binding2.provider_key).update(snapshot=s2)
+last = prepare(admin, request)
+apply(admin, uuid4(), request, last['fingerprint'])
+IPAddress.objects.filter(address='8.8.8.9/32', vrf=None).update(description='allowed')
 assert prepare(admin, request)['changes'] == 0
 print('Native IPAM: scoped adoption, guest assignments, shared prefix, masks, permissions, rollback, replay, SQL guards, HTML and no-op OK')

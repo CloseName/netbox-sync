@@ -11,7 +11,7 @@ from django.apps import apps
 from django.db import connection, transaction
 from .models import (ProviderBinding, ProviderInventory, ProviderIPAMObject,
                      ProviderNetworkLink, ProviderIPAMReceipt)
-from .provider_policy import digest
+from .provider_policy import digest, identity
 from .service import _permission
 from .selectel_ipam_policy import project, require
 
@@ -73,6 +73,7 @@ def prepare(user, request):
         require(obj.created == binding.object_created, 'TARGET_RECREATED')
         inventory = ProviderInventory.objects.filter(pk=binding.provider_key, account=request['account']).first()
         require(inventory is not None, 'INVENTORY_MISSING')
+        require(identity(inventory.snapshot['identity'], 'device') == binding.provider_key, 'INVENTORY_IDENTITY_CONFLICT')
         value = project(inventory.snapshot)
         for k, spec in value['objects'].items():
             require(k not in objects or objects[k] == spec, 'CROSS_RESOURCE_CONFLICT')
@@ -122,13 +123,14 @@ def prepare(user, request):
             if native:
                 require(not ProviderIPAMObject.objects.filter(kind=kind, object_id=native.pk).exists(), 'NATIVE_ALREADY_OWNED')
         assigned = None
+        owners = {bindings[l['binding']].object_id for l in links if l['native'] == k and l['relation'] == 'allocation'}
+        if kind == 'ipaddress':
+            require(len(owners) == 1, 'ADDRESS_MULTI_OWNER')
         if native:
             permission(user, native, 'view')
             permission(user, native, 'change')
             before = state(native)
             if kind == 'ipaddress':
-                owners = {bindings[l['binding']].object_id for l in links if l['native'] == k and l['relation'] == 'allocation'}
-                require(len(owners) == 1, 'ADDRESS_MULTI_OWNER')
                 assigned = assignment(user, native, owners)
             # Existing identity or routing-domain changes are never silent fixes.
             for field, expected in fields.items():
