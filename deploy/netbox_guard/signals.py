@@ -20,3 +20,5 @@ def prepare_managed_fields(sender, using, **kwargs):
     if sender.name == 'netbox_guard':
         from .managed_fields import configure_managed_fields
         configure_managed_fields(using)
+        from .provider_schema import configure_provider_fields
+        configure_provider_fields(using)

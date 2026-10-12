@@ -1,0 +1,40 @@
+name: Selectel Guard integration
+on:
+  push:
+    branches: [feat/selectel-guard-bindings]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  disposable-netbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: |
+          python -m unittest tests.test_provider_policy
+          python -m unittest discover -s tools/selectel_audit -t . -p 'test_*.py'
+      - name: Prepare disposable PostgreSQL
+        run: |
+          docker run -d --name provider-test-pg --network none \
+            -e POSTGRES_HOST_AUTH_METHOD=trust postgres:16
+          for attempt in $(seq 1 60); do
+            if docker exec provider-test-pg pg_isready -U postgres; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Test actual NetBox and SQL triggers
+        run: |
+          docker run --rm --network container:provider-test-pg \
+            --mount type=bind,src="$PWD",dst=/app,readonly \
+            --mount type=bind,src="$PWD/tests/netbox_guard_plugins.py",dst=/etc/netbox/config/plugins.py,readonly \
+            -e PYTHONPATH=/app/deploy -e NETBOX_SYNC_ISOLATED_MODEL_TEST=1 \
+            -e NETBOX_SYNC_MODEL_DB=netbox_sync_guard_test \
+            --entrypoint /opt/netbox/venv/bin/python netboxcommunity/netbox:v4.7.0 \
+            /app/tests/netbox_provider_binding_scenario.py
+      - name: Remove disposable database container
+        if: always()
+        run: docker rm -f -v provider-test-pg

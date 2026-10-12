@@ -7,6 +7,7 @@ from pathlib import Path
 from .review import inventory, match_candidates
 from .contextual_review import contextual_review
 from .coverage import summarize, resource_counts
+from .field_contract import ownership_review, CUSTOM_FIELDS
 
 
 def html_report(document, rows):
@@ -23,6 +24,10 @@ def html_report(document, rows):
             details += '<br>Связанные гостевые VM: ' + esc(', '.join(str(x['id']) + ' ' + x['name'] for x in row['related_vms']))
         if row.get('unscoped_ip_matches'):
             details += '<br>Совпадения частных IP без карты сетей: ' + esc(', '.join(x['name'] for x in row['unscoped_ip_matches']))
+        contract = ownership_review(row)
+        details += '<details><summary>Иерархия и владельцы полей</summary><p>' + esc(' → '.join(contract['hierarchy'])) + '</p>'
+        details += '<p>' + esc(contract['prerequisite']) + '</p><p>Связь не подтверждена; запись запрещена.</p><ul>'
+        details += ''.join('<li>' + esc(f"{r['field']}: {r['authority']}. {r['rule']}") + '</li>' for r in contract['field_rules']) + '</ul></details>'
         tr.append('<tr>' + ''.join('<td>' + esc(row[k]) + '</td>' for k in
             ('kind', 'name', 'project', 'region', 'provider_id')) +
             '<td>' + '<br>'.join(map(esc, row['addresses'])) + '</td><td><span class="badge">' +
@@ -84,6 +89,12 @@ def write_report(document, directory, netbox=None):
         match_candidates(rows, netbox)
         rows = contextual_review(rows, netbox)
     document['review'] = rows
+    document['integration_contract'] = {
+        'stage': 'review_only', 'writes_enabled': False,
+        'resources': [ownership_review(row) for row in rows],
+        'custom_field_manifest': CUSTOM_FIELDS,
+        'schema_status': 'not_checked',
+    }
     if netbox:
         document['netbox'] = netbox
     def write(name, value):

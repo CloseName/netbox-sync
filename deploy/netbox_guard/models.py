@@ -1,6 +1,46 @@
 """Independent records survive removal of the infrastructure objects."""
 from django.db import models
 
+
+class ProviderBinding(models.Model):
+    """Accepted provider identity; independent of hypervisor sync_identities."""
+    provider_key = models.CharField(max_length=512, unique=True)
+    account = models.CharField(max_length=128)
+    resource = models.CharField(max_length=16)
+    object_id = models.PositiveBigIntegerField()
+    object_created = models.DateTimeField()
+    revision = models.PositiveBigIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        default_permissions = ()
+        permissions = [('manage_providerbinding', 'Review and accept provider bindings')]
+        constraints = [models.UniqueConstraint(fields=('resource', 'object_id'), name='guard_provider_target')]
+
+
+class ProviderFieldClaim(models.Model):
+    binding = models.ForeignKey(ProviderBinding, on_delete=models.PROTECT)
+    field = models.CharField(max_length=128)
+    value = models.JSONField(null=True)
+
+    class Meta:
+        default_permissions = ()
+        constraints = [models.UniqueConstraint(fields=('binding', 'field'), name='guard_provider_field')]
+
+
+class ProviderBindingChange(models.Model):
+    nonce = models.UUIDField(primary_key=True)
+    binding = models.ForeignKey(ProviderBinding, on_delete=models.PROTECT)
+    actor = models.CharField(max_length=128)
+    digest = models.CharField(max_length=64)
+    before = models.JSONField()
+    after = models.JSONField()
+    reason = models.CharField(max_length=500)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        default_permissions = ()
+
 class CreationClaim(models.Model):
     resource = models.CharField(max_length=16)
     object_id = models.PositiveBigIntegerField()
