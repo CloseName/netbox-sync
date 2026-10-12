@@ -46,6 +46,16 @@ def document(user, kind, pk):
             if visible(user, nic) and visible(user, parent):
                 row['assignment'] = {'kind': nic._meta.label_lower, 'id': nic.pk,
                     'label': str(parent) + ' / ' + str(nic), 'url': nic.get_absolute_url()}
+                from .host_network_paths import paths
+                if nic._meta.label_lower == 'dcim.interface' and nic.device_id == device.pk:
+                    row['host_path'] = paths(device.custom_field_data or {}, interface=nic.name)
+                elif nic._meta.label_lower == 'virtualization.vminterface' and parent.device_id == device.pk:
+                    fields = nic.custom_field_data or {}
+                    host_instances = {i.get('instance') for i in (device.custom_field_data or {}).get('sync_identities', []) if isinstance(i, dict)}
+                    nic_instances = {i.get('instance') for i in fields.get('sync_identities', []) if isinstance(i, dict)}
+                    if fields.get('source_bridge') and (host_instances & nic_instances) - {None}:
+                        row['host_path'] = paths(device.custom_field_data or {}, bridge=fields['source_bridge'])
+
         if link.relation == 'attachment':
             row['provider_ports'] = link.evidence.get('ports', [])
             row['host_interface'] = None

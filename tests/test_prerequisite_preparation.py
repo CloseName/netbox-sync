@@ -332,7 +332,7 @@ def test_first_install_json_is_hidden_only_when_guard_has_a_panel():
     spec = importlib.util.spec_from_file_location('guard_display_contract', root / 'deploy/netbox_guard/display.py')
     display = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(display)
-    rendered = (set(display.FIELD_LABELS) - {'physical_disks'}) | {'esxi_host_network', 'pfsense_inventory', 'pfsense_network', 'sync_disk_identity'}
+    rendered = (set(display.FIELD_LABELS) - {'physical_disks'}) | {'proxmox_host_network', 'esxi_host_network', 'pfsense_inventory', 'pfsense_network', 'sync_disk_identity'}
     json_fields = {name for name, (kind, _) in FIELDS.items() if kind == 'json'}
     assert json_fields == rendered | {'esxi_events'}  # Deliberately API-only alert evidence.
     for name in FIELDS:

@@ -1,5 +1,5 @@
 <div class="card">
-  <h2 class="card-header">Сеть хоста ESXi</h2>
+  <h2 class="card-header">{{ network_title|default:"Сеть хоста ESXi" }}</h2>
   <div class="card-body">
     <p class="text-muted">{{ network_panel.message }}</p>
     {% for note in network_panel.notes %}<p class="text-warning">{{ note }}</p>{% endfor %}

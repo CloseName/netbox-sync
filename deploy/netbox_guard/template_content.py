@@ -28,6 +28,19 @@ class EsxiNetworkDetails(PluginTemplateExtension):
         return self.render('netbox_guard/esxi_network.html', extra_context={'network_panel': panel})
 
 
+class ProxmoxNetworkDetails(PluginTemplateExtension):
+    models = ['dcim.device']
+
+    def full_width_page(self):
+        from .network_display import proxmox_panel
+        obj = self.context['object']
+        panel = proxmox_panel((obj.custom_field_data or {}).get('proxmox_host_network'))
+        if panel is None:
+            return ''
+        return self.render('netbox_guard/esxi_network.html', extra_context={
+            'network_panel': panel, 'network_title': 'Сеть хоста Proxmox'})
+
+
 class PfsenseNetworkDetails(PluginTemplateExtension):
     models = ['virtualization.virtualmachine']
 
@@ -86,4 +99,4 @@ class ProviderNetworks(PluginTemplateExtension):
         return self.render('netbox_guard/provider_networks.html', extra_context={'provider_networks': value})
 
 
-template_extensions = [NetworkLinks, EsxiNetworkDetails, PfsenseInventoryDetails, ProviderNetworks]
+template_extensions = [NetworkLinks, EsxiNetworkDetails, ProxmoxNetworkDetails, PfsenseInventoryDetails, ProviderNetworks]

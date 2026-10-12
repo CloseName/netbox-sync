@@ -11,6 +11,9 @@
         <td>{% if link.prefix %}<a href="{{ link.prefix.url }}">{{ link.prefix.label }}</a>{% endif %}
             {% if link.vlan %}<a href="{{ link.vlan.url }}">{{ link.vlan.label }}</a>{% endif %}</td>
         <td>{% if link.assignment %}<a href="{{ link.assignment.url }}">{{ link.assignment.label }}</a>
+              {% if link.host_path %}<div class="small text-muted">Путь по конфигурации хоста ({{ link.host_path.status }}):
+              {% for path in link.host_path.paths %}<div>{{ path|join:" → " }}</div>{% empty %}Недостаточно сведений.{% endfor %}
+              Порт Selectel не подтверждён; путь не доказывает доступность или NAT.</div>{% endif %}
             {% elif link.relation == 'allocation' %}Не подтверждено / недоступно
             {% elif link.relation == 'attachment' %}{% for port in link.provider_ports %}Порт провайдера: {{ port.port_name }}{% if not forloop.last %}; {% endif %}{% endfor %}. Интерфейс хоста не сопоставлен.
             {% else %}—{% endif %}</td>

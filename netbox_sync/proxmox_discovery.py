@@ -56,10 +56,10 @@ def _warn_malformed(kind, source_config):
 
 
 
-def _discover_host_interfaces(pve_api, node_name):
+def _discover_host_interfaces(pve_api, node_name, rows=None):
     discovered = []
 
-    for raw in pve_api.nodes(node_name).network.get():
+    for raw in (pve_api.nodes(node_name).network.get() if rows is None else rows):
         name = raw.get('iface')
 
         if not name:
@@ -168,6 +168,9 @@ def discover_hosts(pve_api, source_config) -> list[DiscoveredHost]:
         if pve_version and pve_version.startswith('pve-manager/'):
             pve_version = pve_version.split('/', 2)[1]
 
+        from .proxmox_host_network import snapshot
+        network_rows = pve_api.nodes(node_name).network.get()
+
         hosts.append(
             DiscoveredHost(
                 source='proxmox',
@@ -196,7 +199,8 @@ def discover_hosts(pve_api, source_config) -> list[DiscoveredHost]:
                     node_name,
                     source_config,
                 ),
-                interfaces=_discover_host_interfaces(pve_api, node_name),
+                interfaces=_discover_host_interfaces(pve_api, node_name, network_rows),
+                proxmox_host_network=snapshot(network_rows),
             )
         )
 

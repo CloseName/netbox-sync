@@ -9,6 +9,7 @@ MANAGED_DEVICE_CUSTOM_FIELDS = (
     'cpu_threads',
     'memory_mb',
     'esxi_host_network',
+    'proxmox_host_network',
 )
 
 from .source_identity import (
@@ -98,5 +99,9 @@ def build_device_custom_fields(
     if host.source == 'esxi' and host.esxi_host_network is not None:
         from copy import deepcopy
         result['esxi_host_network'] = deepcopy(host.esxi_host_network)
+
+    if host.source == 'proxmox' and host.proxmox_host_network is not None:
+        from copy import deepcopy
+        result['proxmox_host_network'] = deepcopy(host.proxmox_host_network)
 
     return result

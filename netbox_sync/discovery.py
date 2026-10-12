@@ -77,6 +77,7 @@ class DiscoveredHost:
     containers: list['DiscoveredContainer'] = field(default_factory=list)
     esxi_events: dict | None = None
     esxi_host_network: dict | None = None
+    proxmox_host_network: dict | None = None
     connection_management: dict | None = None
 
 

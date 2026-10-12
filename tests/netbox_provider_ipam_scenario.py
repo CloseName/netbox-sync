@@ -131,3 +131,32 @@ bad_request = copy.deepcopy(request)
 bad_request['targets'][0]['provider_key'] = 'wrong-resource'
 rejected(lambda: prepare(admin, bad_request), (ValueError,))
 print('Operator native IPAM command, review export and target pinning OK')
+# Provider allocation paths use current assignments and actual VM host placement.
+# Neither the read API nor HTML rendering writes native IPAM or provider edges.
+with transaction.atomic():
+    from netbox_guard.managed_fields import configure_managed_fields
+    configure_managed_fields()
+    assert CustomField.objects.get(name='proxmox_host_network').ui_visible == 'hidden'
+    topology = {'version': 1, 'available': True, 'interfaces': [
+        {'name': 'vmbr0', 'type': 'bridge', 'bridge_ports': ['eno1']},
+        {'name': 'eno1', 'type': 'eth'}]}
+    host2.refresh_from_db()
+    host2.custom_field_data.update({'proxmox_host_network': topology,
+        'sync_identities': [{'instance': 'test-pve'}]})
+    host2.save(update_fields=['custom_field_data'])
+    VMInterface.objects.filter(pk=wan.pk).update(custom_field_data={
+        'source_bridge': 'vmbr0', 'sync_identities': [{'instance': 'test-pve'}]})
+    doc = network_document(admin, 'device', host2.pk)
+    row = next(r for r in doc['links'] if r['native']['id'] == existing2.pk and r['relation'] == 'allocation')
+    assert row['host_path']['paths'] == [['vmbr0', 'eno1']]
+    assert row['host_path']['provider_port_confirmed'] is False
+    html = render_to_string('netbox_guard/provider_networks.html', {'provider_networks': doc})
+    assert 'eno1' in html
+    # Unrelated source bridge metadata cannot be joined to this host.
+    VMInterface.objects.filter(pk=wan.pk).update(custom_field_data={
+        'source_bridge': 'vmbr0', 'sync_identities': [{'instance': 'other-host'}]})
+    row = next(r for r in network_document(admin, 'device', host2.pk)['links'] if r['native']['id'] == existing2.pk and r['relation'] == 'allocation')
+    assert 'host_path' not in row
+    assert prepare(admin, request)['changes'] == 0
+    transaction.set_rollback(True)
+print('Configured topology read model, source scoping, HTML and unchanged native IPAM OK')

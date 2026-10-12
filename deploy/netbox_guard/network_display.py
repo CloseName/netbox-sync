@@ -56,3 +56,20 @@ def network_panel(value):
     return {'message': 'Снимок последнего применённого сбора ESXi. '
                        'Эти сведения не создают интерфейсы, кабели или назначения IP в NetBox.',
             'tables': tables, 'notes': notes}
+
+
+def proxmox_panel(value):
+    if value is None:
+        return None
+    if not isinstance(value, dict) or value.get('version') != 1:
+        return {'message': 'Формат снимка Proxmox не поддерживается.', 'tables': [], 'notes': []}
+    columns = ['Интерфейс', 'Тип', 'Активен', 'Порты bridge', 'Участники bond',
+               'Режим bond', 'Родитель VLAN', 'VLAN ID', 'VLAN aware', 'MTU', 'MAC', 'IPv4', 'IPv6', 'Ожидающие изменения']
+    keys = ['name', 'type', 'active', 'bridge_ports', 'bond_slaves', 'bond_mode',
+            'vlan_parent', 'vlan_id', 'vlan_aware', 'mtu', 'mac', 'cidr', 'cidr6', 'pending']
+    return {'message': 'Конфигурация из API Proxmox при последнем применённом сборе. '
+                       'Не подтверждает кабельное соединение, доступность или NAT. '
+                       'Наличие ожидающих применения изменений может быть неизвестно.',
+            'tables': [{'title': 'Bridge, bond и VLAN', 'columns': columns,
+                        'rows': [[cell(r.get(k)) for k in keys] for r in value.get('interfaces', []) if isinstance(r, dict)]}],
+            'notes': []}
