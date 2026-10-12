@@ -26,6 +26,14 @@ jobs:
             sleep 1
           done
           exit 1
+      - name: Prepare disposable Redis
+        run: |
+          docker run -d --name provider-test-redis --network container:provider-test-pg redis:7-alpine
+          for attempt in $(seq 1 30); do
+            if docker exec provider-test-redis redis-cli ping; then exit 0; fi
+            sleep 1
+          done
+          exit 1
       - name: Test actual NetBox and SQL triggers
         run: |
           docker run --rm --network container:provider-test-pg \
@@ -37,4 +45,4 @@ jobs:
             /app/tests/netbox_provider_binding_scenario.py
       - name: Remove disposable database container
         if: always()
-        run: docker rm -f -v provider-test-pg
+        run: docker rm -f -v provider-test-redis provider-test-pg

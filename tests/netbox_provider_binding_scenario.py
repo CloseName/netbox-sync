@@ -32,7 +32,7 @@ def rejected(action, errors=(IntegrityError,)):
 
 
 with transaction.atomic():
-    admin = get_user_model().objects.create(username='provider-fixture', is_superuser=True, is_staff=True)
+    admin = get_user_model().objects.create(username='provider-fixture', is_superuser=True)
     unprivileged = get_user_model().objects.create(username='provider-fixture-no-permission')
     site = Site.objects.create(name='Provider test', slug='provider-test')
     maker = Manufacturer.objects.create(name='Provider fixture', slug='provider-fixture')
@@ -41,6 +41,8 @@ with transaction.atomic():
     obj = Device.objects.create(name='preserved-host', site=site, device_type=dtype, role=role)
     original_created = obj.created
     configure_provider_fields()
+    identity_field, _ = CustomField.objects.get_or_create(name='sync_identities', defaults={'type': 'json'})
+    identity_field.object_types.add(identity_field.object_types.model.objects.get(app_label='dcim', model='device'))
     ids = list(CustomField.objects.filter(name__startswith='selectel_').values_list('id', flat=True))
     configure_provider_fields()
     assert ids == list(CustomField.objects.filter(name__startswith='selectel_').values_list('id', flat=True))
