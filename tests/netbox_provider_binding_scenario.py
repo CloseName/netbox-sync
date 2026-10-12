@@ -3,6 +3,7 @@ import copy
 import runpy
 from pathlib import Path
 from uuid import uuid4
+from unittest.mock import patch
 
 runpy.run_path(str(Path(__file__).with_name('netbox_model_scope_scenario.py')))
 from django.db import connection, transaction, IntegrityError
@@ -11,6 +12,7 @@ from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from dcim.models import Device, DeviceType, DeviceRole, Manufacturer, Site
 from extras.models import CustomField
+from virtualization.models import VirtualMachine
 from netbox_guard.models import ProviderBinding, ProviderFieldClaim, ProviderBindingChange
 from netbox_guard.provider_schema import configure_provider_fields
 from netbox_guard.provider_service import review_binding, apply_binding
@@ -87,6 +89,22 @@ with transaction.atomic():
     obj.refresh_from_db()
     assert obj.serial == 'SN456' and obj.custom_field_data['sync_identities'][0]['external_id'] == 'h1'
     assert ProviderFieldClaim.objects.get(field='serial').value == 'SN456'
+    failed = dict(update, serial='SN789')
+    failed_preview = review_binding(admin, failed)
+    before_count = ProviderBindingChange.objects.count()
+    with patch.object(Device, 'save', side_effect=ValidationError('fixture refusal')):
+        rejected(lambda: apply_binding(admin, uuid4(), failed, failed_preview['fingerprint']), (ValidationError,))
+    obj.refresh_from_db()
+    assert obj.serial == 'SN456'
+    assert ProviderFieldClaim.objects.get(field='serial').value == 'SN456'
+    assert ProviderBindingChange.objects.count() == before_count
     rejected(lambda: Device.objects.filter(pk=duplicate.pk).update(custom_field_data={'selectel_summary': 'forged'}))
+    vm = VirtualMachine.objects.create(name='cloud-fixture')
+    vm_spec = dict(payload, resource='vm', object_id=vm.pk, serial=None,
+                  identity={'account': 'fixture', 'kind': 'cloud_vm', 'native_id': 'vm-a', 'project': 'p', 'region': 'r'})
+    vm_preview = review_binding(admin, vm_spec)
+    apply_binding(admin, uuid4(), vm_spec, vm_preview['fingerprint'])
+    rejected(lambda: VirtualMachine.objects.filter(pk=vm.pk).update(custom_field_data={}))
+    rejected(lambda: VirtualMachine.objects.filter(pk=vm.pk).delete())
     transaction.set_rollback(True)
 print('Provider schema, bindings, stale review, replay, permission and PostgreSQL overwrite/delete protection OK; fixtures rolled back')

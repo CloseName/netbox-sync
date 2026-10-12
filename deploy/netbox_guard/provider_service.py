@@ -32,6 +32,7 @@ def _spec(spec):
 def _read(user, spec, *, lock=False):
     _spec(spec)
     _permission(user, 'manage_providerbinding')
+    user = type(user).objects.get(pk=user.pk)
     check_schema()
     model = apps.get_model(MODELS[spec['resource']])
     query = model.objects.select_for_update() if lock else model.objects
@@ -62,6 +63,9 @@ def review_binding(user, spec):
     obj, binding, before, proposed = _read(user, spec)
     return {'fingerprint': digest({'spec': spec, 'before': before}),
             'binding_revision': before['binding_revision'], 'object_id': obj.pk,
+            'object_name': obj.name, 'current_claims': before['claims'],
+            'current_values': {field: ((obj.custom_field_data or {}).get(field.split('.', 1)[1])
+                if field.startswith('custom_fields.') else getattr(obj, field)) for field in proposed},
             'provider_key': identity(spec['identity'], spec['resource']),
             'proposed_claims': proposed, 'writes_performed': False}
 
