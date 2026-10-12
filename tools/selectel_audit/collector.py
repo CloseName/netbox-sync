@@ -109,7 +109,7 @@ class Collector:
                 'API permissions may hide projects/resources even with HTTP 200.',
                 'Collected means enumeration succeeded for this endpoint, not full-account certification.',
                 'Catalog presence does not prove that a product has purchased resources.',
-                'No S3 objects, DNS record contents, secrets, user-data, console or guest files are read.',
+                'No S3 objects, DNS record contents, console or guest files are requested; secrets are excluded from exports.',
                 'Unsupported products are reported; no writes or automatic NetBox adoption occur.',
             ],
         }
@@ -141,6 +141,15 @@ class Collector:
                     *[prefix + suffix for prefix in ('', 'local_')
                       for suffix in ('ipv4_address', 'ipv4_gateway', 'ipv4_netmask',
                                      'ipv6_address', 'ipv6_gateway', 'ipv6_netmask')]}}
+                def scalar_fields(obj, names):
+                    return {k: v for k, v in obj.items() if k in names and
+                            (v is None or type(v) in (str, int, float, bool))} if isinstance(obj, dict) else {}
+                if isinstance(value.get('partitions'), list):
+                    value['partitions'] = [scalar_fields(v, ('expand', 'fstype', 'mount', 'size'))
+                                           for v in value['partitions']]
+                if isinstance(value.get('partitions_config'), dict):
+                    value['partitions_config'] = {k: scalar_fields(v, ('type', 'device', 'fstype', 'mount', 'size', 'level'))
+                                                  for k, v in value['partitions_config'].items()}
             items, status = [value], 'collected'
         except AuditError as exc:
             items, status = [], str(exc)

@@ -17,6 +17,7 @@ jobs:
       - run: |
           python -m unittest tests.test_provider_policy tests.test_selectel_inventory
           python -m unittest discover -s tools/selectel_audit -t . -p 'test_*.py'
+          bash -n deploy/update-selectel-test.sh deploy/collect-selectel-test.sh
       - name: Prepare disposable PostgreSQL
         run: |
           docker run -d --name provider-test-pg --network none \

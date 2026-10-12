@@ -52,12 +52,17 @@ def _prepare(user, document, evidence_digest, *, lock=False):
                                     for k, v in snapshot['sections'].items()}})
         plans.append((key, snapshot, old, binding, obj, before, claims, changed, projection_changed))
     missing = sorted(set(old_records) - set(records))
+    issues = [{k: row.get(k) for k in ('service', 'kind', 'project', 'region', 'status', 'count')}
+              for row in document.get('coverage', []) if isinstance(row, dict)
+              and row.get('service') in ('dedicated', 'compute', 'network', 'volumev2', 'volumev3', 'image', 'identity', 'iam', 'resell')
+              and row.get('status') != 'collected' and not str(row.get('status', '')).startswith('SKIPPED_')]
     fingerprint = digest({'evidence_digest': evidence_digest, 'account': inventory.account, 'state': state,
                           'missing': missing})
     return inventory, plans, {'fingerprint': fingerprint, 'account': inventory.account,
         'server_count': len(records), 'bound_count': sum(x['target'] is not None for x in report),
         'unmatched_count': sum(x['target'] is None for x in report), 'missing_retained': missing,
-        'resources': report, 'writes_performed': False}
+        'resources': report, 'collection_issues': issues,
+        'account_completeness': 'not_proven', 'writes_performed': False}
 
 
 def review_inventory(user, document, evidence_digest):
