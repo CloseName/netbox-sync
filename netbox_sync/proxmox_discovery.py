@@ -200,9 +200,13 @@ def discover_hosts(pve_api, source_config) -> list[DiscoveredHost]:
                     source_config,
                 ),
                 interfaces=_discover_host_interfaces(pve_api, node_name, network_rows),
-                proxmox_host_network=snapshot(network_rows),
             )
         )
+        host = hosts[-1]
+        host.proxmox_host_network = snapshot(network_rows, guest_bridges=[
+            nic.bridge for guest in [*host.virtual_machines, *host.containers]
+            for nic in guest.interfaces if nic.bridge
+        ])
 
     return hosts
 

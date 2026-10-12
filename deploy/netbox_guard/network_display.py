@@ -48,6 +48,17 @@ def network_panel(value):
     add('vmkernel', 'VMkernel-интерфейсы',
         ['Интерфейс', 'Подключение', 'MAC', 'IPv4', 'Маска', 'IPv6', 'MTU', 'DHCP'], kernel)
     notes = []
+    neighbors = value.get('neighbors')
+    if isinstance(neighbors, dict):
+        labels = {'collected': 'получены объявления соседей', 'empty': 'объявлений нет',
+                  'denied': 'API отказал в доступе', 'unsupported': 'API не поддерживается',
+                  'unavailable': 'сбор недоступен', 'error': 'ошибка чтения API'}
+        notes.append('CDP/LLDP: ' + labels.get(neighbors.get('status'), 'неизвестный статус') +
+                     '. Объявление соседа не подтверждает прямой кабель или порт Selectel.')
+        tables.append({'title': 'Наблюдения CDP/LLDP',
+                       'columns': ['Адаптер', 'Протокол', 'Chassis / device ID', 'Порт соседа', 'Имя соседа', 'Платформа'],
+                       'rows': [[cell(r.get(k)) for k in ('interface', 'protocol', 'chassis_id', 'port_id', 'system_name', 'platform')]
+                                for r in neighbors.get('observations', []) if isinstance(r, dict)]})
     for key, label in [('distributed_switch_count', 'Распределённые коммутаторы'),
                        ('opaque_switch_count', 'Opaque-коммутаторы')]:
         count = value.get(key, 0)
@@ -67,9 +78,15 @@ def proxmox_panel(value):
                'Режим bond', 'Родитель VLAN', 'VLAN ID', 'VLAN aware', 'MTU', 'MAC', 'IPv4', 'IPv6', 'Ожидающие изменения']
     keys = ['name', 'type', 'active', 'bridge_ports', 'bond_slaves', 'bond_mode',
             'vlan_parent', 'vlan_id', 'vlan_aware', 'mtu', 'mac', 'cidr', 'cidr6', 'pending']
+    coverage = value.get('coverage') or {}
+    missing = coverage.get('missing_references', [])
+    notes = [f"Не найден в ответе API: {r.get('target')} (источник: {r.get('source')}, связь: {r.get('relation')})."
+             for r in missing if isinstance(r, dict)]
+    if missing:
+        notes.append('Возможны ограничения прав или неполная конфигурация. Проверьте доступ токена к указанным мостам; причина автоматически не подтверждена.')
     return {'message': 'Конфигурация из API Proxmox при последнем применённом сборе. '
                        'Не подтверждает кабельное соединение, доступность или NAT. '
                        'Наличие ожидающих применения изменений может быть неизвестно.',
             'tables': [{'title': 'Bridge, bond и VLAN', 'columns': columns,
                         'rows': [[cell(r.get(k)) for k in keys] for r in value.get('interfaces', []) if isinstance(r, dict)]}],
-            'notes': []}
+            'notes': notes}

@@ -470,6 +470,11 @@ def discover_hosts(service_instance, source_config):
         with stage('esxi_conversion', reads) as stats:
             result = _convert_hosts(hosts, source_config)
             stats['objects'] = sum(1+len(host.virtual_machines) for host in result)
+        from .esxi_network_neighbors import collect_neighbors
+        with stage('esxi_neighbors', reads):
+            for raw_host, host in zip(hosts, result):
+                if host.esxi_host_network and host.esxi_host_network.get('available'):
+                    host.esxi_host_network['neighbors'] = collect_neighbors(raw_host)
         from .esxi_events import collect_events
         with stage('esxi_events', reads):
             for raw_host, host in zip(hosts, result):

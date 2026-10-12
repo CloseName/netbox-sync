@@ -1,6 +1,8 @@
 """Permission-filtered, read-only topology inspection; no network calls or writes."""
 import json
 from django.contrib.auth import get_user_model
+from django.apps import apps
+from django.shortcuts import get_object_or_404
 from django.core.management.base import BaseCommand
 from django.db import connection, transaction
 from netbox_guard.provider_network_display import document
@@ -12,6 +14,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--actor', required=True)
         parser.add_argument('--device', required=True, type=int, action='append')
+        parser.add_argument('--evidence', action='store_true', help='Include stored topology diagnostics and neighbor observations.')
 
     def handle(self, **options):
         with transaction.atomic():
@@ -19,4 +22,12 @@ class Command(BaseCommand):
                 cursor.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY')
             actor = get_user_model().objects.get(username=options['actor'], is_active=True)
             result = [document(actor, 'device', pk) for pk in sorted(set(options['device']))]
+            if options['evidence']:
+                for item in result:
+                    device = get_object_or_404(apps.get_model('dcim.Device').objects.restrict(actor, 'view'), pk=item['id'])
+                    fields = device.custom_field_data or {}
+                    item['network_evidence'] = {
+                        'proxmox_coverage': (fields.get('proxmox_host_network') or {}).get('coverage'),
+                        'esxi_neighbors': (fields.get('esxi_host_network') or {}).get('neighbors'),
+                    }
             self.stdout.write(json.dumps({'writes_performed': False, 'devices': result}, ensure_ascii=False, indent=2))

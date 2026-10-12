@@ -98,6 +98,36 @@ def test_esxi_report_only_network_survives_public_discovery_contract():
     assert any(i.object_kind=='host_network' and i.classification=='UNSUPPORTED' for i in result.items)
 
 
+def test_existing_proxmox_missing_snapshot_is_planned_and_persisted_without_network_changes():
+    """Upgrade an existing host through REST, preserving IPs and provider metadata."""
+    from copy import deepcopy
+    from netbox_sync.netbox_full_apply import apply_full_sync
+    seed = FakeNetBox()
+    config = target(seed, replace(sample_source_config(), legacy_identity_owner=False))
+    hosts = discover_hosts(FakeProxmox(proxmox_responses()), config)
+    with netbox_http(seed) as (api, rows, writes):
+        apply_full_sync(api, hosts, config.target, confirmed=True)
+        device = next(iter(rows['dcim.devices'].values()))
+        device['custom_fields']['proxmox_host_network'] = None
+        device['custom_fields']['selectel_refs'] = [{'provider': 'selectel', 'account': 'test', 'native_id': 'server'}]
+        before = deepcopy(rows)
+        writes.clear()
+        plan = build_runtime_plan(api, hosts, config)
+        assert writes == []
+        updates = [item for item in plan.items if item.action.value in ('CREATE', 'UPDATE')]
+        assert len(updates) == 1
+        assert updates[0].object_kind == 'dcim.devices'
+        assert dict(updates[0].after)['custom_fields']['proxmox_host_network'] == hosts[0].proxmox_host_network
+        apply_full_sync(api, hosts, config.target, confirmed=True)
+        expected = deepcopy(before)
+        expected['dcim.devices'][device['id']]['custom_fields']['proxmox_host_network'] = hosts[0].proxmox_host_network
+        assert rows == expected
+        writes.clear()
+        repeated = build_runtime_plan(api, hosts, config)
+        assert writes == []
+        assert not [item for item in repeated.items if item.action.value in ('CREATE', 'UPDATE')]
+
+
 def test_reordered_provider_inventory_has_identical_exact_plan():
     from copy import deepcopy
     from netbox_sync.discovery import DiscoveredHostInterface

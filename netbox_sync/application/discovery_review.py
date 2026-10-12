@@ -157,6 +157,14 @@ def build_proxmox_review(nb_api, hosts, config):
     items = []
     for host in hosts:
         items.append(_proxmox_host_item(host, devices, target_devices))
+        missing = ((getattr(host, 'proxmox_host_network', None) or {}).get('coverage') or {}).get('missing_references', [])
+        if missing:
+            names = sorted({r['target'] for r in missing})
+            items.append(ReviewItem('host_network', host.normalized_name, host.source_id,
+                ReviewClassification.UNSUPPORTED, 'PROXMOX_NETWORK_REFERENCES_MISSING',
+                'Network API omitted referenced interfaces: ' + ', '.join(names) +
+                '. Check configuration and bridge permissions; insufficient permissions are not confirmed.',
+                'review', properties={'missing_references': missing}))
         items.extend(_generic_item(vm, 'qemu', virtual_machine_source_identity(vm), vms, target_vms)
                      for vm in host.virtual_machines)
         items.extend(_generic_item(lxc, 'lxc', lxc_source_identity(lxc), vms, target_vms)

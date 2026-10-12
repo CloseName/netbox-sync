@@ -2,7 +2,7 @@
 import re
 
 
-def snapshot(rows):
+def snapshot(rows, guest_bridges=()):
     def text(value):
         return str(value)[:256] if value is not None else None
 
@@ -28,6 +28,22 @@ def snapshot(rows):
             'cidr': text(row.get('cidr')), 'cidr6': text(row.get('cidr6')),
             'pending': True if row.get('changes') or row.get('changes6') else None,
         })
+    names = {r['name'] for r in interfaces}
+    references = []
+    for name in sorted(set(guest_bridges)):
+        if name and name not in names:
+            references.append({'source': 'guest', 'relation': 'bridge', 'target': text(name)})
+    for row in interfaces:
+        for relation, targets in (
+            ('bridge_port', row['bridge_ports']), ('bond_slave', row['bond_slaves']),
+            ('vlan_parent', [row['vlan_parent']] if row['vlan_parent'] else []),
+        ):
+            for target in targets:
+                if target not in names:
+                    references.append({'source': row['name'], 'relation': relation, 'target': target})
+    references.sort(key=lambda r: (r['source'], r['relation'], r['target']))
     return {'version': 1, 'available': True, 'basis': 'api_network_configuration',
+            'coverage': {'status': 'missing_references' if references else 'references_resolved',
+                         'scope': 'known_references_only', 'missing_references': references},
             'pending_state': 'unknown_response_metadata_not_available',
             'interfaces': sorted(interfaces, key=lambda r: r['name'])}

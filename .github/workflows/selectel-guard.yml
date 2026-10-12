@@ -21,7 +21,7 @@ jobs:
       - name: Test host topology and collector compatibility
         run: |
           python -m pip install -e '.[web]' pytest httpx
-          sudo "$(which python)" -m pytest -q tests/test_host_network_paths.py tests/test_proxmox_discovery.py tests/test_esxi_host_network.py tests/test_prerequisite_preparation.py
+          sudo "$(which python)" -m pytest -q tests/test_host_network_paths.py tests/test_proxmox_discovery.py tests/test_esxi_host_network.py tests/test_prerequisite_preparation.py tests/test_network_evidence.py tests/test_discovery_review.py tests/test_first_sync.py
       - name: Prepare disposable PostgreSQL
         run: |
           docker run -d --name provider-test-pg --network none \
