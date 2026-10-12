@@ -19,3 +19,7 @@ frontend/playwright-report/
 *.key
 privkey.pem
 secrets/
+
+# Private provider audit exports
+selectel-audit-output/
+audit-output/

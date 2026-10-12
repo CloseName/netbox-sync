@@ -1,0 +1,50 @@
+name: Selectel audit container
+on:
+  push:
+    branches: [feat/selectel-account-audit]
+    paths: ['tools/selectel_audit/**', '.github/workflows/selectel-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s tools/selectel_audit -t . -p 'test_*.py' -v
+      - name: Build and smoke test
+        env:
+          REVISION: ${{ github.sha }}
+        run: |
+          docker build -f tools/selectel_audit/Dockerfile --build-arg VCS_REF="$REVISION" -t selectel-audit:test .
+          docker run --rm --read-only --network none --cap-drop ALL selectel-audit:test --version
+          docker run --rm --read-only --network none --cap-drop ALL selectel-audit:test --help
+      - name: Publish versioned image
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REVISION: ${{ github.sha }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          image="ghcr.io/${OWNER,,}/netbox-sync-selectel-audit"
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$OWNER" --password-stdin
+          docker tag selectel-audit:test "$image:$REVISION"
+          docker push "$image:$REVISION"
+      - name: Export portable image
+        if: always()
+        run: |
+          if docker image inspect selectel-audit:test >/dev/null 2>&1; then
+            docker save selectel-audit:test | gzip > selectel-audit-image.tar.gz
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: selectel-audit-image
+          path: selectel-audit-image.tar.gz
+          if-no-files-found: ignore
+          retention-days: 7
