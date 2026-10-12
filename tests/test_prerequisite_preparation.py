@@ -14,7 +14,7 @@ def row(name, index=1, **changes):return {**definition(name), 'id':index, 'statu
 
 
 def test_contract_all_models_and_status_constraints():
-    assert len(FIELDS)==21
+    assert len(FIELDS)==22
     rows=[row(name,i+1) for i,name in enumerate(FIELDS)]
     assert all(f['status']=='ready' for f in reconcile(rows))
     assert all(f['status']=='missing' for f in reconcile([]))
