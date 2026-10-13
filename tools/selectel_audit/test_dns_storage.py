@@ -87,7 +87,10 @@ class DNSStorageTests(unittest.TestCase):
             buckets(c, status=status, names=())
             collect_storage_details(c, 't', catalog(), 'p')
             self.assertFalse(c.client.calls)
-            self.assertEqual({d['status'] for d in c.document['datasets']}, {status})
+            self.assertEqual(c.document['datasets'][1]['status'],
+                             'collected' if status == 'collected' else 'PARENT_COLLECTION_UNAVAILABLE')
+            self.assertFalse(c.document['datasets'][1]['request_attempted'])
+            self.assertEqual(c.document['datasets'][1]['dependency']['status'], status)
 
     def test_unmatched_region_or_ambiguous_catalog_no_requests(self):
         for cat, error in [(catalog(region='other'), 'STORAGE_ENDPOINT_NOT_IN_CATALOG'),

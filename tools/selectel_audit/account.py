@@ -89,6 +89,7 @@ def outcome(row):
         'HTTP_404': 'unavailable', 'UNSUPPORTED_SERVICE': 'unsupported',
         'PRODUCT_ADAPTER_NOT_IMPLEMENTED': 'unsupported',
         'NOT_IN_CATALOG': 'not_in_catalog', 'NOT_CHECKED': 'not_checked',
+        'PARENT_COLLECTION_UNAVAILABLE': 'not_checked',
         'UNTRUSTED_OR_INVALID_ENDPOINT': 'blocked_endpoint',
     }.get(status, 'error')
 
@@ -114,7 +115,9 @@ def scope_result(product, project, region, rows):
         seen = {r.get('kind') for r in relevant}
         sections.extend({'kind': kind, 'code': 'NOT_CHECKED', 'state': 'not_checked',
                          'observations': 0} for kind in product.sections if kind not in seen)
-    state = combine(x['state'] for x in sections)
+    # Dependent sections were not requested; keep their diagnostics without
+    # counting the parent's failure a second time.
+    state = combine(x['state'] for x in sections if x['code'] != 'PARENT_COLLECTION_UNAVAILABLE')
     roots = [r for r in relevant if r.get('kind') in product.roots]
     if state == 'collected' and roots and not any(r.get('count', 0) for r in roots):
         state = 'empty'
@@ -175,7 +178,7 @@ def account_overview(document):
     known = {s for p in PRODUCTS for s in p.services} | {'identity'}
     unknown = sorted({r.get('service') for r in coverage
                       if r.get('service') and r['service'] not in known})
-    return {'schema': 'selectel-account-overview-v1', 'capability_version': 2,
+    return {'schema': 'selectel-account-overview-v1', 'capability_version': 3,
         'account': document.get('account'), 'account_verified': document.get('account_verified', False),
         'profile': document.get('profile', 'all'), 'observed_at': document.get('finished_at'),
         'projects_visible': len(projects), 'account_completeness': 'not_proven',

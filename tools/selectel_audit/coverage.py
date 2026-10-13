@@ -3,6 +3,7 @@ from collections import Counter, defaultdict
 
 CATEGORIES = {
     'collected': 'collected',
+    'PARENT_COLLECTION_UNAVAILABLE': 'dependency_unavailable',
     'UNSUPPORTED_SERVICE': 'unsupported',
     'PRODUCT_ADAPTER_NOT_IMPLEMENTED': 'unsupported',
     'UNTRUSTED_OR_INVALID_ENDPOINT': 'blocked_endpoint',

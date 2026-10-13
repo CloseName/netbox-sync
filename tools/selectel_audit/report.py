@@ -10,6 +10,7 @@ from .coverage import summarize, resource_counts
 from .field_contract import ownership_review, CUSTOM_FIELDS
 from .account import account_overview, LABELS
 from .dns_storage import export as dns_storage_export
+from .resource_registry import registry, registry_html
 
 
 def account_html(document):
@@ -137,6 +138,9 @@ def write_report(document, directory, netbox=None):
     account = account_overview(document)
     write('account.json', json.dumps(account, ensure_ascii=False, indent=2))
     write('dns-storage.json', json.dumps(dns_storage_export(document), ensure_ascii=False, indent=2))
+    resources = registry(document)
+    write('resource-registry.json', json.dumps(resources, ensure_ascii=False, indent=2))
+    write('resource-registry.html', registry_html(resources))
     fields = [{k: x.get(k) for k in ('service', 'kind', 'project', 'region', 'fields')}
               for x in document['datasets']]
     write('fields.json', json.dumps(fields, ensure_ascii=False, indent=2))
@@ -147,6 +151,8 @@ def write_report(document, directory, netbox=None):
         'collector_version': document.get('collector_version', 'unknown'),
         'coverage_summary': summarize(document['coverage']),
         'resource_counts': resource_counts(document),
+        'registry_counts': resources['counts'],
+        'registry_unconfirmed_relations': len(resources['unconfirmed_relations']),
         'account_overview': {'schema': account['schema'], 'states': account['states'],
             'unmapped_catalog_services': account['unmapped_catalog_services'],
             'products': [{k: p[k] for k in ('product', 'adapter', 'state', 'observations_by_collection')}

@@ -85,10 +85,14 @@ def domains(obj):
     return {'domains': obj['domains']}
 
 
-def save(collector, service, kind, project, region, items, status, *, resource_id=None, pages=0):
+def save(collector, service, kind, project, region, items, status, *, resource_id=None, pages=0, dependency=None, request_attempted=None):
     context = dict(service=service, kind=kind, project=project, region=region)
     if resource_id is not None:
         context['resource_id'] = resource_id
+    if dependency is not None:
+        context['dependency'] = dependency
+    if request_attempted is not None:
+        context['request_attempted'] = request_attempted
     clean = sanitize(items, collector.credentials.secrets)
     collector.document['coverage'].append({**context, 'status': status, 'count': len(clean), 'pages': pages})
     collector.document['datasets'].append({**context, 'status': status, 'items': clean,
@@ -115,7 +119,8 @@ def collect_dns(collector, token, project):
     root_status = collector.document['coverage'][-1]['status']
     if not zones:
         save(collector, 'selectel-dns', 'rrsets', project, '', [],
-             'collected' if root_status == 'collected' else root_status)
+             'collected' if root_status == 'collected' else 'PARENT_COLLECTION_UNAVAILABLE',
+             dependency={'kind': 'zones', 'status': root_status}, request_attempted=False)
     for ident in sorted({z['id'] for z in zones}):
         collection(collector, 'selectel-dns', 'rrsets', DNS + '/zones/' + path_id(ident) + '/rrset',
                    token, 'result', 'offset', lambda obj: rrset(obj, ident), project, resource_id=ident)
@@ -148,7 +153,8 @@ def collect_storage_details(collector, token, catalog, project):
         if not ds['items']:
             for kind in ('container_options', 'container_domains'):
                 save(collector, 'storage', kind, project, region, [],
-                     'collected' if ds['status'] == 'collected' else ds['status'])
+                     'collected' if ds['status'] == 'collected' else 'PARENT_COLLECTION_UNAVAILABLE',
+                     dependency={'kind': 'buckets', 'status': ds['status']}, request_attempted=False)
             continue
         try:
             base, endpoint_error = storage_endpoint(catalog, region), None
