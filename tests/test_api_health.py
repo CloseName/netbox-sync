@@ -166,7 +166,11 @@ def test_frontend_serving_is_limited_to_build_assets(tmp_path):
     (tmp_path / 'assets').mkdir()
     (tmp_path / 'private.txt').write_text(SECRET, encoding='utf-8')
     with TestClient(create_app(ApiSettings(web_dist=str(tmp_path)))) as client:
-        assert client.get('/').status_code == 200
+        for path in ('/', '/users', '/settings', '/diagnostics', '/sources', '/sources/selectel'):
+            response = client.get(path)
+            assert response.status_code == 200, path
+            assert 'text/html' in response.headers['content-type']
+            assert 'NetBox Sync' in response.text
         assert client.get('/private.txt').status_code == 404
         response = client.get('/assets/%2e%2e/private.txt')
         assert response.status_code == 404

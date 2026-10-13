@@ -96,7 +96,7 @@ for (const [suffix, title] of [
       await expect(
         section(
           page,
-          ["configuration","diagnostics","runs"].includes(suffix)?"Overview":suffix ? suffix[0].toUpperCase() + suffix.slice(1) : "Overview",
+          suffix==="configuration"?"Connection":suffix==="sync"?"Changes":["diagnostics","runs"].includes(suffix)?"Overview":suffix ? suffix[0].toUpperCase() + suffix.slice(1) : "Overview",
         ),
       ).toHaveAttribute("aria-current", "page");
       await expect(
@@ -371,12 +371,12 @@ test("discovery persists across tabs", async ({ page }) => {
     "page",
   );
   release();
-  await section(page, "Sync").click();
+  await section(page, "Changes").click();
   await expect(
     page.getByRole("combobox", { name: /^Classification/ }),
   ).toBeVisible();
   await section(page, "Schedule").click();
-  await section(page, "Sync").click();
+  await section(page, "Changes").click();
   await expect(
     page.getByRole("combobox", { name: /^Classification/ }),
   ).toBeVisible();
@@ -416,7 +416,7 @@ test("not found differs from temporary unavailability and retries", async ({
   await expect(
     page.getByRole("heading", { name: "Source 001", exact: true }),
   ).toBeVisible();
-  await expect(page).toHaveURL(/#configuration$/);
+  await expect(page).toHaveURL(/\/configuration$/);
 });
 test("configuration, automatic sync and last outcome remain independent", async ({
   page,
@@ -521,7 +521,7 @@ test("Build plan needs no discovery, retains result and confirmation semantics a
     "aria-current",
     "page",
   );
-  await section(page, "Sync").click();
+  await section(page, "Changes").click();
   await expect(
     page.getByRole("button", { name: "Review and confirm sync", exact: true }),
   ).toBeEnabled();
@@ -535,7 +535,7 @@ test("Build plan needs no discovery, retains result and confirmation semantics a
     "aria-current",
     "page",
   );
-  await section(page, "Sync").click();
+  await section(page, "Changes").click();
   await expect(
     page.getByRole("heading", { name: "Sync completed", exact: true }),
   ).toBeVisible();
@@ -568,7 +568,7 @@ test("late plan for A cannot appear on B", async ({ page }) => {
   await expect(page.getByText(/Build plan.*Operation in progress/)).toBeVisible();
   await page.getByRole("link", { name: "Back to sources" }).click();
   await page.getByRole("link", { name: "Source 002", exact: true }).click();
-  await section(page, "Sync").click();
+  await section(page, "Changes").click();
   await expect(page).toHaveURL(/source-2\/sync$/);
   release();
   await expect(

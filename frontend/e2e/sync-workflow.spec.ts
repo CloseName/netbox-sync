@@ -282,7 +282,7 @@ test("review allowed, keyboard modal trap/cancel/return and digest/token exactne
   });
   await nav(page, "Schedule").click();
   await expect(nav(page, "Schedule")).toHaveAttribute("aria-current", "page");
-  await nav(page, "Sync").click();
+  await nav(page, "Changes").click();
   await expect(
     page.getByRole("heading", { name: "Sync completed", exact: true }),
   ).toBeVisible();
@@ -581,7 +581,7 @@ test("switching sibling tab dismisses unsubmitted confirmation and preserves pla
     dispatchEvent(new PopStateEvent("popstate"));
   });
   await expect(page.getByRole("dialog")).not.toBeVisible();
-  await nav(page, "Sync").click();
+  await nav(page, "Changes").click();
   await expect(page.getByText("Plan ready for review.")).toBeVisible();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   expect(

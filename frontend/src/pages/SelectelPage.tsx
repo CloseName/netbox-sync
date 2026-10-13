@@ -42,7 +42,7 @@ export function SelectelPage(){
  <RefreshControl loading={resource.loading} error={resource.error} received={resource.received} refresh={resource.refresh}/></div>
  {(error||resource.error)&&<p role="alert">{error||'Не удалось загрузить аккаунты.'}</p>}
  {resource.data&&!resource.data.import_ready&&<p role="alert">Не настроен импорт в NetBox. Сначала выполните обновление Selectel MVP.</p>}
- {form&&<section className="panel selectel-form"><h2>Подключение Selectel</h2><p>Используйте сервисного пользователя с правами чтения нужных проектов и продуктов. Пароль не возвращается в интерфейс.</p>
+ {form&&<section className="panel selectel-form"><h2>Подключение Selectel</h2><ol className="flow-steps"><li aria-current="step">Доступ</li><li>Первый сбор</li><li>Результат</li></ol><p>Используйте сервисного пользователя с правами чтения нужных проектов и продуктов. Пароль не возвращается в интерфейс.</p>
  <form onSubmit={save}>
  <label>Название подключения<input required maxLength={128} value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})}/></label>
  <label>Номер аккаунта<input required inputMode="numeric" pattern="[0-9]{1,20}" value={draft.account} onChange={e=>setDraft({...draft,account:e.target.value})}/></label>
@@ -51,11 +51,16 @@ export function SelectelPage(){
  <p>Сохранение подключения не запускает сбор. Для замены пароля укажите тот же номер аккаунта.</p>
  <div className="actions"><button className="primary" disabled={busy} type="submit">{busy?'Сохраняем…':'Сохранить подключение'}</button> <button disabled={busy} type="button" onClick={()=>{setDraft({...draft,password:''});setForm(false);}}>Отмена</button></div>
  </form></section>}
- <div className="scroll-region selectel-table" tabIndex={0} role="region" aria-label="Аккаунты Selectel"><table><thead><tr><th scope="col">Аккаунт</th><th scope="col">Состояние</th><th scope="col">Последняя попытка</th><th scope="col">Действия</th></tr></thead><tbody>
- {resource.data?.items.map(a=><tr key={a.account} data-selected={a.account===selected}><td><button className="account-name" aria-expanded={a.account===selected} aria-controls={a.account===selected?'selectel-account-detail':undefined} onClick={()=>setSelected(a.account)}>{a.name}</button><small>№ {a.account}</small></td>
- <td><span className={'badge badge-'+(a.status==='attention'||a.error?'danger':a.status==='running'?'info':'neutral')}>{({configured:'Готов к первому сбору',running:'Сбор выполняется',completed:'Данные обновлены',attention:'Требует внимания'} as Record<string,string>)[a.status]||a.status}</span>{a.error&&<small className="account-error">{messages[a.error]||'Сбор не завершён. Проверьте результат аккаунта.'}</small>}</td>
- <td>{a.finished_at?<time dateTime={new Date(a.finished_at*1000).toISOString()}>{exactTime(new Date(a.finished_at*1000).toISOString())}</time>:'—'}</td><td><div className="actions"><button disabled={busy||a.status==='running'||!resource.data?.import_ready} onClick={()=>collect(a.account)}>{a.status==='running'?'Сбор выполняется…':'Собрать и обновить'}</button> <a href={a.url} target="_blank" rel="noreferrer">Ресурсы в NetBox ↗</a></div></td></tr>)}
- </tbody></table></div>
+ <div className="account-cards selectel-table" aria-label="Аккаунты Selectel">
+ {resource.data?.items.map(a=><section className="panel account-card" key={a.account} data-selected={a.account===selected}>
+ <h2><ProviderIcon provider="selectel"/> <button className="account-name" aria-expanded={a.account===selected} onClick={()=>setSelected(a.account)}>{a.name}</button></h2><small>№ {a.account} · {a.username}</small>
+ <p><span className={'badge badge-'+(a.status==='attention'||a.error?'danger':a.status==='running'?'info':'neutral')}>{({configured:'Готов к первому сбору',running:'Сбор выполняется',completed:'Данные обновлены',attention:'Требует внимания'} as Record<string,string>)[a.status]||a.status}</span></p>
+ {a.error&&<p className="account-error">{messages[a.error]||'Сбор не завершён. Проверьте результат аккаунта.'}</p>}
+ {a.finished_at&&<small>Последняя попытка: <time dateTime={new Date(a.finished_at*1000).toISOString()}>{exactTime(new Date(a.finished_at*1000).toISOString())}</time></small>}
+ <div className="actions"><button disabled={busy||a.status==='running'||!resource.data?.import_ready} onClick={()=>{setSelected(a.account);void collect(a.account);}}>{a.status==='running'?'Сбор выполняется…':'Собрать и обновить'}</button><a href={a.url} target="_blank" rel="noreferrer">Ресурсы в NetBox ↗</a></div>
+ <details><summary>Доступ</summary><p>Сервисный пользователь: {a.username}</p><button disabled={busy} onClick={()=>{setDraft({account:a.account,name:a.name,username:a.username,password:''});setForm(true);}}>Изменить доступ</button></details>
+ </section>)}
+ </div>
  {resource.data?.items.length===0&&<p>Подключите аккаунт, затем нажмите «Собрать и обновить».</p>}
  {account&&<section className="panel" id="selectel-account-detail"><h2>{account.name} · {account.account}</h2>
  {account.error&&<p role="alert">{messages[account.error]||'Сбор не завершён. Последние успешные данные сохранены.'}</p>}

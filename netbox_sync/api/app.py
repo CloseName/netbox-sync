@@ -978,6 +978,7 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
 
         @app.get('/settings/netbox', include_in_schema=False)
         @app.get('/settings', include_in_schema=False)
+        @app.get('/users', include_in_schema=False)
         @app.get('/policy', include_in_schema=False)
         @app.get('/setup', include_in_schema=False)
         @app.get('/sources', include_in_schema=False)

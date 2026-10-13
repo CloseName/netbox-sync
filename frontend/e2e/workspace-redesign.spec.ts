@@ -52,6 +52,6 @@ for (const theme of ['dark','light'] as const) for (const width of [1440,390]) {
     await page.goto('/#diagnostics');
     await expect(page).toHaveURL(/\/diagnostics$/);
     if(width<801) await page.getByRole('button',{name:'Navigation',exact:true}).click();
-    await expect(nav.getByRole('link',{name:'Diagnostics',exact:true})).toHaveAttribute('aria-current','page');
+    await expect(nav.getByRole('link',{name:'Problems',exact:true})).toHaveAttribute('aria-current','page');
   });
 }

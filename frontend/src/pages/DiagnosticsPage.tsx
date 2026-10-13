@@ -1,237 +1,30 @@
+import {SelectelAttention} from '../ui/SelectelAttention';
+import {usePermission} from '../AuthGate';
 import {useState} from 'react';
-import {SourceNames,SourceName,useSourceNames} from '../ui/SourceNames';
-import {tr} from "../ui/i18n";
-import { Link } from "react-router-dom";
-import { fetchDiagnostics } from "../api/diagnostics";
-import { useResource } from "../ui/useResource";
-import { ResourceFeedback } from "../ui/ResourceFeedback";
-import { Badge, PageHeader, Timestamp } from "../ui/primitives";
-import { healthStatus, runStatus, scheduleStates } from "../ui/status";
-import {
-  componentLabels,
-  componentReason,
-  aggregateReason,
-} from "../ui/diagnosticEvidence";
-import type { ComponentKey } from "../ui/diagnosticEvidence";
-import { diagnosticsUsable } from "../ui/operations";
-import { DiagnosticAttention } from "../ui/DiagnosticAttention";
-import { staleEvidence } from "../ui/runEvidence";
-import { sourcePath, runPath } from "../ui/routes";
-export function DiagnosticsPage(){return <SourceNames><DiagnosticsContent/></SourceNames>;}
-function DiagnosticsContent() {
-  const sources=useSourceNames();const [search,setSearch]=useState('');
-  const matches=(id:string)=>{const source=sources.find(s=>s.source_instance===id);return [id,source?.name,source?.address].some(value=>value?.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));};
-  const resource = useResource(fetchDiagnostics),
-    data = resource.data;
-  return (
-    <section className="operations-workspace">
-      <PageHeader
-        title={tr("Diagnostics")}
-        description={tr("Source outcomes and worker responses. Application connections are checked in System health.")}
-        actions={
-          <button disabled={resource.loading} onClick={resource.refresh}>
-            {tr("Refresh")}{" "}</button>
-        }
-      />
-      <ResourceFeedback
-        resource={resource}
-        label={tr("diagnostics")}
-        evidenceAt={data?.generated_at}
-      />
-      {data && (
-        <>
-          <section
-            className="diagnostic-summary source-panel"
-            aria-label={tr("System assessment")}
-          >
-            <div>
-              <h2>
-                <Badge
-                  value={healthStatus(data.overall_status)}
-                  code={data.overall_status}
-                />
-              </h2>
-              <p>{tr(aggregateReason(data))}</p>
-            </div>
-            <p>
-              {tr("Snapshot")}{" "}<Timestamp value={data.generated_at} />
-            </p>
-          </section>
-          <section className="source-panel">
-            <h2>{tr("Component checks")}{" "}</h2>
-            <div className="diagnostic-components">
-              {(Object.keys(componentLabels) as ComponentKey[]).map((key) => {
-                const c = data.components[key];
-                return (
-                  <article
-                    id={"component-" + key}
-                    key={key}
-                    className="diagnostic-component"
-                  >
-                    <div>
-                      <h3>{tr(componentLabels[key])}</h3>
-                      <Badge value={healthStatus(c.status)} code={c.status} />
-                    </div>
-                    <div>
-                      <p>{tr(componentReason(key, c))}</p>
-                      {key === "scheduler" && (
-                        <small>
-                          {tr("Last recorded activity:")}{" "}{" "}
-                          <Timestamp value={c.last_seen_at} />
-                        </small>
-                      )}
-                      <details>
-                        <summary>{tr("Technical details")}{" "}</summary>
-                        <dl className="technical-facts">
-                          <div>
-                            <dt>{tr("Recorded status")}{" "}</dt>
-                            <dd>{c.status}</dd>
-                          </div>
-                          <div>
-                            <dt>{tr("Checked at")}{" "}</dt>
-                            <dd>
-                              <Timestamp value={c.checked_at} />
-                            </dd>
-                          </div>
-                          <div>
-                            <dt>{tr("Last response")}{" "}</dt>
-                              <dd><Timestamp value={c.last_seen_at} /></dd>
-                            </div>
-                            <div>
-                              <dt>{tr("Last success")}{" "}</dt>
-                            <dd>
-                              <Timestamp value={c.last_success_at} />
-                            </dd>
-                          </div>
-                          <div>
-                            <dt>{tr("Next expected")}{" "}</dt>
-                            <dd>
-                              <Timestamp value={c.next_expected_at} />
-                            </dd>
-                          </div>
-                          <div>
-                            <dt>{tr("Safe code")}{" "}</dt>
-                            <dd>{c.safe_code ?? tr("None reported")}</dd>
-                          </div>
-                          {c.safe_message && (
-                            <div>
-                              <dt>{tr("Safe message")}{" "}</dt>
-                              <dd>{c.safe_message}</dd>
-                            </div>
-                          )}
-                        </dl>
-                      </details>
-                    </div>
-                    <div className="muted">
-                      {tr("Checked")}{" "}<Timestamp value={c.checked_at} />
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-          <section className="source-panel">
-            <h2>{tr("Attention")}{" "}</h2>
-            <DiagnosticAttention data={data} />
-          </section>
-          <section className="source-panel">
-            <h2>{tr("Source evidence")}{" "}</h2>
-            <p className="muted">
-              {tr("Derived from configuration and persisted runs. This does not verify source connectivity or a live scheduler heartbeat.")}{" "}</p>
-            {!diagnosticsUsable(data) ? (
-              <p>
-                {tr("Source evidence unavailable. Registry and run history checks must both succeed.")}{" "}</p>
-            ) : data.sources.length === 0 ? (
-              <p>
-                {tr("No sources configured.")}{" "}<Link to="/sources">{tr("Open Sources")}{" "}</Link>
-              </p>
-            ) : (
-              <div
-                className="source-table"
-                role="region"
-                aria-label={tr("Source diagnostic evidence")}
-                tabIndex={0}
-              >
-                <label>{tr("Search sources")}<input type="search" value={search} onChange={e=>setSearch(e.target.value)}/></label><table>
-                  <thead>
-                    <tr>
-                      {[
-                        "Source",
-                        "Assessment",
-                        "Latest run",
-                        "Scheduled activity",
-                        "Last success",
-                      ].map((label) => (
-                        <th key={tr(label)} scope="col">
-                          {tr(label)}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.sources.filter(s=>matches(s.source_instance)).map((s) => (
-                      <tr key={s.source_instance}>
-                        <td>
-                          <Link
-                            to={sourcePath(s.source_instance) + "/diagnostics"}
-                          >
-                            <SourceName id={s.source_instance}/>
-                          </Link>
-                          <small>
-                            {s.source_type === "proxmox"
-                              ? tr("Proxmox VE")
-                              : tr("VMware ESXi")}
-                          </small>
-                        </td>
-                        <td>
-                          <Badge value={healthStatus(s.status)} />
-                        </td>
-                        <td>
-                          {s.latest_run ? (
-                            <>
-                              <Link to={runPath(s.latest_run.run_id)}>
-                                <Badge
-                                  value={runStatus(
-                                    s.latest_run.status,
-                                    !!staleEvidence(
-                                      s.latest_run,
-                                      s.source_instance,
-                                      data,
-                                    ),
-                                  )}
-                                />
-                              </Link>
-                              <small>
-                                <Timestamp value={s.latest_run.started_at} />
-                              </small>
-                            </>
-                          ) : (
-                            tr("No runs recorded")
-                          )}
-                        </td>
-                        <td>
-                          <Link
-                            to={sourcePath(s.source_instance) + "/schedule"}
-                          >
-                            <Badge value={scheduleStates[s.scheduler_state]} />
-                          </Link>
-                          <small>
-                            {tr("Last scheduled:")}{" "}{" "}
-                            <Timestamp value={s.last_scheduled_run_at} />
-                          </small>
-                        </td>
-                        <td>
-                          <Timestamp value={s.latest_success_at} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        </>
-      )}
-    </section>
-  );
+import {Link} from 'react-router-dom';
+import {SourceNames,useSourceNames} from '../ui/SourceNames';
+import {tr} from '../ui/i18n';
+import {fetchDiagnostics} from '../api/diagnostics';
+import {useResource} from '../ui/useResource';
+import {ResourceFeedback} from '../ui/ResourceFeedback';
+import {PageHeader,Badge,Timestamp} from '../ui/primitives';
+import {DiagnosticAttention} from '../ui/DiagnosticAttention';
+import {componentLabels,componentReason} from '../ui/diagnosticEvidence';
+import type {ComponentKey} from '../ui/diagnosticEvidence';
+import {healthStatus} from '../ui/status';
+export function DiagnosticsPage(){return <SourceNames><Problems/></SourceNames>;}
+function Problems(){
+ const resource=useResource(fetchDiagnostics),data=resource.data,names=useSourceNames();
+ const [search,setSearch]=useState('');
+ const selectel=usePermission('bootstrap.manage');
+ const matches=(id:string|null)=>!search||!!id&&[id,names.find(s=>s.source_instance===id)?.name].some(v=>v?.toLowerCase().includes(search.toLowerCase()));
+ const filtered=data?{...data,sources:data.sources.filter(s=>matches(s.source_instance)),warnings:data.warnings.filter(w=>matches(w.source_instance))}:null;
+ return <main className="operations-workspace"><PageHeader title={tr('Problems')} description={tr('What needs your attention and what to do next.')} actions={<button disabled={resource.loading} onClick={resource.refresh}>{tr('Refresh')}</button>}/>
+ <ResourceFeedback resource={resource} label={tr('diagnostics')} evidenceAt={data?.generated_at}/>
+ <label>{tr('Search sources')}<input type="search" value={search} onChange={e=>setSearch(e.target.value)}/></label>
+ {filtered&&<section className="panel"><DiagnosticAttention data={filtered}/></section>}
+ {selectel&&<SelectelAttention/>}
+ <p><Link to="/system">{tr('Check system health')} →</Link></p>
+ {data&&<details className="quiet-detail"><summary>{tr('Component checks')}</summary>{(Object.keys(componentLabels) as ComponentKey[]).map(key=><section id={'component-'+key} className="panel" key={key}><h2>{tr(componentLabels[key])}</h2><Badge value={healthStatus(data.components[key].status)}/><p>{tr(componentReason(key,data.components[key]))}</p><small><Timestamp value={data.components[key].checked_at}/></small></section>)}</details>}
+ </main>;
 }

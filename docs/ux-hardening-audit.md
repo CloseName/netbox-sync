@@ -1,6 +1,38 @@
 > Follow-up: local admin and destination policy now implemented; release gate pending: [contract](local-admin-policy.md), [evidence and pending gate](local-admin-policy-review.md). The original review below is retained as historical context.
 
-## 2026-10-13 — quiet workspace implementation
+## 2026-10-13 — usability follow-up and defect repairs
+
+- Fixed the missing HTML route for `/users`; direct navigation and refresh use
+  the same application shell. API endpoints and authorization remain separate.
+- Sticky header and viewport-height sidebar share the measured header height.
+  Window scrolling, keyboard navigation and narrow-screen navigation remain.
+- Replaced provider letter badges with locally served brand marks; provenance
+  is included alongside the assets.
+- Overview now prioritizes source problems, Selectel collection failures, recent
+  outcomes and expected runs. Diagnostics becomes Problems, with named sources,
+  consequences and next actions. Component and support evidence is expandable.
+- Source lists show one primary result with a timestamp and schedule. Successful
+  runs with unsupported categories are explicitly labelled as limitations, not
+  silently healthy. Suppression of aggregate attention requires available
+  operation evidence and no blocking, uncertain, warning or failed condition.
+- Bulk selection actions appear after selection. Global schedule shutdown is
+  separate and requires confirmation. Existing removal review is preserved.
+- Connection settings get a dedicated source tab; Changes retains the reviewed
+  plan workflow. Settings is a hub; the profile menu only holds personal
+  preferences and sign-out. Users have a compact table and explicit role Save;
+  failed refresh disables edits of stale rows.
+- Selectel uses account cards, separate credential and collection actions, and
+  category results. Zero observations and unavailable evidence remain distinct.
+  Credentials are cleared after save/cancel and never returned to the form.
+
+Validation includes unit tests, API HTML-route tests, browser coverage of scroll
+geometry, explicit role save and stale-read refusal, desktop/mobile light/dark
+screens, source settings, LDAP, bulk actions, Selectel and synchronization safety.
+This is a UI change: provider writes, reconciliation, permissions and collection
+scheduling semantics are not replaced. Test deployment uses the existing
+`deploy/update-ui-test-no-backup.sh` with its test-host and target checks.
+
+## 2026-10-13 — quiet workspace implementation (initial iteration)
 
 User-approved direction: dark petrol surfaces, restrained teal accents, monochrome
 provider symbols; saturated warning/error colors only where attention is required.

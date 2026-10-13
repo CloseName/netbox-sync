@@ -194,8 +194,8 @@ test("stale evidence is exact, contextual and has no retry sync", async ({
   );
   await page.getByRole("link", { name: "View system diagnostics" }).click();
   await expect(
-    page.getByRole("region", { name: "System assessment" }),
-  ).toContainText("Needs attention");
+    page.locator(".diagnostic-attention"),
+  ).toContainText("Completion unconfirmed");
 });
 test("empty, filtered empty, list failure, detail failure and retry are distinct", async ({
   page,
@@ -268,12 +268,8 @@ test("diagnostic healthy checks disclose actual evidence; unknown is never avail
   await expect(page.locator("#component-apply_worker")).toContainText(
     "connectivity are not tested",
   );
-  await component.getByText("Technical details", { exact: true }).focus();
-  await page.keyboard.press("Enter");
-  await expect(component.getByText("Recorded status")).toBeVisible();
-  await expect(
-    page.getByRole("region", { name: "Source diagnostic evidence" }),
-  ).toContainText("No runs recorded");
+  await page.getByText("Component checks", {exact:true}).click();
+  await expect(component).toBeVisible();
 });
 test("stale-only degraded keeps aggregate and links to real run and source", async ({
   page,
@@ -285,25 +281,15 @@ test("stale-only degraded keeps aggregate and links to real run and source", asy
   await mock(page, { data: d });
   await page.goto("/diagnostics");
   await expect(
-    page.getByRole("region", { name: "System assessment" }),
-  ).toContainText("Needs attention");
-  await expect(
-    page.getByRole("region", { name: "System assessment" }),
-  ).toContainText("Checked components are available");
+    page.locator(".diagnostic-attention"),
+  ).toContainText("Completion unconfirmed");
+  await expect(page.locator(".diagnostic-attention")).toContainText("a newer result does not prove its outcome");
   await expect(
     page
       .locator(".diagnostic-attention")
       .getByRole("link", { name: "Open run" }),
   ).toHaveAttribute("href", "/runs/" + runId);
-  await expect(
-    page
-      .locator(".diagnostic-attention")
-      .getByRole("link", { name: "Source diagnostics" }),
-  ).toHaveAttribute("href", "/sources/source-1/diagnostics");
-  // A newer successful run stays completed, even with an older stale warning.
-  await expect(
-    page.getByRole("region", { name: "Source diagnostic evidence" }),
-  ).toContainText("Completed");
+  await expect(page.locator(".diagnostic-attention")).not.toContainText("Outcome unknown");
 });
 test("unavailable registry hides source assessments and preserves unhealthy aggregate", async ({
   page,
@@ -316,14 +302,14 @@ test("unavailable registry hides source assessments and preserves unhealthy aggr
   await mock(page, { data: d });
   await page.goto("/diagnostics");
   await expect(
-    page.getByRole("region", { name: "System assessment" }),
-  ).toContainText("Unhealthy");
+    page.locator(".diagnostic-attention"),
+  ).toContainText("Service availability could not be confirmed.");
   await expect(page.locator("#component-registry")).toContainText(
     "Unavailable",
   );
   await expect(
     page.getByText(
-      "Source evidence unavailable. Registry and run history checks must both succeed.",
+      "Service availability could not be confirmed.",
     ),
   ).toBeVisible();
   await expect(page.getByText(/No sources configured/)).toHaveCount(0);
@@ -354,6 +340,7 @@ test("mixed source attention, delayed schedule and bounded stale sample", async 
   ];
   await mock(page, { data: d });
   await page.goto("/diagnostics");
+  await page.getByText("About this check",{exact:true}).click();
   await expect(
     page.getByText(/The 100 oldest stale runs are shown/),
   ).toBeVisible();
@@ -371,6 +358,7 @@ test("refresh failures retain old diagnostics and explicitly mark data freshness
 }) => {
   const fixture = await mock(page);
   await page.goto("/diagnostics");
+  await page.getByText("Component checks",{exact:true}).click();
   await expect(page.locator("#component-api")).toBeVisible();
   fixture.fail();
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
@@ -396,6 +384,7 @@ test("source diagnostics uses exact stale links without duplicating component ch
   await expect(
     page.getByRole("heading", { name: "Source diagnostics", exact: true }),
   ).toBeVisible();
+  await page.locator(".diagnostic-attention").getByText("Support details",{exact:true}).click();
   await expect(
     page
       .locator(".diagnostic-attention")
@@ -429,7 +418,7 @@ for (const width of [1440, 1280, 1024, 768])
       if (name === "runs")
         await expect(page.locator(".run-table tbody tr")).toHaveCount(50);
       if (name === "diagnostics")
-        await expect(page.locator("#component-api")).toBeVisible();
+        await expect(page.locator(".diagnostic-attention")).toBeVisible();
       if (name === "detail")
         await expect(
           page.locator("summary").filter({hasText:"Plan actions"}),
@@ -521,7 +510,7 @@ for (const width of [1440, 1280, 1024, 768])
         name,
         path: "/diagnostics",
         options: { data },
-        ready: "#component-api",
+        ready: ".diagnostic-attention",
       })),
     ];
     for (const scenario of scenarios) {
@@ -586,7 +575,7 @@ test("diagnostics initial failure retries without invented source counts", async
     "Diagnostics could not be loaded",
   );
   await expect(
-    page.getByRole("region", { name: "System assessment" }),
+    page.locator(".diagnostic-attention"),
   ).toHaveCount(0);
   await expect(
     page.getByText("No sources configured.", { exact: false }),
@@ -595,8 +584,8 @@ test("diagnostics initial failure retries without invented source counts", async
   await mock(page);
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(
-    page.getByRole("region", { name: "System assessment" }),
-  ).toContainText("Healthy");
+    page.locator(".diagnostic-attention"),
+  ).toContainText("No attention items reported in this snapshot.");
 });
 test("exact full last page can lead to empty older response without invented totals", async ({
   page,

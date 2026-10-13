@@ -5,7 +5,7 @@ export const navigation = [
   { to: "/", label: "Overview" },
   { to: "/sources", label: "Sources" },
   { to: "/runs", label: "Runs" },
-  { to: "/diagnostics", label: "Diagnostics" },
+  { to: "/diagnostics", label: "Problems" },
 ];
 export function breadcrumbs(pathname: string) {
   if(pathname === "/settings")return [{label:"Settings",to:"/settings"}];

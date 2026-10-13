@@ -1,3 +1,4 @@
+import {SettingsPage} from './pages/SettingsPage';
 import {TeamsSettings} from './pages/TeamsSettings';
 import {SourceNavigation} from './ui/SourceNavigation';
 import {PfSensePage} from './pages/PfSensePage';
@@ -44,6 +45,15 @@ function OverviewWorkspace(){
 }
 
 export function App() {
+  const header = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const element = header.current;
+    if (!element) return;
+    const resize = () => document.documentElement.style.setProperty('--app-header-height', `${element.getBoundingClientRect().height}px`);
+    const observer = new ResizeObserver(resize);
+    observer.observe(element); resize();
+    return () => observer.disconnect();
+  }, []);
   const [language] = useLanguage();
   const manageIdentity = usePermission('identity.manage');
   const configureSources = usePermission('source.configure');
@@ -64,11 +74,10 @@ export function App() {
     <>
       <a className="skip-link" href="#content">
         {tr("Skip to content")}{" "}</a>
-      <header className="app-header">
+      <header className="app-header" ref={header}>
         <Link className="app-brand" to="/">
           <Brand />
         </Link>
-        <span className="muted">{tr("Source synchronization")}{" "}</span>
         <SessionControls/>
         <button
           ref={navToggle}
@@ -134,10 +143,10 @@ export function App() {
             <Route path="/runs" element={<RunRoute />} />
             <Route path="/runs/:runId" element={<RunRoute />} />
             <Route path="/users" element={<Permission permission="identity.manage"><DirectoryUsersPage/></Permission>}/>
-            <Route path="/settings" element={new URLSearchParams(location.search).get("section")==="teams"?<Permission permission="source.configure"><TeamsSettings/></Permission>:<Permission permission="identity.manage">{location.search.includes('section=destinations')?<DestinationPolicyPage/>:<AuthenticationSettings/>}</Permission>} />
+            <Route path="/settings" element={!new URLSearchParams(location.search).get("section")?<SettingsPage/>:new URLSearchParams(location.search).get("section")==="teams"?<Permission permission="source.configure"><TeamsSettings/></Permission>:<Permission permission="identity.manage">{location.search.includes('section=destinations')?<DestinationPolicyPage/>:<AuthenticationSettings/>}</Permission>} />
             <Route path="/policy" element={<Navigate replace to="/settings?section=destinations"/>} />
-            <Route path="/system" element={<><nav className="source-tabs"><Link to="/diagnostics">{tr('Diagnostics')}</Link><Link to="/system" aria-current="page">{tr('System health')}</Link></nav><SystemHealthPage/></>} />
-            <Route path="/diagnostics" element={<><nav className="source-tabs"><Link to="/diagnostics" aria-current="page">{tr('Diagnostics')}</Link><Link to="/system">{tr('System health')}</Link></nav><DiagnosticsPage/></>} />
+            <Route path="/system" element={<><Link to="/settings">{tr("Settings")}</Link><SystemHealthPage/></>} />
+            <Route path="/diagnostics" element={<DiagnosticsPage/>} />
             <Route
               path="*"
               element={
