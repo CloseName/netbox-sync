@@ -29,6 +29,7 @@ RUNTIME_GID=$(docker exec netbox id -g)
 docker exec --user 0 netbox chown "$RUNTIME_UID:$RUNTIME_GID" "$REMOTE/check.py" "$REMOTE/before.json"
 docker exec --user 0 netbox chmod 600 "$REMOTE/check.py" "$REMOTE/before.json"
 docker exec -e PROVIDER_CHECK_MODE=compare -e PROVIDER_CHECK_DEVICES=28,29 \
+  -e "PROVIDER_CHECK_ALLOW_BINDING_REVISION=${PROVIDER_CHECK_ALLOW_BINDING_REVISION:-0}" \
   -e "PROVIDER_CHECK_FILE=$REMOTE/before.json" netbox /opt/netbox/venv/bin/python \
   /opt/netbox/netbox/manage.py shell -c "import runpy; runpy.run_path('$REMOTE/check.py', run_name='__main__')"
 CHECK
@@ -48,5 +49,6 @@ print('Hardware identity schema ready. No native Device.serial or IP changes req
 PY
 bash "$WORK/check.sh"
 printf '\nAfter ESXi / Proxmox synchronization, run: bash %q\n' "$WORK/check.sh"
+printf 'After Selectel metadata collection, run: PROVIDER_CHECK_ALLOW_BINDING_REVISION=1 bash %q\n' "$WORK/check.sh"
 echo 'Then: docker exec netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py provider_hardware_check --account 29916 --actor admin'
 echo "Acceptance baseline: $WORK/before.json"

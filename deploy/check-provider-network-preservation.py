@@ -57,6 +57,14 @@ def main():
         result = capture(ids)
     if mode == 'compare':
         before = json.loads(path.read_text(encoding='utf-8'))
+        if os.environ.get('PROVIDER_CHECK_ALLOW_BINDING_REVISION') == '1':
+            # A provider refresh may advance metadata revisions, never identities.
+            previous = {row['id']: row for row in before['bindings']}
+            for row in result['bindings']:
+                old = previous.get(row['id'])
+                if old is not None:
+                    assert row['revision'] >= old['revision'], 'Binding revision decreased'
+                    row['revision'] = old['revision']
         changed = [key for key in result if before.get(key) != result[key]]
         assert not changed, 'Preservation check failed: ' + ', '.join(changed)
         print('SUCCESS: management IPs, host/guest assignments, NAT references and provider links preserved. READ ONLY.')
