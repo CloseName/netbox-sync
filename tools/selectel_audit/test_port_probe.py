@@ -31,6 +31,46 @@ class Routes:
 
 
 class PortProbeTests(unittest.TestCase):
+    def test_auxiliary_shapes_are_distinguished_without_exporting_unknown_fields(self):
+        cases = [
+            ({}, 'AUX_RESULT_MISSING', 'not_reported'),
+            ({'result': None}, 'AUX_RESULT_NULL', 'not_reported'),
+            ({'result': []}, 'UNEXPECTED_RESPONSE_SHAPE', 'unavailable'),
+            ({'result': {}}, 'AUX_PORTS_MISSING', 'not_reported'),
+            ({'result': {'ports': None}}, 'AUX_PORTS_NULL', 'not_reported'),
+            ({'result': {'ports': []}}, 'AUX_PORTS_EMPTY', 'empty'),
+            ({'result': {'ports': {}}}, 'AUX_PORTS_WRONG_TYPE', 'unavailable'),
+            ({'result': {'ports': [None]}}, 'AUX_PORT_ITEM_WRONG_TYPE', 'unavailable'),
+            ({'result': {'ports': [{'uuid': uid(3)}]}}, 'collected', 'collected'),
+        ]
+        for payload, code, status in cases:
+            with self.subTest(code=code):
+                probe = PortProbe(Credentials('12345', token='t'), Routes(routes={'/aux': payload}))
+                r = probe.get('/aux', 'auxiliary')
+                self.assertEqual((r['code'], r['status']), (code, status))
+                self.assertIn('result_type', r['diagnostics'])
+        client = Routes(routes={'/aux': {'result': {'ports': None, 'customer-private-key-name': 'private-value'}}})
+        result = PortProbe(Credentials('12345', token='t'), client).get('/aux', 'auxiliary')
+        self.assertEqual(result['diagnostics']['unknown_field_count'], 1)
+        self.assertNotIn('customer-private-key-name', json.dumps(result))
+        self.assertNotIn('private-value', json.dumps(result))
+
+    def test_auxiliary_profile_only_enumerates_and_reads_auxiliary_endpoints(self):
+        client = Routes([{'uuid': uid(i), 'service_type': 'custom'} for i in (1, 2)], {
+            '/resource/' + uid(1) + '/aux_network_info': {'result': {'ports': None}},
+            '/resource/' + uid(2) + '/aux_network_info': {'result': {'ports': []}},
+        })
+        doc = PortProbe(Credentials('12345', token='synthetic-secret-token'), client,
+                        progress=lambda _: None, profile='auxiliary').run()
+        self.assertEqual(len(client.calls), 4)
+        self.assertEqual(len(doc['records']), 2)
+        self.assertEqual(doc['profile'], 'auxiliary')
+        self.assertEqual(doc['probe_version'], 2)
+        summary = summarize(doc)
+        self.assertEqual(len(summary['auxiliary_diagnostics']), 2)
+        self.assertFalse(summary['provider_port_confirmed'])
+        self.assertFalse(summary['writes_performed'])
+
     def run_probe(self, client):
         return PortProbe(Credentials('12345', token='synthetic-secret-token'), client,
                          progress=lambda _: None).run()
@@ -102,7 +142,7 @@ class PortProbeTests(unittest.TestCase):
         client = Routes(routes={'/aux': {'result': {'uuid': uid(1), 'ports': None}},
                                 '/ports': {'result': [{'uuid': uid(2)}], 'total': 2}})
         probe = PortProbe(Credentials('12345', token='t'), client)
-        self.assertEqual(probe.get('/aux', 'auxiliary')['code'], 'PORTS_FIELD_MISSING_OR_INVALID')
+        self.assertEqual(probe.get('/aux', 'auxiliary')['code'], 'AUX_PORTS_NULL')
         partial = probe.get('/ports', 'ports')
         self.assertEqual(partial['code'], 'PAGINATION_UNRESOLVED')
         self.assertEqual(len(partial['data']), 1)

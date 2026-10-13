@@ -5,6 +5,8 @@ set -Eeuo pipefail
   echo 'Run as root on netbox-test only.' >&2; exit 1;
 }
 ACCOUNT=${1:?Usage: probe-selectel-ports-test.sh ACCOUNT}
+PROFILE=${2:-full}
+[[ $PROFILE == full || $PROFILE == auxiliary ]] || { echo 'Invalid profile.' >&2; exit 1; }
 [[ $ACCOUNT =~ ^[0-9]{1,20}$ ]] || { echo 'Invalid account number.' >&2; exit 1; }
 REPO=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 RELEASE=$(git -C "$REPO" rev-parse HEAD)
@@ -17,6 +19,6 @@ docker run --rm -it --read-only --cap-drop ALL --security-opt no-new-privileges 
   --tmpfs /tmp:rw,noexec,nosuid,size=32m \
   --mount "type=bind,src=$WORK/output,dst=/output" \
   --entrypoint python "selectel-audit:$RELEASE" \
-  -m selectel_audit.port_probe --account "$ACCOUNT" < /dev/tty
+  -m selectel_audit.port_probe --account "$ACCOUNT" --profile "$PROFILE" < /dev/tty
 echo "Done. Reports: $WORK/output"
 echo 'NetBox, management IPs, pfSense assignments and provider settings were not modified.'

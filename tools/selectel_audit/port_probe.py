@@ -26,6 +26,42 @@ AUX = {'asn', 'availability_zone', 'client_ip', 'leaf_pairs', 'loopback_ips',
 SERVER_TYPES = {'server', 'serverchip', 'custom', 'colocation'}
 
 
+def shape(value):
+    if value is None:
+        return 'null'
+    if isinstance(value, dict):
+        return 'object'
+    if isinstance(value, list):
+        return 'array'
+    return type(value).__name__
+
+
+def auxiliary_shape(response):
+    """Describe known schema fields without retaining arbitrary keys or values."""
+    out = {'response_type': shape(response)}
+    if not isinstance(response, dict):
+        return out
+    status = response.get('status')
+    out['provider_status_type'] = shape(status) if 'status' in response else 'missing'
+    if isinstance(status, str) and status.lower() in ('ok', 'success', 'done', 'completed',
+                                                    'pending', 'queued', 'processing', 'error', 'failed', 'failure'):
+        out['provider_status'] = status.lower()
+    out['task_id_present'] = bool(response.get('task_id'))
+    out['result_type'] = shape(response['result']) if 'result' in response else 'missing'
+    value = response.get('result')
+    if not isinstance(value, dict):
+        return out
+    known = RESOURCE | AUX | {'ports', 'config_name', 'user_desc', 'aux_network_info'}
+    out['known_field_types'] = {k: shape(value[k]) for k in sorted(known & value.keys())}
+    out['unknown_field_count'] = len(value.keys() - known)
+    out['ports_type'] = shape(value['ports']) if 'ports' in value else 'missing'
+    ports = value.get('ports')
+    if isinstance(ports, list):
+        out['ports_count'] = len(ports)
+        out['port_item_types'] = dict(Counter(shape(p) for p in ports))
+    return out
+
+
 def identifier(value):
     try:
         return str(UUID(value)) if isinstance(value, str) else None
@@ -65,6 +101,10 @@ def project_port(value):
 
 
 def classify(code, has_data=False):
+    if code in ('AUX_PORTS_MISSING', 'AUX_PORTS_NULL', 'AUX_RESULT_MISSING', 'AUX_RESULT_NULL'):
+        return 'not_reported'
+    if code == 'AUX_PORTS_EMPTY':
+        return 'empty'
     if code == 'collected':
         return 'collected' if has_data else 'empty'
     return {'HTTP_401': 'authentication_failed', 'HTTP_403': 'denied',
@@ -73,7 +113,10 @@ def classify(code, has_data=False):
 
 
 class PortProbe:
-    def __init__(self, credentials, client=None, progress=print):
+    def __init__(self, credentials, client=None, progress=print, profile='full'):
+        if profile not in ('full', 'auxiliary'):
+            raise ValueError('INVALID_PROBE_PROFILE')
+        self.profile = profile
         self.credentials = credentials
         self.client = client or Client(max_requests=5000)
         self.progress = progress
@@ -91,6 +134,8 @@ class PortProbe:
                 raise AuditError('REQUEST_BUDGET_EXCEEDED')
             response, _ = self.client.request(DEDICATED + path, self.token)
             response = sanitize(response, self.credentials.secrets)
+            if kind == 'auxiliary':
+                record['diagnostics'] = auxiliary_shape(response)
             if not isinstance(response, dict):
                 raise AuditError('UNEXPECTED_RESPONSE_SHAPE')
             if str(response.get('status', '')).lower() in ('error', 'failed', 'failure'):
@@ -114,16 +159,26 @@ class PortProbe:
                 record['code'] = 'PAGINATION_UNRESOLVED' if incomplete else 'collected'
                 if kind == 'port' and any(identifier(r.get('uuid')) != path.rsplit('/', 1)[-1] for r in rows):
                     record['code'] = 'PORT_RESPONSE_ID_MISMATCH'
+            elif kind == 'auxiliary' and ('result' not in response or value is None):
+                record['code'] = 'AUX_RESULT_MISSING' if 'result' not in response else 'AUX_RESULT_NULL'
             elif not isinstance(value, dict):
                 raise AuditError('UNEXPECTED_RESPONSE_SHAPE')
             elif kind == 'auxiliary':
                 record['data'] = fields(value, {'uuid', 'location_uuid', 'state'})
                 ports = value.get('ports')
-                if isinstance(ports, list) and len(ports) <= 10000 and all(isinstance(p, dict) for p in ports):
+                if 'ports' not in value:
+                    record['code'] = 'AUX_PORTS_MISSING'
+                elif ports is None:
+                    record['code'] = 'AUX_PORTS_NULL'
+                elif not isinstance(ports, list):
+                    record['code'] = 'AUX_PORTS_WRONG_TYPE'
+                elif len(ports) > 10000:
+                    record['code'] = 'ITEM_LIMIT_EXCEEDED'
+                elif all(isinstance(p, dict) for p in ports):
                     record['data']['ports'] = [project_port(p) for p in ports]
-                    record['code'] = 'collected'
+                    record['code'] = 'collected' if ports else 'AUX_PORTS_EMPTY'
                 else:
-                    record['code'] = 'PORTS_FIELD_MISSING_OR_INVALID'
+                    record['code'] = 'AUX_PORT_ITEM_WRONG_TYPE'
             else:
                 record['data'] = fields(value, RESOURCE)
                 record['code'] = 'collected'
@@ -156,6 +211,9 @@ class PortProbe:
                 notes.append('INVALID_RESOURCE_UUID')
                 continue
             self.progress(f'Сервер {index}/{len(resources)}: {rid}')
+            if self.profile == 'auxiliary':
+                self.get('/resource/' + rid + '/aux_network_info', 'auxiliary')
+                continue
             detail = self.get('/resource/' + rid, 'resource')
             aux = self.get('/resource/' + rid + '/aux_network_info', 'auxiliary')
             # Keep observations separate: a changed hardware identity is a conflict, not a merge.
@@ -189,7 +247,8 @@ class PortProbe:
             self.get('/network/port/' + port + '/network', 'networks')
         if self.exhausted:
             notes.append('PROBE_STOPPED_EARLY')
-        document = {'schema': 'selectel-port-probe-v1', 'account': self.credentials.account,
+        document = {'schema': 'selectel-port-probe-v1', 'probe_version': 2,
+                    'profile': self.profile, 'account': self.credentials.account,
                     'finished_at': stamp(), 'mode': 'read_only', 'writes_performed': False,
                     'scope': 'visible_dedicated_resources', 'account_completeness': 'not_proven',
                     'resource_enumeration': {'code': code, 'status': classify(code, bool(rows))},
@@ -211,11 +270,15 @@ def summarize(document):
                 useful.append({'endpoint': record['endpoint'], 'port_uuid': port.get('uuid'),
                                'aux_network_info': aux})
     return {'schema': document['schema'], 'account': document['account'],
+            'probe_version': document.get('probe_version', 1), 'profile': document.get('profile', 'full'),
             'resource_enumeration': document['resource_enumeration'],
             'resource_count': len(document['resources']), 'endpoint_count': len(document['records']),
             'statuses': dict(Counter(r['status'] for r in document['records'])),
             'codes': dict(Counter(r['code'] for r in document['records'])),
             'auxiliary_evidence': useful, 'notes': document['notes'],
+            'auxiliary_diagnostics': [{'endpoint': r['endpoint'], 'code': r['code'],
+                                      'diagnostics': r.get('diagnostics')} for r in document['records']
+                                     if r['kind'] == 'auxiliary'],
             'writes_performed': False, 'provider_port_confirmed': False}
 
 
@@ -224,10 +287,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--account', required=True)
     parser.add_argument('--output', default='/output')
+    parser.add_argument('--profile', choices=('full', 'auxiliary'), default='full')
     args = parser.parse_args()
     os.umask(0o077)
     credentials = Credentials(args.account, token=hidden('IAM-токен аккаунта (скрытый ввод): '))
-    document = PortProbe(credentials).run()
+    document = PortProbe(credentials, profile=args.profile).run()
     directory = Path(args.output) / (credentials.account + '-' + stamp().replace(':', '').replace('+', '_'))
     directory.mkdir(parents=True, exist_ok=False)
     summary = summarize(document)
