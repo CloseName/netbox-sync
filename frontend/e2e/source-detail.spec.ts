@@ -193,6 +193,8 @@ test("schedule exact value, pending duplicate protection and success", async ({
   expect(submitted).toEqual({
     sync_enabled: false,
     sync_interval_seconds: 9000,
+    sync_calendar: null,
+    expected_sync_calendar: null,
     expected_sync_enabled: true,
     expected_sync_interval_seconds: 601,
   });
@@ -602,6 +604,8 @@ test("enable automatic sync with exact custom minutes and preserve expectations"
     {
       sync_enabled: true,
       sync_interval_seconds: 69,
+      sync_calendar: null,
+      expected_sync_calendar: null,
       expected_sync_enabled: false,
       expected_sync_interval_seconds: 601,
     },
@@ -654,7 +658,7 @@ test("scheduled outcome and expected time are evidence, not a guaranteed start",
   );
   await expect(
     page.locator(".schedule-panel time[datetime='" + next + "']"),
-  ).toHaveAttribute("title", /.+/);
+  ).toContainText("МСК");
   await expect(page.getByText(/not a guaranteed start/)).toBeVisible();
   await page.screenshot({
     path: "test-results/ui2-scheduled-evidence.png",

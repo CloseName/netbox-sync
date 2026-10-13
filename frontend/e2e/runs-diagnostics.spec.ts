@@ -402,7 +402,7 @@ test("source diagnostics uses exact stale links without duplicating component ch
       .getByRole("link", { name: "Open run" }),
   ).toHaveAttribute("href", "/runs/" + runId);
   await expect(page.locator("#component-api")).toHaveCount(0);
-  await expect(page.locator(".source-panel").last()).toContainText(
+  await expect(page.locator(".source-panel").filter({has: page.getByRole("heading", {name:"Source diagnostics",exact:true})})).toContainText(
     "Completion unconfirmed",
   );
 });

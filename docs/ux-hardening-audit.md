@@ -1,5 +1,40 @@
 > Follow-up: local admin and destination policy now implemented; release gate pending: [contract](local-admin-policy.md), [evidence and pending gate](local-admin-policy-review.md). The original review below is retained as historical context.
 
+## 2026-10-13 — quiet workspace implementation
+
+User-approved direction: dark petrol surfaces, restrained teal accents, monochrome
+provider symbols; saturated warning/error colors only where attention is required.
+The light theme uses the same structure. Existing theme and language preferences remain.
+
+- Shared shell, tables, forms, source tabs, schedule and plan-review surfaces restyled.
+- Sources is a real expandable button with an accessible state and rotating chevron.
+  Provider links remain scoped to ESXi, Proxmox, pfSense and permitted Selectel access.
+- Settings and Users are direct permission-aware sidebar links. User menu exposes the
+  signed-in username, theme/language preferences and sign-out with keyboard dismissal.
+- Overview puts attention and upcoming runs before secondary activity counters, adds
+  provider entry points and retains evidence timestamps and unavailable states.
+- Diagnostics and System health have separate routes; legacy overview hash links redirect.
+- Selectel keeps save-credentials and collect as separate actions. Account errors appear
+  in the list, collection times use Moscow, zero observations differ from absent evidence,
+  and a completed account without summary no longer claims collection never happened.
+- No provider-write logic, automatic Selectel scheduling, permission expansion, or NetBox
+  schema migration is introduced by the redesign.
+
+Validation: frontend build, 89 unit tests and 118 distinct browser scenarios passed;
+the test updater passes `bash -n`. Browser coverage includes light/dark desktop/mobile,
+Selectel onboarding, independent zero/missing evidence, Moscow time from a different browser
+timezone, keyboard navigation, LDAP roles/drafts, bulk dialogs, pfSense refresh, calendars,
+plan review and uncertain outcomes. Screenshots use disposable API fixtures, not live hosts.
+Four existing browser assertions were aligned with already implemented calendar fields,
+visible Moscow timestamps and the specific diagnostics panel instead of the last panel.
+Test-server visual acceptance remains an operator step after deployment.
+
+Test update: `deploy/update-ui-test-no-backup.sh` uses the existing installer, verifies
+`netbox-test`, `/netbox-sync-test`, `/netbox-test` and both expected test URLs. It creates
+no backup and updates Sync only; NetBox/Guard is not rebuilt. Run from a clean pinned checkout.
+After updating, refresh the browser and inspect Overview, provider navigation, source Sync
+and Schedule, Selectel, Settings and the user menu in the preferred theme.
+
 # UX hardening audit — baseline 36c727d
 
 This is a repository and disposable-browser audit. No VM, real hypervisor or live

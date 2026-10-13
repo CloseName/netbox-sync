@@ -1,3 +1,6 @@
+import {ProviderIcon} from "../ui/ProviderIcon";
+import {usePermission} from "../AuthGate";
+import {useLanguage} from "../ui/language";
 import {tr} from "../ui/i18n";
 import { Link } from "react-router-dom";
 import { fetchSources } from "../api/sources";
@@ -22,6 +25,8 @@ import {
 import { sourcePath, runPath } from "../ui/routes";
 import { staleEvidence } from "../ui/runEvidence";
 export function OverviewPage() {
+  const [language] = useLanguage();
+  const canSelectel = usePermission("bootstrap.manage");
   const sources = useResource(fetchSources),
     diagnostics = useResource(fetchDiagnostics),
     runs = useResource(fetchRuns);
@@ -53,7 +58,7 @@ export function OverviewPage() {
       !staleEvidence(run, run.source_instance, data),
   );
   return (
-    <main>
+    <main className="overview-workspace">
       <PageHeader
         title={tr("Overview")}
         description={tr("Sources, schedules and recent runs.")}
@@ -62,7 +67,7 @@ export function OverviewPage() {
             disabled={sources.loading || diagnostics.loading || runs.loading}
             onClick={refresh}
           >
-            {tr("Refresh")}{" "}</button>
+            {sources.loading || diagnostics.loading || runs.loading ? (language === "ru" ? "Обновляем…" : "Refreshing…") : tr("Refresh")}{" "}</button>
         }
       />
       <ResourceNotice
@@ -81,11 +86,12 @@ export function OverviewPage() {
               code={data.overall_status}
             />
             <p>{tr(overviewReason(data))}</p>
-            <small>{tr("Diagnostic snapshot; source connectivity is not tested here.")}</small>
             <small>
               {tr("Checked")}{" "}<Timestamp value={data.generated_at} />
             </small>
-            <Link to="/diagnostics">{tr("Open diagnostics →")}{" "}</Link>
+            <details><summary>{language === "ru" ? "О диагностике" : "About this snapshot"}</summary>
+            <small>{tr("Diagnostic snapshot; source connectivity is not tested here.")}</small>
+            <Link to="/diagnostics">{tr("Open diagnostics →")}{" "}</Link></details>
           </>
         ) : diagnostics.loading ? (
           <LoadingState label={tr("Loading diagnostic summary…")} />
@@ -93,6 +99,81 @@ export function OverviewPage() {
           <p>{tr("Overall diagnostics unavailable.")}{" "}</p>
         )}
       </section>
+      <nav className="overview-providers" aria-label={language === "ru" ? "Провайдеры" : "Providers"}>
+        {([
+          {id:"esxi", name:"ESXi", to:"/sources?provider=esxi", note:language === "ru" ? "Хосты и виртуальные машины" : "Hosts and virtual machines"},
+          {id:"proxmox", name:"Proxmox", to:"/sources?provider=proxmox", note:language === "ru" ? "Хосты и виртуальные машины" : "Hosts and virtual machines"},
+          {id:"pfsense", name:"pfSense", to:"/sources/pfsense", note:language === "ru" ? "Конфигурация и сбор данных" : "Configuration and collection"},
+          ...(canSelectel ? [{id:"selectel", name:"Selectel", to:"/sources/selectel", note:language === "ru" ? "Аккаунты и ресурсы" : "Accounts and resources"}] : []),
+        ]).map(provider=><Link className="provider-entry" key={provider.id} to={provider.to}><ProviderIcon provider={provider.id}/><span><strong>{provider.name}</strong><small>{provider.note}</small></span><span aria-hidden="true">›</span></Link>)}
+      </nav>
+      <div className="overview-grid">
+        <section className="panel attention-panel">
+          <h2>{tr("Needs attention")}{" "}</h2>
+          {data &&
+            Object.entries(data.components)
+              .filter(([, c]) => ["UNAVAILABLE", "DEGRADED"].includes(c.status))
+              .map(([key, c]) => (
+                <p key={key}>
+                  <Link to="/diagnostics">
+                    {key.replaceAll("_", " ")}: {tr(healthStatus(c.status).label)}
+                  </Link>
+                </p>
+              ))}
+          {!sources.data || !usable ? (
+            <p>{tr("Source attention cannot be fully evaluated.")}{" "}</p>
+          ) : attention.length ? (
+            <ul className="activity-list">
+              {attention.map((row) => (
+                <li key={row.source.source_instance}>
+                  <Link to={sourcePath(row.source.source_instance)}>
+                    {row.source.name}
+                  </Link>
+                  <span>{tr(row.attention!.label)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>{tr("No source attention items reported.")}{" "}</p>
+          )}
+          {data?.stale_runs.slice(0, 3).map((w) => (
+            <p key={w.run_id ?? w.source_instance}>
+              {w.run_id ? (
+                <Link to={runPath(w.run_id)}>
+                  {tr("Completion unconfirmed:")}{" "}{w.source_instance}
+                </Link>
+              ) : (
+                tr("Completion unconfirmed")
+              )}
+            </p>
+          ))}
+          <Link to="/sources?attention=yes">
+            {tr("View sources needing attention →")}{" "}</Link>
+        </section>
+        <section className="panel">
+          <h2>{tr("Next scheduled runs")}{" "}</h2>
+          {!usable ? (
+            <p>{tr("Schedule evidence unavailable.")}{" "}</p>
+          ) : expected.length ? (
+            <ul className="activity-list">
+              {expected.map((s) => (
+                <li key={s.source_instance}>
+                  <Link to={sourcePath(s.source_instance)}>
+                    {sources.data?.find(
+                      (source) => source.source_instance === s.source_instance,
+                    )?.name ?? s.source_instance}
+                  </Link>
+                  <Timestamp value={s.next_expected_at} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>{tr("No upcoming runs reported.")}{" "}</p>
+          )}
+          <p className="muted">
+            {tr("Up to five estimates from configuration and history. Actual start times may differ.")}{" "}</p>
+        </section>
+      </div>
       <div className="summary-panels">
         <section className="panel">
           <h2>{tr("Sources")}{" "}</h2>
@@ -160,73 +241,6 @@ export function OverviewPage() {
           ) : (
             <p>{tr("Stale record evidence unavailable.")}{" "}</p>
           )}
-        </section>
-      </div>
-      <div className="overview-grid">
-        <section className="panel">
-          <h2>{tr("Needs attention")}{" "}</h2>
-          {data &&
-            Object.entries(data.components)
-              .filter(([, c]) => ["UNAVAILABLE", "DEGRADED"].includes(c.status))
-              .map(([key, c]) => (
-                <p key={key}>
-                  <Link to="/diagnostics">
-                    {key.replaceAll("_", " ")}: {tr(healthStatus(c.status).label)}
-                  </Link>
-                </p>
-              ))}
-          {!sources.data || !usable ? (
-            <p>{tr("Source attention cannot be fully evaluated.")}{" "}</p>
-          ) : attention.length ? (
-            <ul className="activity-list">
-              {attention.map((row) => (
-                <li key={row.source.source_instance}>
-                  <Link to={sourcePath(row.source.source_instance)}>
-                    {row.source.name}
-                  </Link>
-                  <span>{tr(row.attention!.label)}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p>{tr("No source attention items reported.")}{" "}</p>
-          )}
-          {data?.stale_runs.slice(0, 3).map((w) => (
-            <p key={w.run_id ?? w.source_instance}>
-              {w.run_id ? (
-                <Link to={runPath(w.run_id)}>
-                  {tr("Completion unconfirmed:")}{" "}{w.source_instance}
-                </Link>
-              ) : (
-                tr("Completion unconfirmed")
-              )}
-            </p>
-          ))}
-          <Link to="/sources?attention=yes">
-            {tr("View sources needing attention →")}{" "}</Link>
-        </section>
-        <section className="panel">
-          <h2>{tr("Next scheduled runs")}{" "}</h2>
-          {!usable ? (
-            <p>{tr("Schedule evidence unavailable.")}{" "}</p>
-          ) : expected.length ? (
-            <ul className="activity-list">
-              {expected.map((s) => (
-                <li key={s.source_instance}>
-                  <Link to={sourcePath(s.source_instance)}>
-                    {sources.data?.find(
-                      (source) => source.source_instance === s.source_instance,
-                    )?.name ?? s.source_instance}
-                  </Link>
-                  <Timestamp value={s.next_expected_at} />
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p>{tr("No upcoming runs reported.")}{" "}</p>
-          )}
-          <p className="muted">
-            {tr("Up to five estimates from configuration and history. Actual start times may differ.")}{" "}</p>
         </section>
       </div>
       <section className="panel">
