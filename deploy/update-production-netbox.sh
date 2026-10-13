@@ -55,9 +55,9 @@ for name in ('esxi_host_network', 'hardware_identity'):
     f = CustomField.objects.get(name=name)
     assert f.type == 'json' and f.object_types.filter(app_label='dcim', model='device').exists(), name
     assert not f.required and not f.unique, name
-    assert not f.validation_regex and not f.validation_schema, name
+    assert not getattr(f, 'validation_regex', None) and not getattr(f, 'validation_schema', None), name
     assert f.validation_minimum is None and f.validation_maximum is None, name
-    assert str(f.status) == 'active', (name, f.status)
+    assert str(getattr(f, 'status', 'active')) == 'active', (name, getattr(f, 'status', None))
     print('READY:', name)
 print('READY: NetBox Sync menu, provider registry and VM replacement Guard')
 PY

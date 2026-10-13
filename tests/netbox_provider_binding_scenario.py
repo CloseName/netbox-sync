@@ -22,6 +22,16 @@ from netbox_guard.service import _claims
 
 assert connection.settings_dict['NAME'] == 'netbox_sync_guard_test'
 call_command('makemigrations', 'netbox_guard', check=True, dry_run=True, verbosity=0)
+# The exact ESXi prerequisites must exist on fresh install without manual setup.
+from netbox_guard.managed_fields import configure_managed_fields
+for field_name in ('esxi_host_network', 'hardware_identity'):
+    field = CustomField.objects.get(name=field_name)
+    assert field.type == 'json'
+    assert set(field.object_types.values_list('app_label', 'model')) == {('dcim', 'device')}
+    previous_pk = field.pk
+    configure_managed_fields()
+    assert CustomField.objects.get(name=field_name).pk == previous_pk
+
 
 
 def rejected(action, errors=(IntegrityError,)):
