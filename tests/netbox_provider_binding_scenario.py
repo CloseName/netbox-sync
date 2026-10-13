@@ -170,3 +170,4 @@ with transaction.atomic():
     runpy.run_path(str(Path(__file__).with_name('netbox_selectel_mvp_scenario.py')), init_globals=globals())
     transaction.set_rollback(True)
 print('Provider schema, server inventory, atomic rollback, stale review, replay, permissions and PostgreSQL protection OK; fixtures rolled back')
+runpy.run_path(str(Path(__file__).with_name('netbox_vm_replacement_scenario.py')))

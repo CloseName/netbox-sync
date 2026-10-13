@@ -16,6 +16,8 @@ def build_runtime_plan(nb_api, hosts, config):
                             target_fingerprint, stable_fingerprint)
     from .ip_observations import assignment_inventory, source_policy
     from ..network_scopes import scoped_inventory,NetworkScopeError
+    from ..vm_replacement import configure, stage
+    configure(nb_api)
     nb_api=PlanningNetBox(nb_api)
     from ..esxi_vm_identity import resolve_vm_identities
     hosts, identity_conflicts = resolve_vm_identities(nb_api, hosts, config)
@@ -67,6 +69,8 @@ def build_runtime_plan(nb_api, hosts, config):
     with measured_phase('netbox_mapping'):
         validate(nb_api,config.target,hosts)
     with measured_phase('netbox_review'):
+        if config.source_type == 'esxi':
+            stage(nb_api, hosts, config)
         review = (build_proxmox_review(nb_api, hosts, config) if config.source_type == 'proxmox'
                   else build_esxi_review(build_esxi_adoption_plan(nb_api, hosts, config), config))
     review_plan = plan_from_review(review, config)

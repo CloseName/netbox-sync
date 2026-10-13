@@ -56,10 +56,19 @@ class CreationNamespace:
 class GuardedCreation:
     def __init__(self, api, client, source, cluster, run):
         self.api = api
+        self.client, self.run = client, UUID(str(run))
         for name in ('dcim', 'virtualization', 'ipam'):
             setattr(self, name, CreationNamespace(getattr(api, name), name, client, source, cluster, UUID(str(run))))
 
     def __getattr__(self, name): return getattr(self.api, name)
+
+    def replace_vm(self, identifier, body):
+        nonce = uuid5(self.run, f'vm-replacement:{identifier}')
+        result = self.client._request('POST', f'vm-replacements/{identifier}/execute/',
+                                      dict(body, nonce=str(nonce)))
+        if result.get('id') != identifier:
+            raise GuardTransportError('GUARD_RESPONSE_INVALID', uncertain=True)
+        return result
 
 
 def for_run(api, config, *, instance, run_id, url, token):

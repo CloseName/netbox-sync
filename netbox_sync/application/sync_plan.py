@@ -10,7 +10,7 @@ from .inventory_conflicts import InventoryConflict
 
 
 PLAN_SCHEMA_VERSION = 1
-PLANNER_VERSION = 'web-5a-16'
+PLANNER_VERSION = 'web-5a-17'
 
 
 class SyncAction(str, Enum):
@@ -173,8 +173,9 @@ def plan_from_mutations(review, config, mutations):
             object_kind=mutation.endpoint, external_id=str(external_id),
             name=str(mutation.after.get('name', object_names.get((mutation.endpoint, mutation.object_id), mutation.object_id))),
             action=SyncAction.CREATE if mutation.operation == 'create' else SyncAction.UPDATE,
-            reason_code='GUARDED_EXECUTOR_ACTION',
-            reason='Existing guarded executor would perform this managed-field mutation.',
+            reason_code='VM_GENERATION_REPLACE' if mutation.operation == 'replace' else 'GUARDED_EXECUTOR_ACTION',
+            reason=('Recreated VM: reuse its creation-proven NetBox card, replace the old UUID and rebuild unconnected owned components.'
+                    if mutation.operation == 'replace' else 'Existing guarded executor would perform this managed-field mutation.'),
             matched_object_id=None if mutation.operation == 'create' else mutation.object_id,
             before=tuple(sorted(mutation.before.items())),
             after=tuple(sorted(planned_after(mutation.endpoint, mutation.after).items())),

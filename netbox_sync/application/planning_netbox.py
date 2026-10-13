@@ -80,6 +80,7 @@ class PlanningEndpoint:
         self._wrapped = {}
         self._next_id = -1
         self._reads = {}
+        self._replacement_hidden = set()
 
     def _wrap(self, record):
         if record is None:
@@ -110,7 +111,7 @@ class PlanningEndpoint:
         return self._reads[key]
 
     def all(self):
-        return sorted([self._wrap(record) for record in self._read('all', {})] + list(self._created),
+        return sorted([self._wrap(record) for record in self._read('all', {}) if record.id not in self._replacement_hidden] + list(self._created),
                       key=lambda record: record.id)
 
     @staticmethod
@@ -170,7 +171,7 @@ class PlanningEndpoint:
                     record.serialize().get(field) != record._baseline.get(field)
                     for field in (key[:-3] if key.endswith('_id') else key for key in filters)):
                 del matches[record.id]
-        return sorted(matches.values(), key=lambda record: record.id)
+        return sorted((record for record in matches.values() if record.id not in self._replacement_hidden), key=lambda record: record.id)
 
     def get(self, *args, **filters):
         if len(args) > 1 or (args and filters):
@@ -181,6 +182,8 @@ class PlanningEndpoint:
         if isinstance(identifier, str) and identifier.lstrip('-').isdigit():
             identifier = int(identifier)
         if type(identifier) is int:
+            if identifier in self._replacement_hidden:
+                return None
             if identifier in self._wrapped:
                 return self._wrapped[identifier]
             for record in self._created:
@@ -236,7 +239,27 @@ class PlanningNetBox:
 
     def __init__(self, api):
         self.base_url = getattr(api, 'base_url', '')
+        self.replacement_review = getattr(api, 'replacement_review', None)
         self.mutations = []
         for name in ('dcim', 'ipam', 'virtualization', 'extras'):
             if hasattr(api, name):
                 setattr(self, name, PlanningNamespace(getattr(api, name), name, self.mutations))
+
+    def simulate_vm_replacement(self, identifier, body):
+        """Only the Guard-reviewed reset; ordinary DELETE stays forbidden."""
+        vm = self.virtualization.virtual_machines.get(identifier)
+        before = vm.serialize()
+        identity = body['new_identity']
+        if (before.get('custom_fields') or {}).get('sync_identities') == [identity]:
+            return
+        fields = {**(before.get('custom_fields') or {}), 'sync_identities': [identity],
+            'sync_original_names': {f"esxi/{body['source_instance']}/vm": body['name']}}
+        vm._changes.update(name=body['name'], custom_fields=fields)
+        endpoints = {'vminterface': self.virtualization.interfaces,
+                     'disk': self.virtualization.virtual_disks, 'mac': self.dcim.mac_addresses}
+        for kind, pk in body['expected']['children']:
+            endpoints[kind]._replacement_hidden.add(pk)
+        self.mutations.append(PlannedMutation('replace', 'virtualization.virtual_machines', identifier,
+            {'custom_fields': before.get('custom_fields'), 'replacement_evidence': body['expected'],
+             'replacement_card_url': self.base_url.rstrip('/').removesuffix('/api') + f'/virtualization/virtual-machines/{identifier}/'},
+            {'name': body['name'], 'custom_fields': fields}))
