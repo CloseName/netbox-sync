@@ -19,8 +19,14 @@ def facts(snapshot):
     row = {'sections': snapshot['sections']}
     ident = snapshot['identity']
     resource = obj(row, 'resource')
-    serial = obj(row, 'hardware').get('serial') or obj(row, 'details').get('serial') or ''
-    if serial.strip().casefold() in ('unknown', 'n/a', 'none', '0', 'to be filled by o.e.m.', 'default string'):
+    serial = ''
+    for section in ('hardware', 'details'):
+        observation = row['sections'].get(section, {})
+        value = obj(row, section).get('serial')
+        if observation.get('status') == 'collected' and not observation.get('retained') and isinstance(value, str):
+            serial = value
+            break
+    if serial.strip().casefold() in ('unknown', 'n/a', 'none', '0', 'to be filled by o.e.m.', 'default string', 'system serial number') or not serial.strip('0 '):
         serial = ''
     addresses = {str(v['ip']) for section in ('public_ips', 'private_ips') for v in items(row, section) if v.get('ip')}
     addresses.update(v['addr'] for values in obj(row, 'addresses').values() for v in values if v.get('addr'))
@@ -87,7 +93,7 @@ def prepare(user, account):
             strong, possible = [], set()
             for kind, target in targets:
                 tid = (kind, target.pk)
-                if kind == native_kind and native_kind == 'device' and info['serial'] and target.serial.casefold() == info['serial'].casefold():
+                if kind == native_kind and native_kind == 'device' and info['serial'] and target.serial.strip().casefold() == info['serial'].casefold():
                     strong.append(tid)
                 if target.name and target.name.casefold() == info['name'].casefold():
                     possible.add(tid)
