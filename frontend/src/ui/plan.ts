@@ -90,7 +90,7 @@ export interface FieldValue {
 export function managedFields(item: SyncPlanItem) {
   const before = new Map(item.before as [string, unknown][]),
     after = new Map(item.after as [string, unknown][]);
-  return [...new Set([...before.keys(), ...after.keys()])].filter(field=>field!=='matching_candidates').map((field) => ({
+  return [...new Set([...before.keys(), ...after.keys()])].filter(field=>!['matching_candidates','replacement_evidence','replacement_card_url'].includes(field)).map((field) => ({
     field,
     before: {
       provided: before.has(field),
