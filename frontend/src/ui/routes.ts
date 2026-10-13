@@ -17,7 +17,7 @@ export function breadcrumbs(pathname: string) {
   if (!section) return [{ label: "Page not found", to: pathname }];
   const result = [{ label: section.label, to: section.to }];
   if (parts[1]) {
-    let label = parts[1];
+    let label = parts[1] === 'selectel' ? 'Selectel' : parts[1];
     try {
       label = decodeURIComponent(label);
     } catch {

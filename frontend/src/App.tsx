@@ -20,6 +20,7 @@ import {
   useParams,
 } from "react-router-dom";
 import { SourcesPage } from "./pages/SourcesPage";
+import { SelectelPage } from "./pages/SelectelPage";
 import { SourcesListPage } from "./pages/SourcesListPage";
 import { OverviewPage } from "./pages/OverviewPage";
 import { RunsPage } from "./pages/RunsPage";
@@ -49,7 +50,7 @@ export function App() {
   const navToggle = useRef<HTMLButtonElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const crumbs = breadcrumbs(location.pathname);
-  const sourceDetail = /^\/sources\/(?!(?:add|pfsense)(?:\/|$))[^/]+/.test(
+  const sourceDetail = /^\/sources\/(?!(?:add|pfsense|selectel)(?:\/|$))[^/]+/.test(
     location.pathname,
   );
   useEffect(() => {
@@ -117,6 +118,7 @@ export function App() {
             <Route path="/" element={<OverviewWorkspace/>} />
             <Route path="/sources" element={<SourcesListPage />} />
             <Route path="/sources/pfsense" element={<PfSensePage/>} />
+            <Route path="/sources/selectel" element={<Permission permission="bootstrap.manage"><SelectelPage/></Permission>} />
             <Route path="/sources/add" element={<Permission permission="source.register"><AddSourcePage /></Permission>} />
             <Route
               path="/sources/:sourceInstance/*"

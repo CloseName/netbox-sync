@@ -2,6 +2,18 @@
 from django.db import models
 
 
+class ProviderAccountRun(models.Model):
+    nonce = models.UUIDField(primary_key=True)
+    account = models.CharField(max_length=20)
+    actor = models.CharField(max_length=128)
+    digest = models.CharField(max_length=64)
+    result = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        default_permissions = ()
+
+
 class ProviderResourceRegistry(models.Model):
     account = models.CharField(max_length=20, primary_key=True)
     revision = models.PositiveBigIntegerField(default=1)

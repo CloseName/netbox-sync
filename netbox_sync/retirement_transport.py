@@ -64,7 +64,7 @@ class GuardClient:
         mutation = method == 'POST'
         try:
             with self.session.request(method, self.url + path, json=body,
-                                      headers=self.headers, timeout=(3, 45 if path.startswith('sources/') else 15),
+                                      headers=self.headers, timeout=(3, 75 if path == 'providers/account-import/' else 45 if path.startswith('sources/') else 15),
                                       allow_redirects=False, stream=True) as response:
                 context = dict(http_status=response.status_code, resource=(body or {}).get('resource'),
                                nonce=(body or {}).get('nonce'))

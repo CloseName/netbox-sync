@@ -1,0 +1,75 @@
+"""Durable bounded account job. Provider reads run without root privileges."""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
+from .bootstrap_state import BootstrapStore, runtime_netbox
+from .selectel_control import read, write, root
+from .source_lifecycle import apply_lock
+from .discovery_worker import _drop_privileges, _safe_environment
+from .child_process import child_process, stop_child
+
+
+def child(value, timeout):
+    def sandbox():
+        import resource
+        resource.setrlimit(resource.RLIMIT_FSIZE, (24 * 1024 * 1024, 24 * 1024 * 1024))
+        resource.setrlimit(resource.RLIMIT_AS, (1024 * 1024 * 1024, 1024 * 1024 * 1024))
+        _drop_privileges(10001, 10001)()
+    with tempfile.TemporaryFile() as output:
+        with child_process(subprocess.Popen, [sys.executable, '-B', '-m', 'netbox_sync.selectel_collect'],
+                stdin=subprocess.PIPE, stdout=output, stderr=subprocess.DEVNULL,
+                env=_safe_environment(), preexec_fn=sandbox) as process:
+            try: process.communicate(json.dumps(value).encode(), timeout=timeout)
+            except subprocess.TimeoutExpired:
+                stop_child(process); return {'error': 'RUN_TIMEOUT'}
+        if process.returncode or output.tell() > 16 * 1024 * 1024:
+            return {'error': 'COLLECTION_TOO_LARGE_OR_FAILED'}
+        output.seek(0)
+        return json.load(output)
+
+
+def main():
+    store = BootstrapStore(sys.argv[1]); account, run_id, lock = sys.argv[2:]
+    base = root(store); path = base / (account + '.json')
+    try:
+        # Per-account lock survives API timeout and prevents overlap after interrupted runs.
+        with apply_lock(str(base / 'collection.lock')), apply_lock(str(base / (account + '.lock'))):
+            with store.locked():
+                state = read(path)
+                if state['run_id'] != run_id: return
+            url, _ = runtime_netbox(store.path, 'read')
+            token = read(base / 'netbox-token.json')['token']
+            access = dict(url=url, token=token, guard_instance=os.environ.get('NETBOX_SYNC_GUARD_INSTANCE', ''))
+            result = child(dict(operation='preflight', **access), 90)
+            if result.get('ready') is True:
+                result = child(dict(operation='collect', account=account,
+                    username=state['username'], password=state['password']), 2800)
+            elif 'error' not in result:
+                result = {'error': 'IMPORT_UNCONFIRMED'}
+            if 'error' not in result:
+                with apply_lock(lock):
+                    url, _ = runtime_netbox(store.path, 'read')
+                    token = read(base / 'netbox-token.json')['token']
+                    imported = child(dict(operation='import', url=url, token=token,
+                        guard_instance=os.environ.get('NETBOX_SYNC_GUARD_INSTANCE', ''),
+                        payload=dict(account=account, nonce=run_id, document=result['document'], registry=result['registry'])), 90)
+                if 'error' in imported: result = imported
+                else: result = {'summary': {**result['summary'], **imported}}
+    except Exception:
+        result = {'error': 'RUN_INTERRUPTED_OR_BUSY'}
+    # Do not expose exception bodies, provider payloads, or passwords.
+    with store.locked():
+        state = read(path)
+        if state.get('run_id') != run_id: return
+        if 'error' in result:
+            state.update(status='attention', error=result['error'])
+        else:
+            state.update(status='completed', error=None, summary=result['summary'])
+        state['finished_at'] = time.time()
+        write(path, state)
+
+
+if __name__ == '__main__': main()

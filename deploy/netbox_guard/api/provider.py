@@ -6,6 +6,26 @@ from ..dependencies import DependencyGuardBlocked
 from ..provider_service import review_binding, apply_binding
 
 
+class ProviderAccountImport(GuardView):
+    def get(self, request):
+        from ..service import _permission
+        _permission(request.user, 'manage_providerbinding')
+        _permission(request.user, 'manage_resourceregistry')
+        return Response({'ready': True})
+
+    def post(self, request):
+        import json
+        from ..account_import import import_account
+        # Bounded stream avoids Django's small default request.body allocation limit.
+        raw = request.read(16 * 1024 * 1024 + 1)
+        if len(raw) > 16 * 1024 * 1024:
+            raise DependencyGuardBlocked('REQUEST_TOO_LARGE')
+        try:
+            return Response(import_account(request.user, json.loads(raw)))
+        except (ValueError, TypeError, KeyError, AttributeError, IntegrityError, ValidationError):
+            raise DependencyGuardBlocked('PROVIDER_IMPORT_REFUSED') from None
+
+
 class ProviderReview(GuardView):
     def post(self, request):
         body = _body(request, ('spec',))

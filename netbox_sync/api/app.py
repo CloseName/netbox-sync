@@ -967,6 +967,8 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
         app.include_router(routes(bootstrap_client))
     from .pfsense import routes as pfsense_routes
     app.include_router(pfsense_routes(settings))
+    from .selectel import routes as selectel_routes
+    app.include_router(selectel_routes(settings))
     app.include_router(router)
     if settings.web_dist:
         root = Path(settings.web_dist)

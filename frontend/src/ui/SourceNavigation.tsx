@@ -5,7 +5,9 @@ import {fetchPfSense} from '../api/pfsense';
 import {useResource} from './useResource';
 import {NavIcon} from './NavIcon';
 import {tr} from './i18n';
+import {usePermission} from '../AuthGate';
 export function SourceNavigation(){
+ const selectel=usePermission('bootstrap.manage');
  const location=useLocation();
  const sources=useResource(fetchSources),pfsense=useResource(fetchPfSense);
  const [open,setOpen]=useState(location.pathname.startsWith('/sources'));
@@ -14,5 +16,6 @@ export function SourceNavigation(){
  {open&&<div id="source-subnavigation">
  {(['esxi','proxmox'] as const).map(provider=><Link key={provider} to={'/sources?provider='+provider} aria-current={location.pathname==='/sources'&&new URLSearchParams(location.search).get('provider')===provider?'page':undefined}>{provider==='esxi'?'ESXi':'Proxmox'} ({sources.error?'—':sources.data?.filter(s=>s.type===provider).length??'…'})</Link>)}
  <Link to="/sources/pfsense" aria-current={location.pathname==='/sources/pfsense'?'page':undefined}>pfSense ({pfsense.error?'—':pfsense.data?.count??'…'})</Link>
+ {selectel&&<Link to="/sources/selectel" aria-current={location.pathname==='/sources/selectel'?'page':undefined}>Selectel</Link>}
  </div>}</div>;
 }
