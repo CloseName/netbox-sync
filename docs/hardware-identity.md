@@ -36,6 +36,9 @@ Compare like types only: system serial to system serial, service tag to service 
 system UUID to system UUID. Trim and case normalization preserve serial punctuation.
 Placeholders, zero / all-ones UUIDs, conflicting observations and snapshots older
 than 48 hours are excluded. Future timestamps beyond five minutes are excluded.
+Literal `default` and sample serials `123456789` / `0123456789` are placeholders,
+not hardware identity. Filtering also applies when reading existing snapshots and
+native serial fields, without rewriting stored inventory or existing bindings.
 An exact common identifier with a different value in another common type is a
 conflict. Duplicate identities across provider resources or native candidates block
 adoption. Existing bindings remain unchanged. Unresolved name/IP candidates remain

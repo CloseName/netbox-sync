@@ -42,6 +42,8 @@ field = CustomField.objects.get(name='hardware_identity')
 assert compatible(field, 'json', ('dcim.device',)), 'Incompatible hardware identity field'
 assert field.ui_visible == 'hidden' and field.ui_editable == 'no'
 assert canonical('system_serial', 'unknown') is None
+assert canonical('service_tag', 'default') is None
+assert canonical('system_serial', '0123456789') is None
 print('Hardware identity schema ready. No native Device.serial or IP changes requested.')
 PY
 bash "$WORK/check.sh"

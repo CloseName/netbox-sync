@@ -4,7 +4,7 @@ from uuid import UUID
 
 KINDS = ('system_serial', 'service_tag', 'system_uuid')
 PLACEHOLDERS = {'unknown', 'none', 'n/a', 'na', 'not specified', 'not applicable',
-                'to be filled by o.e.m.', 'to be filled by oem', 'default string',
+                'to be filled by o.e.m.', 'to be filled by oem', 'default string', 'default',
                 'system serial number', 'serial number', 'not available', 'o.e.m.'}
 
 
@@ -15,7 +15,7 @@ def canonical(kind, value):
     if not value or len(value) > 256 or not value.isprintable() or value.casefold() in PLACEHOLDERS:
         return None
     compact = value.replace('-', '').replace(' ', '').casefold()
-    if not compact or set(compact) <= {'0'} or set(compact) <= {'f'} or compact == '123456789':
+    if not compact or set(compact) <= {'0'} or set(compact) <= {'f'} or compact in {'123456789', '0123456789'}:
         return None
     if kind == 'system_uuid':
         try:

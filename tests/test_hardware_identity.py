@@ -50,3 +50,22 @@ def test_provider_namespaces_retention_and_conflict():
     assert compare(tokens(doc), {('service_tag', 'tag-1')}) == 'match'
     assert compare({('service_tag', 'tag-1'), ('system_serial', 'one')},
                    {('service_tag', 'tag-1'), ('system_serial', 'two')}) == 'conflict'
+
+
+def test_placeholder_evidence_is_rejected_on_collection_and_existing_reads():
+    # A single matching placeholder must not become identity even when unique
+    # in the current inventory. Old snapshots are filtered without a migration.
+    at = datetime.now(timezone.utc).isoformat()
+    for value in ('default', ' DEFAULT ', '0123456789'):
+        for kind in ('service_tag', 'system_serial'):
+            assert canonical(kind, value) is None
+            old = dict(version=1, source='esxi', status='collected', observed_at=at,
+                       identifiers=[dict(kind=kind, value=value)])
+            assert not tokens(old)
+        provider = selectel_observation({'hardware': {'status': 'collected',
+            'data': {'service_tag': value, 'serial': value}}}, at)
+        assert provider['status'] == 'not_reported'
+        assert not tokens(provider)
+    # Do not reject all numeric serials or serials merely containing these words.
+    assert canonical('system_serial', '0123456790') == '0123456790'
+    assert canonical('service_tag', 'default-123') == 'default-123'

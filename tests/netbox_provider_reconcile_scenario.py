@@ -150,3 +150,23 @@ assert identified.serial == '' and identified.primary_ip4_id is None
 assert ProviderBinding.objects.get(provider_key=typed.pk).object_id == identified.pk
 print('Typed hardware adoption through Guard and native serial preservation OK')
 
+# Previously stored placeholders cannot adopt an existing host or create a card.
+for index, value in enumerate(('default', '0123456789')):
+    placeholder_host = Device.objects.create(name=f'placeholder-host-{index}', serial=value,
+        site=site, device_type=dtype, role=role, custom_field_data={'hardware_identity': {
+            'version': 1, 'source': 'esxi', 'status': 'collected',
+            'observed_at': timezone.now().isoformat(),
+            'identifiers': [{'kind': 'service_tag', 'value': value}]}})
+    placeholder_resource = insert_resource('dedicated', f'placeholder-{index}',
+        f'Unrelated provider label {index}', serial=value)
+    placeholder_resource.snapshot['sections']['hardware']['data']['service_tag'] = value
+    placeholder_resource.save()
+    placeholder_plan = native_prepare(admin, account)
+    row = next(r for r in placeholder_plan['resources'] if r['key'] == placeholder_resource.pk)
+    assert row['action'] == 'blocked' and not row['candidates'], row
+    placeholder_host.delete()
+    row = next(r for r in native_prepare(admin, account)['resources'] if r['key'] == placeholder_resource.pk)
+    assert row['action'] == 'blocked' and row['reason'] == 'hardware_identity_missing', row
+    placeholder_resource.delete()
+print('Placeholder identifiers cannot adopt or create devices, including legacy snapshots OK')
+
