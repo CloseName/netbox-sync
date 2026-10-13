@@ -37,3 +37,17 @@ assert registry_view(request, '123').status_code == 200
 request.GET = request.GET.copy(); request.GET['revision'] = '1'
 assert registry_view(request, '123').status_code == 200
 print('Persistent DNS/S3 registry: migration, replay, stale review, retention, rollback, permissions and HTML OK')
+
+# Project/category drill-down and historical isolation are read-only.
+request = RequestFactory().get('/providers/123/', {'project': 'p', 'kind': 'storage_container'})
+request.user = admin
+response = registry_view(request, '123')
+assert response.status_code == 200
+assert b'project=p' in response.content and b'resource=' in response.content
+request = RequestFactory().get('/providers/123/', {'project': 'other', 'kind': 'storage_container'})
+request.user = admin
+assert b'resource=' not in registry_view(request, '123').content
+request = RequestFactory().get('/providers/')
+request.user = admin
+assert registry_view(request).status_code == 200
+assert ProviderResourceRegistry.objects.get(pk='123').revision == 2

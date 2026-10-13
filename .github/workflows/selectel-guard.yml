@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: |
-          python -m unittest tests.test_provider_policy tests.test_selectel_inventory tests.test_selectel_ipam_policy tests.test_provider_network_status tests.test_resource_registry_policy
+          python -m unittest tests.test_provider_policy tests.test_selectel_inventory tests.test_selectel_ipam_policy tests.test_provider_network_status tests.test_resource_registry_policy tests.test_resource_tree
           python -m unittest discover -s tools/selectel_audit -t . -p 'test_*.py'
           bash -n deploy/update-host-topology-test.sh deploy/update-selectel-test.sh deploy/collect-selectel-test.sh deploy/project-selectel-ipam-test.sh deploy/probe-selectel-ports-test.sh deploy/update-provider-network-panel-test.sh deploy/audit-selectel-account-test.sh deploy/import-resource-registry-test.sh
       - name: Smoke test read-only port probe container
