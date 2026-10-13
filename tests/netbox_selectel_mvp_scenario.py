@@ -36,4 +36,23 @@ with tempfile.TemporaryDirectory() as temp:
     assert not service_user.has_perm('ipam.change_ipaddress')
     payload['nonce'] = str(uuid4())
     assert import_account(service_user, payload)['servers'] == 2
+    from rest_framework.test import APIRequestFactory, force_authenticate
+    from netbox_guard.api.provider import ProviderAccountImport
+    from netbox_guard.models import GuardIdentity
+    from users.models import Token
+    token = Token.objects.get(pk=json.loads(output.read_text())['token_id'])
+    factory = APIRequestFactory()
+    headers = {'HTTP_X_NETBOX_SYNC_GUARD_INSTANCE': str(GuardIdentity.objects.get(pk=1).identifier)}
+    request = factory.get('/providers/account-import/', **headers)
+    force_authenticate(request, user=service_user, token=token)
+    assert ProviderAccountImport.as_view()(request).data == {'ready': True}
+    payload['nonce'] = str(uuid4())
+    request = factory.post('/providers/account-import/', payload, format='json', **headers)
+    force_authenticate(request, user=service_user, token=token)
+    response = ProviderAccountImport.as_view()(request)
+    assert response.status_code == 200, response.data
+    assert response.data['servers'] == 2
+    request = factory.get('/providers/account-import/', **headers)
+    force_authenticate(request, user=unprivileged)
+    assert ProviderAccountImport.as_view()(request).status_code == 403
 print('Selectel MVP atomic import, rollback, replay, permissions and native preservation OK')
