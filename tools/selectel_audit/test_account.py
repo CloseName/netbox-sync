@@ -24,16 +24,29 @@ def product(doc, key):
 
 
 class AccountTests(unittest.TestCase):
+    def test_project_catalog_aliases_do_not_contaminate_account_collection(self):
+        rows = [row('iam', 'projects', 2), row('resell', 'projects', 2),
+                row('resell', 'floatingips', 3), row('resell', 'subnets', 1)]
+        rows += [row(service, 'catalog', status='UNSUPPORTED_SERVICE', project='p', region='r')
+                 for service in ('iam', 'resell')]
+        doc = document(rows)
+        self.assertEqual(product(doc, 'projects')['state'], 'collected')
+        self.assertEqual(product(doc, 'cloud-allocation')['state'], 'collected')
+        self.assertEqual(len(doc['coverage']), 6)
+        rows[0]['status'] = 'HTTP_403'
+        rows[0]['count'] = 0
+        self.assertEqual(product(doc, 'projects')['state'], 'access_denied')
+
     def test_successful_zone_list_does_not_promise_record_support(self):
         result = product(document([row('selectel-dns', 'zones', 2, project='p')]), 'dns')
-        self.assertEqual(result['state'], 'collected')
+        self.assertEqual(result['state'], 'partial')
         self.assertEqual(result['adapter'], 'partial')
-        self.assertIn('ещё не собираются', result['limitations'])
+        self.assertIn('rrsets', str(result['scopes']))
         self.assertFalse(result['auto_apply'])
 
     def test_empty_denied_missing_and_unsupported_are_different(self):
-        cases = [(document([row('selectel-dns', 'zones', project='p')]), 'dns', 'empty'),
-                 (document([row('selectel-dns', 'zones', status='HTTP_403', project='p')]), 'dns', 'access_denied'),
+        cases = [(document([row('selectel-dns', 'zones', project='p'), row('selectel-dns', 'rrsets', project='p')]), 'dns', 'empty'),
+                 (document([row('selectel-dns', 'zones', status='HTTP_403', project='p'), row('selectel-dns', 'rrsets', status='HTTP_403', project='p')]), 'dns', 'access_denied'),
                  (document(), 'dns', 'not_checked'), (document(), 'managed-kubernetes', 'unsupported')]
         for doc, key, state in cases:
             self.assertEqual(product(doc, key)['state'], state)
@@ -57,7 +70,9 @@ class AccountTests(unittest.TestCase):
 
     def test_success_and_empty_scopes_are_not_partial_failure(self):
         doc = document([row('selectel-dns', 'zones', 1, project='a'),
-                        row('selectel-dns', 'zones', 0, project='b')], projects=('a', 'b'))
+                        row('selectel-dns', 'zones', 0, project='b'),
+                        row('selectel-dns', 'rrsets', 1, project='a'),
+                        row('selectel-dns', 'rrsets', 0, project='b')], projects=('a', 'b'))
         self.assertEqual(product(doc, 'dns')['state'], 'collected')
 
     def test_expired_auth_and_no_projects_are_not_empty_resources(self):
@@ -92,6 +107,7 @@ class AccountTests(unittest.TestCase):
         doc = document([row('object-store', 'catalog', status='NOT_IN_CATALOG', project='p'),
             row('dnsv2', 'catalog', status='DELEGATED_TO_PROJECT_ADAPTER', project='p', region='r'),
             row('selectel-dns', 'zones', 2, project='p'),
+            row('selectel-dns', 'rrsets', 3, project='p'),
             row('volumev2', 'catalog', status='SKIPPED_LEGACY_API', project='p', region='r'),
             row('volumev3', 'volumes', project='p', region='r'),
             row('volumev3', 'snapshots', project='p', region='r')])

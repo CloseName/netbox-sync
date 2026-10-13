@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 from .client import (AuditError, Client, IDENTITY, read_collection, sanitize,
                      field_shapes, validate_url)
 from . import VERSION
+from .dns_storage import collect_dns, collect_storage_details, collection, container
 
 DEDICATED = 'https://api.selectel.ru/servers/v2'
 PROJECTS = 'https://api.selectel.ru/iam/v1/projects'
@@ -109,7 +110,7 @@ class Collector:
                 'API permissions may hide projects/resources even with HTTP 200.',
                 'Collected means enumeration succeeded for this endpoint, not full-account certification.',
                 'Catalog presence does not prove that a product has purchased resources.',
-                'No S3 objects, DNS record contents, console or guest files are requested; secrets are excluded from exports.',
+                'DNS records and allowlisted storage settings may be collected; no S3 object contents, console or guest files are requested.',
                 'Unsupported products are reported; no writes or automatic NetBox adoption occur.',
             ],
         }
@@ -221,7 +222,7 @@ class Collector:
                     self.document['coverage'].append({**context, 'kind': 'catalog',
                         'status': 'SKIPPED_LEGACY_API', 'count': 0})
                     continue
-                if typ == 'dnsv2':
+                if typ in ('dnsv2', 'storage'):
                     self.document['coverage'].append({**context, 'kind': 'catalog',
                         'status': 'DELEGATED_TO_PROJECT_ADAPTER', 'count': 0})
                     continue
@@ -238,6 +239,15 @@ class Collector:
                     continue
                 for kind, path, key in SERVICES[typ]:
                     actual_key = key.replace('-', '_') if key else None
+                    if typ == 'object-store':
+                        # Swift lists containers only at the scoped account path.
+                        # Refuse unexpected paths rather than accidentally list objects.
+                        if urlsplit(url).path.rstrip('/') != '/v1/' + project or urlsplit(url).query:
+                            self.document['coverage'].append({**context, 'kind': kind,
+                                'status': 'STORAGE_ACCOUNT_PATH_MISMATCH', 'count': 0})
+                            continue
+                        collection(self, typ, kind, url, token, None, 'swift', container, project, region)
+                        continue
                     self.collect(typ, kind, child_url(url, path), token, actual_key,
                                  mode='swift' if typ == 'object-store' else 'glance' if typ == 'image' else 'links',
                                  project=project, region=region)
@@ -276,7 +286,8 @@ class Collector:
                 scoped, catalog = self.credentials.authenticate(self.client, ident)
                 self.collect_catalog(scoped, catalog, ident)
                 if self.profile == 'all':
-                    self.collect('selectel-dns', 'zones', DNS + '/zones', scoped, 'result', 'offset', project=ident)
+                    collect_dns(self, scoped, ident)
+                    collect_storage_details(self, scoped, catalog, ident)
             except AuditError as exc:
                 self.document['coverage'].append(dict(service='identity', kind='project_auth',
                     project=ident, region='', status=str(exc), count=0))

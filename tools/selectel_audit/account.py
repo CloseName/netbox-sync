@@ -44,12 +44,13 @@ PRODUCTS = (
     Product('images', 'Образы облачных серверов', ('image',), 'catalog',
             ('images',), ('images',), True, 'Каталог образов включает общедоступные образы.'),
     Product('dns', 'DNS-хостинг', ('selectel-dns', 'dnsv2'), 'project',
-            ('zones',), ('zones',), gaps='Читаются зоны; ресурсные записи ещё не собираются.'),
+            ('zones', 'rrsets'), ('zones',), gaps='Читаются зоны и RRsets; переноса записей в NetBox пока нет.'),
     Product('catalog-dns', 'DNS из каталога проекта', ('dns',), 'catalog',
             ('zones',), ('zones',), gaps='Читаются зоны доступного catalog API; записи ещё не собираются.'),
-    Product('s3', 'S3 / Swift', ('object-store',), 'catalog', ('buckets',), ('buckets',),
-            gaps='Это наблюдения Swift containers, включая служебные. Настройки S3-бакетов, '
-                 'домены и объекты внутри не собираются.'),
+    Product('s3', 'S3 / Swift', ('object-store', 'storage'), 'catalog',
+            ('buckets', 'container_options', 'container_domains'), ('buckets',),
+            gaps='Контейнеры Swift, статистика, options и домены. Versioning, lifecycle и S3 policy '
+                 'ещё не собираются; содержимое объектов не запрашивается.'),
     Product('load-balancer', 'Балансировщики', ('load-balancer',), 'catalog',
             ('loadbalancers',), ('loadbalancers',), gaps='Listeners, pools и members ещё не собираются.'),
     Product('global-router', 'Глобальный роутер', ('global-router',), 'account',
@@ -141,7 +142,10 @@ def account_overview(document):
         elif not supported:
             state = 'unsupported'
         elif product.scope == 'account':
-            scopes = [scope_result(product, '', '', rows)]
+            # Project catalogs repeat IAM/Resell endpoints. Their unimplemented
+            # catalog adapters are not failures of the explicit account requests.
+            account_rows = [r for r in rows if not r.get('project') and r.get('kind') != 'catalog']
+            scopes = [scope_result(product, '', '', account_rows)]
             state = scopes[0]['state']
         else:
             scope_projects = sorted(set(projects) | {r.get('project') for r in rows if r.get('project')})
@@ -171,7 +175,7 @@ def account_overview(document):
     known = {s for p in PRODUCTS for s in p.services} | {'identity'}
     unknown = sorted({r.get('service') for r in coverage
                       if r.get('service') and r['service'] not in known})
-    return {'schema': 'selectel-account-overview-v1', 'capability_version': 1,
+    return {'schema': 'selectel-account-overview-v1', 'capability_version': 2,
         'account': document.get('account'), 'account_verified': document.get('account_verified', False),
         'profile': document.get('profile', 'all'), 'observed_at': document.get('finished_at'),
         'projects_visible': len(projects), 'account_completeness': 'not_proven',

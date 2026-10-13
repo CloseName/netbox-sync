@@ -9,6 +9,10 @@ from urllib.request import Request, build_opener, HTTPSHandler, HTTPRedirectHand
 
 IDENTITY = 'https://cloud.api.selcloud.ru/identity/v3'
 TRUSTED = ('selectel.ru', 'selcloud.ru', 'selcdn.ru', 'selstorage.ru', 'servercore.com')
+# Exact documented hosts only; no wildcard trust for regional/private storage.
+# https://docs.selectel.ru/api/urls/ (S3 section). The KZ management hostname
+# differs between the catalog and docs and is deliberately not added here.
+STORAGE_HOSTS = {'swift.uz-2.srvstorage.uz', 'api.uz-2.srvstorage.uz', 'swift.kz-1.srvstorage.kz'}
 PAGE_SIZE = 200
 
 
@@ -26,7 +30,7 @@ def validate_url(url, netbox_origin=None):
     if netbox_origin is not None:
         if origin != netbox_origin or not parts.path.startswith('/api/'):
             raise AuditError('NETBOX_ENDPOINT_OUTSIDE_SCOPE')
-    elif not any(parts.hostname == x or parts.hostname.endswith('.' + x) for x in TRUSTED):
+    elif parts.hostname not in STORAGE_HOSTS and not any(parts.hostname == x or parts.hostname.endswith('.' + x) for x in TRUSTED):
         raise AuditError('UNTRUSTED_PROVIDER_ENDPOINT')
     return parts
 

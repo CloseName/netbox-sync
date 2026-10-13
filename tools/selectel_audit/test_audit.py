@@ -211,7 +211,7 @@ class MatchingTests(unittest.TestCase):
             self.assertNotIn('<script>alert(1)</script>', text)
             self.assertIn('&lt;script&gt;', text)
             self.assertEqual({p.name for p in target.iterdir()}, {
-                'inventory.json', 'account.json', 'fields.json', 'summary.json', 'report.html', 'summary.txt'})
+                'inventory.json', 'account.json', 'dns-storage.json', 'fields.json', 'summary.json', 'report.html', 'summary.txt'})
             with self.assertRaises(FileExistsError):
                 write_report(doc, target)
 

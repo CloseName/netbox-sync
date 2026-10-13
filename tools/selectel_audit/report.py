@@ -9,6 +9,7 @@ from .contextual_review import contextual_review
 from .coverage import summarize, resource_counts
 from .field_contract import ownership_review, CUSTOM_FIELDS
 from .account import account_overview, LABELS
+from .dns_storage import export as dns_storage_export
 
 
 def account_html(document):
@@ -135,6 +136,7 @@ def write_report(document, directory, netbox=None):
     write('inventory.json', json.dumps(document, ensure_ascii=False, indent=2))
     account = account_overview(document)
     write('account.json', json.dumps(account, ensure_ascii=False, indent=2))
+    write('dns-storage.json', json.dumps(dns_storage_export(document), ensure_ascii=False, indent=2))
     fields = [{k: x.get(k) for k in ('service', 'kind', 'project', 'region', 'fields')}
               for x in document['datasets']]
     write('fields.json', json.dumps(fields, ensure_ascii=False, indent=2))

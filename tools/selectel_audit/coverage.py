@@ -65,4 +65,7 @@ def resource_counts(document):
             counts['cloud_' + kind] += len(items)
         elif service == 'selectel-dns' and kind == 'zones':
             counts['dns_zones'] += len(items)
+        elif service == 'selectel-dns' and kind == 'rrsets':
+            counts['dns_rrsets'] += len(items)
+            counts['dns_records'] += sum(len(item.get('records', [])) for item in items)
     return dict(counts)

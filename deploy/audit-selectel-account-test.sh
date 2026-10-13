@@ -36,6 +36,7 @@ for product in report['products']:
 print('Other catalog services:', ', '.join(report['unmapped_catalog_services']) or 'none observed')
 print('Overview:', path)
 print('HTML:', path.with_name('report.html'))
-print('Send summary.json and account.json first; do not publish inventory.json in Git.')
+print('DNS and storage details:', path.with_name('dns-storage.json'))
+print('Send summary.json, account.json and dns-storage.json; do not publish inventories in Git.')
 print('READ ONLY: no NetBox writes, service restarts or provider resource changes.')
 PY
