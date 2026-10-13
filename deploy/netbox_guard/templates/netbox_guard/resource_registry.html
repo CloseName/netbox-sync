@@ -1,0 +1,16 @@
+{% extends 'base/layout.html' %}
+{% block title %}Ресурсы провайдера — DNS / S3{% endblock %}
+{% block content %}
+<h1>Ресурсы провайдера — DNS / S3</h1>
+<p>Реестр хранит сведения Selectel отдельно от устройств и IPAM. Отсутствие ресурса в последнем сборе не удаляет его.</p>
+<nav class="mb-3">{% for a in accounts %}<a class="btn btn-outline-primary me-2" href="{% url 'plugins:netbox_guard:provider_resource_account' account=a.account %}">Selectel {{ a.account }}</a>{% empty %}Ресурсы ещё не импортированы.{% endfor %}</nav>
+{% if registry %}
+<h2>Аккаунт {{ registry.account }} · ревизия {{ revision }}</h2>
+<form method="get" class="d-flex gap-2 mb-3"><input type="hidden" name="revision" value="{{ revision }}"><input class="form-control" name="q" value="{{ q }}" placeholder="Название ресурса"><select class="form-select" name="kind"><option value="">Все типы</option><option value="dns_zone" {% if kind == 'dns_zone' %}selected{% endif %}>DNS-зоны</option><option value="dns_rrset" {% if kind == 'dns_rrset' %}selected{% endif %}>DNS-записи</option><option value="storage_container" {% if kind == 'storage_container' %}selected{% endif %}>Контейнеры S3/Swift</option><option value="storage_domain" {% if kind == 'storage_domain' %}selected{% endif %}>Домены контейнеров</option></select><button class="btn btn-primary">Найти</button></form>
+<table class="table table-striped"><thead><tr><th>Тип</th><th>Название</th><th>Последнее наблюдение</th><th>Состояние</th></tr></thead><tbody>{% for r in page %}<tr><td>{{ r.kind }}</td><td><a href="?revision={{ revision }}&amp;resource={{ r.ref }}">{{ r.name }}</a></td><td>{{ r.last_seen }}</td><td>{% if r.present_in_latest %}Есть в снимке{% else %}Не получен · сохранены прежние данные{% endif %}</td></tr>{% endfor %}</tbody></table>
+<p>Страница {{ page.number }} из {{ page.paginator.num_pages }}. {% if page.has_previous %}<a href="?revision={{ revision }}&amp;q={{ q|urlencode }}&amp;kind={{ kind|urlencode }}&amp;page={{ page.previous_page_number }}">Назад</a>{% endif %} {% if page.has_next %}<a href="?revision={{ revision }}&amp;q={{ q|urlencode }}&amp;kind={{ kind|urlencode }}&amp;page={{ page.next_page_number }}">Далее</a>{% endif %}</p>
+{% if selected %}<section class="card mb-3"><h2 class="card-header">{{ selected.name }}</h2><div class="card-body"><h3>Связи</h3><ul>{% for e in related %}<li>{{ e.source }} → {{ e.target }} ({{ e.relation }}){% if not e.present %} · сохранена из прошлого снимка{% endif %}</li>{% empty %}<li>Связей нет</li>{% endfor %}</ul><details><summary>Данные и состояние разделов</summary><pre>{{ details }}</pre></details></div></section>{% endif %}
+<h2>История импорта</h2><ul>{% for h in history %}<li><a href="?revision={{ h.revision }}">Ревизия {{ h.revision }}</a> · {{ h.created_at }} · ID пользователя {{ h.actor }}</li>{% endfor %}</ul>
+<details><summary>Диагностика сбора</summary><pre>{{ coverage }}</pre></details>
+{% endif %}
+{% endblock %}

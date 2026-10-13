@@ -165,5 +165,6 @@ with transaction.atomic():
     apply_inventory(admin, uuid4(), newer, 'c' * 64, newer_review['fingerprint'])
     rejected(lambda: review_inventory(admin, document, 'b' * 64), (ValueError,))
     runpy.run_path(str(Path(__file__).with_name('netbox_provider_ipam_scenario.py')), init_globals=globals())
+    runpy.run_path(str(Path(__file__).with_name('netbox_resource_registry_scenario.py')), init_globals=globals())
     transaction.set_rollback(True)
 print('Provider schema, server inventory, atomic rollback, stale review, replay, permissions and PostgreSQL protection OK; fixtures rolled back')

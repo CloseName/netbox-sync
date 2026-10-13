@@ -2,6 +2,34 @@
 from django.db import models
 
 
+class ProviderResourceRegistry(models.Model):
+    account = models.CharField(max_length=20, primary_key=True)
+    revision = models.PositiveBigIntegerField(default=1)
+    observed_at = models.DateTimeField()
+    evidence_digest = models.CharField(max_length=64)
+    snapshot = models.JSONField()
+
+    class Meta:
+        default_permissions = ()
+        permissions = [('view_resourceregistry', 'View all provider resource registries'),
+                       ('manage_resourceregistry', 'Import provider resource registries')]
+
+
+class ProviderResourceRegistryChange(models.Model):
+    nonce = models.UUIDField(primary_key=True)
+    registry = models.ForeignKey(ProviderResourceRegistry, on_delete=models.PROTECT)
+    actor = models.CharField(max_length=128)
+    digest = models.CharField(max_length=64)
+    revision = models.PositiveBigIntegerField()
+    before = models.JSONField(null=True)
+    after = models.JSONField()
+    result = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        default_permissions = ()
+
+
 class ProviderBinding(models.Model):
     """Accepted provider identity; independent of hypervisor sync_identities."""
     provider_key = models.CharField(max_length=512, unique=True)
