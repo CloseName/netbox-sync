@@ -48,6 +48,25 @@ def test_control_checks_admin_before_touching_storage():
             handle(None, '/unused', dict(action='selectel', operation='list', session='bad', data={}))
 
 
+def test_runner_waits_for_launcher_lock_without_repeating_body():
+    from contextlib import contextmanager
+    from netbox_sync.selectel_runner import locked_store
+    from netbox_sync.local_control import ControlError
+    attempts = []
+    @contextmanager
+    def lock():
+        attempts.append(1)
+        if len(attempts) < 3:
+            raise ControlError('BOOTSTRAP_BUSY')
+        yield
+    store = SimpleNamespace(locked=lock)
+    with patch('netbox_sync.selectel_runner.time.sleep'):
+        with pytest.raises(ControlError):
+            with locked_store(store):
+                raise ControlError('BOOTSTRAP_BUSY')
+    assert len(attempts) == 3
+
+
 @pytest.mark.skipif(os.name != 'posix' or getattr(os, 'geteuid', lambda: 1)() != 0, reason='root-owned Linux control')
 def test_control_storage_and_double_click(tmp_path):
     from netbox_sync.bootstrap_state import BootstrapStore

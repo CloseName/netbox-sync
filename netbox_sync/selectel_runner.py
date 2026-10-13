@@ -5,11 +5,28 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import ExitStack, contextmanager
 from .bootstrap_state import BootstrapStore, runtime_netbox
+from .local_control import ControlError
 from .selectel_control import read, write, root
 from .source_lifecycle import apply_lock
 from .discovery_worker import _drop_privileges, _safe_environment
 from .child_process import child_process, stop_child
+
+
+@contextmanager
+def locked_store(store):
+    # The launcher still holds this lock briefly after starting our process.
+    with ExitStack() as stack:
+        for attempt in range(101):
+            try:
+                stack.enter_context(store.locked())
+                break
+            except ControlError as exc:
+                if exc.code != 'BOOTSTRAP_BUSY' or attempt == 100:
+                    raise
+                time.sleep(0.05)
+        yield
 
 
 def child(value, timeout):
@@ -37,7 +54,7 @@ def main():
     try:
         # Per-account lock survives API timeout and prevents overlap after interrupted runs.
         with apply_lock(str(base / 'collection.lock')), apply_lock(str(base / (account + '.lock'))):
-            with store.locked():
+            with locked_store(store):
                 state = read(path)
                 if state['run_id'] != run_id: return
             url, _ = runtime_netbox(store.path, 'read')
@@ -61,7 +78,7 @@ def main():
     except Exception:
         result = {'error': 'RUN_INTERRUPTED_OR_BUSY'}
     # Do not expose exception bodies, provider payloads, or passwords.
-    with store.locked():
+    with locked_store(store):
         state = read(path)
         if state.get('run_id') != run_id: return
         if 'error' in result:

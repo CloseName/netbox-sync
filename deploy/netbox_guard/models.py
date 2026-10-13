@@ -24,7 +24,8 @@ class ProviderResourceRegistry(models.Model):
     class Meta:
         default_permissions = ()
         permissions = [('view_resourceregistry', 'View all provider resource registries'),
-                       ('manage_resourceregistry', 'Import provider resource registries')]
+                       ('manage_resourceregistry', 'Import provider resource registries'),
+                       ('manage_providerresourceregistry', 'Import provider resource registries (NetBox object permission)')]
 
 
 class ProviderResourceRegistryChange(models.Model):

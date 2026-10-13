@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
@@ -25,19 +24,25 @@ class Command(BaseCommand):
             raise CommandError('Existing user is not the dedicated Selectel service account.')
         if created:
             user.set_unusable_password(); user.save()
-        for codename in ('manage_providerbinding', 'manage_resourceregistry'):
-            user.user_permissions.add(Permission.objects.get(content_type__app_label='netbox_guard', codename=codename))
+        managed = {ContentType.objects.get(app_label='netbox_guard', model=model).pk
+                   for model in ('providerbinding', 'providerresourceregistry')}
+        importer, new = ObjectPermission.objects.get_or_create(name='Selectel provider inventory import',
+            defaults={'actions': ['manage'], 'constraints': None})
+        if not new and (set(importer.actions) != {'manage'} or importer.constraints
+                       or not importer.enabled or set(importer.object_types.values_list('pk', flat=True)) != managed):
+            raise CommandError('Existing import permission differs; no overwrite.')
+        importer.object_types.set(managed); importer.users.add(user)
         name = 'Selectel inventory existing device and VM metadata'
         wanted = {ContentType.objects.get(app_label=app, model=model).pk
                   for app, model in (('dcim', 'device'), ('virtualization', 'virtualmachine'))}
         permission, new = ObjectPermission.objects.get_or_create(name=name,
             defaults={'actions': ['view', 'change'], 'constraints': None})
-        if not new and (set(permission.actions) != {'view', 'change'} or permission.constraints
+        if not new and (set(permission.actions) != {'view', 'change'} or permission.constraints or not permission.enabled
                        or set(permission.object_types.values_list('pk', flat=True)) != wanted):
             raise CommandError('Existing permission differs; no overwrite.')
         permission.object_types.set(wanted); permission.users.add(user)
         user = get_user_model().objects.get(pk=user.pk)
-        for perm in ('netbox_guard.manage_providerbinding', 'netbox_guard.manage_resourceregistry',
+        for perm in ('netbox_guard.manage_providerbinding', 'netbox_guard.manage_providerresourceregistry',
                      'dcim.view_device', 'dcim.change_device', 'virtualization.view_virtualmachine',
                      'virtualization.change_virtualmachine'):
             if not user.has_perm(perm): raise CommandError('Service permission not effective: ' + perm)

@@ -26,5 +26,22 @@ if [[ ! -e "$STATE/selectel/netbox-token.json" ]]; then
   chmod 600 "$STATE/selectel/netbox-token.json"
   docker exec --user 0 netbox rm -- "$REMOTE/token.json"
 fi
+docker exec --user 0 -i netbox-sync-bootstrap-worker python -B - <<'PY'
+import os
+from pathlib import Path
+from netbox_sync.bootstrap_state import BootstrapStore, runtime_netbox
+from netbox_sync.selectel_control import read
+from netbox_sync.selectel_runner import child
+store = BootstrapStore(os.environ.get('NETBOX_SYNC_NETBOX_STATE_DIR', '/var/lib/netbox-sync/netbox'))
+url, _ = runtime_netbox(store.path, 'read')
+from urllib.parse import urlsplit
+assert urlsplit(url).hostname == 'netbox-test.indeed-id.hq', 'Unexpected NetBox target'
+instance = os.environ.get('NETBOX_SYNC_GUARD_INSTANCE', '')
+assert instance, 'Guard instance is not configured'
+token = read(store.root / 'selectel' / 'netbox-token.json')['token']
+result = child(dict(operation='preflight', url=url, token=token, guard_instance=instance), 90)
+assert result.get('ready') is True, 'Selectel import preflight failed: ' + str(result.get('error', 'IMPORT_UNCONFIRMED'))
+print('OK: test NetBox target and Selectel import permissions verified; no inventory writes.')
+PY
 echo 'Ready: https://netbox-sync-test.indeed-id.hq/sources/selectel'
 echo 'Connect the Selectel service user, then use Collect and update. No new native bindings are applied.'

@@ -16,7 +16,10 @@ def _permission(user, action, obj=None):
     if not user.is_authenticated:
         raise DependencyGuardBlocked('PERMISSION_DENIED')
     user = type(user).objects.get(pk=user.pk)
-    if not user.has_perm('netbox_guard.' + action, obj):
+    allowed = user.has_perm('netbox_guard.' + action, obj)
+    if action == 'manage_resourceregistry':
+        allowed = allowed or user.has_perm('netbox_guard.manage_providerresourceregistry', obj)
+    if not allowed:
         raise DependencyGuardBlocked('PERMISSION_DENIED')
     return str(user.pk)
 
