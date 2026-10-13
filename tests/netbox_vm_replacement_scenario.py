@@ -9,6 +9,7 @@ from django.db import connection
 from extras.models import CustomField
 from virtualization.models import Cluster, ClusterType, VirtualMachine, VMInterface, VirtualDisk
 from ipam.models import IPAddress
+from dcim.models import MACAddress
 from netbox_guard.models import CreationClaim, CreationReceipt
 from netbox_guard.service import create_owned
 from netbox_guard.dependencies import DependencyGuardBlocked
@@ -47,6 +48,11 @@ def fixture(name):
         custom_field_data={'sync_identities': [identity], 'sync_original_names': {f'esxi/{source}/vm': name}}), cluster=cluster.pk)
     nic = create_owned(actor, uuid4(), source, 'vminterface',
         dict(name='old-nic', virtual_machine=vm, custom_field_data={'source_bridge': 'Fixture portgroup'}), cluster=cluster.pk)
+    octets = vm.pk.to_bytes(4, 'big')
+    mac = create_owned(actor, uuid4(), source, 'mac',
+        dict(mac_address='02:aa:' + ':'.join(f'{part:02x}' for part in octets), assigned_object=nic), cluster=cluster.pk)
+    nic.primary_mac_address = mac
+    nic.save()
     disk = create_owned(actor, uuid4(), source, 'disk',
         dict(name='old-disk', virtual_machine=vm, size=8000, custom_field_data={'sync_disk_identity':
             {**identity, 'kind': 'vm-disk', 'external_id': identity['external_id'] + ':2000'}}), cluster=cluster.pk)
@@ -63,7 +69,16 @@ def refused(call):
 
 vm, nic, disk, new = fixture('Recreated')
 evidence = review(actor, vm.pk, source, cluster.pk)
-assert {tuple(row) for row in evidence['children']} == {('vminterface', nic.pk), ('disk', disk.pk)}
+# Known-name hooks must still have the exact enabled state/body; no name-only bypass.
+with connection.cursor() as cursor:
+    cursor.execute('ALTER TABLE virtualization_virtualmachine DISABLE TRIGGER netbox_guard_provider_write')
+try:
+    refused(lambda: review(actor, vm.pk, source, cluster.pk))
+finally:
+    with connection.cursor() as cursor:
+        cursor.execute('ALTER TABLE virtualization_virtualmachine ENABLE TRIGGER netbox_guard_provider_write')
+old_mac = nic.primary_mac_address_id
+assert {tuple(row) for row in evidence['children']} == {('vminterface', nic.pk), ('disk', disk.pk), ('mac', old_mac)}
 nonce = uuid4()
 refused(lambda: execute(denied, vm.pk, source, cluster.pk, nonce, evidence, new, vm.name))
 refused(lambda: review(denied, vm.pk, source, cluster.pk))
@@ -93,6 +108,7 @@ assert (vm.pk, vm.created) == (before_id, before_created)
 assert vm.custom_field_data['sync_identities'] == [new]
 assert not VMInterface.objects.filter(pk=nic.pk).exists()
 assert not VirtualDisk.objects.filter(pk=disk.pk).exists()
+assert not MACAddress.objects.filter(pk=old_mac).exists()
 assert not CreationClaim.objects.filter(resource='vminterface', object_id=nic.pk).exists()
 assert execute(actor, vm.pk, source, cluster.pk, nonce, evidence, new, vm.name)['replayed']
 refused(lambda: execute(actor, vm.pk, source, cluster.pk, nonce, evidence, {**new, 'external_id': str(uuid4())}, vm.name))

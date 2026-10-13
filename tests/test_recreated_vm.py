@@ -141,3 +141,36 @@ def test_unproven_guard_evidence_keeps_isolated_review(fake_netbox):
     plan = build_runtime_plan(fake_netbox, hosts, _config())
     assert plan.apply_allowed and any(i.reason_code == 'VM_RECREATED_NAME' for i in plan.items)
     assert not fake_netbox.mutations
+
+
+def test_guard_refusal_precedes_other_writes(fake_netbox):
+    hosts, managed, old, _ = replacement(fake_netbox)
+    prove_replacement(fake_netbox, old)
+    before = deepcopy(old.serialize()), deepcopy(managed.serialize())
+    def refuse(*args): raise RuntimeError('Dependencies changed')
+    fake_netbox.replace_vm = refuse
+    with pytest.raises(RuntimeError, match='Dependencies changed'):
+        execute_esxi_runtime(fake_netbox, hosts, _config(), confirmed=True)
+    assert (old.serialize(), managed.serialize()) == before
+    assert not fake_netbox.mutations
+
+
+def test_fresh_plan_finishes_after_post_reset_failure_without_second_replacement(fake_netbox, monkeypatch):
+    import netbox_sync.esxi_runtime as runtime
+    from netbox_sync.application.planning_netbox import PlanningNetBox
+    hosts, _, old, new = replacement(fake_netbox)
+    calls = prove_replacement(fake_netbox, old)
+    original = runtime.apply_virtual_machines
+    def fail_real_write(api, *args, **kwargs):
+        if not isinstance(api, PlanningNetBox): raise RuntimeError('Temporary write failure')
+        return original(api, *args, **kwargs)
+    monkeypatch.setattr(runtime, 'apply_virtual_machines', fail_real_write)
+    with pytest.raises(RuntimeError, match='Temporary write failure'):
+        execute_esxi_runtime(fake_netbox, hosts, _config(), confirmed=True)
+    assert old.custom_fields['sync_identities'][0]['external_id'] == new.external_id
+    monkeypatch.setattr(runtime, 'apply_virtual_machines', original)
+    plan = build_runtime_plan(fake_netbox, hosts, _config())
+    assert plan.apply_allowed and not any(i.reason_code == 'VM_GENERATION_REPLACE' for i in plan.items)
+    execute_esxi_runtime(fake_netbox, hosts, _config(), confirmed=True)
+    assert len(calls) == 1 and old.vcpus == new.vcpus
+    assert len(fake_netbox.virtualization.virtual_machines.all()) == 2
