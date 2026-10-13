@@ -3,8 +3,9 @@ import hashlib
 import json
 import re
 
-VERSION = 8
+VERSION = 9
 FIELDS = {
+    'hardware_identity': ('json', ('dcim.device',)),
     'sync_identities': ('json', ('dcim.device','dcim.interface','virtualization.virtualmachine','virtualization.vminterface')),
     'sync_original_names': ('json', ('dcim.device','dcim.interface','virtualization.virtualmachine','virtualization.vminterface')),
     'hypervisor_version': ('text', ('dcim.device',)),
@@ -27,6 +28,7 @@ FIELDS = {
 }
 
 LABELS = {
+    'hardware_identity': ('Hardware identity', 'Аппаратные идентификаторы'),
     'proxmox_host_network': ('Proxmox host network', 'Сеть хоста Proxmox'),
     'esxi_events': ('ESXi events for alerting', 'События ESXi для оповещений'),
     'sync_disk_identity': ('Disk source identity', 'Идентификатор диска источника'),
@@ -52,6 +54,7 @@ LABELS = {
     'source_vlan_id': ('Source VLAN ID', 'VLAN ID источника'),
 }
 PURPOSES = {
+    'hardware_identity': ('Typed physical system identifiers and collection coverage.', 'Идентификаторы физического сервера и доступность их сбора.'),
     'proxmox_host_network': ('Observed Proxmox bridge, bond and VLAN configuration; not verified cabling.', 'Конфигурация bridge, bond и VLAN Proxmox; не подтверждение кабельных соединений.'),
     'esxi_events': ('Bounded source events with observed actors; not a complete audit archive.', 'События с автором из источника; не полный архив аудита.'),
     'sync_disk_identity': ('Stable provider disk identity.', 'Устойчивый идентификатор диска провайдера.'),

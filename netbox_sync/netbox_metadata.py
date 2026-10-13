@@ -1,4 +1,5 @@
 MANAGED_DEVICE_CUSTOM_FIELDS = (
+    'hardware_identity',
     'sync_identities',
     'sync_original_names',
     'hypervisor_version',
@@ -65,6 +66,9 @@ def build_device_custom_fields(
     )
 
     result = dict(existing)
+    if host.hardware_identity is not None:
+        from copy import deepcopy
+        result['hardware_identity'] = deepcopy(host.hardware_identity)
 
     result.update({
         'sync_identities':

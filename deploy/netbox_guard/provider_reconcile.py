@@ -13,25 +13,19 @@ from .provider_service import review_binding, apply_binding
 from .provider_schema import check_schema
 from .resource_presentation import obj, items
 from .service import _permission, _add_permission
+from .hardware_identity import canonical, tokens, selectel_observation, compare
 
 
 VM_STATES = {'ACTIVE': 'active', 'SHUTOFF': 'offline', 'SHELVED': 'offline',
              'SHELVED_OFFLOADED': 'offline', 'ERROR': 'failed'}
 
 
-def facts(snapshot):
+def facts(snapshot, observed_at=None):
     row = {'sections': snapshot['sections']}
     ident = snapshot['identity']
     resource = obj(row, 'resource')
-    serial = ''
-    for section in ('hardware', 'details'):
-        observation = row['sections'].get(section, {})
-        value = obj(row, section).get('serial')
-        if observation.get('status') == 'collected' and not observation.get('retained') and isinstance(value, str) and value.strip():
-            serial = value
-            break
-    if serial.strip().casefold() in ('unknown', 'n/a', 'none', '0', 'to be filled by o.e.m.', 'default string', 'system serial number') or not serial.strip('0 '):
-        serial = ''
+    hardware = selectel_observation(row['sections'], observed_at)
+    serial = next((v for k, v in sorted(tokens(hardware)) if k == 'system_serial'), '')
     addresses = {str(v['ip']) for section in ('public_ips', 'private_ips') for v in items(row, section) if v.get('ip')}
     addresses.update(v['addr'] for values in obj(row, 'addresses').values() for v in values if v.get('addr'))
     normalized = set()
@@ -42,7 +36,7 @@ def facts(snapshot):
             pass
     placement = obj(row, 'placement')
     return dict(name=resource.get('name') or resource.get('user_desc') or ident['native_id'],
-                serial=serial.strip(), addresses=sorted(normalized),
+                serial=serial.strip(), hardware_identity=hardware, addresses=sorted(normalized),
                 location=placement.get('name') or placement.get('OS-EXT-AZ:availability_zone') or ident.get('region'))
 
 
@@ -85,7 +79,8 @@ def prepare(user, account):
         native_kind = 'device' if snap['identity']['kind'] == 'dedicated' else 'vm'
         if identity(snap['identity'], native_kind) != record.provider_key:
             raise ValueError('PROVIDER_IDENTITY_INVALID')
-        info = facts(snap)
+        info = facts(snap, record.observed_at.isoformat())
+        provider_tokens = tokens(info['hardware_identity'])
         plan = dict(key=record.provider_key, name=info['name'], resource=native_kind,
                     action='blocked', reason='', candidates=[], info=info,
                     ignored_address_matches=[], host_groups=[])
@@ -99,11 +94,23 @@ def prepare(user, account):
                         reason='existing_binding' if target and target.created == binding.object_created else 'binding_target_missing',
                         object_id=binding.object_id)
         else:
-            strong, possible = [], set()
+            strong, possible, identity_conflicts = [], set(), set()
             for kind, target in targets:
                 tid = (kind, target.pk)
-                if kind == native_kind and native_kind == 'device' and info['serial'] and target.serial.strip().casefold() == info['serial'].casefold():
-                    strong.append(tid)
+                if kind == native_kind == 'device':
+                    host_observation = (target.custom_field_data or {}).get('hardware_identity') or {}
+                    host_tokens = tokens(host_observation)
+                    native_serial = canonical('system_serial', target.serial)
+                    if native_serial:
+                        host_tokens.add(('system_serial', native_serial))
+                    verdict = compare(provider_tokens, host_tokens)
+                    if host_observation.get('status') == 'conflict' and verdict == 'match':
+                        verdict = 'conflict'
+                    if verdict == 'match':
+                        strong.append(tid)
+                    elif verdict == 'conflict':
+                        identity_conflicts.add(tid)
+                        possible.add(tid)
                 if target.name and target.name.casefold() == info['name'].casefold():
                     possible.add(tid)
                 # Previously stored provider identities are evidence only in the exact account/scope.
@@ -134,7 +141,7 @@ def prepare(user, account):
                 host_id = i if k == 'device' else target.device_id
                 plan['candidates'].append(dict(resource=k, id=i, name=target.name,
                     url=target.get_absolute_url(), host_device_id=host_id,
-                    evidence=dict(stable_identity=(k, i) in strong,
+                    evidence=dict(stable_identity=(k, i) in strong, hardware_conflict=(k, i) in identity_conflicts,
                                   same_name=(target.name or '').casefold() == info['name'].casefold(),
                                   public_ips=matching_ips)))
                 if host_id and ('device', host_id) in target_index:
@@ -151,6 +158,8 @@ def prepare(user, account):
                 plan['reason'] = 'placement_missing'
             else:
                 plan.update(action='create', reason='no_existing_candidate')
+            if info['hardware_identity']['status'] == 'conflict' or identity_conflicts:
+                plan.update(action='blocked', reason='hardware_identity_conflict')
             section = snap['sections'].get('resource', {})
             if native_kind == 'vm':
                 if plan['native_status'] is None:
@@ -170,7 +179,8 @@ def prepare(user, account):
         if plan['action'] in ('bind', 'create'):
             collisions = [p for p in plans if p is not plan and
                 ((plan.get('object_id') and p.get('object_id') == plan['object_id'] and p['resource'] == plan['resource']) or
-                 (plan['info']['serial'] and p['info']['serial'].casefold() == plan['info']['serial'].casefold()))]
+                 (plan['resource'] == p['resource'] == 'device' and
+                  tokens(plan['info']['hardware_identity']) & tokens(p['info']['hardware_identity'])))]
             if collisions:
                 plan.update(action='blocked', reason='multiple_provider_resources')
     state = {'records': [(r.pk, r.evidence_digest, r.snapshot) for r in records],

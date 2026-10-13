@@ -79,6 +79,7 @@ class DiscoveredHost:
     esxi_host_network: dict | None = None
     proxmox_host_network: dict | None = None
     connection_management: dict | None = None
+    hardware_identity: dict | None = None
 
 
 @dataclass

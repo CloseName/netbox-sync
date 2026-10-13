@@ -82,10 +82,11 @@ class HostNetworkPrerequisiteError(ValueError):
 
 def require_host_network_field(api):
     from .prerequisites import reconcile
-    rows = [r.serialize() for r in api.extras.custom_fields.filter(name='esxi_host_network')]
-    field = next(r for r in reconcile(rows) if r['name'] == 'esxi_host_network')
-    if field['status'] != 'ready':
-        raise HostNetworkPrerequisiteError('Prepare esxi_host_network in NetBox before synchronization')
+    for name in ('esxi_host_network', 'hardware_identity'):
+        rows = [r.serialize() for r in api.extras.custom_fields.filter(name=name)]
+        field = next(r for r in reconcile(rows) if r['name'] == name)
+        if field['status'] != 'ready':
+            raise HostNetworkPrerequisiteError('Prepare ' + name + ' in NetBox before synchronization')
 
 
 def apply_host_network_snapshots(api, hosts):
@@ -101,6 +102,8 @@ def apply_host_network_snapshots(api, hosts):
             raise ValueError('Expected one owned ESXi host for network snapshot')
         device = matches[0]
         fields = dict(getattr(device, 'custom_fields', None) or {})
-        if fields.get('esxi_host_network') != host.esxi_host_network:
+        if host.hardware_identity is not None:
+            fields['hardware_identity'] = deepcopy(host.hardware_identity)
+        if fields.get('esxi_host_network') != host.esxi_host_network or fields != (getattr(device, 'custom_fields', None) or {}):
             fields['esxi_host_network'] = deepcopy(host.esxi_host_network)
             device.update({'custom_fields': fields})

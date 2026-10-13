@@ -9,8 +9,9 @@ def add_target(fake_netbox):
     """Create the prerequisites shared by VM and network apply."""
 
     from netbox_sync.prerequisites import definition
-    if not fake_netbox.extras.custom_fields.filter(name='esxi_host_network'):
-        fake_netbox.extras.custom_fields.add(FakeRecord(id=9001, **definition('esxi_host_network')))
+    for ident, name in enumerate(('esxi_host_network', 'hardware_identity'), 9001):
+        if not fake_netbox.extras.custom_fields.filter(name=name):
+            fake_netbox.extras.custom_fields.add(FakeRecord(id=ident, **definition(name)))
 
     site = fake_netbox.dcim.sites.add(
         FakeRecord(id=1, slug='test-site', name='Test Site')

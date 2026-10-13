@@ -17,6 +17,15 @@ spec.loader.exec_module(mod)
 
 
 class InventoryTests(unittest.TestCase):
+    def test_system_identity_fields_survive_normalization(self):
+        doc = fixture()
+        source = doc['datasets'][0]['items'][0]
+        source.update(serial='SERIAL-1', service_tag='TAG-1',
+                      system_uuid='b64f8ef7-5c89-48db-8b2a-886731fa16a4')
+        resource = self.normalized(doc)[0]['sections']['resource']['data']
+        for field in ('serial', 'service_tag', 'system_uuid'):
+            self.assertEqual(resource[field], source[field])
+
     def normalized(self, data=None):
         return list(mod.Inventory(data or fixture()).normalize().values())
 

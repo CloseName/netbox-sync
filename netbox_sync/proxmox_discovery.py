@@ -2,6 +2,7 @@
 
 import logging
 import re
+from .hardware_identity import collect_proxmox
 
 from .discovery import (
     DiscoveredCPU,
@@ -185,6 +186,7 @@ def discover_hosts(pve_api, source_config) -> list[DiscoveredHost]:
                 normalized_name=node_name.upper(),
                 management_ip=node_ips.get(node_name),
                 hypervisor='Proxmox VE',
+                hardware_identity=collect_proxmox(),
                 hypervisor_version=pve_version,
                 cpu=cpu,
                 memory_bytes=int(memory.get('total', 0)),

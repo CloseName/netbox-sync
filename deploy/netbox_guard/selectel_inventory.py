@@ -95,13 +95,13 @@ class Inventory:
         info_obj = next(iter(rows(info.get('items'))), {})
         merged = {**obj, **detail_obj}
         sections['resource'] = self.section(root, pick(obj, ('uuid', 'user_desc', 'service_type',
-            'state', 'project_uuid', 'hw_uuid', 'location_uuid')))
-        sections['details'] = self.section(detail, pick(detail_obj, ('config_name', 'state', 'serial', 'service_tag')))
+            'state', 'project_uuid', 'hw_uuid', 'location_uuid', 'serial', 'service_tag', 'system_uuid')))
+        sections['details'] = self.section(detail, pick(detail_obj, ('config_name', 'state', 'serial', 'service_tag', 'system_uuid')))
         config = info_obj.get('config') or {}
         hardware = {kind: [pick(v, HARDWARE) for v in rows(config.get(kind))]
                     for kind in ('cpu', 'ram', 'disk', 'board', 'case', 'gpu', 'pcie', 'misc', 'ocp')
                     if isinstance(config, dict) and kind in config}
-        hardware.update(pick(info_obj, ('config_name', 'serial', 'service_tag')))
+        hardware.update(pick(info_obj, ('config_name', 'serial', 'service_tag', 'system_uuid')))
         sections['hardware'] = self.section(info, hardware)
         locations = ds('locations')
         location = next((v for v in rows(locations.get('items')) if v.get('uuid') == merged.get('location_uuid')), {})

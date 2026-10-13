@@ -3,6 +3,7 @@
 import re
 from uuid import UUID
 from .esxi_host_network import collect_host_network
+from .hardware_identity import collect_esxi
 
 from .discovery import (
     DiscoveredCPU,
@@ -434,6 +435,7 @@ def _convert_hosts(hosts, source_config):
                 storages=_datastores(host),
                 interfaces=_host_interfaces(host),
                 esxi_host_network=collect_host_network(host),
+                hardware_identity=collect_esxi(host),
                 virtual_machines=_virtual_machines(host, source_config, host_id),
                 containers=[],
             )

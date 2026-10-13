@@ -74,6 +74,7 @@ def test_legacy_managed_device_receives_snapshot_without_network_objects(fake_ne
     original_name = device.name
     execute_esxi_runtime(fake_netbox, hosts, _config(), confirmed=True)
     assert device.custom_fields['esxi_host_network'] == hosts[0].esxi_host_network
+    assert device.custom_fields['hardware_identity'] == hosts[0].hardware_identity
     assert device.custom_fields['operator_field'] == 'keep'
     assert device.name == original_name
     assert fake_netbox.dcim.interfaces.all() == []
@@ -97,6 +98,7 @@ def test_new_host_roundtrip_and_readonly_plan(fake_netbox):
         execute_esxi_runtime(api, hosts, config, confirmed=True)
         device = next(iter(rows['dcim.devices'].values()))
         assert device['custom_fields']['esxi_host_network'] == hosts[0].esxi_host_network
+        assert device['custom_fields']['hardware_identity'] == hosts[0].hardware_identity
         assert rows['dcim.interfaces'] == {}
         assert not [r for r in build_runtime_plan(api, hosts, config).items
                     if r.action.value in ('CREATE', 'UPDATE')]
@@ -120,10 +122,11 @@ def test_mac_conflict_is_a_named_blocked_plan_without_writes(fake_netbox,monkeyp
 
 
 @pytest.mark.parametrize('mode', ['missing', 'wrong_type', 'provisioning'])
-def test_field_preparation_blocks_before_any_writes(fake_netbox, mode):
+@pytest.mark.parametrize('field_name', ['esxi_host_network', 'hardware_identity'])
+def test_field_preparation_blocks_before_any_writes(fake_netbox, mode, field_name):
     config = target(fake_netbox, _config())
     hosts = discover_hosts(fake_esxi_service(), config)
-    field = fake_netbox.extras.custom_fields.filter(name='esxi_host_network')[0]
+    field = fake_netbox.extras.custom_fields.filter(name=field_name)[0]
     if mode == 'missing':
         fake_netbox.extras.custom_fields.records.remove(field)
     elif mode == 'wrong_type':

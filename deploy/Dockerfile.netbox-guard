@@ -8,3 +8,4 @@ ENV PYTHONPATH=/opt/netbox-sync-guard${PYTHONPATH:+:${PYTHONPATH}}
 
 # Standalone parser shared with the read-only operator preview.
 COPY --chmod=0644 netbox_sync/pfsense_preview.py /opt/netbox-sync-guard/netbox_guard/pfsense_preview.py
+COPY --chmod=0644 netbox_sync/hardware_identity.py /opt/netbox-sync-guard/netbox_guard/hardware_identity.py

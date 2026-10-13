@@ -18,6 +18,7 @@ def target(api, config):
 def test_proxmox_empty_target_full_plan():
     api=FakeNetBox();config=target(api,replace(sample_source_config(),legacy_identity_owner=False))
     hosts=discover_hosts(FakeProxmox(proxmox_responses()),config)
+    assert hosts[0].hardware_identity['status'] == 'unsupported_api'
     plan=build_runtime_plan(api,hosts,config)
     assert api.mutations==[]
     assert plan.apply_allowed

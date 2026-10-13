@@ -116,3 +116,37 @@ for address, owner in ((private_ip, guest_nic), (public_ip, guest_nic), (host_ip
     assert address.assigned_object == owner and address.nat_inside_id is None
 assert not any(r['action'] in ('create', 'bind') for r in native_prepare(admin, account)['resources'])
 print('Scope isolation, ERROR inventory, task guard and guest-host evidence preservation OK')
+
+# New collection feeds typed hardware evidence without overwriting Device.serial.
+from netbox_guard.hardware_identity import observation
+identified = Device.objects.create(name='typed-hardware-host', site=site, device_type=dtype, role=role,
+    custom_field_data={'hardware_identity': observation('esxi', [('service_tag', 'TAG-UNIQUE', 'ServiceTag')])})
+typed = insert_resource('dedicated', 'typed-hardware', 'Provider hardware name')
+typed.snapshot['sections']['hardware']['data']['service_tag'] = 'TAG-UNIQUE'
+typed.save()
+plan = native_prepare(admin, account)
+row = next(r for r in plan['resources'] if r['key'] == typed.pk)
+assert row['action'] == 'bind' and row['object_id'] == identified.pk
+# A duplicate service tag blocks both provider records, even without system serials.
+duplicate_tag = insert_resource('dedicated', 'typed-duplicate', 'Other provider hardware')
+duplicate_tag.snapshot['sections']['hardware']['data']['service_tag'] = 'TAG-UNIQUE'
+duplicate_tag.save()
+ambiguous = {r['key']: r for r in native_prepare(admin, account)['resources']}
+assert ambiguous[typed.pk]['reason'] == ambiguous[duplicate_tag.pk]['reason'] == 'multiple_provider_resources'
+duplicate_tag.delete()
+# Stale host evidence cannot cause adoption.
+identified.custom_field_data['hardware_identity']['observed_at'] = (timezone.now() - timedelta(days=3)).isoformat()
+identified.save()
+assert next(r for r in native_prepare(admin, account)['resources'] if r['key'] == typed.pk)['action'] == 'blocked'
+identified.custom_field_data['hardware_identity'] = observation('esxi', [('system_serial', 'TAG-UNIQUE', 'serial')])
+identified.save()
+assert next(r for r in native_prepare(admin, account)['resources'] if r['key'] == typed.pk)['action'] == 'blocked'
+identified.custom_field_data['hardware_identity'] = observation('esxi', [('service_tag', 'TAG-UNIQUE', 'ServiceTag')])
+identified.save()
+plan = native_prepare(admin, account)
+native_apply(admin, account, uuid4(), plan['fingerprint'])
+identified.refresh_from_db()
+assert identified.serial == '' and identified.primary_ip4_id is None
+assert ProviderBinding.objects.get(provider_key=typed.pk).object_id == identified.pk
+print('Typed hardware adoption through Guard and native serial preservation OK')
+
