@@ -21,14 +21,22 @@ from tests.test_sync_plan import review
 
 @pytest.mark.parametrize('provider', ['esxi', 'proxmox'])
 @pytest.mark.parametrize('existing', [False, True])
-def test_fresh_discoveries_have_same_plan_and_apply_actual_observation_time(provider, existing, monkeypatch):
+@pytest.mark.parametrize('events', [False, True])
+def test_fresh_discoveries_have_same_plan_and_apply_actual_observation_time(provider, existing, events, monkeypatch):
     seed = FakeNetBox()
     config = target(seed, _config() if provider == 'esxi' else
                     replace(sample_source_config(), legacy_identity_owner=False))
+    if events and provider == 'esxi':
+        from tests.fakes import FakeRecord
+        from netbox_sync.prerequisites import definition
+        seed.extras.custom_fields.add(FakeRecord(id=9500, **definition('esxi_events')))
     def discover(second):
         hosts = (discover_esxi(fake_esxi_service(), config) if provider == 'esxi' else
                  discover_pve(FakeProxmox(proxmox_responses()), config))
         hosts[0].hardware_identity['observed_at'] = f'2026-10-13T15:00:{second:02d}+00:00'
+        if events and provider == 'esxi':
+            hosts[0].esxi_events = dict(status='available', events=[] if second == 0 else [
+                dict(event_id='stable-event', occurred_at='2026-10-13T14:00:00+00:00')])
         return hosts
     def apply(api, hosts):
         if provider == 'esxi':
@@ -96,3 +104,25 @@ def test_only_desired_hardware_clock_is_excluded_from_review():
     assert plan(new=changed).digest != first.digest
     assert plan(endpoint='virtualization.virtual_machines', new=later).digest != plan(endpoint='virtualization.virtual_machines').digest
 
+
+
+def test_simulated_clock_does_not_hide_persisted_changes_or_other_objects():
+    from netbox_sync.application.sync_plan import canonical_mutation_baselines
+    def fields(time):
+        return {'custom_fields': {'hardware_identity': dict(version=1, source='esxi',
+            observed_at=time, status='collected', identifiers=[]), 'operator': 'keep'}}
+    stored, fresh = fields('stored-time'), fields('fresh-time')
+    steps = [PlannedMutation('update', 'dcim.devices', 1, stored, fresh),
+             PlannedMutation('update', 'dcim.devices', 1, fresh, fresh),
+             PlannedMutation('update', 'dcim.devices', 2, fresh, fresh)]
+    original = deepcopy(steps)
+    normalized = canonical_mutation_baselines(steps)
+    assert normalized[0].before == stored
+    assert normalized[1].before['custom_fields']['hardware_identity']['observed_at'] == '<fresh-collection-time>'
+    assert normalized[1].before['custom_fields']['operator'] == 'keep'
+    assert normalized[2].before == fresh  # No preceding write to this object.
+    assert steps == original
+    changed = deepcopy(fresh)
+    changed['custom_fields']['hardware_identity']['status'] = 'access_denied'
+    drift = canonical_mutation_baselines([steps[0], replace(steps[1], before=changed)])
+    assert drift[1].before == changed

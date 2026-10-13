@@ -10,7 +10,7 @@ from .inventory_conflicts import InventoryConflict
 
 
 PLAN_SCHEMA_VERSION = 1
-PLANNER_VERSION = 'web-5a-17'
+PLANNER_VERSION = 'web-5a-18'
 
 
 class SyncAction(str, Enum):
@@ -149,6 +149,7 @@ def plan_from_review(review, config):
 
 def plan_from_mutations(review, config, mutations):
     """Build the exact plan emitted by guarded executors on a recording facade."""
+    mutations = canonical_mutation_baselines(mutations)
     review_plan = plan_from_review(review, config)
     items = [item for item in review_plan.items
              if item.action in (SyncAction.REVIEW_REQUIRED, SyncAction.BLOCKED,
@@ -227,4 +228,30 @@ def planned_after(endpoint, values):
             and doc.get('version') == 1 and doc.get('source') in ('esxi', 'proxmox')
             and isinstance(doc.get('observed_at'), str)):
         doc['observed_at'] = '<fresh-collection-time>'
+    return result
+
+
+def canonical_mutation_baselines(mutations):
+    """Normalize only clocks carried forward from an earlier simulated write.
+
+    The initial persisted baseline stays exact. A later before value is symbolic
+    only if it is identical to the preceding write for this same object/field.
+    Never alter the recording facade or payloads used by the real executor.
+    """
+    result = []
+    written = {}
+    for mutation in mutations:
+        key = (mutation.endpoint, mutation.object_id)
+        before = deepcopy(mutation.before)
+        fields = before.get('custom_fields')
+        if (key in written and isinstance(fields, dict)
+                and fields.get('hardware_identity') == written[key]):
+            before = planned_after(mutation.endpoint, before)
+        result.append(replace(mutation, before=before))
+        after_fields = mutation.after.get('custom_fields')
+        if isinstance(after_fields, dict):
+            if 'hardware_identity' in after_fields:
+                written[key] = deepcopy(after_fields['hardware_identity'])
+            else:
+                written.pop(key, None)
     return result

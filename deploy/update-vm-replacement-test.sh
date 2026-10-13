@@ -69,7 +69,7 @@ python3 "$REPO/deploy/install.py" --root "$ROOT" --source "$REPO" --release-id "
 [[ $(readlink -f "$ROOT/current") == "$ROOT/releases/$RELEASE" ]]
 docker exec -i netbox-sync-bootstrap-worker python -B - <<'PY'
 from netbox_sync.application.sync_plan import PLANNER_VERSION
-assert PLANNER_VERSION == 'web-5a-17'
+assert PLANNER_VERSION == 'web-5a-18'
 print('OK: replacement planner installed. Rebuild the plan before syncing.')
 PY
 echo "Updated test Guard and Sync. Backups: $BACKUP"
