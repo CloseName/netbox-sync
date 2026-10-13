@@ -59,3 +59,18 @@ request = RequestFactory().get('/providers/123/', {'kind': 'storage_container', 
 request.user = admin
 response = registry_view(request, '123')
 assert response.status_code == 200 and b'<pre>' not in response.content
+
+# Repair project names from the exact source audit, keeping imports idempotent.
+import tempfile
+import json
+with tempfile.TemporaryDirectory() as directory:
+    audit_path = Path(directory) / 'inventory.json'
+    audit_path.write_text(json.dumps({'schema': 'selectel-audit-v1', 'account': '123',
+        'finished_at': registry_new['observed_at'], 'projects': [{'id': 'p', 'name': 'Readable project'}]}))
+    call_command('provider_project_names', input=str(audit_path), account='123', actor=admin.username)
+    repaired = ProviderResourceRegistry.objects.get(pk='123')
+    assert repaired.revision == 3
+    assert next(r for r in repaired.snapshot['resources'].values() if r['kind'] == 'project')['name'] == 'Readable project'
+    call_command('provider_project_names', input=str(audit_path), account='123', actor=admin.username)
+    assert ProviderResourceRegistry.objects.get(pk='123').revision == 3
+    assert registry_prepare(admin, registry_new)[3]['changes'] == 0

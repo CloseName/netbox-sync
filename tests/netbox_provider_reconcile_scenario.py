@@ -1,6 +1,8 @@
 """Real models, within the disposable outer transaction."""
 from datetime import timedelta
 from django.utils import timezone
+from django.test import RequestFactory
+from netbox_guard.resource_registry_views import registry as registry_view
 from netbox_guard.provider_reconcile import prepare as native_prepare, apply as native_apply
 from netbox_guard.provider_policy import identity as provider_key
 from netbox_guard.models import ProviderInventory

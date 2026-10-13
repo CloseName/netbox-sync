@@ -23,7 +23,7 @@ def facts(snapshot):
     for section in ('hardware', 'details'):
         observation = row['sections'].get(section, {})
         value = obj(row, section).get('serial')
-        if observation.get('status') == 'collected' and not observation.get('retained') and isinstance(value, str):
+        if observation.get('status') == 'collected' and not observation.get('retained') and isinstance(value, str) and value.strip():
             serial = value
             break
     if serial.strip().casefold() in ('unknown', 'n/a', 'none', '0', 'to be filled by o.e.m.', 'default string', 'system serial number') or not serial.strip('0 '):
