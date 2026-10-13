@@ -19,7 +19,7 @@ def registry(request, account=None):
     account_ids = set(ProviderResourceRegistry.objects.values_list('account', flat=True))
     account_ids.update(ProviderInventory.objects.values_list('account', flat=True))
     accounts = [dict(account=a) for a in sorted(account_ids)]
-    context = {'accounts': accounts}
+    context = {'accounts': accounts, 'registry': None}
     if account is not None:
         if account not in account_ids:
             raise Http404
