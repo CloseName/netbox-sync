@@ -62,3 +62,57 @@ assert response.status_code == 200
 assert cloud_vm.get_absolute_url().encode() in response.content
 assert b'<pre>' not in response.content
 assert b'provider_key' not in response.content
+
+# Network scope and guest placement are evidence, never identity by themselves.
+from virtualization.models import VMInterface
+from dcim.models import Interface
+from ipam.models import IPAddress
+
+guest = VirtualMachine.objects.create(name='scope-guest', site=site, device=native_host)
+guest_nic = VMInterface.objects.create(virtual_machine=guest, name='WAN')
+host_nic = Interface.objects.create(device=native_host, name='fixture-management', type='virtual')
+private_ip = IPAddress.objects.create(address='192.168.199.231/24', assigned_object=guest_nic)
+public_ip = IPAddress.objects.create(address='8.8.4.231/24', assigned_object=guest_nic)
+host_ip = IPAddress.objects.create(address='8.8.4.232/24', assigned_object=host_nic)
+
+def with_addresses(record, values, status='ACTIVE', task=None):
+    record.snapshot['sections']['addresses'] = {'status': 'collected', 'data': {
+        'network': [{'addr': v} for v in values]}}
+    record.snapshot['sections']['resource']['data'].update(status=status, **{'OS-EXT-STS:task_state': task})
+    record.save()
+    return record
+
+scoped = with_addresses(insert_resource('cloud_vm', 'scope', 'Distinct cloud VM'), ['192.168.199.231'])
+error_vm = with_addresses(insert_resource('cloud_vm', 'error', 'Failed cloud VM'), [], status='ERROR')
+busy = with_addresses(insert_resource('cloud_vm', 'busy', 'Busy cloud VM'), [], status='ERROR', task='rebuilding')
+unknown_state = with_addresses(insert_resource('cloud_vm', 'unknown-state', 'Unknown state'), [], status='NEW_STATE')
+chain = with_addresses(insert_resource('dedicated', 'chain', 'Guest-host chain'), ['8.8.4.231', '8.8.4.232'])
+public_collision = with_addresses(insert_resource('cloud_vm', 'public-collision', 'Public collision'), ['8.8.4.231'])
+plan = native_prepare(admin, account)
+rows = {r['key']: r for r in plan['resources']}
+assert rows[scoped.pk]['action'] == 'create' and not rows[scoped.pk]['candidates']
+assert rows[scoped.pk]['ignored_address_matches'][0]['reason'] == 'network_scope_unverified'
+assert rows[error_vm.pk]['action'] == 'create' and rows[error_vm.pk]['native_status'] == 'failed'
+assert rows[busy.pk]['reason'] == 'provider_task_in_progress'
+assert rows[unknown_state.pk]['reason'] == 'provider_state_not_ready'
+assert rows[public_collision.pk]['action'] == 'blocked'
+assert rows[chain.pk]['action'] == 'blocked'
+assert len(rows[chain.pk]['host_groups']) == 1
+assert rows[chain.pk]['host_groups'][0]['device_id'] == native_host.pk
+assert len(rows[chain.pk]['host_groups'][0]['members']) == 2
+assert rows[chain.pk]['host_groups'][0]['confirmed'] is False
+# Same private address plus equal name remains a duplicate candidate.
+scoped.snapshot['sections']['resource']['data']['name'] = guest.name
+scoped.save()
+assert next(r for r in native_prepare(admin, account)['resources'] if r['key'] == scoped.pk)['action'] == 'blocked'
+scoped.snapshot['sections']['resource']['data']['name'] = 'Distinct cloud VM'
+scoped.save()
+plan = native_prepare(admin, account)
+result = native_apply(admin, account, uuid4(), plan['fingerprint'])
+failed_binding = ProviderBinding.objects.get(provider_key=error_vm.pk)
+assert VirtualMachine.objects.get(pk=failed_binding.object_id).status == 'failed'
+for address, owner in ((private_ip, guest_nic), (public_ip, guest_nic), (host_ip, host_nic)):
+    address.refresh_from_db()
+    assert address.assigned_object == owner and address.nat_inside_id is None
+assert not any(r['action'] in ('create', 'bind') for r in native_prepare(admin, account)['resources'])
+print('Scope isolation, ERROR inventory, task guard and guest-host evidence preservation OK')

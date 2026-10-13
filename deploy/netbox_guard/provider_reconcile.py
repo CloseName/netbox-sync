@@ -15,6 +15,10 @@ from .resource_presentation import obj, items
 from .service import _permission, _add_permission
 
 
+VM_STATES = {'ACTIVE': 'active', 'SHUTOFF': 'offline', 'SHELVED': 'offline',
+             'SHELVED_OFFLOADED': 'offline', 'ERROR': 'failed'}
+
+
 def facts(snapshot):
     row = {'sections': snapshot['sections']}
     ident = snapshot['identity']
@@ -59,6 +63,7 @@ def prepare(user, account):
     bindings = {b.provider_key: b for b in ProviderBinding.objects.order_by('pk')}
     bound_targets = {(b.resource, b.object_id) for b in bindings.values()}
     targets = [('device', o) for o in Device.objects.order_by('pk')] + [('vm', o) for o in VirtualMachine.objects.order_by('pk')]
+    target_index = {(kind, o.pk): o for kind, o in targets}
     address_targets = {}
     for kind, target in targets:
         for address in (target.primary_ip4, target.primary_ip6):
@@ -82,7 +87,11 @@ def prepare(user, account):
             raise ValueError('PROVIDER_IDENTITY_INVALID')
         info = facts(snap)
         plan = dict(key=record.provider_key, name=info['name'], resource=native_kind,
-                    action='blocked', reason='', candidates=[], info=info)
+                    action='blocked', reason='', candidates=[], info=info,
+                    ignored_address_matches=[], host_groups=[])
+        resource_data = obj({'sections': snap['sections']}, 'resource')
+        plan['provider_state'] = resource_data.get('status')
+        plan['native_status'] = VM_STATES.get(plan['provider_state']) if native_kind == 'vm' else None
         binding = bindings.get(record.provider_key)
         if binding:
             target = next((o for kind, o in targets if kind == binding.resource and o.pk == binding.object_id), None)
@@ -107,9 +116,31 @@ def prepare(user, account):
                         except (KeyError, ValueError):
                             continue
             for address in info['addresses']:
-                possible.update(address_targets.get(address, ()))
+                matches = address_targets.get(address, ())
+                if ipaddress.ip_address(address).is_global:
+                    possible.update(matches)
+                elif matches:
+                    # No verified provider-network -> NetBox VRF mapping exists here.
+                    # Even two empty VRFs or equal project names cannot establish scope.
+                    plan['ignored_address_matches'].append(dict(address=address,
+                        reason='network_scope_unverified',
+                        targets=[dict(resource=k, id=i) for k, i in sorted(matches)]))
             strong = set(strong)
-            plan['candidates'] = [dict(resource=k, id=i) for k, i in sorted(possible | strong)]
+            groups = {}
+            for k, i in sorted(possible | strong):
+                target = target_index[k, i]
+                matching_ips = [a for a in info['addresses'] if ipaddress.ip_address(a).is_global
+                                and (k, i) in address_targets.get(a, ())]
+                host_id = i if k == 'device' else target.device_id
+                plan['candidates'].append(dict(resource=k, id=i, name=target.name,
+                    url=target.get_absolute_url(), host_device_id=host_id,
+                    evidence=dict(stable_identity=(k, i) in strong,
+                                  same_name=(target.name or '').casefold() == info['name'].casefold(),
+                                  public_ips=matching_ips)))
+                if host_id and ('device', host_id) in target_index:
+                    groups.setdefault(host_id, []).append(dict(resource=k, id=i, public_ips=matching_ips))
+            plan['host_groups'] = [dict(device_id=i, name=target_index['device', i].name,
+                members=members, confirmed=False) for i, members in sorted(groups.items())]
             if len(strong) == 1 and not (possible - strong) and not (strong & bound_targets):
                 plan.update(action='bind', reason='stable_identity', object_id=next(iter(strong))[1])
             elif strong or possible:
@@ -121,8 +152,11 @@ def prepare(user, account):
             else:
                 plan.update(action='create', reason='no_existing_candidate')
             section = snap['sections'].get('resource', {})
-            if native_kind == 'vm' and obj({'sections': snap['sections']}, 'resource').get('status') not in ('ACTIVE', 'SHUTOFF', 'SHELVED', 'SHELVED_OFFLOADED'):
-                plan.update(action='blocked', reason='provider_state_not_ready')
+            if native_kind == 'vm':
+                if plan['native_status'] is None:
+                    plan.update(action='blocked', reason='provider_state_not_ready')
+                elif resource_data.get('OS-EXT-STS:task_state'):
+                    plan.update(action='blocked', reason='provider_task_in_progress')
             if (record.provider_key in missing or record.observed_at < timezone.now() - timedelta(hours=48)
                     or record.observed_at > timezone.now() + timedelta(minutes=5)
                     or section.get('status') != 'collected' or section.get('retained')):
@@ -174,7 +208,7 @@ def _create(user, record, plan):
         hardware = obj({'sections': record.snapshot['sections']}, 'hardware')
         status = obj({'sections': record.snapshot['sections']}, 'resource').get('status')
         target = VirtualMachine(name=plan['native_name'], site=site,
-            status='active' if status == 'ACTIVE' else 'offline' if status in ('SHUTOFF', 'SHELVED', 'SHELVED_OFFLOADED') else 'planned',
+            status=VM_STATES[status],
             vcpus=hardware.get('vcpus'), memory=hardware.get('ram'))
     _add_permission(user, target)
     target.full_clean(); target.save()
