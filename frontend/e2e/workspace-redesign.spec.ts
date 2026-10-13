@@ -2,9 +2,9 @@ import {test, expect} from './auth-fixture';
 import {source, diagnostics, run} from '../tests/fixtures.mjs';
 test.use({timezoneId:'America/Los_Angeles'});
 
-for (const theme of ['dark','light'] as const) for (const width of [1440,390]) {
+for (const theme of ['dark','light'] as const) for (const width of [1366,1920,2560,390]) {
   test(`quiet workspace navigation and account evidence ${theme} ${width}`, async ({page})=>{
-    await page.setViewportSize({width,height:1000});
+    await page.setViewportSize({width,height:1080});
     await page.emulateMedia({colorScheme:theme});
     const sources = [source(1),source(2)];
     await page.route('**/api/v1/**', route=>{
@@ -53,5 +53,17 @@ for (const theme of ['dark','light'] as const) for (const width of [1440,390]) {
     await expect(page).toHaveURL(/\/diagnostics$/);
     if(width<801) await page.getByRole('button',{name:'Navigation',exact:true}).click();
     await expect(nav.getByRole('link',{name:'Problems',exact:true})).toHaveAttribute('aria-current','page');
+    if(width>=801)for(const path of ['/', '/sources', '/sources/pfsense', '/sources/selectel', '/runs', '/diagnostics', '/settings', '/users']){
+      await page.goto(path);
+      await expect(page.locator('.app-content > main')).toBeVisible();
+      const edges=await page.locator('.app-content').evaluate(e=>{
+        const r=e.getBoundingClientRect(),style=getComputedStyle(e),main=e.querySelector('main')!.getBoundingClientRect();
+        return {left:main.left-r.left-parseFloat(style.paddingLeft),right:r.right-main.right-parseFloat(style.paddingRight)};
+      });
+      expect(Math.abs(edges.left),path+' left inset').toBeLessThan(2);
+      expect(Math.abs(edges.right),path+' unused right strip').toBeLessThan(2);
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    }
+
   });
 }
