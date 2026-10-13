@@ -86,6 +86,7 @@ def main():
     print(f'\nСохранено: {path}\nСерверов/ресурсов в обзоре: {len(rows)}.')
     print('Покрытие по категориям: ' + str(coverage['categories']))
     print('NetBox: ' + document['netbox_read']['status'])
+    print('Обзор продуктов и пробелов: account.json и раздел аккаунта в report.html.')
     print('Сначала пришлите summary.json. report.html открывается локально в браузере.')
     print('inventory.json и fields.json нужны для проектирования полей; не публикуйте их в Git.')
     return 0
