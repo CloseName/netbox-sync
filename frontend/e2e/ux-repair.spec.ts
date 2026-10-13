@@ -9,9 +9,10 @@ test('sidebar stays attached through page scroll and provider assets load locall
   if(p==='/api/v1/diagnostics')return r.fulfill({json:diagnostics(sources)});
   return r.fulfill({json:{items:[],count:0}});
  });
- await page.setViewportSize({width:1440,height:800});
+ await page.setViewportSize({width:1920,height:1080});
  await page.goto('/sources');
  await expect(page.locator('.source-list-table tbody tr')).toHaveCount(25);
+ await page.screenshot({path:'test-results/aligned-sources-1920.png'});
  await expect(page.getByRole('button',{name:'Set schedule',exact:true})).not.toBeVisible();
  for(const height of [800,600]){
   await page.setViewportSize({width:1440,height});

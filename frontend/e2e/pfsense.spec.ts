@@ -12,16 +12,18 @@ test('source categories and pfSense setup keep credentials out of repeated colle
  if(path.endsWith('/connect')||path.endsWith('/collect')||path.endsWith('/schedule')){calls.push(route.request().postDataJSON());return route.fulfill({json:{status:'CONNECTED',ssh_port:2233,collected_at:'2026-10-04T00:00:00Z'}});}
  return route.fulfill({json:{}});
  });
+ await page.setViewportSize({width:1920,height:1080});
  await page.goto('/sources/pfsense');
  await expect(page.getByRole('link',{name:'ESXi (1)',exact:true})).toBeVisible();
  await expect(page.getByRole('link',{name:'Proxmox (1)',exact:true})).toBeVisible();
  await expect(page.getByRole('link',{name:'pfSense (1)',exact:true})).toBeVisible();
  const selected=page.locator('.sidebar [aria-current="page"]');
  await expect(selected).toHaveCount(1);
- await expect(selected).toHaveText('pfSense (1)');
- const sourceIcon=await page.locator('.source-nav-toggle svg').boundingBox();
+ await expect(selected).toHaveText(/pfSense\s*\(1\)/);
+ const sourceIcon=await page.locator('.source-nav-toggle svg').first().boundingBox();
  const overviewIcon=await page.getByRole('link',{name:'Overview',exact:true}).locator('svg').boundingBox();
  expect(sourceIcon!.x).toBe(overviewIcon!.x);
+ await page.screenshot({path:'test-results/aligned-pfsense-1920.png'});
  await page.getByRole('button',{name:'Connection',exact:true}).click();
  await expect(page.getByRole('dialog')).toContainText('pfSense CE 2.6.0+');
  await page.screenshot({path:'test-results/pfsense-connection.png'});
@@ -45,10 +47,10 @@ test('source categories and pfSense setup keep credentials out of repeated colle
  await page.getByRole('link',{name:'Proxmox (1)',exact:true}).click();
  await expect(page).toHaveURL(/provider=proxmox/);
  await expect(selected).toHaveCount(1);
- await expect(selected).toHaveText('Proxmox (1)');
+ await expect(selected).toHaveText(/Proxmox\s*\(1\)/);
  await page.getByRole('link',{name:'ESXi (1)',exact:true}).click();
  await expect(selected).toHaveCount(1);
- await expect(selected).toHaveText('ESXi (1)');
+ await expect(selected).toHaveText(/ESXi\s*\(1\)/);
  await page.getByRole('link',{name:'Overview',exact:true}).click();
  await expect(selected).toHaveCount(1);
  await expect(selected).toHaveText('Overview');

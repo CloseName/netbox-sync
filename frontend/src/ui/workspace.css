@@ -15,8 +15,12 @@
   --on-accent: #ffffff;
   --info: #38636b;
   --info-bg: #eaf2f3;
-  --success: #38636b;
-  --success-bg: #eaf2f3;
+  --success: #08783e;
+  --success-bg: #d9f7e5;
+  --warning: #855600;
+  --warning-bg: #fff0b3;
+  --danger: #b21832;
+  --danger-bg: #ffe0e5;
   --neutral-bg: #edf2f4;
   --focus: #087782;
   --nav-surface: #0b2632;
@@ -42,13 +46,13 @@
   --on-accent: #092a34;
   --info: #b1ccd3;
   --info-bg: #193540;
-  --success: #b1ccd3;
-  --success-bg: #193540;
+  --success: #66f0a0;
+  --success-bg: #124831;
   --neutral-bg: #19333f;
-  --warning: #f2cf8e;
-  --warning-bg: #352e21;
-  --danger: #ffb1b8;
-  --danger-bg: #3a252e;
+  --warning: #ffe066;
+  --warning-bg: #514018;
+  --danger: #ff929c;
+  --danger-bg: #592633;
   --focus: #a3dfe4;
   --nav-surface: #09232f;
   --nav-hover: #123440;
@@ -123,7 +127,8 @@ h3 { font-size: 15px; }
 .provider-entry small { display: block; color: var(--muted); font-weight: 400; margin-top: 2px; font-size: 11px; }
 .provider-entry > span:last-child { margin-left: auto; color: var(--muted); }
 .badge { border-radius: 5px; font-size: 11px; font-weight: 600; padding: 4px 7px; line-height: 1.35; }
-.badge-info, .badge-success { border: 1px solid var(--border); background: var(--neutral-bg); color: var(--info); }
+.badge-info { border: 1px solid var(--border); background: var(--info-bg); color: var(--info); }
+.badge-success { border: 1px solid var(--success); background: var(--success-bg); color: var(--success); }
 .badge-warning, .badge-danger { border: 1px solid currentColor; }
 .alert, .source-error, .sync-attention, .sync-safety { border-radius: 8px; }
 .scroll-region { border-radius: var(--radius); border-color: var(--border); background: var(--surface); }
@@ -228,3 +233,21 @@ html { scroll-padding-top: calc(var(--app-header-height, 70px) + 16px); }
   h1 { font-size: 24px; }
 }
 @media (prefers-reduced-motion: reduce) { button, .nav-chevron { transition: none !important; } }
+
+/* Stable desktop columns: do not let an unassigned middle column absorb the row. */
+.source-list-table th:nth-child(2) { width: 36%; }
+.source-list-table th:last-child { width: 30%; }
+.source-list-table :is(th,td) { padding: 16px 20px; vertical-align: middle; }
+.source-list-table :is(th,td):first-child { width: 44px; padding-inline: 12px; }
+.source-list-table small { margin-top: 5px; }
+.pfsense-list-table table { width: 100%; table-layout: fixed; min-width: 950px; }
+.pfsense-list-table th:nth-child(1) { width: 28%; }
+.pfsense-list-table th:nth-child(2) { width: 18%; }
+.pfsense-list-table th:nth-child(3) { width: 12%; }
+.pfsense-list-table th:nth-child(4) { width: 16%; }
+.pfsense-list-table th:nth-child(5) { width: 26%; }
+.pfsense-list-table :is(th,td) { padding: 16px 20px; vertical-align: middle; overflow-wrap: anywhere; }
+.pfsense-connection-cell { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; }
+.pfsense-connection-cell > button { flex-shrink: 0; margin: 0 0 0 auto; }
+.pfsense-row-status { min-width: 0; }
+.pfsense-row-status small { display: block; margin-top: 5px; }
