@@ -5,7 +5,6 @@ import re
 
 VERSION = 9
 FIELDS = {
-    'hardware_identity': ('json', ('dcim.device',)),
     'sync_identities': ('json', ('dcim.device','dcim.interface','virtualization.virtualmachine','virtualization.vminterface')),
     'sync_original_names': ('json', ('dcim.device','dcim.interface','virtualization.virtualmachine','virtualization.vminterface')),
     'hypervisor_version': ('text', ('dcim.device',)),
@@ -25,6 +24,7 @@ FIELDS = {
     'proxmox_host_network': ('json', ('dcim.device',)),
     'sync_disk_identity': ('json', ('virtualization.virtualdisk',)),
     'esxi_events': ('json', ('dcim.device',)),
+    'hardware_identity': ('json', ('dcim.device',)),
 }
 
 LABELS = {
