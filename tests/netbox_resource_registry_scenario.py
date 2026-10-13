@@ -1,5 +1,5 @@
 """Loaded inside disposable NetBox test transaction; no live infrastructure."""
-from tests.resource_registry_fixture import fixture
+fixture = runpy.run_path(str(Path(__file__).with_name('resource_registry_fixture.py')))['fixture']
 from netbox_guard.resource_registry_service import prepare as registry_prepare, apply as registry_apply
 from netbox_guard.models import ProviderResourceRegistry, ProviderResourceRegistryChange
 from netbox_guard.resource_registry_views import registry as registry_view
