@@ -17,6 +17,15 @@ from netbox_guard.vm_replacement import review, execute
 assert os.environ.get('NETBOX_SYNC_ISOLATED_MODEL_TEST') == '1'
 assert connection.settings_dict['NAME'] == 'netbox_sync_guard_test'
 assert not connection.in_atomic_block
+from netbox_guard.dependencies import _digest, NETBOX_470_HOOKS
+with connection.cursor() as cursor:
+    cursor.execute('SELECT c.relname,t.tgname,t.tgenabled,pg_get_triggerdef(t.oid),pg_get_functiondef(t.tgfoid) FROM pg_catalog.pg_trigger t '
+        'JOIN pg_catalog.pg_class c ON c.oid=t.tgrelid JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace '
+        'WHERE n.nspname=current_schema() AND NOT t.tgisinternal ORDER BY c.relname,t.tgname')
+    hooks = cursor.fetchall()
+    native = [row for row in hooks if row[1] not in ('netbox_guard_provider_write', 'guard_provider_ipam', 'guard_provider_immutable')]
+    print('Disposable migrated database hooks:', len(hooks), _digest(hooks), 'native:', len(native), _digest(native), flush=True)
+    assert _digest(native) == NETBOX_470_HOOKS
 actor = get_user_model().objects.create(username='vm-replacement-fixture', is_superuser=True)
 denied = get_user_model().objects.create(username='vm-replacement-denied')
 ct = ClusterType.objects.create(name='Replacement fixture', slug='replacement-fixture')
@@ -26,6 +35,10 @@ for field_name in ('sync_identities', 'sync_original_names'):
     field, _ = CustomField.objects.get_or_create(name=field_name, defaults={'type': 'json'})
     field.object_types.add(*ContentType.objects.filter(app_label='virtualization',
         model__in=['virtualmachine', 'vminterface', 'virtualdisk']))
+for field_name, field_type, model in [('source_bridge', 'text', 'vminterface'),
+                                     ('sync_disk_identity', 'json', 'virtualdisk')]:
+    field, _ = CustomField.objects.get_or_create(name=field_name, defaults={'type': field_type})
+    field.object_types.add(ContentType.objects.get(app_label='virtualization', model=model))
 
 
 def fixture(name):
@@ -33,9 +46,10 @@ def fixture(name):
     vm = create_owned(actor, uuid4(), source, 'vm', dict(name=name, cluster=cluster,
         custom_field_data={'sync_identities': [identity], 'sync_original_names': {f'esxi/{source}/vm': name}}), cluster=cluster.pk)
     nic = create_owned(actor, uuid4(), source, 'vminterface',
-        dict(name='old-nic', virtual_machine=vm), cluster=cluster.pk)
+        dict(name='old-nic', virtual_machine=vm, custom_field_data={'source_bridge': 'Fixture portgroup'}), cluster=cluster.pk)
     disk = create_owned(actor, uuid4(), source, 'disk',
-        dict(name='old-disk', virtual_machine=vm, size=8000), cluster=cluster.pk)
+        dict(name='old-disk', virtual_machine=vm, size=8000, custom_field_data={'sync_disk_identity':
+            {**identity, 'kind': 'vm-disk', 'external_id': identity['external_id'] + ':2000'}}), cluster=cluster.pk)
     return vm, nic, disk, {**identity, 'external_id': str(uuid4())}
 
 

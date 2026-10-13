@@ -31,7 +31,7 @@ python3 "$REPO/deploy/install.py" --root /netbox-sync-test --source "$REPO" \
 docker exec -i netbox-sync-bootstrap-worker python -B - <<'PY'
 from netbox_sync.application.sync_plan import PLANNER_VERSION
 from netbox_sync.esxi_adoption import AdoptionClassification
-assert PLANNER_VERSION == 'web-5a-16'
+assert PLANNER_VERSION == 'web-5a-17'
 assert AdoptionClassification.RETAINED_NAME.value == 'RETAINED_NAME'
 print('OK: recreated VM review installed; no inventory writes performed by this updater.')
 PY

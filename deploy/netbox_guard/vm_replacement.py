@@ -36,8 +36,20 @@ def _evidence(user, identifier, source, cluster):
         if not user.has_perm(f'{obj._meta.app_label}.view_{obj._meta.model_name}', obj):
             raise DependencyGuardBlocked('PERMISSION_DENIED')
         # Provider, firewall and manual custom fields are not silently inherited.
+        managed = {'sync_identities', 'sync_original_names'}
+        if kind == 'vminterface':
+            managed.update(('source_bridge', 'source_vlan_id', 'sync_network_observations'))
+        if kind == 'disk':
+            managed.add('sync_disk_identity')
+            disk_identity = (obj.custom_field_data or {}).get('sync_disk_identity')
+            old = identities[0]
+            if disk_identity is not None and (not isinstance(disk_identity, dict)
+                    or any(disk_identity.get(k) != old[k] for k in ('schema', 'type', 'instance'))
+                    or disk_identity.get('kind') != 'vm-disk'
+                    or not str(disk_identity.get('external_id', '')).startswith(old['external_id'] + ':')):
+                raise DependencyGuardBlocked('OWNERSHIP_CONFLICT')
         if any(v not in (None, '', [], {}) for k, v in (obj.custom_field_data or {}).items()
-               if k not in ('sync_identities', 'sync_original_names')):
+               if k not in managed):
             raise DependencyGuardBlocked('PROTECTED_DEPENDENCY')
         if kind != 'vm' and (getattr(obj, 'description', '') or getattr(obj, 'comments', '')
                              or (hasattr(obj, 'tags') and obj.tags.exists())):

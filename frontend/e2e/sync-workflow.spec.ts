@@ -48,6 +48,21 @@ test('recreated VM shows retained record link and leaves other changes applicabl
   await expect(page.getByText(/Give the new VM a unique name in the hypervisor/)).toBeVisible();
   await expect(page.getByRole('button',{name:'Review and confirm sync',exact:true})).toBeEnabled();
 });
+test('recreated VM replacement shows preserved card and both UUIDs', async ({page})=>{
+  await fixture(page, plan([row('UPDATE', {
+    name:'Recreated VM', external_id:'new-generation', reason_code:'VM_GENERATION_REPLACE', matched_object_id:1441,
+    before:[['replacement_evidence',{old_identity:{external_id:'old-generation'},children:[]}],
+      ['replacement_card_url','https://netbox.example/virtualization/virtual-machines/1441/']],
+    after:[['name','Recreated VM']],
+  }),retention]));
+  await build(page);
+  await page.locator('summary').getByText('Recreated VM',{exact:true}).click();
+  await expect(page.getByRole('link',{name:'Recreated VM (#1441)'})).toHaveAttribute('href','https://netbox.example/virtualization/virtual-machines/1441/');
+  await expect(page.getByText('old-generation',{exact:true})).toBeVisible();
+  await expect(page.getByText('new-generation',{exact:true}).first()).toBeVisible();
+  await expect(page.getByText(/IPs and external bindings are not transferred/)).toBeVisible();
+  await expect(page.getByRole('button',{name:'Review and confirm sync',exact:true})).toBeEnabled();
+});
 const nav = (page, name) =>
   page
     .getByRole("navigation", { name: "Source sections" })
