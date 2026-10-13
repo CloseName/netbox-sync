@@ -135,7 +135,9 @@ def test_field_preparation_blocks_before_any_writes(fake_netbox, mode, field_nam
         field.status = 'provisioning'
     plan = build_runtime_plan(fake_netbox, hosts, config)
     assert not plan.apply_allowed
-    assert any(r.reason_code == 'HOST_NETWORK_FIELD_REQUIRED' for r in plan.items)
+    row = next(r for r in plan.items if r.reason_code == 'HOST_NETWORK_FIELD_REQUIRED')
+    assert field_name in row.reason
+    assert ('conflict' if mode == 'wrong_type' else mode) in row.reason
     with pytest.raises(HostNetworkPrerequisiteError):
         execute_esxi_runtime(fake_netbox, hosts, config, confirmed=True)
     assert fake_netbox.mutations == []

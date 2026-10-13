@@ -95,12 +95,12 @@ def build_runtime_plan(nb_api, hosts, config):
             reason=('Several NetBox MAC records match the desired address.' if conflict.duplicate
                     else 'The desired MAC belongs to another interface. Its assignment was preserved.'),
             after=(('mac_address',conflict.mac),))))
-    except HostNetworkPrerequisiteError:
+    except HostNetworkPrerequisiteError as error:
         from dataclasses import replace
         return replace(review_plan, items=(*review_plan.items, SyncPlanItem(
             object_kind='source', external_id=config.source_instance, name=config.name,
             action=SyncAction.BLOCKED, reason_code='HOST_NETWORK_FIELD_REQUIRED',
-            reason='Prepare the ESXi host network field in NetBox settings before synchronization.')))
+            reason=str(error))))
     except ObservationPrerequisiteError:
         from dataclasses import replace
         return replace(review_plan, items=(*review_plan.items, SyncPlanItem(

@@ -163,6 +163,7 @@ export function planReason(item:{reason_code:string;reason:string;action?:SyncAc
   MANAGED_FIELD_UPDATE:'Update managed fields',
   EXECUTOR_CREATE_UNSUPPORTED:'No supported create operation was produced for this object.'
  };
+ if(item.reason_code==='HOST_NETWORK_FIELD_REQUIRED' && item.reason.startsWith('NetBox field '))return item.reason;
  if(Object.hasOwn(reasons,item.reason_code))return tr(reasons[item.reason_code]);
  if(item.reason==='Existing guarded executor would perform this managed-field mutation.')return tr(item.action==='CREATE'?'Create managed object':'Update managed fields');
  return item.reason;

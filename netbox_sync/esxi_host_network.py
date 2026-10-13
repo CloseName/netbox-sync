@@ -77,7 +77,10 @@ def collect_host_network(host):
 
 
 class HostNetworkPrerequisiteError(ValueError):
-    pass
+    def __init__(self, name, status):
+        self.field_name = name
+        self.field_status = status
+        super().__init__(f'NetBox field {name}: {status}. Update NetBox Sync Guard and prepare fields in NetBox settings, then rebuild the plan.')
 
 
 def require_host_network_field(api):
@@ -86,7 +89,7 @@ def require_host_network_field(api):
         rows = [r.serialize() for r in api.extras.custom_fields.filter(name=name)]
         field = next(r for r in reconcile(rows) if r['name'] == name)
         if field['status'] != 'ready':
-            raise HostNetworkPrerequisiteError('Prepare ' + name + ' in NetBox before synchronization')
+            raise HostNetworkPrerequisiteError(name, field['status'])
 
 
 def apply_host_network_snapshots(api, hosts):
