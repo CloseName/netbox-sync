@@ -3,13 +3,14 @@
 
 import hashlib
 import json
+from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 from enum import Enum
 from .inventory_conflicts import InventoryConflict
 
 
 PLAN_SCHEMA_VERSION = 1
-PLANNER_VERSION = 'web-5a-14'
+PLANNER_VERSION = 'web-5a-15'
 
 
 class SyncAction(str, Enum):
@@ -175,7 +176,8 @@ def plan_from_mutations(review, config, mutations):
             reason_code='GUARDED_EXECUTOR_ACTION',
             reason='Existing guarded executor would perform this managed-field mutation.',
             matched_object_id=None if mutation.operation == 'create' else mutation.object_id,
-            before=tuple(sorted(mutation.before.items())), after=tuple(sorted(mutation.after.items())),
+            before=tuple(sorted(mutation.before.items())),
+            after=tuple(sorted(planned_after(mutation.endpoint, mutation.after).items())),
         ))
     mutated_ids = {(item.object_kind, item.matched_object_id) for item in items
                    if item.action is SyncAction.UPDATE}
@@ -208,3 +210,20 @@ def plan_from_mutations(review, config, mutations):
             for mutation in sorted(mutations, key=lambda mutation: (mutation.endpoint, str(mutation.object_id)))]),
         items=ordered,
     )
+
+
+def planned_after(endpoint, values):
+    """Bind hardware content, not the wall clock of a fresh read, to confirmation.
+
+    Only the desired collector timestamp is symbolic. Stored before values and
+    every identity/status field stay exact. Executors still write the real fresh
+    observation; these canonical plan values are never an apply payload.
+    """
+    result = deepcopy(values)
+    fields = result.get('custom_fields')
+    doc = fields.get('hardware_identity') if isinstance(fields, dict) else None
+    if (endpoint == 'dcim.devices' and isinstance(doc, dict)
+            and doc.get('version') == 1 and doc.get('source') in ('esxi', 'proxmox')
+            and isinstance(doc.get('observed_at'), str)):
+        doc['observed_at'] = '<fresh-collection-time>'
+    return result

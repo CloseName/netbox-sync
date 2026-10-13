@@ -55,6 +55,10 @@ section coverage: an empty identifier set with denied/failed sections is not pro
 that the physical server has no identifier. Retained sections are not fresh evidence.
 Each new poll refreshes the observation timestamp and may therefore update host
 metadata even when identifier values stay unchanged.
+The desired observation time is represented symbolically in the canonical sync
+plan so independent reads at review, prepare and apply do not invalidate it.
+The actual fresh time is still written by the executor. Stored before values,
+identifiers, status, source and all other fields remain part of stale-plan checks.
 
 1. On the test host run `deploy/update-hardware-identity-test.sh`. It updates Guard
    and the test collector and checks protected network facts before/after.
