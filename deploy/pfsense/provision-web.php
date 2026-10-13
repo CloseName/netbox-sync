@@ -1,13 +1,14 @@
-// Executed by the authenticated Diagnostics PHP runner on pfSense CE 2.7.2.
+// Executed by the authenticated Diagnostics PHP runner on stable pfSense CE 2.6+ (2.x), after compat-web.php.
 require_once('/etc/inc/auth.inc');
+require_once('/etc/inc/services.inc');
 try {
 (function () use ($ns_input) {
     $ns_version = trim(file_get_contents('/etc/version'));
-    if ($ns_version !== '2.7.2-RELEASE') { throw new Exception('UNSUPPORTED_VERSION'); }
-    if (!array_key_exists('enable', config_get_path('system/ssh', []))) { throw new Exception('SSH_DISABLED'); }
+    ns_require_compat($ns_version);
+    if (!array_key_exists('enable', ns_config_get('system/ssh', []))) { throw new Exception('SSH_DISABLED'); }
     $ns_name = $ns_input['username'];
     if ($ns_name !== 'netbox-sync' && $ns_name !== 'netbox-sync-test' && !preg_match('/^nb-sync-[1-9][0-9]{0,9}$/D', $ns_name)) { throw new Exception('INVALID_USER'); }
-    $ns_users = config_get_path('system/user', []);
+    $ns_users = ns_config_get('system/user', []);
     $ns_existing = null;
     foreach ($ns_users as $ns_index => $ns_user) {
         if ($ns_user['name'] === $ns_name) { $ns_existing = $ns_index; break; }
@@ -37,7 +38,7 @@ try {
     $ns_authorized = 'restrict,command="/usr/local/bin/php -f ' . $ns_dir . '/network-v1.php" ' . $ns_input['public_key'];
     if ($ns_existing === null) {
         if (posix_getpwnam($ns_name) !== false) { throw new Exception('USER_CONFLICT'); }
-        $ns_uid = (int)config_get_path('system/nextuid', 2000);
+        $ns_uid = (int)ns_config_get('system/nextuid', 2000);
         if ($ns_uid < 2000 || $ns_uid >= 65000) { throw new Exception('INVALID_UID'); }
         while (posix_getpwuid($ns_uid) !== false && $ns_uid < 65000) { $ns_uid++; }
         if ($ns_uid >= 65000) { throw new Exception('INVALID_UID'); }
@@ -45,7 +46,7 @@ try {
                     'priv'=>['user-shell-access'], 'authorizedkeys'=>base64_encode($ns_authorized)];
         local_user_set_password($ns_user, bin2hex(random_bytes(48)));
         $ns_users[] = $ns_user;
-        config_set_path('system/nextuid', $ns_uid + 1);
+        ns_config_set('system/nextuid', $ns_uid + 1);
     } else {
         $ns_user = $ns_users[$ns_existing];
         if (($ns_user['priv'] ?? []) !== ['user-shell-access'] || isset($ns_user['disabled'])
@@ -53,7 +54,7 @@ try {
     }
     if ($ns_existing !== null) { $ns_user['descr'] = $ns_descr; $ns_users[$ns_existing] = $ns_user; }
     if (file_put_contents($ns_owner_file, $ns_input['owner'], LOCK_EX) === false || !chmod($ns_owner_file, 0600)) { throw new Exception('INSTALL_FAILED'); }
-    config_set_path('system/user', $ns_users);
+    ns_config_set('system/user', $ns_users);
     write_config('NetBox Sync: provision restricted collector account');
     local_user_set($ns_user);
     // Persistent, per-account job. Only the fixed root-owned producer touches PF.
@@ -68,6 +69,6 @@ try {
 
 } catch (Throwable $error) {
     $code = $error->getMessage();
-    if (!in_array($code, ['USER_CONFLICT','PATH_CONFLICT','INSTALL_FAILED','INVALID_USER','INVALID_UID','SSH_DISABLED','UNSUPPORTED_VERSION'], true)) { $code = 'INSTALL_FAILED'; }
+    if (!in_array($code, ['USER_CONFLICT','PATH_CONFLICT','INSTALL_FAILED','INVALID_USER','INVALID_UID','SSH_DISABLED','UNSUPPORTED_VERSION','UNSUPPORTED_CAPABILITIES'], true)) { $code = 'INSTALL_FAILED'; }
     echo 'NS_RESULT:'  . base64_encode(json_encode(['error'=>$code]));
 }

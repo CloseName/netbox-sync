@@ -1,0 +1,17 @@
+{
+  "2.6.0-RELEASE": true,
+  "2.7.0-RELEASE": true,
+  "2.7.2-RELEASE": true,
+  "2.8.0-RELEASE": true,
+  "2.8.1-RELEASE": true,
+  "2.8.1-RELEASE-p1": true,
+  "2.10.0-RELEASE": true,
+  "2.5.2-RELEASE": false,
+  "2.6.0-DEVELOPMENT": false,
+  "2.8.0-RC": false,
+  "2.6.0": false,
+  "25.11.1-RELEASE": false,
+  "3.0.0-RELEASE": false,
+  "2.7.2-RELEASE\n": false,
+  "unknown": false
+}

@@ -57,12 +57,27 @@ def php(session,base,code):
     return Page(gui_request(session,base+'/diag_command.php',{'__csrf_magic':page.token,
         'submit':'EXECPHP','txtPHPCommand':code})).result()
 
-PROBE = """echo 'NS_RESULT:' . base64_encode(json_encode([
+PROBE = """require_once('/etc/inc/auth.inc');
+require_once('/etc/inc/services.inc');
+try {
+ns_require_compat(trim(file_get_contents('/etc/version')));
+echo 'NS_RESULT:' . base64_encode(json_encode([
 'version'=>trim(file_get_contents('/etc/version')),
-'ssh_port'=>(int)(config_get_path('system/ssh/port', 22) ?: 22),
-'ssh_enabled'=>array_key_exists('enable', config_get_path('system/ssh', [])),
+'ssh_port'=>(int)(ns_config_get('system/ssh/port', 22) ?: 22),
+'ssh_enabled'=>array_key_exists('enable', ns_config_get('system/ssh', [])),
 'host_key'=>trim(file_get_contents('/etc/ssh/ssh_host_ed25519_key.pub')),
-'ifconfig'=>shell_exec('/sbin/ifconfig -a')]));"""
+'ifconfig'=>shell_exec('/sbin/ifconfig -a')]));
+} catch (Throwable $error) {
+ $code=$error->getMessage();
+ if (!in_array($code, ['UNSUPPORTED_VERSION','UNSUPPORTED_CAPABILITIES'], true)) { $code='GUI_COMMAND_FAILED'; }
+ echo 'NS_RESULT:' . base64_encode(json_encode(['error'=>$code]));
+}"""
+
+
+def supported_version(version):
+    if not isinstance(version, str): return False
+    match = re.fullmatch(r'2\.([0-9]+)\.([0-9]+)-RELEASE(?:-p[0-9]+)?', version)
+    return match is not None and int(match[1]) >= 6
 
 def setup(value, interfaces):
     state=value['state'];data=value['data'];port=state['port']
@@ -76,8 +91,11 @@ def setup(value, interfaces):
         if not page.token:raise SetupError('GUI_LOGIN_UNSUPPORTED')
         gui_request(session,base+'/',{'__csrf_magic':page.token,'usernamefld':data['username'],
             'passwordfld':data['password'],'login':'Sign In'})
-        probe=php(session,base,PROBE)
-        if probe.get('version')!='2.7.2-RELEASE':raise SetupError('UNSUPPORTED_VERSION')
+        compat=(ASSETS/'compat-web.php').read_text(encoding='utf-8')+'\n'
+        probe=php(session,base,compat+PROBE)
+        if probe.get('error') in {'UNSUPPORTED_VERSION','UNSUPPORTED_CAPABILITIES','GUI_COMMAND_FAILED'}:
+            raise SetupError(probe['error'])
+        if not supported_version(probe.get('version')):raise SetupError('UNSUPPORTED_VERSION')
         if not probe.get('ssh_enabled'):raise SetupError('SSH_DISABLED')
         expected={r['mac'].lower() for r in interfaces if r['mac']}
         actual=set(re.findall(r'ether ([0-9a-f:]{17})',probe['ifconfig'].lower()))
@@ -87,10 +105,10 @@ def setup(value, interfaces):
         files={name:base64.b64encode((ASSETS/name).read_bytes()).decode()
                for name in ('network-v1.php','inventory-v1.php','pf-runtime-v1.php')}
         payload=dict(username=state['username'],owner=state['owner'],public_key=state['public_key'],files=files)
-        code='$ns_input=json_decode(base64_decode("'+base64.b64encode(json.dumps(payload).encode()).decode()+'"), true);\n'
+        code=compat+'$ns_input=json_decode(base64_decode("'+base64.b64encode(json.dumps(payload).encode()).decode()+'"), true);\n'
         code+=(ASSETS/'provision-web.php').read_text(encoding='utf-8')
         result=php(session,base,code)
-        if result.get('error') in {'USER_CONFLICT','PATH_CONFLICT','INSTALL_FAILED','INVALID_USER','INVALID_UID','SSH_DISABLED','UNSUPPORTED_VERSION'}:raise SetupError(result['error'])
+        if result.get('error') in {'USER_CONFLICT','PATH_CONFLICT','INSTALL_FAILED','INVALID_USER','INVALID_UID','SSH_DISABLED','UNSUPPORTED_VERSION','UNSUPPORTED_CAPABILITIES'}:raise SetupError(result['error'])
         if result.get('installed') is not True:raise SetupError('INSTALL_FAILED')
         return probe
 

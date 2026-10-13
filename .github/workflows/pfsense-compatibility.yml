@@ -1,0 +1,33 @@
+name: pfSense PHP compatibility
+on:
+  push:
+    branches: [feat/selectel-guard-bindings]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  collectors:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.2', '8.3', '8.4']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: simplexml, posix
+          coverage: none
+      - name: Check provisioning syntax and collector fixtures
+        run: |
+          for file in network-v1.php inventory-v1.php pf-runtime-v1.php; do
+            php -l "deploy/pfsense/$file"
+          done
+          { echo '<?php'; cat deploy/pfsense/compat-web.php deploy/pfsense/provision-web.php; } > /tmp/netbox-pfsense-provision.php
+          php -l /tmp/netbox-pfsense-provision.php
+          php deploy/pfsense/test-compat-web.php legacy
+          php deploy/pfsense/test-compat-web.php modern
+          php deploy/pfsense/test-network-v1.php
+          php deploy/pfsense/test-inventory-v1.php
+          php deploy/pfsense/test-pf-runtime-v1.php
