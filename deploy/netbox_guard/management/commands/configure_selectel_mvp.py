@@ -20,7 +20,7 @@ class Command(BaseCommand):
         if path.exists(): raise CommandError('Output already exists; no token rotated.')
         user, created = get_user_model().objects.get_or_create(username='netbox-sync-selectel',
             defaults={'last_name': 'Managed Selectel MVP', 'is_active': True})
-        if not created and (user.last_name != 'Managed Selectel MVP' or user.is_superuser or user.is_staff):
+        if not created and (user.last_name != 'Managed Selectel MVP' or user.is_superuser or getattr(user, 'is_staff', False)):
             raise CommandError('Existing user is not the dedicated Selectel service account.')
         if created:
             user.set_unusable_password(); user.save()

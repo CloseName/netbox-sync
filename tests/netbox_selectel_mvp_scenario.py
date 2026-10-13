@@ -31,7 +31,7 @@ with tempfile.TemporaryDirectory() as temp:
     call_command('configure_selectel_mvp', output=str(output))
     assert json.loads(output.read_text())['token']
     service_user = get_user_model().objects.get(username='netbox-sync-selectel')
-    assert not service_user.is_superuser and not service_user.is_staff
+    assert not service_user.is_superuser and not getattr(service_user, 'is_staff', False)
     assert not service_user.has_perm('dcim.add_device')
     assert not service_user.has_perm('ipam.change_ipaddress')
     payload['nonce'] = str(uuid4())
