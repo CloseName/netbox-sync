@@ -28,6 +28,15 @@ def registry(document):
                         'status': 'provider_reported'}
 
     root = node(key(account), 'account', account)
+    project_names = {}
+    for project in document.get('projects', []):
+        ident = project.get('id') or project.get('uuid')
+        name = project.get('name')
+        if ident and isinstance(name, str) and name.strip():
+            project_names[ident] = name.strip()
+        if ident:
+            pk = node(key(account, ident, kind='project', native_id=ident), 'project', name or ident)
+            edge(root, pk, 'contains')
     datasets = [d for d in document.get('datasets', []) if d.get('service') in
                 ('selectel-dns', 'object-store', 'storage')]
     for ds in datasets:
@@ -35,7 +44,7 @@ def registry(document):
         if not project:
             unresolved.append({'code': 'PROJECT_SCOPE_MISSING', 'kind': ds.get('kind')})
             continue
-        pk = node(key(account, project, kind='project', native_id=project), 'project', project)
+        pk = node(key(account, project, kind='project', native_id=project), 'project', project_names.get(project, project))
         edge(root, pk, 'contains')
         kind = {'zones': 'dns_zone', 'rrsets': 'dns_rrset', 'buckets': 'storage_container'}.get(ds['kind'])
         if not kind:

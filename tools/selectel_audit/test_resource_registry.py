@@ -16,6 +16,12 @@ def ds(kind, items, project='p', region='r', parent=None, status='collected'):
 
 
 class RegistryTests(unittest.TestCase):
+    def test_project_display_names_are_preserved(self):
+        result = registry({'account': '123', 'projects': [{'id': 'p', 'name': 'Human project'}],
+                           'datasets': [ds('buckets', [{'name': 'b'}])]})
+        project = next(r for r in result['resources'] if r['kind'] == 'project')
+        self.assertEqual(project['name'], 'Human project')
+
     def test_scope_isolation_and_deterministic_identity(self):
         d = {'account': 'a', 'datasets': [ds('buckets', [{'name': 'same'}], project=p, region=r)
              for p, r in [('p', 'r'), ('q', 'r'), ('p', 's')]]}

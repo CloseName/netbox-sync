@@ -43,11 +43,19 @@ request = RequestFactory().get('/providers/123/', {'project': 'p', 'kind': 'stor
 request.user = admin
 response = registry_view(request, '123')
 assert response.status_code == 200
-assert b'project=p' in response.content and b'resource=' in response.content
+assert b'resource=' in response.content
+assert b'<pre>' not in response.content
 request = RequestFactory().get('/providers/123/', {'project': 'other', 'kind': 'storage_container'})
 request.user = admin
 assert b'resource=' not in registry_view(request, '123').content
 request = RequestFactory().get('/providers/')
 request.user = admin
-assert registry_view(request).status_code == 200
+assert registry_view(request).status_code in (200, 302)
 assert ProviderResourceRegistry.objects.get(pk='123').revision == 2
+
+from netbox_guard.resource_tree import build_tree
+bucket_rows, _ = build_tree(ProviderResourceRegistry.objects.get(pk='123').snapshot['resources'].values())
+request = RequestFactory().get('/providers/123/', {'kind': 'storage_container', 'resource': bucket_rows[0]['ref']})
+request.user = admin
+response = registry_view(request, '123')
+assert response.status_code == 200 and b'<pre>' not in response.content

@@ -136,6 +136,8 @@ def merge(previous, incoming):
             value['last_seen'] = incoming['observed_at']
             value['present_in_latest'] = True
             if group == 'resources':
+                if value['kind'] == 'project' and value['name'] == json.loads(k)[2]:
+                    value['name'] = old.get(k, {}).get('name', value['name'])
                 prior = old.get(k, {}).get('sections', {})
                 current = value['sections']
                 for section in set(prior) | set(current):
