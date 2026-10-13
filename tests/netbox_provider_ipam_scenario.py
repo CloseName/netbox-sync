@@ -150,8 +150,35 @@ with transaction.atomic():
     row = next(r for r in doc['links'] if r['native']['id'] == existing2.pk and r['relation'] == 'allocation')
     assert row['host_path']['paths'] == [['vmbr0', 'eno1']]
     assert row['host_path']['provider_port_confirmed'] is False
+    assert row['evidence_status']['assignment']['code'] == 'recorded'
+    assert row['evidence_status']['host_path']['code'] == 'configured'
+    assert row['evidence_status']['physical']['confirmed'] is False
+    assert doc['summary']['confirmed_physical_links'] == 0
+    assert doc['summary']['configured_paths'] == 1
+    for x in (host2, existing2, wan):
+        x.refresh_from_db()
+    before_read = [state(x) for x in (host2, existing2, wan)]
+    capture_network = runpy.run_path(str(Path(__file__).parents[1] / 'deploy/check-provider-network-preservation.py'))['capture']
+    acceptance_before = capture_network([obj.pk, host2.pk])
     html = render_to_string('netbox_guard/provider_networks.html', {'provider_networks': doc})
     assert 'eno1' in html
+    assert 'NIC ↔ порт Selectel: не подтверждено' in html
+    assert 'UUID:' in html
+    for x, expected in zip((host2, existing2, wan), before_read):
+        x.refresh_from_db()
+        assert state(x) == expected
+    assert capture_network([obj.pk, host2.pk]) == acceptance_before
+    assert any(ip['assigned_object_id'] == wan.pk and ip['id'] == existing2.pk for ip in acceptance_before['addresses'])
+    # Guest/interface permission loss hides assignment and path, including counts.
+    import netbox_guard.provider_network_display as display_module
+    original_visible = display_module.visible
+    with patch.object(display_module, 'visible', side_effect=lambda user, native:
+                      False if isinstance(native, VMInterface) else original_visible(user, native)):
+        hidden = network_document(admin, 'device', host2.pk)
+        hidden_row = next(r for r in hidden['links'] if r['native']['id'] == existing2.pk and r['relation'] == 'allocation')
+        assert hidden_row['assignment'] is None and 'host_path' not in hidden_row
+        assert hidden['summary']['configured_paths'] == 0
+        assert hidden['summary']['interface_assignments'] == 0
     # Unrelated source bridge metadata cannot be joined to this host.
     VMInterface.objects.filter(pk=wan.pk).update(custom_field_data={
         'source_bridge': 'vmbr0', 'sync_identities': [{'instance': 'other-host'}]})

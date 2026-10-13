@@ -3,6 +3,7 @@ from django.apps import apps
 from django.shortcuts import get_object_or_404
 from .models import ProviderBinding, ProviderIPAMObject, ProviderNetworkLink
 from .selectel_ipam_service import MODELS
+from .provider_network_status import evidence_status, summary
 
 
 def visible(user, obj):
@@ -59,5 +60,8 @@ def document(user, kind, pk):
         if link.relation == 'attachment':
             row['provider_ports'] = link.evidence.get('ports', [])
             row['host_interface'] = None
+        row['evidence_status'] = evidence_status(row)
         rows.append(row)
-    return {'schema': 'netbox-sync.provider-network.v1', 'kind': kind, 'id': obj.pk, 'links': rows}
+    return {'schema': 'netbox-sync.provider-network.v1', 'evidence_version': 1,
+            'kind': kind, 'id': obj.pk, 'links': rows, 'summary': summary(rows),
+            'writes_performed': False}
