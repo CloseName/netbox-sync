@@ -33,6 +33,21 @@ const retention = row("RETAIN_ONLY", {
   before: [],
   after: [],
 });
+
+test('recreated VM shows retained record link and leaves other changes applicable', async ({page})=>{
+  await fixture(page, plan([row('UPDATE'), row('REVIEW_REQUIRED', {
+    object_kind:'vm', name:'Replacement VM', external_id:'new-uuid',
+    reason_code:'VM_RECREATED_NAME', matched_object_id:null,
+    before:[['matching_candidates',[{id:1441,name:'Previous VM',url:'https://netbox.example/virtualization/virtual-machines/1441/',external_ids:['old-uuid']}]]], after:[],
+  }),retention]));
+  await build(page);
+  await page.getByRole('button',{name:'All',exact:true}).click();
+  await page.getByText('Replacement VM',{exact:true}).click();
+  await expect(page.getByRole('link',{name:'Previous VM (#1441)'})).toHaveAttribute('href','https://netbox.example/virtualization/virtual-machines/1441/');
+  await expect(page.getByText('old-uuid',{exact:true})).toBeVisible();
+  await expect(page.getByText(/Give the new VM a unique name in the hypervisor/)).toBeVisible();
+  await expect(page.getByRole('button',{name:'Review and confirm sync',exact:true})).toBeEnabled();
+});
 const nav = (page, name) =>
   page
     .getByRole("navigation", { name: "Source sections" })

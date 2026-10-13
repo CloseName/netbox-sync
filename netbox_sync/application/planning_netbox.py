@@ -235,6 +235,7 @@ class PlanningNetBox:
     """Facade whose only side effect is appending in-memory mutation records."""
 
     def __init__(self, api):
+        self.base_url = getattr(api, 'base_url', '')
         self.mutations = []
         for name in ('dcim', 'ipam', 'virtualization', 'extras'):
             if hasattr(api, name):

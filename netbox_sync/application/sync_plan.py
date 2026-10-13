@@ -10,7 +10,7 @@ from .inventory_conflicts import InventoryConflict
 
 
 PLAN_SCHEMA_VERSION = 1
-PLANNER_VERSION = 'web-5a-15'
+PLANNER_VERSION = 'web-5a-16'
 
 
 class SyncAction(str, Enum):
@@ -127,7 +127,7 @@ def plan_from_review(review, config):
         object_kind=item.object_kind, external_id=item.external_id, name=item.name,
         action=action_map[item.classification.value], reason_code=item.reason_code,
         reason=item.reason, matched_object_id=item.matched_object_id,
-        before=(() if item.matched_object_id is None else (
+        before=((('matching_candidates', item.properties['matching_candidates']),) if item.properties.get('matching_candidates') else ()) + (() if item.matched_object_id is None else (
             ('id', item.matched_object_id), ('name', item.matched_object_name))),
         after=(('name', item.name),) if item.future_action in ('create', 'update') else (),
     ) for item in review.items) + (SyncPlanItem(
