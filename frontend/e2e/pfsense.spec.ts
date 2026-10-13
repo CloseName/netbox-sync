@@ -23,12 +23,13 @@ test('source categories and pfSense setup keep credentials out of repeated colle
  const overviewIcon=await page.getByRole('link',{name:'Overview',exact:true}).locator('svg').boundingBox();
  expect(sourceIcon!.x).toBe(overviewIcon!.x);
  await page.getByRole('button',{name:'Connection',exact:true}).click();
+ await expect(page.getByRole('dialog')).toContainText('pfSense CE 2.6.0+');
  await page.screenshot({path:'test-results/pfsense-connection.png'});
  await page.getByLabel('Administrator (LDAP or local)',{exact:true}).fill('admin@example.test');
  await page.getByLabel('Password',{exact:true}).fill('not-a-real-password');
  await page.getByRole('button',{name:'Set up and collect',exact:true}).click();
  await expect(page.getByRole('dialog')).not.toBeVisible();
- await expect(page.getByRole('status')).toContainText('Collection completed');
+ await expect(page.getByRole('status').filter({hasText:'Collection completed'})).toBeVisible();
  await page.getByRole('button',{name:'Connection',exact:true}).click();
  await expect(page.getByLabel('Password',{exact:true})).toHaveValue('');
  await page.getByRole('button',{name:'Collect now',exact:true}).click();
