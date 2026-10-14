@@ -56,3 +56,30 @@ def test_invalid_block_changes_nothing(tmp_path):
     with pytest.raises(RuntimeError, match='Invalid managed'):
         patch.configure(tmp_path)
     assert path.read_text() == original
+
+
+def test_test_host_plugins_only_and_broken_override(tmp_path):
+    path = tmp_path / 'plugins.py'
+    original = "PLUGINS = globals().get('PLUGINS', [])\nif 'netbox_guard' not in PLUGINS:\n    PLUGINS.append('netbox_guard')\n"
+    path.write_text(original)
+    broken = tmp_path / 'zzzz_selectel_v2_test.py'
+    broken.write_text("raise RuntimeError('no previous PLUGINS_CONFIG definition')")
+    assert patch.configure(tmp_path) == 'plugins.py'
+    first = path.read_text()
+    patch.configure(tmp_path)
+    assert path.read_text() == first
+    assert first.startswith(original)
+    namespace = {}
+    exec(first, namespace)
+    exec(broken.read_text(), {})
+    assert namespace['PLUGINS'] == ['netbox_guard']
+    assert namespace['PLUGINS_CONFIG'] == {'netbox_guard': {'selectel_native_reconcile': True}}
+
+
+def test_conditional_settings_are_not_replaced(tmp_path):
+    path = tmp_path / 'plugins.py'
+    original = "if True:\n    PLUGINS_CONFIG = {'other': {}}\n"
+    path.write_text(original)
+    with pytest.raises(RuntimeError, match='no files changed'):
+        patch.configure(tmp_path)
+    assert path.read_text() == original

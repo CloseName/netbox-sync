@@ -32,6 +32,7 @@ def configure(directory):
     directory = Path(directory)
     broken = directory / 'zzzz_selectel_v2_test.py'
     candidates = []
+    config_references = False
     paths = sorted(directory.glob('*.py'), key=lambda p: (p.name != 'configuration.py', p.name))
     for path in paths:
         if path.is_symlink():
@@ -40,6 +41,8 @@ def configure(directory):
             continue
         text = path.read_text(encoding='utf-8')
         tree = ast.parse(text)
+        config_references |= any(isinstance(n, ast.Name) and n.id == 'PLUGINS_CONFIG'
+                                 for n in ast.walk(tree))
         # Patch only an explicit module-level definition, not a guessed module.
         for node in tree.body:
             targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
@@ -47,8 +50,14 @@ def configure(directory):
                 candidates.append((path, text))
                 break
     if not candidates:
-        raise RuntimeError('No module-level PLUGINS_CONFIG definition; no files changed')
-    path, text = candidates[-1]
+        # PLUGINS_CONFIG is optional. The test installation has only PLUGINS.
+        # Do not overwrite conditional/imported settings that need inspection.
+        path = directory / 'plugins.py'
+        if config_references or not path.is_file():
+            raise RuntimeError('Unresolved plugin configuration; no files changed')
+        text = path.read_text(encoding='utf-8').rstrip() + '\n\nPLUGINS_CONFIG = {}\n'
+    else:
+        path, text = candidates[-1]
     if text.count(BEGIN) != text.count(END) or text.count(BEGIN) > 1:
         raise RuntimeError('Invalid managed config block; no files changed')
     if BEGIN in text:
