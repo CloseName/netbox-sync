@@ -8,12 +8,15 @@ from netbox_guard.models import ProviderAccountRun, ProviderInventoryImport, Pro
 from tools.selectel_audit.resource_registry import registry
 document = runpy.run_path(str(Path(__file__).with_name('selectel_inventory_fixture.py')))['fixture']('67890')
 document['projects'] = [{'id': 'p', 'name': 'Readable project'}]
+document['datasets'].append(dict(service='image', kind='images', project='p', region='r',
+    status='collected', items=[{'id': 'unused-image', 'name': 'Public catalog choice', 'metadata': 'x'*1000000}]))
 # NetBox does not install Sync's runtime dependencies; load the pure wire module.
 wire = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'netbox_sync/selectel_payload.py'))
 inventory_document, import_payload = wire['inventory_document'], wire['import_payload']
 from netbox_guard.selectel_inventory import Inventory
 compact = inventory_document(document)
 assert Inventory(compact).normalize() == Inventory(document).normalize()
+assert len(json.dumps(compact)) < len(json.dumps(document)) - 900000
 payload = import_payload('67890', str(uuid4()), dict(document=compact, registry=registry(document)))
 before = list(Device.objects.order_by('pk').values())
 rejected(lambda: import_account(unprivileged, payload), (DependencyGuardBlocked,))

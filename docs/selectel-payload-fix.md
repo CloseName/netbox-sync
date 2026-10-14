@@ -36,3 +36,23 @@ After rollout refresh the UI and run one collection for account 29916. The origi
 production payload was not copied out, so its compact size and final import outcome
 must be confirmed by this run. If still over 16 MiB, the job fails before import
 with SELECTEL_RESULT_TOO_LARGE; it never silently drops resource observations.
+
+## Follow-up: scope catalogs to discovered VM references
+
+The production read-only size probe measured 33,774,214 import bytes: image/images
+24,716,124 bytes (13,580 rows in 90 datasets) and compute/flavors 4,436,540 bytes
+(9,898 rows in 90 datasets). Those are available catalog choices, not a count of
+owned virtual machines. All remaining payload accounts for 4,621,550 bytes.
+
+The transport now retains only image and flavor entries referenced by discovered
+VMs in the same project and region. It preserves selected rows and ordering,
+endpoint statuses, coverage and missing-ID join behavior. Conflicting duplicate
+catalog datasets are left intact so filtering cannot conceal a conflict. Full
+audit collection and summary accounting remain unchanged. DNS, storage, volumes,
+network observations and dedicated server data are unaffected.
+
+Regression tests compare Inventory.normalize before/after filtering, including
+27 MB of unused catalogs, duplicate conflicts, failed endpoints and absent IDs.
+The actual NetBox scenario imports this filtered payload. Production success
+still requires a fresh collection after rollout; no live resources were read or
+changed from the development environment.

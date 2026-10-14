@@ -42,5 +42,5 @@ BUNDLES=("$BACKUP"/sync/netbox-sync-backup-*)
 [[ ${#BUNDLES[@]} -eq 1 ]]
 python3 "$REPO/deploy/backup.py" --root "$ROOT" verify "${BUNDLES[0]}"
 python3 "$REPO/deploy/install.py" --root "$ROOT" --source "$REPO" --release-id "$RELEASE"
-docker exec netbox-sync-bootstrap-worker python -B -c "from netbox_sync.selectel_payload import MAX_BYTES, inventory_document; from netbox_sync.selectel_runner import child_result; assert MAX_BYTES == 16*1024*1024; print('OK: bounded Selectel payload installed')"
+docker exec netbox-sync-bootstrap-worker python -B -c "from netbox_sync.selectel_payload import MAX_BYTES, inventory_document, referenced_catalogs; from netbox_sync.selectel_runner import child_result; assert MAX_BYTES == 16*1024*1024; print('OK: scoped Selectel catalog filtering installed')"
 echo "Updated Sync. Backup: $BACKUP. Refresh the Selectel page and start one new collection. Existing bindings are retained."

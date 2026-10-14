@@ -15,6 +15,61 @@ from tests.selectel_inventory_fixture import fixture
 from tools.selectel_audit.resource_registry import registry
 
 
+def catalog_fixture():
+    document = fixture('29916')
+    server = next(d for d in document['datasets'] if d['service'] == 'compute' and d['kind'] == 'servers')
+    server['items'][0]['image'] = {'id': 'used-image'}
+    document['datasets'].append(dict(service='image', kind='images', project='p', region='r',
+        status='collected', items=[{'id': 'used-image', 'name': 'Chosen OS'}, {'id': 'unused', 'name': 'Unused'}]))
+    flavors = next(d for d in document['datasets'] if d['kind'] == 'flavors')
+    flavors['items'].append({'id': 'unused', 'name': 'Unused flavor'})
+    return document
+
+
+def test_catalogs_are_scoped_and_preserve_inventory_with_large_unused_catalogs():
+    document = catalog_fixture()
+    # Public catalogs repeated in many scopes are choices, not owned VMs/disks.
+    for i in range(90):
+        document['datasets'].append(dict(service='image', kind='images', project='p', region=f'region-{i}',
+            status='collected', items=[{'id': 'used-image', 'name': 'Wrong scope', 'metadata': 'x'*300000}]))
+    before = copy.deepcopy(document)
+    compact = inventory_document(document)
+    assert Inventory(compact).normalize() == Inventory(document).normalize()
+    assert document == before
+    assert len(bounded_json(compact)) < 100000
+    images = [d for d in compact['datasets'] if d['kind'] == 'images']
+    assert [row['name'] for d in images for row in d['items']] == ['Chosen OS']
+    assert len(images) == 91  # Keep endpoint status even when no VM uses its entries.
+
+
+@pytest.mark.parametrize('conflict', ['items', 'status', 'none'])
+def test_catalog_filter_cannot_hide_conflicts(conflict):
+    document = catalog_fixture()
+    original = document['datasets'][-1]
+    duplicate = copy.deepcopy(original)
+    if conflict == 'items':
+        duplicate['items'][-1]['name'] = 'Different unused row'
+    if conflict == 'status':
+        duplicate['status'] = 'HTTP_403'
+    document['datasets'].append(duplicate)
+    compact = inventory_document(document)
+    assert Inventory(compact).normalize() == Inventory(document).normalize()
+    assert len(compact['datasets'][-1]['items']) == (1 if conflict == 'none' else 2)
+
+
+@pytest.mark.parametrize('status', ['collected', 'HTTP_403', 'NOT_COLLECTED'])
+def test_missing_catalog_ids_and_partial_results_keep_old_join_semantics(status):
+    document = catalog_fixture()
+    server = next(d for d in document['datasets'] if d['kind'] == 'servers')['items'][0]
+    server.pop('image')
+    images = document['datasets'][-1]
+    images['status'] = status
+    images['items'].extend([{'name': 'Missing ID'}, {'id': None, 'name': 'Second missing ID'}])
+    compact = inventory_document(document)
+    assert Inventory(compact).normalize() == Inventory(document).normalize()
+    assert compact['datasets'][-1]['status'] == status
+
+
 def test_large_audit_preserves_server_inventory_registry_and_failures():
     document = fixture('29916')
     document['projects'] = [{'id': 'p', 'name': 'Project'}]
