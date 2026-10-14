@@ -8,7 +8,9 @@ from netbox_guard.models import ProviderAccountRun, ProviderInventoryImport, Pro
 from tools.selectel_audit.resource_registry import registry
 document = runpy.run_path(str(Path(__file__).with_name('selectel_inventory_fixture.py')))['fixture']('67890')
 document['projects'] = [{'id': 'p', 'name': 'Readable project'}]
-from netbox_sync.selectel_payload import inventory_document, import_payload
+# NetBox does not install Sync's runtime dependencies; load the pure wire module.
+wire = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'netbox_sync/selectel_payload.py'))
+inventory_document, import_payload = wire['inventory_document'], wire['import_payload']
 from netbox_guard.selectel_inventory import Inventory
 compact = inventory_document(document)
 assert Inventory(compact).normalize() == Inventory(document).normalize()
