@@ -83,6 +83,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install -e '.[web]' pytest httpx
+      - run: python -m pip install -e '.[web]' pytest httpx sqlalchemy alembic
       - run: python -m pytest -q tests/test_reconciliation_wait.py tests/test_run_reconciliation.py tests/test_shared_apply_lock.py tests/test_scheduler.py tests/test_deployment_foundation.py
       - run: bash -n scripts/run-scheduled-sync.sh deploy/update-reconciliation-production.sh
