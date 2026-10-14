@@ -1,6 +1,7 @@
 """Reviewed, atomic server inventory import; never creates native infrastructure."""
 from uuid import UUID, uuid5
 from django.db import connection, transaction
+from django.conf import settings
 from .models import ProviderBinding, ProviderFieldClaim, ProviderBindingChange, ProviderInventory, ProviderInventoryImport
 from .provider_policy import digest
 from .provider_schema import check_schema
@@ -16,7 +17,13 @@ def _prepare(user, document, evidence_digest, *, lock=False):
             or any(c not in '0123456789abcdef' for c in evidence_digest)):
         raise ValueError('PROVIDER_EVIDENCE_REQUIRED')
     inventory = Inventory(document)
+    from .models import ProviderAccountFence
+    if ProviderAccountFence.objects.filter(account=inventory.account, deleted=True).exists():
+        raise ValueError('PROVIDER_ACCOUNT_DELETED')
     records = inventory.normalize()
+    from collections import Counter
+    from .provider_native_fields import native_fields
+    names = Counter(native_fields(record).get('name') for record in records.values())
     old_records = {r.pk: r for r in ProviderInventory.objects.filter(account=inventory.account)}
     bindings = {b.provider_key: b for b in ProviderBinding.objects.filter(account=inventory.account)}
     plans, state, report = [], [], []
@@ -40,6 +47,14 @@ def _prepare(user, document, evidence_digest, *, lock=False):
                 raise ValueError('PROVIDER_REVIEW_STALE')
             binding = actual_binding
             claims = {**claims, **{'custom_fields.' + k: v for k, v in projection(snapshot).items()}}
+            if settings.PLUGINS_CONFIG.get('netbox_guard', {}).get('selectel_native_reconcile') is True:
+                native = native_fields(snapshot)
+                name = native.get('name')
+                if name and (names[name] > 1 or type(obj).objects.filter(name=name).exclude(pk=obj.pk).exists()):
+                    native['name'] = name[:49] + ' [' + digest(snapshot['identity'])[:10] + ']'
+                claims.update(native)
+                claims['custom_fields.selectel_inventory'] = {**snapshot,
+                    'native_fields': sorted(field for field in claims if not field.startswith('custom_fields.'))}
         changed = old is None or old.snapshot != snapshot or old.evidence_digest != evidence_digest
         projection_changed = bool(binding and claims != before['claims'])
         state.append({'key': key, 'old': old.snapshot if old else None,
@@ -86,7 +101,7 @@ def apply_inventory(user, nonce, document, evidence_digest, fingerprint):
     inventory, plans, report = _prepare(user, document, evidence_digest, lock=True)
     if report['fingerprint'] != fingerprint:
         raise ValueError('PROVIDER_REVIEW_STALE')
-    updated, registered = [], 0
+    updated, registered, placement_pending = [], 0, []
     for key, snapshot, old, binding, obj, before, claims, changed, projection_changed in plans:
         if changed:
             ProviderInventory.objects.update_or_create(provider_key=key, defaults={
@@ -96,17 +111,46 @@ def apply_inventory(user, nonce, document, evidence_digest, fingerprint):
         if not projection_changed:
             continue
         cf = dict(obj.custom_field_data or {})
+        native_updates = set()
+        if settings.PLUGINS_CONFIG.get('netbox_guard', {}).get('selectel_native_reconcile') is True:
+            from .provider_placement import resolve
+            site = resolve(user, snapshot, old.snapshot if old else None)
+            pending = None
+            if site is not None:
+                from django.core.exceptions import ValidationError
+                prior_site = obj.site
+                try:
+                    obj.site = site
+                    # Cluster scope/rack/VM host constraints must remain valid.
+                    # A provider location must not move unrelated cluster members.
+                    obj.clean()
+                except ValidationError:
+                    pending = {'resource':binding.resource,'id':obj.pk,'site_id':site.pk,
+                               'reason':'placement_dependencies_require_review'}
+                    placement_pending.append(pending)
+                else:
+                    claims['site_id'] = site.pk
+                finally:
+                    obj.site = prior_site
+            claims['custom_fields.selectel_inventory'] = {**snapshot,
+                'native_fields': sorted(field for field in claims if not field.startswith('custom_fields.'))}
+            if pending:
+                claims['custom_fields.selectel_inventory']['placement_pending'] = pending
         for field, value in claims.items():
-            # Existing serial claims stay intact; this importer acquires only provider custom fields.
+            # Claims are saved before native fields, so the SQL ownership guard
+            # validates this provider write against the new authoritative value.
             if field.startswith('custom_fields.'):
                 cf[field.split('.', 1)[1]] = value
+            elif field in ('name', 'serial', 'status', 'vcpus', 'memory', 'site_id'):
+                setattr(obj, field, value)
+                native_updates.add('site' if field == 'site_id' else field)
             ProviderFieldClaim.objects.update_or_create(binding=binding, field=field, defaults={'value': value})
         previous_revision = binding.revision
         binding.revision += 1
         binding.save(update_fields=['revision'])
         obj.custom_field_data = cf
         obj.full_clean()
-        obj.save(update_fields=['custom_field_data', 'last_updated'])
+        obj.save(update_fields=sorted(native_updates | {'custom_field_data', 'last_updated'}))
         ProviderBindingChange.objects.create(nonce=uuid5(nonce, key), binding=binding, actor=actor,
             digest=request_digest, before={'revision': previous_revision, 'claims': before['claims']},
             after={'revision': binding.revision, 'claims': claims, 'evidence_digest': evidence_digest},
@@ -114,6 +158,7 @@ def apply_inventory(user, nonce, document, evidence_digest, fingerprint):
         updated.append({'resource': binding.resource, 'id': obj.pk, 'name': obj.name, 'revision': binding.revision})
     result = {'account': inventory.account, 'server_count': len(plans), 'registry_updated': registered,
               'targets_updated': updated, 'unmatched_count': report['unmatched_count'],
+              'placement_pending': placement_pending,
               'missing_retained': report['missing_retained'], 'writes_performed': bool(registered or updated),
               'nonce': str(nonce), 'replayed': False}
     ProviderInventoryImport.objects.create(nonce=nonce, account=inventory.account, actor=actor,

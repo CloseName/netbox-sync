@@ -135,7 +135,16 @@ class BootstrapControl:
 def main():
     control = BootstrapControl(BootstrapStore(os.environ.get('NETBOX_SYNC_NETBOX_STATE_DIR', '/var/lib/netbox-sync/netbox')),
         os.environ.get('NETBOX_SYNC_APPLY_LOCK_PATH', '/run/netbox-sync-lock/apply.lock'))
-    serve(os.environ.get('NETBOX_SYNC_BOOTSTRAP_SOCKET', '/run/netbox-sync-bootstrap/worker.sock'), control, concurrent=True)
+    import threading
+    from .selectel_scheduler import run
+    stop = threading.Event()
+    scheduler = threading.Thread(target=run, args=(control.store, control.lock_path, stop), daemon=True)
+    scheduler.start()
+    try:
+        serve(os.environ.get('NETBOX_SYNC_BOOTSTRAP_SOCKET', '/run/netbox-sync-bootstrap/worker.sock'), control, concurrent=True)
+    finally:
+        stop.set()
+        scheduler.join(timeout=5)
 
 
 if __name__ == '__main__':

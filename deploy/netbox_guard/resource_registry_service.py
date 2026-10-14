@@ -10,6 +10,9 @@ from .service import _permission
 def prepare(user, document):
     _permission(user, 'manage_resourceregistry')
     incoming = normalize(document)
+    from .models import ProviderAccountFence
+    if ProviderAccountFence.objects.filter(account=incoming['account'], deleted=True).exists():
+        raise ValueError('PROVIDER_ACCOUNT_DELETED')
     old = ProviderResourceRegistry.objects.filter(pk=incoming['account']).first()
     evidence = digest(incoming)
     if old:

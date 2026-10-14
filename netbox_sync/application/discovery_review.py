@@ -105,6 +105,20 @@ def _generic_item(discovered, kind, identity, all_records, target_records):
 
 
 def _proxmox_host_item(host, devices, target_devices):
+    if not any(host_source_identity(host).to_record() in _identities(record) for record in devices):
+        from ..selectel_host_match import matches
+        provider = matches(devices, host)
+        if provider:
+            record = provider[0]
+            if record.id not in {r.id for r in target_devices}:
+                return ReviewItem('host',host.original_name,host_source_identity(host).external_id,
+                    ReviewClassification.CONFLICT,'SELECTEL_PLACEMENT_REVIEW_REQUIRED',
+                    'Select the existing Selectel device site and a compatible cluster before synchronizing.',
+                    'review',record.id,getattr(record,'name',None))
+            return ReviewItem('host',host.original_name,host_source_identity(host).external_id,
+                ReviewClassification.MANAGED,'SELECTEL_HARDWARE_MATCH',
+                'Unique hardware identity matches the existing Selectel device. Its provider fields are preserved.',
+                'none',record.id,getattr(record,'name',None))
     item = _generic_item(host, 'host', host_source_identity(host), devices, target_devices)
     if item.classification is not ReviewClassification.WOULD_CREATE or not host.management_ip:
         return item
@@ -151,7 +165,9 @@ def build_proxmox_review(nb_api, hosts, config):
     vms = tuple(nb_api.virtualization.virtual_machines.all())
     target_devices = tuple(record for record in devices if
                            _object_id(_record(record).get('site')) == site.id
-                           and _object_id(_record(record).get('cluster')) == cluster.id)
+                           and (_object_id(_record(record).get('cluster')) == cluster.id
+                                or (_object_id(_record(record).get('cluster')) is None
+                                    and (_record(record).get('custom_fields') or {}).get('selectel_refs'))))
     target_vms = tuple(record for record in vms if
                        _object_id(_record(record).get('cluster')) == cluster.id)
     items = []
@@ -187,6 +203,7 @@ def build_esxi_review(plan, config):
     reasons = {
         'VM_RECREATED_NAME': 'The name belongs to a retained VM with a different identity. Only this VM is skipped; other objects can synchronize. Rename the new VM and rebuild the plan. Existing bindings are preserved.',
         'IDENTITY_MATCH': 'Stable source identity matches an existing NetBox object.',
+        'SELECTEL_HARDWARE_MATCH': 'Unique hardware identity matches the existing Selectel device. Its provider fields are preserved.',
         'SAFE_ADOPTION_CANDIDATE': 'Stable evidence exists, but Web discovery never adopts objects.',
         'LEGACY_REVIEW_REQUIRED': 'Legacy evidence requires operator review and is not adopted.',
         'AMBIGUOUS_LEGACY_MATCH': 'Legacy evidence is ambiguous; processing is blocked.',
@@ -197,6 +214,8 @@ def build_esxi_review(plan, config):
         classification, code, action = mapping[item.classification.value]
         candidate = next((value for value in item.candidates
                           if value.object_id == item.selected_object_id), None)
+        if candidate and 'selectel_hardware_identity' in candidate.signals and classification == ReviewClassification.MANAGED:
+            code = 'SELECTEL_HARDWARE_MATCH'
         import json
         from urllib.parse import urlsplit
         base = plan.netbox_url

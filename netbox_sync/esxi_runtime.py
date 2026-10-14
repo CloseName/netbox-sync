@@ -132,7 +132,8 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write
         # interchangeable with the Proxmox host networking executor.
         host_ids = {item.external_id for item in plan.hosts
                     if item.classification == ObjectMigrationClassification.NEW
-                    or (config.target.onboarding_mapping
+                    or ((config.target.onboarding_mapping or any(
+                        'selectel_hardware_identity' in candidate.signals for candidate in item.candidates))
                         and item.classification == ObjectMigrationClassification.MANAGED)}
         network_host_ids = {item.external_id for item in plan.hosts
                             if item.classification in (ObjectMigrationClassification.NEW,

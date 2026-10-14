@@ -289,11 +289,18 @@ def _classify(discovered, kind, identity, all_records, target_records, network):
     managed = [
         record for record in all_records if _matches_identity(record, identity)
     ]
+    provider_match = False
+    if kind == 'host' and not managed:
+        from .selectel_host_match import matches
+        managed = matches(all_records, discovered)
+        provider_match = bool(managed)
     target_ids = {record.id for record in target_records}
     if managed:
         evidence = tuple(
             _evidence(record, False, (), ()) for record in managed
         )
+        if provider_match:
+            evidence = tuple(replace(row, signals=('selectel_hardware_identity',)) for row in evidence)
         if len(managed) == 1 and managed[0].id in target_ids:
             return EsxiAdoptionItem(
                 object_kind=kind,
@@ -439,7 +446,9 @@ def build_esxi_adoption_plan(nb_api, hosts, config):
         record for record in all_devices
         if (
             _object_id(_serialized(record).get('site')) == site.id
-            and _object_id(_serialized(record).get('cluster')) == cluster.id
+            and (_object_id(_serialized(record).get('cluster')) == cluster.id
+                 or (_object_id(_serialized(record).get('cluster')) is None
+                     and _custom_fields(record).get('selectel_refs')))
         )
     ]
     target_vms = [

@@ -43,12 +43,17 @@ def sync_identity_match_rank(custom_fields, host):
 def find_sync_identity_matches(candidates, host):
     """Find best-ranked host records, retaining same-rank duplicates."""
 
-    return select_best_identity_matches(
+    candidates = list(candidates)
+    matched = select_best_identity_matches(
         candidates,
         lambda candidate: sync_identity_match_rank(
             getattr(candidate, 'custom_fields', None) or {}, host,
         ),
     )
+    if matched:
+        return matched
+    from .selectel_host_match import matches
+    return matches(candidates, host)
 
 
 def build_device_custom_fields(

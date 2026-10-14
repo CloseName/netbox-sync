@@ -3,17 +3,36 @@ import {useResource} from '../ui/useResource';
 import {RefreshControl} from '../ui/RefreshControl';
 import {exactTime} from '../ui/format';
 import {ProviderIcon} from '../ui/ProviderIcon';
+import {SelectelSchedule, type ProviderSchedule} from './SelectelSchedule';
+import {SelectelLifecycle} from './SelectelLifecycle';
 
 type Product = {product:string;title:string;state_label:string;observations_by_collection:Record<string,number>};
 type Account = {account:string;name:string;username:string;status:string;error?:string;
- url:string;finished_at?:number;summary?:{projects:number;servers:number;matched:number;unmatched:number;products:Product[]}};
+ enabled?:boolean;schedule?:ProviderSchedule;next_run?:number;deleted?:boolean;
+ lifecycle_pending?:{operation:string;key?:string|null;fingerprint:string};
+ url:string;finished_at?:number;summary?:{projects:number;servers:number;matched:number;unmatched:number;products:Product[];
+ placement_pending?:{resource:string;id:number;site_id:number;reason:string}[];
+ native_mode?:string;native_created?:number;native_adopted?:number;native_blocked?:number}};
 type Accounts = {items:Account[];import_ready:boolean};
 const messages:Record<string,string> = {
+ LIFECYCLE_BUSY:'Сейчас выполняется запись или сбор. Дождитесь завершения и повторите проверку; останавливать планировщик не требуется.',
+ DISABLE_ACCOUNT_FIRST:'Сначала отключите аккаунт, затем проверьте список ресурсов.',
+ LIFECYCLE_UNCONFIRMED:'Ответ операции не получен. Аккаунт отключён. В разделе отсоединения и удаления нажмите «Проверить результат операции».',
+ PROVIDER_REVIEW_STALE:'Данные изменились после просмотра. Постройте новый план удаления или отсоединения.',
+ PROVIDER_DEPENDENCIES_BLOCKED:'Обнаружены зависимые объекты. Обновите план и проверьте список препятствий.',
+ PROVIDER_UNOWNED_CASCADE_BLOCKED:'Удаление затронуло бы другие объекты. Изменения отменены; отсоедините ресурс, чтобы сохранить карточку.',
+ PROVIDER_APPLY_REFUSED:'NetBox отклонил операцию; изменения отменены. Проверьте права импортёра и зависимости ресурсов.',
+ PROVIDER_REVIEW_REFUSED:'NetBox не смог проверить план. Проверьте версию плагина, права импортёра на просмотр зависимостей и включение режима Selectel v2.',
+ ACCOUNT_DELETED:'Аккаунт удалён. Сначала подготовьте повторное подключение в разделе отсоединения и удаления.',
  RUN_ACTIVE:'Сбор уже выполняется.', SETUP_REQUIRED:'Не настроен доступ к реестру NetBox. Запустите обновление MVP на тестовом сервере.',
  COLLECTION_FAILED:'Не удалось собрать данные. Проверьте сервисного пользователя и права чтения Selectel.',
  HTTP_401:'Selectel отклонил имя пользователя или пароль.', HTTP_403:'Недостаточно прав чтения Selectel.',
- IMPORT_UNCONFIRMED:'Импорт не подтверждён. Последние сохранённые данные доступны в NetBox; повторите сбор.',
- RUN_INTERRUPTED:'Запуск прерван. Повторите сбор.', RUN_INTERRUPTED_OR_BUSY:'Сбор отложен или прерван. Повторите запуск.',
+ IMPORT_UNCONFIRMED:'Ответ импорта не получен: часть данных могла сохраниться. Автоматические запуски приостановлены. Администратору нужно проверить результат по идентификатору запуска в NetBox.',
+ RUN_INTERRUPTED:'Процесс завершился без результата. Перед новым импортом администратору нужно сверить журнал запуска и данные NetBox.', RUN_INTERRUPTED_OR_BUSY:'Сбор не завершён или запись занята другим запуском. Импорт этого запуска не начинался; повторите позже.',
+ ACCOUNT_DISABLED:'Аккаунт отключён. Новые сборы запрещены, сохранённые ресурсы остаются в NetBox.',
+ NETBOX_IMPORT_SETUP_FAILED:'Не прошла проверка доступа к NetBox. Сбор Selectel и импорт не начинались. Проверьте доступность NetBox, токен импортёра, права и версию плагина.',
+ COLLECTION_BUSY:'Сейчас собирается другой аккаунт Selectel. Дождитесь его завершения; запуск по расписанию подождёт автоматически.',
+ SCHEDULE_INVALID:'Проверьте расписание: интервал от 1 до 366 дней, число месяца от 1 до 31, даты ГГГГ-ММ-ДД и часовой пояс, например Europe/Moscow.',
  SELECTEL_RESULT_TOO_LARGE:'Результат сбора превышает допустимый размер. Импорт не запускался. Передайте администратору номер аккаунта для проверки объёма данных.',
  SELECTEL_COLLECTOR_EXITED:'Процесс сбора завершился с ошибкой. Импорт не запускался. Требуется проверка сборщика администратором.',
  SELECTEL_RESULT_INVALID:'Сборщик вернул некорректный результат. Импорт не запускался. Требуется обновление или проверка сборщика.',
@@ -41,6 +60,7 @@ export function SelectelPage(){
   try{await request('',draft);setSelected(draft.account);setDraft({account:'',name:'',username:'',password:''});setForm(false);resource.refresh();}
   catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  async function collect(id:string){setBusy(true);setError('');try{await request('/'+id+'/collect',{});resource.refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ async function configure(id:string,operation:string,value:unknown){setBusy(true);setError('');try{await request('/'+id+'/'+operation,value);resource.refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  return <main className="selectel-workspace"><div className="page-heading"><div><h1><ProviderIcon provider="selectel"/> Selectel</h1><p className="muted">Серверы, DNS и объектное хранилище ваших аккаунтов.</p></div></div>
  <div className="sources-actions"><button className="primary" onClick={()=>{setDraft({account:'',name:'',username:'',password:''});setForm(true);}}>Подключить аккаунт</button>
  <RefreshControl loading={resource.loading} error={resource.error} received={resource.received} refresh={resource.refresh}/></div>
@@ -58,10 +78,15 @@ export function SelectelPage(){
  <div className="account-cards selectel-table" aria-label="Аккаунты Selectel">
  {resource.data?.items.map(a=><section className="panel account-card" key={a.account} data-selected={a.account===selected}>
  <h2><ProviderIcon provider="selectel"/> <button className="account-name" aria-expanded={a.account===selected} onClick={()=>setSelected(a.account)}>{a.name}</button></h2><small>№ {a.account} · {a.username}</small>
- <p><span className={'badge badge-'+(a.status==='attention'||a.error?'danger':a.status==='running'?'info':'neutral')}>{({configured:'Готов к первому сбору',running:'Сбор выполняется',completed:'Данные обновлены',attention:'Требует внимания'} as Record<string,string>)[a.status]||a.status}</span></p>
+ <p><span className={'badge badge-'+(a.status==='attention'||a.error?'danger':a.status==='running'?'info':'neutral')}>{({configured:'Готов к первому сбору',running:'Сбор выполняется',completed:'Данные обновлены',attention:'Требует внимания',deleted:'Аккаунт удалён; доступ и расписание очищены'} as Record<string,string>)[a.status]||a.status}</span></p>
  {a.error&&<p className="account-error">{messages[a.error]||'Сбор не завершён. Проверьте результат аккаунта.'}</p>}
  {a.finished_at&&<small>Последняя попытка: <time dateTime={new Date(a.finished_at*1000).toISOString()}>{exactTime(new Date(a.finished_at*1000).toISOString())}</time></small>}
- <div className="actions"><button disabled={busy||a.status==='running'||!resource.data?.import_ready} onClick={()=>{setSelected(a.account);void collect(a.account);}}>{a.status==='running'?'Сбор выполняется…':'Собрать и обновить'}</button><a href={a.url} target="_blank" rel="noreferrer">Ресурсы в NetBox ↗</a></div>
+ <div className="actions"><button disabled={busy||a.enabled===false||a.status==='running'||!resource.data?.import_ready} onClick={()=>{setSelected(a.account);void collect(a.account);}}>{a.status==='running'?'Сбор выполняется…':'Собрать и обновить'}</button><a href={a.url} target="_blank" rel="noreferrer">Ресурсы в NetBox ↗</a></div>
+ <p>{a.deleted?'Сохранён только маркер удаления для защиты от повторной записи.':a.enabled===false?'Аккаунт отключён. Ресурсы сохранены.':a.next_run?'Следующий запуск: '+exactTime(new Date(a.next_run*1000).toISOString()):'Автоматический запуск не назначен.'}</p>
+ <button disabled={busy||a.deleted||!!a.lifecycle_pending} onClick={()=>void configure(a.account,'enabled',{enabled:a.enabled===false})}>{a.enabled===false?'Включить аккаунт':'Отключить аккаунт'}</button>
+ <p className="muted">Отключение запрещает новые запуски. Уже начатая запись в NetBox завершается.</p>
+ {!a.deleted&&<SelectelSchedule key={a.account+JSON.stringify(a.schedule)} value={a.schedule} disabled={busy||!!a.lifecycle_pending} save={schedule=>configure(a.account,'schedule',{schedule})}/>}
+ <SelectelLifecycle account={a.account} disabled={a.enabled===false} deleted={a.deleted} pending={a.lifecycle_pending} busy={busy} request={request} refresh={resource.refresh}/>
  <details><summary>Доступ</summary><p>Сервисный пользователь: {a.username}</p><button disabled={busy} onClick={()=>{setDraft({account:a.account,name:a.name,username:a.username,password:''});setForm(true);}}>Изменить доступ</button></details>
  </section>)}
  </div>
@@ -69,9 +94,12 @@ export function SelectelPage(){
  {account&&<section className="panel" id="selectel-account-detail"><h2>{account.name} · {account.account}</h2>
  {account.error&&<p role="alert">{messages[account.error]||'Сбор не завершён. Последние успешные данные сохранены.'}</p>}
  {account.summary?<><dl className="selectel-summary"><div><dt>Проектов</dt><dd>{account.summary.projects}</dd></div><div><dt>Серверов</dt><dd>{account.summary.servers}</dd></div><div><dt>Связано с NetBox</dt><dd>{account.summary.matched}</dd></div><div><dt>Без подтверждённой связи</dt><dd>{account.summary.unmatched}</dd></div></dl>
+ {account.summary.native_mode==='registry_only'&&<p role="status">Данные собраны в реестр. Автоматическое создание обычных карточек NetBox не включено на сервере NetBox.</p>}
+ {!!account.summary.placement_pending?.length&&<p role="alert">Для {account.summary.placement_pending.length} ресурсов площадка Selectel конфликтует с текущим размещением кластера, стойки или хоста. Сведения провайдера сохранены; размещение связанных объектов нужно проверить в NetBox.</p>}
+ {account.summary.native_mode==='automatic'&&<p>Создано карточек: {account.summary.native_created}. Связано с существующими: {account.summary.native_adopted}. Требуют проверки: {account.summary.native_blocked}. <a href={account.url} target="_blank" rel="noreferrer">Проверить ресурсы и кандидатов в NetBox ↗</a></p>}
  <div className="scroll-region" tabIndex={0} role="region" aria-label="Результаты по категориям"><table><thead><tr><th scope="col">Категория</th><th scope="col">Результат</th><th scope="col">Наблюдений в списках</th></tr></thead><tbody>{account.summary.products.map(p=><tr key={p.product}><td>{p.title}</td><td>{p.state_label}</td><td>{Object.keys(p.observations_by_collection).length?Object.values(p.observations_by_collection).reduce((a,b)=>a+b,0):'—'}</td></tr>)}</tbody></table></div>
  <p className="muted">Счётчики категорий не складываются в число уникальных ресурсов. Недоступная категория не означает отсутствие ресурсов.</p></>:<p>{account.status==='configured'?'После первого сбора здесь появится результат по категориям.':account.status==='running'?'Ожидаем результат текущего сбора.':'Подробный результат по категориям не получен. Проверьте сохранённые ресурсы в NetBox.'}</p>}
  </section>}
- <details className="workspace-note"><summary>Как обновляются данные Selectel</summary><p>Обновляются реестр и сведения уже связанных серверов. Адреса управления и сетевые назначения сохраняются. Для новых связей и создания карточек требуется отдельный просмотр плана. Автоматическое расписание пока недоступно. Имена проектов и ресурсов сохраняются как у провайдера.</p></details>
+ <details className="workspace-note"><summary>Как обновляются данные Selectel</summary><p>Обновляются реестр и сведения уже связанных серверов. Адреса управления и сетевые назначения сохраняются. Для новых связей и создания карточек требуется отдельный просмотр плана. Расписание настраивается отдельно для каждого аккаунта, с интервалом от одного дня. Имена проектов и ресурсов сохраняются как у провайдера.</p></details>
  </main>;
 }

@@ -5,7 +5,7 @@ from django.test import RequestFactory
 from netbox_guard.resource_registry_views import registry as registry_view
 from netbox_guard.provider_reconcile import prepare as native_prepare, apply as native_apply
 from netbox_guard.provider_policy import identity as provider_key
-from netbox_guard.models import ProviderInventory
+from netbox_guard.models import ProviderInventory, ProviderCreatedObject
 
 account = '98765'
 def insert_resource(kind, native, name, serial='', age=0):
@@ -13,7 +13,7 @@ def insert_resource(kind, native, name, serial='', age=0):
     key = provider_key(ident, 'device' if kind == 'dedicated' else 'vm')
     sections = {'resource': {'status': 'collected', 'data': {'name': name, 'status': 'ACTIVE'}},
                 'hardware': {'status': 'collected', 'data': {'serial': serial, 'vcpus': 2, 'ram': 2048}},
-                'placement': {'status': 'collected', 'data': {'name': 'Test zone'}}}
+                'placement': {'status': 'collected', 'data': {'name': 'Test zone', 'uuid': 'test-zone'}}}
     return ProviderInventory.objects.create(provider_key=key, account=account,
         snapshot={'identity': ident, 'sections': sections}, evidence_digest='e' * 64,
         observed_at=timezone.now() - timedelta(days=age))
@@ -49,6 +49,9 @@ vm_binding = ProviderBinding.objects.get(provider_key=cloud.pk)
 cloud_vm = VirtualMachine.objects.get(pk=vm_binding.object_id)
 assert cloud_vm.site.region.name.endswith('ru-test')
 assert cloud_vm.memory == 2048 and cloud_vm.primary_ip4_id is None
+assert ProviderCreatedObject.objects.filter(model_label='virtualization.virtualmachine',
+    object_id=cloud_vm.pk, object_created=cloud_vm.created, account=account).exists()
+assert not ProviderCreatedObject.objects.filter(model_label='dcim.device', object_id=native_host.pk).exists()
 
 # Duplicate hardware IDs never silently choose one Device.
 insert_resource('dedicated', 'duplicate', 'Another label', serial='NATIVE-UNIQUE')

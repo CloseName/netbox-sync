@@ -33,6 +33,9 @@ def run(value):
         client = GuardClient(session, value['url'], authorization(value['token']), value['guard_instance'])
         if value['operation'] == 'preflight':
             return client._request('GET', 'providers/account-import/')
+        if value['operation'] in ('lifecycle-review', 'lifecycle-execute'):
+            suffix = 'review' if value['operation'] == 'lifecycle-review' else 'execute'
+            return client._request('POST', 'providers/lifecycle/'+suffix+'/', value['payload'])
         bounded_json(value['payload'])
         return client._request('POST', 'providers/account-import/', value['payload'])
 
@@ -52,13 +55,15 @@ def main():
             'REQUEST_BUDGET_EXCEEDED', 'INVALID_AUTH_RESPONSE'} else 'COLLECTION_FAILED'}
     except ValueError as exc:
         result = {'error': 'SELECTEL_RESULT_TOO_LARGE' if str(exc) == 'SELECTEL_RESULT_TOO_LARGE'
-                  else 'IMPORT_UNCONFIRMED' if operation == 'import' else 'COLLECTION_FAILED'}
+                  else 'IMPORT_UNCONFIRMED' if operation in ('import', 'lifecycle-execute')
+                  else 'NETBOX_IMPORT_SETUP_FAILED' if operation == 'preflight' else 'COLLECTION_FAILED'}
     except Exception:
-        result = {'error': 'IMPORT_UNCONFIRMED' if operation == 'import' else 'COLLECTION_FAILED'}
+        result = {'error': 'IMPORT_UNCONFIRMED' if operation in ('import', 'lifecycle-execute')
+                  else 'NETBOX_IMPORT_SETUP_FAILED' if operation == 'preflight' else 'COLLECTION_FAILED'}
     try:
         encoded = bounded_json(result)
     except (ValueError, MemoryError):
-        encoded = bounded_json({'error': 'IMPORT_UNCONFIRMED' if operation == 'import'
+        encoded = bounded_json({'error': 'IMPORT_UNCONFIRMED' if operation in ('import', 'lifecycle-execute')
                                 else 'SELECTEL_RESULT_TOO_LARGE'})
     sys.stdout.write(encoded.decode('ascii'))
 

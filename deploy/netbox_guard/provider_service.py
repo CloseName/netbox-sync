@@ -43,6 +43,11 @@ def _read(user, spec, *, lock=False):
         if not user.has_perm(f'{obj._meta.app_label}.{action}_{obj._meta.model_name}', obj):
             raise DependencyGuardBlocked('PERMISSION_DENIED')
     key = identity(spec['identity'], spec['resource'])
+    from .models import ProviderAccountFence, ProviderDetachedResource
+    if ProviderAccountFence.objects.filter(account=spec['identity']['account'], deleted=True).exists():
+        raise ValueError('PROVIDER_ACCOUNT_DELETED')
+    if ProviderDetachedResource.objects.filter(provider_key=key).exists():
+        raise ValueError('PROVIDER_RESOURCE_DETACHED')
     binding = ProviderBinding.objects.filter(resource=spec['resource'], object_id=obj.pk).first()
     if binding and (binding.provider_key != key or binding.object_created != obj.created):
         raise ValueError('PROVIDER_BINDING_CONFLICT')
@@ -54,7 +59,10 @@ def _read(user, spec, *, lock=False):
               'object_updated': obj.last_updated.isoformat() if obj.last_updated else None,
               'custom_fields': obj.custom_field_data, 'name': obj.name,
               'serial': getattr(obj, 'serial', ''), 'site_id': getattr(obj, 'site_id', None),
-              'cluster_id': getattr(obj, 'cluster_id', None)}
+              'cluster_id': getattr(obj, 'cluster_id', None),
+              'status': getattr(obj, 'status', None),
+              'vcpus': str(obj.vcpus) if getattr(obj, 'vcpus', None) is not None else None,
+              'memory': getattr(obj, 'memory', None)}
     proposed = {**claims, **proposed_claims(spec['identity'], spec['resource'], spec['serial'])}
     return obj, binding, before, proposed
 
@@ -101,10 +109,11 @@ def apply_binding(user, nonce, spec, fingerprint):
             if cf.get(name) != value:
                 cf[name] = value
                 update.add('custom_field_data')
-        elif field == 'serial' and obj.serial != value:
-            obj.serial = value
-            update.add('serial')
-        elif field != 'serial':
+        elif field in ('name', 'serial', 'status', 'vcpus', 'memory', 'site_id'):
+            if getattr(obj, field) != value:
+                setattr(obj, field, value)
+                update.add('site' if field == 'site_id' else field)
+        else:
             raise ValueError('PROVIDER_FIELD_UNSUPPORTED')
     if update:
         obj.custom_field_data = cf

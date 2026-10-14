@@ -59,6 +59,45 @@ class ProviderBinding(models.Model):
         constraints = [models.UniqueConstraint(fields=('resource', 'object_id'), name='guard_provider_target')]
 
 
+class ProviderCreatedObject(models.Model):
+    """Creation provenance, never inferred from a name, binding or current fields."""
+    account = models.CharField(max_length=20, db_index=True)
+    model_label = models.CharField(max_length=100)
+    object_id = models.PositiveBigIntegerField()
+    object_created = models.DateTimeField()
+    provider_key = models.CharField(max_length=512, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        default_permissions = ()
+        constraints = [models.UniqueConstraint(fields=('model_label', 'object_id'), name='guard_provider_created_object')]
+
+
+class ProviderDetachedResource(models.Model):
+    provider_key = models.CharField(max_length=512, primary_key=True)
+    account = models.CharField(max_length=20, db_index=True)
+    class Meta:
+        default_permissions = ()
+
+
+class ProviderAccountFence(models.Model):
+    account = models.CharField(max_length=20, primary_key=True)
+    deleted = models.BooleanField(default=False)
+    class Meta:
+        default_permissions = ()
+
+
+class ProviderLifecycleReceipt(models.Model):
+    nonce = models.UUIDField(primary_key=True)
+    account = models.CharField(max_length=20)
+    actor = models.CharField(max_length=128)
+    digest = models.CharField(max_length=64)
+    result = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        default_permissions = ()
+
+
 class ProviderFieldClaim(models.Model):
     binding = models.ForeignKey(ProviderBinding, on_delete=models.PROTECT)
     field = models.CharField(max_length=128)

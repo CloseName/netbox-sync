@@ -5,15 +5,16 @@ from uuid import UUID, uuid5
 from django.db import transaction, connection
 from django.utils import timezone
 from dcim.models import Device, DeviceType, DeviceRole, Manufacturer, Site, Region
-from virtualization.models import VirtualMachine
+from virtualization.models import VirtualMachine, VMInterface
 from ipam.models import IPAddress
-from .models import ProviderInventory, ProviderBinding, ProviderInventoryImport
+from .models import ProviderInventory, ProviderBinding, ProviderInventoryImport, ProviderCreatedObject, ProviderDetachedResource, ProviderAccountFence
 from .provider_policy import digest, identity
 from .provider_service import review_binding, apply_binding
 from .provider_schema import check_schema
 from .resource_presentation import obj, items
 from .service import _permission, _add_permission
 from .hardware_identity import canonical, tokens, selectel_observation, compare
+from .provider_guest_evidence import guest_wans
 
 
 VM_STATES = {'ACTIVE': 'active', 'SHUTOFF': 'offline', 'SHELVED': 'offline',
@@ -51,6 +52,9 @@ def _permission_all(user):
 
 def prepare(user, account):
     _permission_all(user)
+    if ProviderAccountFence.objects.filter(account=account, deleted=True).exists():
+        raise ValueError('PROVIDER_ACCOUNT_DELETED')
+    detached = set(ProviderDetachedResource.objects.filter(account=account).values_list('provider_key', flat=True))
     records = list(ProviderInventory.objects.filter(account=account).order_by('provider_key'))
     if not records:
         raise ValueError('PROVIDER_INVENTORY_REQUIRED')
@@ -58,6 +62,22 @@ def prepare(user, account):
     bound_targets = {(b.resource, b.object_id) for b in bindings.values()}
     targets = [('device', o) for o in Device.objects.order_by('pk')] + [('vm', o) for o in VirtualMachine.objects.order_by('pk')]
     target_index = {(kind, o.pk): o for kind, o in targets}
+    guest_interfaces = {}
+    snapshot_vm_ids = [o.pk for kind, o in targets if kind == 'vm'
+                       and (o.custom_field_data or {}).get('pfsense_network')]
+    for interface in VMInterface.objects.select_related('primary_mac_address').filter(virtual_machine_id__in=snapshot_vm_ids):
+        mac = interface.primary_mac_address
+        guest_interfaces.setdefault(interface.virtual_machine_id, {})[interface.pk] = (
+            str(mac.mac_address) if mac else None)
+    observed_wans = {}
+    now = timezone.now()
+    for kind, target in targets:
+        if kind != 'vm' or ('device', target.device_id) not in target_index:
+            continue
+        snapshot = (target.custom_field_data or {}).get('pfsense_network')
+        for evidence in guest_wans(snapshot, target.pk, target.device_id,
+                                   guest_interfaces.get(target.pk, {}), now):
+            observed_wans.setdefault(evidence['address'], []).append(evidence)
     address_targets = {}
     for kind, target in targets:
         for address in (target.primary_ip4, target.primary_ip6):
@@ -95,6 +115,7 @@ def prepare(user, account):
                         object_id=binding.object_id)
         else:
             strong, possible, identity_conflicts = [], set(), set()
+            guest_evidence = []
             for kind, target in targets:
                 tid = (kind, target.pk)
                 if kind == native_kind == 'device':
@@ -123,6 +144,11 @@ def prepare(user, account):
                         except (KeyError, ValueError):
                             continue
             for address in info['addresses']:
+                if native_kind == 'device':
+                    for evidence in observed_wans.get(address, []):
+                        guest_evidence.append(evidence)
+                        possible.add(('vm', evidence['vm_id']))
+                        possible.add(('device', evidence['host_device_id']))
                 matches = address_targets.get(address, ())
                 if ipaddress.ip_address(address).is_global:
                     possible.update(matches)
@@ -143,7 +169,10 @@ def prepare(user, account):
                     url=target.get_absolute_url(), host_device_id=host_id,
                     evidence=dict(stable_identity=(k, i) in strong, hardware_conflict=(k, i) in identity_conflicts,
                                   same_name=(target.name or '').casefold() == info['name'].casefold(),
-                                  public_ips=matching_ips)))
+                                  public_ips=matching_ips,
+                                  observed_guest_wans=[e for e in guest_evidence if
+                                      (k == 'vm' and e['vm_id'] == i) or
+                                      (k == 'device' and e['host_device_id'] == i)])))
                 if host_id and ('device', host_id) in target_index:
                     groups.setdefault(host_id, []).append(dict(resource=k, id=i, public_ips=matching_ips))
             plan['host_groups'] = [dict(device_id=i, name=target_index['device', i].name,
@@ -154,7 +183,8 @@ def prepare(user, account):
                 plan['reason'] = 'identity_needs_confirmation'
             elif native_kind == 'device' and not info['serial']:
                 plan['reason'] = 'hardware_identity_missing'
-            elif not info['location']:
+            elif not (obj({'sections': snap['sections']}, 'placement').get('uuid')
+                      or obj({'sections': snap['sections']}, 'placement').get('OS-EXT-AZ:availability_zone')):
                 plan['reason'] = 'placement_missing'
             else:
                 plan.update(action='create', reason='no_existing_candidate')
@@ -171,6 +201,8 @@ def prepare(user, account):
                     or section.get('status') != 'collected' or section.get('retained')):
                 plan.update(action='blocked', reason='fresh_inventory_required')
         plans.append(plan)
+        if record.provider_key in detached:
+            plan.update(action='detached', reason='operator_detached')
     # Two resources must never adopt the same target or hardware identity in one run.
     for plan in plans:
         plan['native_name'] = plan['name'][:64]
@@ -201,14 +233,15 @@ def _create(user, record, plan):
             result = model(slug=slug, **values)
             _add_permission(user, result)
             result.full_clean(); result.save()
+            ProviderCreatedObject.objects.create(account=ident['account'], model_label=result._meta.label_lower,
+                object_id=result.pk, object_created=result.created)
         elif any(getattr(result, k) != v for k, v in values.items()):
             raise ValueError('PROVIDER_NATIVE_SCOPE_CONFLICT')
         return result
-    region = None
-    if ident.get('region'):
-        region = ensure(Region, 'selectel-' + scope, {'name': 'Selectel / ' + ident['account'] + ' / ' + ident['region']})
-    site_scope = digest([scope, info['location']])[:16]
-    site = ensure(Site, 'selectel-' + site_scope, {'name': ('Selectel / ' + ident['account'] + ' / ' + info['location'])[:100], 'region': region})
+    from .provider_placement import resolve
+    site = resolve(user, record.snapshot)
+    if site is None:
+        raise ValueError('PROVIDER_PLACEMENT_IDENTITY_REQUIRED')
     if plan['resource'] == 'device':
         manufacturer = ensure(Manufacturer, 'selectel-unspecified', {'name': 'Selectel — manufacturer not reported'})
         device_type = ensure(DeviceType, 'selectel-unspecified', {'model': 'Unspecified server', 'manufacturer': manufacturer, 'u_height': 0})
@@ -222,6 +255,8 @@ def _create(user, record, plan):
             vcpus=hardware.get('vcpus'), memory=hardware.get('ram'))
     _add_permission(user, target)
     target.full_clean(); target.save()
+    ProviderCreatedObject.objects.create(account=ident['account'], model_label=target._meta.label_lower,
+        object_id=target.pk, object_created=target.created, provider_key=record.provider_key)
     return target
 
 
