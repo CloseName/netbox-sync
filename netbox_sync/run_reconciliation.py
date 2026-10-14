@@ -1,5 +1,9 @@
 """Explicit Admin acceptance of a new baseline, never a historical success claim."""
 from uuid import UUID
+from contextlib import contextmanager, ExitStack
+import errno
+import os
+import time
 from psycopg import sql
 from psycopg.types.json import Jsonb
 from .source_operations import source_gate
@@ -38,8 +42,38 @@ class RunReconciliation:
         result['digest']=fingerprint(result)
         return result
 
+    @contextmanager
+    def _waiting_lock(self):
+        # A kernel-owned intent lock defers new scheduler ticks; crashes release it.
+        import fcntl
+        path = str(self.store.lock_path) + '.reconciliation'
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as error:
+                if error.errno not in (errno.EAGAIN, errno.EACCES):
+                    raise
+                raise LifecycleError('SOURCE_APPLY_ACTIVE') from None
+            deadline = time.monotonic() + 10
+            stack = ExitStack()
+            while True:
+                lock = self.store.lock(self.store.lock_path)
+                try:
+                    stack.enter_context(lock)
+                except LifecycleError as error:
+                    if error.code != 'SOURCE_APPLY_ACTIVE' or time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.1)
+                else:
+                    break
+            with stack:
+                yield
+        finally:
+            os.close(fd)
+
     def review(self,source,operation):
-        with self.store.lock(self.store.lock_path):return self._review(source,operation)
+        with self._waiting_lock():return self._review(source,operation)
 
     def confirm(self,source,operation,actor,digest,acknowledgements):
         operation=UUID(str(operation))
@@ -47,7 +81,7 @@ class RunReconciliation:
                 or not isinstance(acknowledgements,dict) or any(type(value) is not bool for value in acknowledgements.values())
                 or acknowledgements!={'old_writes_stopped':True,'outcome_stays_unknown':True,'fresh_plan_required':True}):
             raise LifecycleError('REQUEST_INVALID')
-        with self.store.lock(self.store.lock_path):
+        with self._waiting_lock():
             with self.store.connect() as connection:
                 previous=connection.execute(sql.SQL('SELECT decision,actor_id,source_instance,valid FROM {} WHERE operation_id=%s LIMIT 1').format(self.store.table('run_reconciliations')),(operation,)).fetchone()
                 if previous:

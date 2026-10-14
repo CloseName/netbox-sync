@@ -142,7 +142,8 @@ def test_tracked_systemd_path_has_exactly_one_shared_lock():
     wrapper = (ROOT / 'scripts/run-scheduled-sync.sh').read_text(encoding='utf-8')
     combined = service + wrapper
     assert 'ExecStart=@DEPLOYMENT_ROOT@/current/scripts/run-scheduled-sync.sh' in service
-    assert combined.count('/usr/bin/flock') == 1
+    assert combined.count('/usr/bin/flock -n /run/netbox-sync/apply.lock ') == 1
+    assert combined.count('/usr/bin/flock -s -n /run/netbox-sync/apply.lock.reconciliation') == 2
     assert '/run/netbox-sync/apply.lock' in wrapper
     assert '--remove-orphans' not in wrapper
     assert 'deploy/compose.py' in wrapper
