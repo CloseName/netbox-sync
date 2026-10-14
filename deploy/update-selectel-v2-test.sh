@@ -25,12 +25,17 @@ r=json.load(sys.stdin)[0]
 p=[Path(m["Source"]).resolve() for m in r["Mounts"] if m["Destination"]=="/etc/netbox/config" and m["Type"]=="bind"]
 assert len(p)==1 and p[0].is_relative_to(Path("/netbox-test")), "Expected test NetBox config directory mount"
 print(p[0])')
-docker exec -i netbox-sync-bootstrap-worker python -B - <<'PY'
-import os
+python3 - "$STATE/bootstrap.json" <<'PY'
+import json, os, stat, sys
 from urllib.parse import urlsplit
-from netbox_sync.bootstrap_state import BootstrapStore, runtime_netbox
-store=BootstrapStore(os.environ.get('NETBOX_SYNC_NETBOX_STATE_DIR','/var/lib/netbox-sync/netbox'))
-assert urlsplit(runtime_netbox(store.path,'read')[0]).hostname=='netbox-test.indeed-id.hq', 'Not test NetBox target'
+fd=os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW)
+with os.fdopen(fd) as stream:
+    info=os.fstat(stream.fileno())
+    assert stat.S_ISREG(info.st_mode) and info.st_uid==0 and stat.S_IMODE(info.st_mode)==0o600
+    assert info.st_size<=32768
+    state=json.load(stream)
+assert state.get('status')=='READY', 'Test bootstrap state is not ready'
+assert urlsplit(state['url']).hostname=='netbox-test.indeed-id.hq', 'Not test NetBox target'
 PY
 python3 "$REPO/deploy/install.py" --root /netbox-sync-test --source "$REPO" --check
 python3 "$REPO/deploy/install.py" --root /netbox-sync-test --source "$REPO" --check-tls
@@ -42,8 +47,13 @@ exec 9>/run/netbox-sync/apply.lock
 flock -w 300 9
 docker stop --time 60 netbox-sync-bootstrap-worker
 [[ ! -L "$CONFIG/zzzz_selectel_v2_test.py" ]]
-printf '%s\n' "PLUGINS_CONFIG.setdefault('netbox_guard', {})['selectel_native_reconcile'] = True" > "$CONFIG/zzzz_selectel_v2_test.py"
-chmod 644 "$CONFIG/zzzz_selectel_v2_test.py"
+CONFIG_TMP=$(mktemp "$CONFIG/.selectel-v2.XXXXXX")
+install -m 644 "$REPO/deploy/selectel-v2-test-config.py" "$CONFIG_TMP"
+mv -f -- "$CONFIG_TMP" "$CONFIG/zzzz_selectel_v2_test.py"
+# Also works when the prior attempt left NetBox and bootstrap stopped.
+# Validate the loader before building images or attempting migrations.
+(cd /netbox-test && docker compose run --rm --no-deps -T \
+  --entrypoint /opt/netbox/venv/bin/python netbox /opt/netbox/netbox/manage.py check </dev/null)
 bash "$REPO/deploy/update-selectel-test.sh"
 REMOTE=$(docker exec --user 0 netbox mktemp -d /tmp/selectel-v2-token.XXXXXX)
 docker exec --user 0 netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py configure_selectel_mvp --native-resources --lifecycle --output "$REMOTE/token.json"
