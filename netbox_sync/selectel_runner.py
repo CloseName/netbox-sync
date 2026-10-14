@@ -12,6 +12,28 @@ from .selectel_control import read, write, root
 from .source_lifecycle import apply_lock
 from .discovery_worker import _drop_privileges, _safe_environment
 from .child_process import child_process, stop_child
+from .selectel_payload import MAX_BYTES
+
+
+def child_result(output, returncode, operation):
+    # Once import started, an abnormal response cannot prove that no writes ran.
+    def failure(code):
+        return {'error': 'IMPORT_UNCONFIRMED' if operation == 'import' else code}
+    if os.fstat(output.fileno()).st_size > MAX_BYTES:
+        return failure('SELECTEL_RESULT_TOO_LARGE')
+    if returncode:
+        return failure('SELECTEL_COLLECTOR_EXITED')
+    output.seek(0)
+    try:
+        result = json.load(output)
+    except (ValueError, UnicodeError):
+        return failure('SELECTEL_RESULT_INVALID')
+    if not isinstance(result, dict):
+        return failure('SELECTEL_RESULT_INVALID')
+    if operation == 'collect' and 'error' not in result and not all(
+            isinstance(result.get(k), dict) for k in ('document', 'registry', 'summary')):
+        return failure('SELECTEL_RESULT_INVALID')
+    return result
 
 
 @contextmanager
@@ -32,7 +54,7 @@ def locked_store(store):
 def child(value, timeout):
     def sandbox():
         import resource
-        resource.setrlimit(resource.RLIMIT_FSIZE, (24 * 1024 * 1024, 24 * 1024 * 1024))
+        resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_BYTES + 4096, MAX_BYTES + 4096))
         resource.setrlimit(resource.RLIMIT_AS, (1024 * 1024 * 1024, 1024 * 1024 * 1024))
         _drop_privileges(10001, 10001)()
     with tempfile.TemporaryFile() as output:
@@ -41,11 +63,9 @@ def child(value, timeout):
                 env=_safe_environment(), preexec_fn=sandbox) as process:
             try: process.communicate(json.dumps(value).encode(), timeout=timeout)
             except subprocess.TimeoutExpired:
-                stop_child(process); return {'error': 'RUN_TIMEOUT'}
-        if process.returncode or output.tell() > 16 * 1024 * 1024:
-            return {'error': 'COLLECTION_TOO_LARGE_OR_FAILED'}
-        output.seek(0)
-        return json.load(output)
+                stop_child(process)
+                return {'error': 'IMPORT_UNCONFIRMED' if value['operation'] == 'import' else 'RUN_TIMEOUT'}
+        return child_result(output, process.returncode, value['operation'])
 
 
 def main():

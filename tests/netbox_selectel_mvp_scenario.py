@@ -8,7 +8,11 @@ from netbox_guard.models import ProviderAccountRun, ProviderInventoryImport, Pro
 from tools.selectel_audit.resource_registry import registry
 document = runpy.run_path(str(Path(__file__).with_name('selectel_inventory_fixture.py')))['fixture']('67890')
 document['projects'] = [{'id': 'p', 'name': 'Readable project'}]
-payload = dict(account='67890', nonce=str(uuid4()), document=document, registry=registry(document))
+from netbox_sync.selectel_payload import inventory_document, import_payload
+from netbox_guard.selectel_inventory import Inventory
+compact = inventory_document(document)
+assert Inventory(compact).normalize() == Inventory(document).normalize()
+payload = import_payload('67890', str(uuid4()), dict(document=compact, registry=registry(document)))
 before = list(Device.objects.order_by('pk').values())
 rejected(lambda: import_account(unprivileged, payload), (DependencyGuardBlocked,))
 receipts = ProviderInventoryImport.objects.count()
