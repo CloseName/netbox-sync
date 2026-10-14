@@ -6,6 +6,7 @@ frontend/dist/
 # Python
 __pycache__/
 *.py[cod]
+.dev-deps/
 
 # Local configuration
 .env

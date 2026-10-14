@@ -15,6 +15,35 @@ class Client:
         return {'id': 19, **args[-1]}
 
 
+def test_vm_replacement_nonce_is_run_and_card_bound():
+    api = pynetbox.api('https://netbox.invalid')
+    calls = []
+    client = SimpleNamespace(_request=lambda method, path, body: calls.append((method, path, body)) or {'id': 19})
+    run = uuid4()
+    for _ in range(2):
+        facade = GuardedCreation(api, client, 'esxi-fixture', 7, run)
+        facade.replace_vm(19, {'name': 'recreated'})
+    assert calls[0] == calls[1]
+    assert calls[0][0:2] == ('POST', 'vm-replacements/19/execute/')
+
+
+def test_vm_replacement_review_uses_read_transport(monkeypatch):
+    from netbox_sync.vm_replacement import configure
+    import json
+    api = pynetbox.api('https://netbox.invalid', token='fixture-token')
+    captured = []
+    class Response:
+        status_code = 200
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def iter_content(self, size): return [json.dumps({'fingerprint': 'a' * 64}).encode()]
+    monkeypatch.setattr(api.http_session, 'get', lambda url, **kw: captured.append((url, kw)) or Response())
+    configure(api)
+    assert api.replacement_review(19, 'esxi-fixture', 7) == {'fingerprint': 'a' * 64}
+    assert captured[0][0] == 'https://netbox.invalid/api/plugins/netbox-sync-guard/vm-replacements/19/review/?source_instance=esxi-fixture&cluster_id=7'
+    assert captured[0][1]['allow_redirects'] is False
+
+
 def test_real_pynetbox_records_and_read_delegation(monkeypatch):
     api=pynetbox.api('https://netbox.invalid',token='test-only')
     client=Client();run=uuid4()

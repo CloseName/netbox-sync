@@ -478,6 +478,10 @@ def _device_changes(
         'device_type': device_type.id,
         'cluster': cluster.id,
     }
+    from .selectel_authority import owned_fields
+    protected = owned_fields(data.get('custom_fields'))
+    if 'site_id' in protected:
+        expected.pop('site')
 
     for field, desired_id in expected.items():
         if (

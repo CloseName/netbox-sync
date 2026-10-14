@@ -499,6 +499,7 @@ def _mark_shared_interface_claims(items):
 
 
 _OBJECT_CLASSIFICATIONS = {
+    AdoptionClassification.RETAINED_NAME: ObjectMigrationClassification.REVIEW_REQUIRED,
     AdoptionClassification.MANAGED: ObjectMigrationClassification.MANAGED,
     AdoptionClassification.SAFE_ADOPTION_CANDIDATE:
         ObjectMigrationClassification.SAFE_LEGACY_CANDIDATE,

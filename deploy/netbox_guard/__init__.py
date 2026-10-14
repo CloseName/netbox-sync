@@ -9,7 +9,8 @@ class NetBoxGuardConfig(PluginConfig):
     min_version = '4.7.0'
     max_version = '4.7.0'
     base_url = 'netbox-sync-guard'
-    middleware = ['netbox_guard.middleware.IPAMAllocationLock']
+    middleware = ['netbox_guard.middleware.IPAMAllocationLock',
+                  'netbox_guard.middleware.ProviderWriteConflict']
 
     def ready(self):
         super().ready()

@@ -5,7 +5,11 @@ from collections import defaultdict
 
 def ip(value):
     try:
-        return str(ipaddress.ip_interface(str(value)).ip)
+        address = ipaddress.ip_interface(str(value)).ip
+        if (address.is_unspecified or address.is_loopback or address.is_link_local
+                or address.is_multicast or str(address) == '255.255.255.255'):
+            return None
+        return str(address)
     except ValueError:
         return None
 

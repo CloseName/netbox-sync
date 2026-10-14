@@ -105,6 +105,20 @@ def _generic_item(discovered, kind, identity, all_records, target_records):
 
 
 def _proxmox_host_item(host, devices, target_devices):
+    if not any(host_source_identity(host).to_record() in _identities(record) for record in devices):
+        from ..selectel_host_match import matches
+        provider = matches(devices, host)
+        if provider:
+            record = provider[0]
+            if record.id not in {r.id for r in target_devices}:
+                return ReviewItem('host',host.original_name,host_source_identity(host).external_id,
+                    ReviewClassification.CONFLICT,'SELECTEL_PLACEMENT_REVIEW_REQUIRED',
+                    'Select the existing Selectel device site and a compatible cluster before synchronizing.',
+                    'review',record.id,getattr(record,'name',None))
+            return ReviewItem('host',host.original_name,host_source_identity(host).external_id,
+                ReviewClassification.MANAGED,'SELECTEL_HARDWARE_MATCH',
+                'Unique hardware identity matches the existing Selectel device. Its provider fields are preserved.',
+                'none',record.id,getattr(record,'name',None))
     item = _generic_item(host, 'host', host_source_identity(host), devices, target_devices)
     if item.classification is not ReviewClassification.WOULD_CREATE or not host.management_ip:
         return item
@@ -151,12 +165,22 @@ def build_proxmox_review(nb_api, hosts, config):
     vms = tuple(nb_api.virtualization.virtual_machines.all())
     target_devices = tuple(record for record in devices if
                            _object_id(_record(record).get('site')) == site.id
-                           and _object_id(_record(record).get('cluster')) == cluster.id)
+                           and (_object_id(_record(record).get('cluster')) == cluster.id
+                                or (_object_id(_record(record).get('cluster')) is None
+                                    and (_record(record).get('custom_fields') or {}).get('selectel_refs'))))
     target_vms = tuple(record for record in vms if
                        _object_id(_record(record).get('cluster')) == cluster.id)
     items = []
     for host in hosts:
         items.append(_proxmox_host_item(host, devices, target_devices))
+        missing = ((getattr(host, 'proxmox_host_network', None) or {}).get('coverage') or {}).get('missing_references', [])
+        if missing:
+            names = sorted({r['target'] for r in missing})
+            items.append(ReviewItem('host_network', host.normalized_name, host.source_id,
+                ReviewClassification.UNSUPPORTED, 'PROXMOX_NETWORK_REFERENCES_MISSING',
+                'Network API omitted referenced interfaces: ' + ', '.join(names) +
+                '. Check configuration and bridge permissions; insufficient permissions are not confirmed.',
+                'review'))
         items.extend(_generic_item(vm, 'qemu', virtual_machine_source_identity(vm), vms, target_vms)
                      for vm in host.virtual_machines)
         items.extend(_generic_item(lxc, 'lxc', lxc_source_identity(lxc), vms, target_vms)
@@ -168,6 +192,7 @@ def build_proxmox_review(nb_api, hosts, config):
 def build_esxi_review(plan, config):
     """Map the established adoption classifications explicitly."""
     mapping = {
+        'RETAINED_NAME': (ReviewClassification.REVIEW_REQUIRED, 'VM_RECREATED_NAME', 'review'),
         'MANAGED': (ReviewClassification.MANAGED, 'IDENTITY_MATCH', 'none'),
         'SAFE_ADOPTION_CANDIDATE': (ReviewClassification.REVIEW_REQUIRED,
                                     'SAFE_ADOPTION_CANDIDATE', 'review'),
@@ -176,7 +201,9 @@ def build_esxi_review(plan, config):
         'UNMATCHED': (ReviewClassification.WOULD_CREATE, 'NO_IDENTITY_MATCH', 'create'),
     }
     reasons = {
+        'VM_RECREATED_NAME': 'The name belongs to a retained VM with a different identity. Only this VM is skipped; other objects can synchronize. Rename the new VM and rebuild the plan. Existing bindings are preserved.',
         'IDENTITY_MATCH': 'Stable source identity matches an existing NetBox object.',
+        'SELECTEL_HARDWARE_MATCH': 'Unique hardware identity matches the existing Selectel device. Its provider fields are preserved.',
         'SAFE_ADOPTION_CANDIDATE': 'Stable evidence exists, but Web discovery never adopts objects.',
         'LEGACY_REVIEW_REQUIRED': 'Legacy evidence requires operator review and is not adopted.',
         'AMBIGUOUS_LEGACY_MATCH': 'Legacy evidence is ambiguous; processing is blocked.',
@@ -187,10 +214,26 @@ def build_esxi_review(plan, config):
         classification, code, action = mapping[item.classification.value]
         candidate = next((value for value in item.candidates
                           if value.object_id == item.selected_object_id), None)
+        if candidate and 'selectel_hardware_identity' in candidate.signals and classification == ReviewClassification.MANAGED:
+            code = 'SELECTEL_HARDWARE_MATCH'
+        import json
+        from urllib.parse import urlsplit
+        base = plan.netbox_url
+        parsed = urlsplit(base)
+        base = base if parsed.scheme in ('https', 'http') and parsed.hostname and not parsed.username and not parsed.password else ''
+        evidence = []
+        if classification in (ReviewClassification.CONFLICT, ReviewClassification.REVIEW_REQUIRED):
+            for value in sorted(item.candidates, key=lambda c: str(c.object_id)):
+                identities = json.loads(value.custom_fields_snapshot).get('sync_identities') or []
+                evidence.append(dict(id=value.object_id, name=value.object_name,
+                    url=(base + ('/virtualization/virtual-machines/' if item.object_kind == 'vm' else '/dcim/devices/') + str(value.object_id) + '/') if base else '',
+                    external_ids=sorted(str(v.get('external_id', v.get('source_id', ''))) for v in identities if isinstance(v, dict)),
+                    signals=list(value.signals), conflicts=list(value.conflicts)))
         items.append(ReviewItem(item.object_kind, item.source_name, item.identity.external_id,
                                 classification, code, reasons[code], action,
                                 item.selected_object_id,
-                                None if candidate is None else candidate.object_name))
+                                None if candidate is None else candidate.object_name,
+                                properties={'matching_candidates': evidence} if evidence else {}))
         if item.object_kind == 'host':
             items.append(ReviewItem('host_network', item.source_name, item.identity.external_id,
                 ReviewClassification.UNSUPPORTED, 'ESXI_HOST_NETWORK_UNSUPPORTED',
@@ -223,7 +266,7 @@ def enrich_review(review, hosts):
             items.append(item)
             continue
         obj = candidates.popleft()
-        properties = {}
+        properties = dict(item.properties)
         for key in ('vcpus', 'memory_bytes'):
             value = getattr(obj, key, None)
             if isinstance(value, int) and value > 0: properties[key] = value

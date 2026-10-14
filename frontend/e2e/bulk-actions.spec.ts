@@ -104,6 +104,8 @@ test('disable all includes filtered-out sources and independent pfSense collecti
  });
  await page.goto('/sources?provider=proxmox');
  await expect(page.getByRole('checkbox',{name:'Select Source 002',exact:true})).toHaveCount(0);
+ await page.getByText('Global scheduling',{exact:true}).click();
+ page.once('dialog',dialog=>dialog.accept());
  await page.getByRole('button',{name:'Disable all scheduled sync, including pfSense',exact:true}).click();
  await expect.poll(()=>disabled).toEqual(['source-1','source-2','pfSense']);
  await expect(page.getByText('pfSense: pfSense collection disabled',{exact:true})).toBeVisible();

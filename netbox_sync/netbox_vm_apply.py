@@ -271,6 +271,8 @@ def _vm_changes(
 ):
     data = existing_vm.serialize()
     changes = {}
+    from .selectel_authority import owned_fields
+    protected = owned_fields(data.get('custom_fields'))
     for field, value in _description_fields(discovered_vm).items():
         if (data.get(field) or '') != value:
             changes[field] = value
@@ -351,7 +353,7 @@ def _vm_changes(
             'custom_fields'
         ] = desired_custom_fields
 
-    return changes
+    return {field: value for field, value in changes.items() if field not in protected}
 
 
 def _blocked_context(

@@ -1,3 +1,4 @@
+import {SourceResult} from '../ui/SourceResult';
 import {SourcesBulkActions} from '../components/SourcesBulkActions';
 import {RefreshControl} from '../ui/RefreshControl';
 import {useEffect,useState} from 'react';
@@ -11,18 +12,15 @@ import { fetchDiagnostics } from "../api/diagnostics";
 import { useResource } from "../ui/useResource";
 import { ResourceNotice } from "../ui/ResourceNotice";
 import {
-  Badge,
   EmptyState,
   LoadingState,
   PageHeader,
   Pagination,
   Timestamp,
 } from "../ui/primitives";
-import { healthStatus, runStatus } from "../ui/status";
 import { interval } from "../ui/format";
 import { composeSources, querySources } from "../ui/operations";
-import { sourcePath, runPath } from "../ui/routes";
-import { staleEvidence } from "../ui/runEvidence";
+import { sourcePath } from "../ui/routes";
 export function SourcesListPage() {
   const [selected,setSelected]=useState<Set<string>>(new Set());
   const [language]=useLanguage(),t=(en:string,ru:string)=>language==='ru'?ru:en;
@@ -37,7 +35,7 @@ export function SourcesListPage() {
   useEffect(()=>{if(location.state?.addedSource)navigate(location.pathname+location.search,{replace:true,state:null});},[location,navigate]);
   const result = querySources(
     composeSources(sources.data ?? [], diagnostics.data),
-    new URLSearchParams([...params].filter(([key])=>!["team","schedule","attention","site"].includes(key))),
+    params,
   );
   useEffect(()=>{if(!sources.data||diagnostics.loading)return;try{const offset=Number(sessionStorage.getItem("sources-scroll:"+location.search)||0);if(offset>0)requestAnimationFrame(()=>window.scrollTo(0,offset));}catch{/* Optional browser storage. */}},[!!sources.data,diagnostics.loading]);
   // Browser history changes before React commits a navigation transition.
@@ -47,6 +45,7 @@ export function SourcesListPage() {
     const next = new URLSearchParams(window.location.search);
     value ? next.set(key, value) : next.delete(key);
     if (key !== "page") next.delete("page");
+    if (key === "attention") next.delete("health");
     setParams(next, { replace: key === "q" });
   };
   useEffect(()=>setSelected(new Set()),[location.search]);
@@ -140,16 +139,14 @@ export function SourcesListPage() {
                     <th scope="col"><input type="checkbox" aria-label={t("Select this page","Выбрать эту страницу")} checked={result.rows.length>0&&result.rows.every(r=>selected.has(r.source.source_instance))} onChange={e=>setSelected(new Set(e.target.checked?result.rows.map(r=>r.source.source_instance):[]))}/></th>
                     {heading("Source", "name")}
 
-                    <th scope="col">{tr("Target")}{" "}</th>
-                    <th scope="col">{tr("Sync status")}{" "}</th>
+                    {heading("Last result", "attention")}
                     <th scope="col">{tr("Schedule")}{" "}</th>
-                    {heading("Last run", "last")}
-                    {heading("Attention", "attention")}
+
                   </tr>
                 </thead>
                 <tbody>
                   {result.rows.map(
-                    ({ source: s, diagnostic: d, attention: a }) => (
+                    ({ source: s, diagnostic: d }) => (
                       <tr key={s.source_instance}><td><input type="checkbox" aria-label={t("Select ","Выбрать ")+s.name} checked={selected.has(s.source_instance)} onChange={e=>setSelected(before=>{const next=new Set(before);e.target.checked?next.add(s.source_instance):next.delete(s.source_instance);return next;})}/></td>
                         <th scope="row">
                           <Link
@@ -161,29 +158,11 @@ export function SourcesListPage() {
                           >
                             {s.name}
                           </Link>
-<small>{s.type === "proxmox" ? tr("Proxmox VE") : tr("VMware ESXi")}</small>
+<small>{s.site_slug} · {s.cluster_name}</small>
                           {!s.enabled && <small>{tr("Source disabled")}{" "}</small>}
                         </th>
 
-                        <td>
-                          {s.site_slug}
-                          <small>{s.cluster_name}</small>
-                        </td>
-                        <td>
-                          {d ? (
-                            <Badge
-                              value={healthStatus(d.status)}
-                              code={d.status}
-                            />
-                          ) : (
-                            <span className="muted">{tr(diagnostics.loading?"Loading diagnostics…":"Status unavailable")}{" "}</span>
-                          )}
-                          {d?.plan_checked_at&&<small>{t('Last plan: ','Последний план: ')}<Timestamp value={d.plan_checked_at}/></small>}
-                          {d?.latest_success_at&&<small>{t('Last successful sync: ','Последняя успешная синхронизация: ')}<Timestamp value={d.latest_success_at}/></small>}
-                          {!d && diagnostics.loading && (
-                            <small>{tr("Loading diagnostics…")}{" "}</small>
-                          )}
-                        </td>
+                        <td><SourceResult evidence={d}/></td>
                         <td>
                           {s.enabled && s.sync_enabled ? (
                             <>{tr("Every")}{" "}{interval(s.sync_interval_seconds)}</>
@@ -201,42 +180,6 @@ export function SourcesListPage() {
                                 <Timestamp value={d.next_expected_at} />
                               </small>
                             )}
-                        </td>
-                        <td>
-                          {d?.latest_run ? (
-                            <>
-                              <Link to={runPath(d.latest_run.run_id)}>
-                                <Badge
-                                  value={runStatus(
-                                    d.latest_run.status,
-                                    !!staleEvidence(
-                                      d.latest_run,
-                                      s.source_instance,
-                                      diagnostics.data,
-                                    ),
-                                  )}
-                                />
-                              </Link>
-                              <small>
-                                <Timestamp value={d.latest_run.started_at} />
-                              </small>
-                            </>
-                          ) : d ? (
-                            tr("No recorded run")
-                          ) : (
-                            tr(diagnostics.loading?"Loading diagnostics…":"Unavailable")
-                          )}
-                        </td>
-                        <td>
-                          {a ? (
-                            <Link to={sourcePath(s.source_instance)+(d?.plan_blocked?"/sync":"")}>
-                              {tr(a.label)}
-                            </Link>
-                          ) : d ? (
-                            tr(d?.operation_evidence_available===false?"Status unavailable":"None reported")
-                          ) : (
-                            tr(diagnostics.loading?"Loading diagnostics…":"Unavailable")
-                          )}
                         </td>
 
                       </tr>

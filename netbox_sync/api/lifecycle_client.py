@@ -64,7 +64,7 @@ class LifecycleClient:
     def reconciliation(self,action,source,**payload):
         from ..local_control import request,ControlError
         if action not in {'review','confirm'}:raise LifecycleRequestError('REQUEST_INVALID')
-        try:return request(self.path,{'action':'run_reconciliation_'+action,'source_instance':source,**payload},timeout=60,response_limit=2*1024*1024)['result']
+        try:return request(self.path,{'action':'run_reconciliation_'+action,'source_instance':source,**payload},timeout=95,response_limit=2*1024*1024)['result']
         except ControlError as exc:raise LifecycleRequestError(exc.code) from None
         except Exception:raise LifecycleRequestError('LIFECYCLE_UNAVAILABLE') from None
 

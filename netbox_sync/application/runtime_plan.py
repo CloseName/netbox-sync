@@ -16,7 +16,22 @@ def build_runtime_plan(nb_api, hosts, config):
                             target_fingerprint, stable_fingerprint)
     from .ip_observations import assignment_inventory, source_policy
     from ..network_scopes import scoped_inventory,NetworkScopeError
+    from ..vm_replacement import configure, stage
+    configure(nb_api)
     nb_api=PlanningNetBox(nb_api)
+    from ..netbox_metadata import find_sync_identity_matches
+    from ..selectel_host_match import SelectelMatchError
+    try:
+        devices = list(nb_api.dcim.devices.all())
+        for host in hosts:
+            find_sync_identity_matches(devices, host)
+    except SelectelMatchError as error:
+        return SyncPlan(source_instance=config.source_instance,source_id=config.id,source_type=config.source_type,
+            source_fingerprint=safe_source_fingerprint(config),target_fingerprint=target_fingerprint(config),
+            provider_fingerprint=stable_fingerprint(error.code),netbox_fingerprint=stable_fingerprint(None),
+            items=(SyncPlanItem(object_kind='host',external_id=host.source_id,name=host.original_name,
+                action=SyncAction.BLOCKED,reason_code=error.code,
+                reason='Selectel hardware matching requires review. Refresh provider inventory and check duplicate hardware identifiers and existing source bindings.'),))
     from ..esxi_vm_identity import resolve_vm_identities
     hosts, identity_conflicts = resolve_vm_identities(nb_api, hosts, config)
     try:hosts=scoped_inventory(nb_api,hosts,config)
@@ -67,6 +82,8 @@ def build_runtime_plan(nb_api, hosts, config):
     with measured_phase('netbox_mapping'):
         validate(nb_api,config.target,hosts)
     with measured_phase('netbox_review'):
+        if config.source_type == 'esxi':
+            stage(nb_api, hosts, config)
         review = (build_proxmox_review(nb_api, hosts, config) if config.source_type == 'proxmox'
                   else build_esxi_review(build_esxi_adoption_plan(nb_api, hosts, config), config))
     review_plan = plan_from_review(review, config)
@@ -91,12 +108,12 @@ def build_runtime_plan(nb_api, hosts, config):
             reason=('Several NetBox MAC records match the desired address.' if conflict.duplicate
                     else 'The desired MAC belongs to another interface. Its assignment was preserved.'),
             after=(('mac_address',conflict.mac),))))
-    except HostNetworkPrerequisiteError:
+    except HostNetworkPrerequisiteError as error:
         from dataclasses import replace
         return replace(review_plan, items=(*review_plan.items, SyncPlanItem(
             object_kind='source', external_id=config.source_instance, name=config.name,
             action=SyncAction.BLOCKED, reason_code='HOST_NETWORK_FIELD_REQUIRED',
-            reason='Prepare the ESXi host network field in NetBox settings before synchronization.')))
+            reason=str(error))))
     except ObservationPrerequisiteError:
         from dataclasses import replace
         return replace(review_plan, items=(*review_plan.items, SyncPlanItem(

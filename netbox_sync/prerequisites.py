@@ -3,7 +3,7 @@ import hashlib
 import json
 import re
 
-VERSION = 7
+VERSION = 9
 FIELDS = {
     'sync_identities': ('json', ('dcim.device','dcim.interface','virtualization.virtualmachine','virtualization.vminterface')),
     'sync_original_names': ('json', ('dcim.device','dcim.interface','virtualization.virtualmachine','virtualization.vminterface')),
@@ -21,11 +21,15 @@ FIELDS = {
     'source_vlan_id': ('integer', ('virtualization.vminterface',)),
     'sync_network_observations': ('json', ('virtualization.vminterface',)),
     'esxi_host_network': ('json', ('dcim.device',)),
+    'proxmox_host_network': ('json', ('dcim.device',)),
     'sync_disk_identity': ('json', ('virtualization.virtualdisk',)),
     'esxi_events': ('json', ('dcim.device',)),
+    'hardware_identity': ('json', ('dcim.device',)),
 }
 
 LABELS = {
+    'hardware_identity': ('Hardware identity', 'Аппаратные идентификаторы'),
+    'proxmox_host_network': ('Proxmox host network', 'Сеть хоста Proxmox'),
     'esxi_events': ('ESXi events for alerting', 'События ESXi для оповещений'),
     'sync_disk_identity': ('Disk source identity', 'Идентификатор диска источника'),
     'pfsense_inventory': ('pfSense services and rules', 'Сервисы и правила pfSense'),
@@ -50,6 +54,8 @@ LABELS = {
     'source_vlan_id': ('Source VLAN ID', 'VLAN ID источника'),
 }
 PURPOSES = {
+    'hardware_identity': ('Typed physical system identifiers and collection coverage.', 'Идентификаторы физического сервера и доступность их сбора.'),
+    'proxmox_host_network': ('Observed Proxmox bridge, bond and VLAN configuration; not verified cabling.', 'Конфигурация bridge, bond и VLAN Proxmox; не подтверждение кабельных соединений.'),
     'esxi_events': ('Bounded source events with observed actors; not a complete audit archive.', 'События с автором из источника; не полный архив аудита.'),
     'sync_disk_identity': ('Stable provider disk identity.', 'Устойчивый идентификатор диска провайдера.'),
     'pfsense_inventory': ('Collected pfSense configuration.', 'Собранная конфигурация pfSense.'),

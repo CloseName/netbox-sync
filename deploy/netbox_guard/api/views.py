@@ -89,6 +89,7 @@ class Capabilities(GuardView):
     def get(self,request):
         return Response({'protocol':1,'guard_instance':str(GuardIdentity.objects.get(pk=1).identifier),'netbox_version':'4.7.0','atomic_dependency_guard':True,'idempotent_creation':True,
                          'creation_receipts':True,'retirement_receipts':True,
+                         'provider_bindings':True,'provider_field_claims':True,
                          'source_coordinator_required':True,'source_tree_retirement':True,'absent_source_retirement':True,'source_audit':True,'source_generation_closure':True,'source_namespace_state':True,
                          'audit_permission':request.user.has_perm('netbox_guard.audit_retirementintent'),
                          'retire_permission':request.user.has_perm('netbox_guard.retire_retirementintent'),

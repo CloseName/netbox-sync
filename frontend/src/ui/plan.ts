@@ -90,7 +90,7 @@ export interface FieldValue {
 export function managedFields(item: SyncPlanItem) {
   const before = new Map(item.before as [string, unknown][]),
     after = new Map(item.after as [string, unknown][]);
-  return [...new Set([...before.keys(), ...after.keys()])].map((field) => ({
+  return [...new Set([...before.keys(), ...after.keys()])].filter(field=>!['matching_candidates','replacement_evidence','replacement_card_url'].includes(field)).map((field) => ({
     field,
     before: {
       provided: before.has(field),
@@ -141,6 +141,12 @@ export function planReason(item:{reason_code:string;reason:string;action?:SyncAc
  const reasons:Record<string,string>={
   NO_IDENTITY_MATCH:'No existing object has this stable source identity.',
   IDENTITY_MATCH:'Stable source identity matches an existing NetBox object.',
+  SELECTEL_HARDWARE_MATCH:'Unique hardware identity matches the existing Selectel device. Its provider fields are preserved.',
+  SELECTEL_HARDWARE_IDENTITY_CONFLICT:'Hardware identifiers disagree. Check the serial number and system UUID before linking the Selectel device.',
+  SELECTEL_HOST_ALREADY_MANAGED:'The Selectel device already belongs to another Sync source. Review that source instead of creating a duplicate.',
+  SELECTEL_HARDWARE_REVIEW_REQUIRED:'Refresh Selectel inventory to verify the hardware identity before linking this host.',
+  SELECTEL_MULTIPLE_HARDWARE_MATCHES:'Several Selectel devices share this hardware identity. Resolve the duplicate bindings before synchronization.',
+  SELECTEL_PLACEMENT_REVIEW_REQUIRED:'Select the existing Selectel device site and a compatible cluster before synchronizing.',
   IDENTITY_SCOPE_CONFLICT:'The stable identity is duplicated or outside the configured target.',
   NAME_ONLY_CANDIDATE:'A name match exists but names are not identity evidence.',
   MANAGEMENT_IP_CONFLICT:'Management IP evidence is ambiguous or outside the configured target.',
@@ -163,6 +169,7 @@ export function planReason(item:{reason_code:string;reason:string;action?:SyncAc
   MANAGED_FIELD_UPDATE:'Update managed fields',
   EXECUTOR_CREATE_UNSUPPORTED:'No supported create operation was produced for this object.'
  };
+ if(item.reason_code==='HOST_NETWORK_FIELD_REQUIRED' && item.reason.startsWith('NetBox field '))return item.reason;
  if(Object.hasOwn(reasons,item.reason_code))return tr(reasons[item.reason_code]);
  if(item.reason==='Existing guarded executor would perform this managed-field mutation.')return tr(item.action==='CREATE'?'Create managed object':'Update managed fields');
  return item.reason;

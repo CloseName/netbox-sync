@@ -59,7 +59,7 @@ def stop_child(process, lock_fd=None):
 PHASES = ('provider', 'netbox', 'planning', 'preflight', 'apply', 'esxi_connect', 'esxi_inventory',
           'esxi_properties', 'esxi_additional', 'esxi_conversion', 'esxi_disconnect',
           'netbox_mapping', 'netbox_review', 'netbox_simulation',
-          'esxi_events', 'simulation_preflight', 'simulation_host_metadata', 'simulation_host_network',
+          'esxi_events', 'esxi_neighbors', 'simulation_preflight', 'simulation_host_metadata', 'simulation_host_network',
           'simulation_events', 'simulation_primary_ip', 'simulation_vms',
           'simulation_vm_networks', 'simulation_placement', 'simulation_disks')
 PHASES += ('write_boundary',) + tuple(

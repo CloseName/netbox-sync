@@ -1,5 +1,4 @@
 import {tr} from "./i18n";
-import { health } from "./status";
 import type { sourceQuery } from "./operations";
 export function SourceFilters({
   query,
@@ -22,15 +21,13 @@ export function SourceFilters({
         <label htmlFor="filter-sync-status">{tr("Sync status")}{" "}</label>
         <select
           id="filter-sync-status"
-          value={query.health}
-          onChange={(e) => change("health", e.target.value)}
+          value={query.attention}
+          onChange={(e) => change("attention", e.target.value)}
         >
           <option value="">{tr("All states")}{" "}</option>
-          {Object.entries(health).map(([key, value]) => (
-            <option key={key} value={key}>
-              {tr(value.label)}
-            </option>
-          ))}
+          <option value="yes">{tr("Needs attention")}</option>
+          <option value="no">{tr("None reported")}</option>
+          <option value="unknown">{tr("Status unavailable")}</option>
         </select>
       </div>
     </div>

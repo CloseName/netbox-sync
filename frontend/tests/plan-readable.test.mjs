@@ -30,3 +30,9 @@ test('structured reason takes priority over legacy mutation description',()=>{
 test('host network preparation has a specific operator instruction',()=>{
  assert.match(planReason({reason:'generic',reason_code:'HOST_NETWORK_FIELD_REQUIRED',action:'BLOCKED'}),/Prepare the ESXi host network field/);
 });
+
+
+test('host field failures retain the exact prerequisite name and state',()=>{
+ const reason='NetBox field hardware_identity: missing. Update NetBox Sync Guard and prepare fields in NetBox settings, then rebuild the plan.';
+ assert.equal(planReason({reason,reason_code:'HOST_NETWORK_FIELD_REQUIRED',action:'BLOCKED'}),reason);
+});

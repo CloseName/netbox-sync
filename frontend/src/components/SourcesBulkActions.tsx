@@ -69,11 +69,12 @@ export function SourcesBulkActions({selected,refresh}:{selected:Source[];refresh
   }
  });}
  return <section className="source-panel" aria-label={t('Bulk actions','Массовые действия')}>
- <p>{t('Selected on this page: ','Выбрано на этой странице: ')}{selected.length}. {t('Running synchronizations will finish.','Уже выполняющиеся синхронизации завершатся.')}</p>
+ <div hidden={!selected.length}><p>{t('Selected on this page: ','Выбрано на этой странице: ')}{selected.length}. {t('Running synchronizations will finish.','Уже выполняющиеся синхронизации завершатся.')}</p>
  <div className="page-actions">
- {canSchedule&&<><button disabled={busy||!selected.length} onClick={()=>void run(()=>schedules([...selected],false))}>{t('Disable selected schedules','Отключить выбранные расписания')}</button><button disabled={busy||!selected.length} onClick={()=>{setTargets([...selected]);scheduleDialog.current?.showModal();}}>{t('Set schedule','Настроить расписание')}</button><button disabled={busy} onClick={()=>void disableAll()}>{t('Disable all scheduled sync, including pfSense','Отключить всю синхронизацию по расписанию, включая pfSense')}</button></>}
+ {canSchedule&&<><button disabled={busy||!selected.length} onClick={()=>void run(()=>schedules([...selected],false))}>{t('Disable selected schedules','Отключить выбранные расписания')}</button><button disabled={busy||!selected.length} onClick={()=>{setTargets([...selected]);scheduleDialog.current?.showModal();}}>{t('Set schedule','Настроить расписание')}</button></>}
  {canRemove&&<button className="danger" disabled={busy||!selected.length} onClick={()=>void reviewDelete()}>{t('Delete resources','Удалить ресурсы')}</button>}
- </div>
+ </div></div>
+ {canSchedule&&<details className="quiet-detail"><summary>{t("Global scheduling","Общее управление расписаниями")}</summary><p>{t("Running synchronizations will finish.","Уже выполняющиеся синхронизации завершатся.")}</p><button disabled={busy} onClick={()=>{if(window.confirm(t("Disable every source schedule, including pfSense?","Отключить расписания всех источников, включая pfSense?")))void disableAll();}}>{t("Disable all scheduled sync, including pfSense","Отключить всю синхронизацию по расписанию, включая pfSense")}</button></details>}
  <div role="status" aria-live="polite">{busy&&<p>{t('Working…','Выполняется…')}</p>}<ul>{results.map((r,i)=><li key={i}>{r}</li>)}</ul></div>
  <dialog ref={scheduleDialog} className="sync-dialog" onClick={closeOnBackdrop}><header className="dialog-heading"><button className="dialog-close" aria-label={t("Close","Закрыть")} onClick={()=>scheduleDialog.current?.close()}>×</button><h2>{t('Schedule for selected sources','Расписание выбранных источников')} ({targets.length})</h2></header><ul>{targets.map(s=><li key={s.source_instance}>{s.name}</li>)}</ul>
  <form className="bulk-schedule-form" onSubmit={e=>{e.preventDefault();scheduleDialog.current?.close();void run(()=>schedules(targets,true));}}>

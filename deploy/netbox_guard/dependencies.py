@@ -25,6 +25,10 @@ MAX_TABLES = 512
 # All 45 default SQL triggers and their complete function bodies, pinned from
 # the isolated NetBox 4.7.0 Docker-5.1.1 migration schema. No name-only allowlist.
 NETBOX_470_HOOKS = '95123f20a0b2889191e5978c2f1cc81a6517dbae403bc63af3f08af8e19eab73'
+# Same 45 native hooks plus the nine protective Guard hooks from migrations
+# 0007-0009. Pinned against the disposable fully migrated NetBox 4.7 database;
+# includes full trigger definitions, enabled state and complete function bodies.
+NETBOX_470_PROVIDER_HOOKS = 'ba75f5d3caad3963cf4225958ad5d287f61b9ee3b8cc08e61de4cb0c4fde1ac7'
 
 
 def _digest(value):
@@ -158,7 +162,8 @@ def _database_fence():
                                'JOIN pg_catalog.pg_class c ON c.oid=t.tgrelid '
                                'JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace '
                                'WHERE n.nspname=current_schema() AND NOT t.tgisinternal ORDER BY c.relname,t.tgname')
-                if _digest(cursor.fetchall()) != NETBOX_470_HOOKS:
+                expected_hooks = NETBOX_470_PROVIDER_HOOKS if settings.PLUGINS == ['netbox_guard'] else NETBOX_470_HOOKS
+                if _digest(cursor.fetchall()) != expected_hooks:
                     raise DependencyGuardBlocked('UNSUPPORTED_DATABASE_HOOK')
             yield
     except (ProtectedError, RestrictedError):

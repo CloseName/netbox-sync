@@ -105,6 +105,10 @@ def netbox_http(seed, ssl_context=None, authorize=None, behavior=None, bind=('12
                     return
                 return self.reply(201,project(endpoint,value))
             if self.command=='PATCH' and identifier in table:
+                # NetBox CustomFieldsDataField.to_internal_value merges field keys.
+                # pynetbox 7.9 sends only changed custom fields, not the entire dict.
+                if isinstance(value.get('custom_fields'), dict):
+                    value['custom_fields'] = {**table[identifier].get('custom_fields', {}), **value['custom_fields']}
                 table[identifier].update(value)
                 if behavior is not None: behavior['successful_writes']=behavior.get('successful_writes',0)+1
                 return self.reply(200,project(endpoint,table[identifier]))

@@ -2,7 +2,7 @@
 
 Sources expands to ESXi, Proxmox and pfSense, including zero counts. Hypervisor counts are registered sources; pfSense counts are NetBox VMs whose names contain `pfsense` case-insensitively. Counts show unavailable rather than zero on fetch errors. NetBox custom fields and other object types are not candidates. VM ID, cluster and site disambiguate equal names. Names discover candidates only: configured interfaces must match by MAC before snapshots are saved.
 
-The initial automated setup supports CE 2.7.2-RELEASE only. SSH must already be enabled. The operator enters the pfSense HTTPS endpoint and an administrative LDAP or local account accepted by its webConfigurator. Authentication follows that appliance's configured authentication backend; Sync does not bypass LDAP or impersonate users. Diagnostics: Command permission is required. Other versions stop before provisioning.
+Automated setup accepts stable pfSense CE 2.x releases starting with 2.6.0 (including RELEASE-pN builds). SSH must already be enabled. The operator enters the pfSense HTTPS endpoint and an administrative LDAP or local account accepted by its webConfigurator. Authentication follows that appliance's configured authentication backend; Sync does not bypass LDAP or impersonate users. Diagnostics: Command permission is required. Older CE, development/RC builds, Plus calendar versions and unknown major versions stop before provisioning. Later stable 2.x releases must also pass capability checks; this is not a claim of live testing on every appliance.
 
 The administrative password is forwarded in memory to a bounded unprivileged child and is not persisted. The worker stores a per-VM Ed25519 private key in the root-only NetBox secret directory under `pfsense/<vm-id>.json`; include this directory in protected backups. API responses expose only safe status fields. TLS verification defaults on and uses source CA trust; explicit disabling is per connection. The SSH host key is obtained through this administrative HTTPS session and subsequently pinned. HTTP redirects are not followed. Destination policy and authenticated permissions are enforced for setup and subsequent collection.
 
@@ -23,3 +23,29 @@ Open Sources > pfSense, choose VM 2609 in PVE-INFRA-TEST, address 10.24.0.1 and 
 Implementation references: pfSense RELENG_2_7_2 `src/usr/local/www/diag_command.php`, `system_usermanager.php` and `src/etc/inc/auth.inc` in the official pfsense/pfsense repository.
 
 Protected host state for the test deployment is `/netbox-sync-test/secrets/netbox/pfsense/<vm-id>.json` (root-only). Back up this directory securely. The generated password is discarded; automatic collection depends on the stored private key, not password recovery. Existing Guard versions may still label snapshots as manually imported; the timestamp is authoritative.
+
+
+## CE 2.6 compatibility
+
+The GUI probe and provisioner share `compat-web.php`. CE 2.6 uses the existing
+loaded `$config` array; releases with native `config_get_path/config_set_path`
+use those functions. Only the dedicated user list and next UID are written through
+the adapter. System user/password and cron functions remain pfSense-native.
+Before provisioning, require PHP >=7.4, XML/POSIX/process functions, configuration
+APIs and fixed executable paths. Missing capabilities stop preparation explicitly.
+MAC identity, pinned SSH host keys, existing user ownership and forced-command
+restrictions remain mandatory. No IP, NAT, rule or interface configuration changes.
+
+Test updater: `deploy/update-pfsense-compat-test.sh` updates Sync only. It does not
+connect to or reconfigure any pfSense. Then select the test VM and repeat
+**Connect and collect**; ordinary collection does not install a new collector.
+Existing dedicated keys are reused. Keep the current endpoint and VM binding.
+Verify Connected, a fresh inventory timestamp and preserved primary IP/interface
+assignments. Repeat collection, then verify scheduled collection. Live acceptance
+on CE 2.6 remains pending until the operator performs this check.
+
+CI runs collector fixtures, compatibility accessors and provisioning syntax on
+PHP 7.4, 8.2, 8.3 and 8.4; it does not emulate a live FreeBSD firewall or LDAP login.
+References: [CE 2.6 source](https://github.com/pfsense/pfsense/tree/RELENG_2_6_0),
+[CE 2.7.2 source](https://github.com/pfsense/pfsense/tree/RELENG_2_7_2),
+[PHP transition in CE 2.7](https://docs.netgate.com/pfsense/en/latest/releases/2-7-0.html).

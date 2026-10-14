@@ -14,7 +14,7 @@ def row(name, index=1, **changes):return {**definition(name), 'id':index, 'statu
 
 
 def test_contract_all_models_and_status_constraints():
-    assert len(FIELDS)==21
+    assert len(FIELDS)==23
     rows=[row(name,i+1) for i,name in enumerate(FIELDS)]
     assert all(f['status']=='ready' for f in reconcile(rows))
     assert all(f['status']=='missing' for f in reconcile([]))
@@ -332,12 +332,13 @@ def test_first_install_json_is_hidden_only_when_guard_has_a_panel():
     spec = importlib.util.spec_from_file_location('guard_display_contract', root / 'deploy/netbox_guard/display.py')
     display = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(display)
-    rendered = (set(display.FIELD_LABELS) - {'physical_disks'}) | {'esxi_host_network', 'pfsense_inventory', 'pfsense_network', 'sync_disk_identity'}
+    rendered = (set(display.FIELD_LABELS) - {'physical_disks'}) | {'proxmox_host_network', 'esxi_host_network', 'pfsense_inventory', 'pfsense_network', 'sync_disk_identity'}
     json_fields = {name for name, (kind, _) in FIELDS.items() if kind == 'json'}
-    assert json_fields == rendered | {'esxi_events'}  # Deliberately API-only alert evidence.
+    api_only = {'esxi_events', 'hardware_identity'}
+    assert json_fields == rendered | api_only
     for name in FIELDS:
         created = definition(name)
-        assert created['ui_visible'] == ('hidden' if name in rendered | {'esxi_events'} else 'if-set')
+        assert created['ui_visible'] == ('hidden' if name in rendered | api_only else 'if-set')
         assert created['ui_editable'] == 'no'
 
 

@@ -5,10 +5,11 @@ export const navigation = [
   { to: "/", label: "Overview" },
   { to: "/sources", label: "Sources" },
   { to: "/runs", label: "Runs" },
-  { to: "/diagnostics", label: "Diagnostics" },
+  { to: "/diagnostics", label: "Problems" },
 ];
 export function breadcrumbs(pathname: string) {
   if(pathname === "/settings")return [{label:"Settings",to:"/settings"}];
+  if(pathname === "/users")return [{label:"Users",to:"/users"}];
   if(pathname === "/policy")return [{label:"Source destinations",to:"/policy"}];
   if(pathname === "/system")return [{label:"System health",to:"/system"}];
   const parts = pathname.split("/").filter(Boolean);
@@ -17,7 +18,7 @@ export function breadcrumbs(pathname: string) {
   if (!section) return [{ label: "Page not found", to: pathname }];
   const result = [{ label: section.label, to: section.to }];
   if (parts[1]) {
-    let label = parts[1];
+    let label = parts[1] === 'selectel' ? 'Selectel' : parts[1];
     try {
       label = decodeURIComponent(label);
     } catch {

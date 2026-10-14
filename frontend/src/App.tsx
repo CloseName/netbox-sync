@@ -1,8 +1,9 @@
+import {SettingsPage} from './pages/SettingsPage';
 import {TeamsSettings} from './pages/TeamsSettings';
 import {SourceNavigation} from './ui/SourceNavigation';
 import {PfSensePage} from './pages/PfSensePage';
 import {DirectoryUsersPage} from './pages/DirectoryUsersPage';
-import {SessionControls,Permission} from './AuthGate';
+import {SessionControls,Permission,usePermission} from './AuthGate';
 import {AuthenticationSettings} from './pages/AuthenticationSettings';
 import {DestinationPolicyPage} from "./pages/DestinationPolicyPage";
 import {tr} from "./ui/i18n";
@@ -20,6 +21,7 @@ import {
   useParams,
 } from "react-router-dom";
 import { SourcesPage } from "./pages/SourcesPage";
+import { SelectelPage } from "./pages/SelectelPage";
 import { SourcesListPage } from "./pages/SourcesListPage";
 import { OverviewPage } from "./pages/OverviewPage";
 import { RunsPage } from "./pages/RunsPage";
@@ -37,19 +39,30 @@ function RunRoute() {
 }
 function OverviewWorkspace(){
  const {hash}=useLocation();
- const [diagnosticsOpen,setDiagnosticsOpen]=useState(hash==='#diagnostics'),[healthOpen,setHealthOpen]=useState(hash==='#health');
- useEffect(()=>{if(hash==='#diagnostics')setDiagnosticsOpen(true);if(hash==='#health')setHealthOpen(true);},[hash]);
- return <><OverviewPage/><section id="diagnostics"><details open={diagnosticsOpen} onToggle={event=>setDiagnosticsOpen(event.currentTarget.open)}><summary>{tr("Diagnostics")}</summary>{diagnosticsOpen&&<DiagnosticsPage/>}</details></section><section id="health"><details open={healthOpen} onToggle={event=>setHealthOpen(event.currentTarget.open)}><summary>{tr("System health")}</summary>{healthOpen&&<SystemHealthPage/>}</details></section></>;
+ if(hash==='#diagnostics')return <Navigate replace to="/diagnostics"/>;
+ if(hash==='#health')return <Navigate replace to="/system"/>;
+ return <OverviewPage/>;
 }
 
 export function App() {
+  const header = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const element = header.current;
+    if (!element) return;
+    const resize = () => document.documentElement.style.setProperty('--app-header-height', `${element.getBoundingClientRect().height}px`);
+    const observer = new ResizeObserver(resize);
+    observer.observe(element); resize();
+    return () => observer.disconnect();
+  }, []);
   const [language] = useLanguage();
+  const manageIdentity = usePermission('identity.manage');
+  const configureSources = usePermission('source.configure');
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const navToggle = useRef<HTMLButtonElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const crumbs = breadcrumbs(location.pathname);
-  const sourceDetail = /^\/sources\/(?!(?:add|pfsense)(?:\/|$))[^/]+/.test(
+  const sourceDetail = /^\/sources\/(?!(?:add|pfsense|selectel)(?:\/|$))[^/]+/.test(
     location.pathname,
   );
   useEffect(() => {
@@ -61,11 +74,10 @@ export function App() {
     <>
       <a className="skip-link" href="#content">
         {tr("Skip to content")}{" "}</a>
-      <header className="app-header">
+      <header className="app-header" ref={header}>
         <Link className="app-brand" to="/">
           <Brand />
         </Link>
-        <span className="muted">{tr("Source synchronization")}{" "}</span>
         <SessionControls/>
         <button
           ref={navToggle}
@@ -89,13 +101,18 @@ export function App() {
           }}
         >
           <p className="nav-section">{tr("Operations")}{" "}</p>
-          {navigation.filter(item=>item.to!=='/diagnostics').map((item) => (item.to==='/sources'?<SourceNavigation key={item.to}/>:
+          {navigation.map((item) => (item.to==='/sources'?<SourceNavigation key={item.to}/>:
             <NavLink key={item.to} to={item.to} end={item.to === "/"}>
               <NavIcon path={item.to} />
               {item.to==='/runs'?(language==='ru'?'История запусков':'Run history'):tr(item.label)}
             </NavLink>
           ))}
-
+          {(manageIdentity||configureSources)&&<div className="nav-administration">
+            <p className="nav-section">{language==='ru'?'Управление':'Administration'}</p>
+            <NavLink to={manageIdentity?'/settings':'/settings?section=teams'}><NavIcon path="/settings"/>{language==='ru'?'Настройки':'Settings'}</NavLink>
+            {manageIdentity&&<NavLink to="/users"><NavIcon path="/users"/>{language==='ru'?'Пользователи':'Users'}</NavLink>}
+          </div>}
+          <div className="nav-footer">NetBox Sync<span>{language==='ru'?'Инфраструктура под контролем':'Infrastructure synchronization'}</span></div>
         </nav>
         <div className="app-content" id="content" ref={content} tabIndex={-1}>
           {!sourceDetail && crumbs.length>1 && location.pathname!=='/settings' && (
@@ -117,6 +134,7 @@ export function App() {
             <Route path="/" element={<OverviewWorkspace/>} />
             <Route path="/sources" element={<SourcesListPage />} />
             <Route path="/sources/pfsense" element={<PfSensePage/>} />
+            <Route path="/sources/selectel" element={<Permission permission="bootstrap.manage"><SelectelPage/></Permission>} />
             <Route path="/sources/add" element={<Permission permission="source.register"><AddSourcePage /></Permission>} />
             <Route
               path="/sources/:sourceInstance/*"
@@ -125,10 +143,10 @@ export function App() {
             <Route path="/runs" element={<RunRoute />} />
             <Route path="/runs/:runId" element={<RunRoute />} />
             <Route path="/users" element={<Permission permission="identity.manage"><DirectoryUsersPage/></Permission>}/>
-            <Route path="/settings" element={new URLSearchParams(location.search).get("section")==="teams"?<Permission permission="source.configure"><TeamsSettings/></Permission>:<Permission permission="identity.manage">{location.search.includes('section=destinations')?<DestinationPolicyPage/>:<AuthenticationSettings/>}</Permission>} />
+            <Route path="/settings" element={!new URLSearchParams(location.search).get("section")?<SettingsPage/>:new URLSearchParams(location.search).get("section")==="teams"?<Permission permission="source.configure"><TeamsSettings/></Permission>:<Permission permission="identity.manage">{location.search.includes('section=destinations')?<DestinationPolicyPage/>:<AuthenticationSettings/>}</Permission>} />
             <Route path="/policy" element={<Navigate replace to="/settings?section=destinations"/>} />
-            <Route path="/system" element={<Navigate replace to="/#health"/>} />
-            <Route path="/diagnostics" element={<Navigate replace to="/#diagnostics"/>} />
+            <Route path="/system" element={<><Link to="/settings">{tr("Settings")}</Link><SystemHealthPage/></>} />
+            <Route path="/diagnostics" element={<DiagnosticsPage/>} />
             <Route
               path="*"
               element={

@@ -59,3 +59,38 @@ test('accepted baseline refreshes retained-source removal gates without reloadin
  assert.ok(panel);before.find(n=>typeof n.props?.onSaved==='function').props.onSaved();
  assert.notEqual(render().find(n=>n.props?.retained===true).key,panel.key);
 });
+
+
+test('busy review retries automatically but transport failure never repeats review',async ctx=>{
+ const render=setup(ctx);let calls=0;
+ ctx.mock.method(globalThis,'fetch',async()=>{calls++;return calls===1
+  ?Response.json({error:{code:'SOURCE_APPLY_ACTIVE'}},{status:409})
+  :Response.json({digest:'a'.repeat(64),runs:[],decisions:[],inventory:{objects:[]}});});
+ render().find(n=>n.type==='button').props.onClick();
+ await new Promise(resolve=>setTimeout(resolve,600));
+ assert.equal(calls,2);assert.match(JSON.stringify(render()),/Нет завершённых/);
+ ctx.mock.method(globalThis,'fetch',async()=>{calls++;throw new TypeError('private-network-detail');});
+ render().find(n=>n.type==='button').props.onClick();await settle();
+ assert.equal(calls,3);assert.ok(!JSON.stringify(render()).includes('private-network-detail'));
+ assert.notEqual(mod.exports.reconciliationFailure('SOURCE_APPLY_ACTIVE','ru'),mod.exports.reconciliationFailure('CONTROL_UNAVAILABLE','ru'));
+});
+
+
+test('confirm retries only explicit busy refusal with identical payload; lost response is not replayed',async ctx=>{
+ const render=setup(ctx),calls=[];
+ const review={digest:'a'.repeat(64),runs:[{run_id:'old',status:'OUTCOME_UNCERTAIN',finished_at:'2026-10-14'}],decisions:[],inventory:{objects:[]}};
+ ctx.mock.method(globalThis,'fetch',async(path,options)=>{
+  if(path.endsWith('-review'))return Response.json(review);
+  calls.push(JSON.parse(options.body));
+  if(calls.length===1)return Response.json({error:{code:'SOURCE_APPLY_ACTIVE'}},{status:409});
+  throw new TypeError('private-detail');
+ });
+ render().find(n=>n.type==='button').props.onClick();await settle();
+ for(const checkbox of render().filter(n=>n.type==='input'))checkbox.props.onChange({target:{checked:true}});
+ render().filter(n=>n.type==='button').at(-1).props.onClick();
+ await new Promise(resolve=>setTimeout(resolve,650));
+ assert.equal(calls.length,2);assert.deepEqual(calls[0],calls[1]);
+ assert.equal(calls[0].digest,review.digest);
+ assert.ok(!JSON.stringify(render()).includes('private-detail'));
+ assert.equal(render().filter(n=>n.type==='input').length,0);
+});

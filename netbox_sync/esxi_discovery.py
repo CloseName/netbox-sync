@@ -3,6 +3,7 @@
 import re
 from uuid import UUID
 from .esxi_host_network import collect_host_network
+from .hardware_identity import collect_esxi
 
 from .discovery import (
     DiscoveredCPU,
@@ -434,6 +435,7 @@ def _convert_hosts(hosts, source_config):
                 storages=_datastores(host),
                 interfaces=_host_interfaces(host),
                 esxi_host_network=collect_host_network(host),
+                hardware_identity=collect_esxi(host),
                 virtual_machines=_virtual_machines(host, source_config, host_id),
                 containers=[],
             )
@@ -470,6 +472,11 @@ def discover_hosts(service_instance, source_config):
         with stage('esxi_conversion', reads) as stats:
             result = _convert_hosts(hosts, source_config)
             stats['objects'] = sum(1+len(host.virtual_machines) for host in result)
+        from .esxi_network_neighbors import collect_neighbors
+        with stage('esxi_neighbors', reads):
+            for raw_host, host in zip(hosts, result):
+                if host.esxi_host_network and host.esxi_host_network.get('available'):
+                    host.esxi_host_network['neighbors'] = collect_neighbors(raw_host)
         from .esxi_events import collect_events
         with stage('esxi_events', reads):
             for raw_host, host in zip(hosts, result):
