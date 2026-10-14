@@ -45,11 +45,9 @@ exec 8>"$STATE/selectel/collection.lock"
 flock -w 900 8
 exec 9>/run/netbox-sync/apply.lock
 flock -w 300 9
-docker stop --time 60 netbox-sync-bootstrap-worker
+docker stop --timeout 60 netbox-sync-bootstrap-worker
 [[ ! -L "$CONFIG/zzzz_selectel_v2_test.py" ]]
-CONFIG_TMP=$(mktemp "$CONFIG/.selectel-v2.XXXXXX")
-install -m 644 "$REPO/deploy/selectel-v2-test-config.py" "$CONFIG_TMP"
-mv -f -- "$CONFIG_TMP" "$CONFIG/zzzz_selectel_v2_test.py"
+python3 "$REPO/deploy/selectel-v2-test-config.py" "$CONFIG"
 # Also works when the prior attempt left NetBox and bootstrap stopped.
 # Validate the loader before building images or attempting migrations.
 (cd /netbox-test && docker compose run --rm --no-deps -T \

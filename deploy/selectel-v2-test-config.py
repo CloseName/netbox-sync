@@ -1,27 +1,72 @@
-"""Late NetBox Docker configuration: preserve the effective plugin settings."""
-from copy import deepcopy as _deepcopy
-from pathlib import Path as _Path
-import sys as _sys
+"""Patch the defining config module; never depend on loader module registration."""
+import ast
+import os
+from pathlib import Path
+import stat
+import sys
+import tempfile
 
-# NetBox Docker executes each file in its own module, then resolves settings
-# from the last loaded definition. There is no shared PLUGINS_CONFIG global.
-_directory = _Path(__file__).parent
-_previous = []
-for _module in tuple(_sys.modules.values()):
-    _file = getattr(_module, '__file__', None)
-    if not _file:
-        continue
-    _path = _Path(_file)
-    if _path.parent != _directory or _path.name == _Path(__file__).name:
-        continue
-    if _path.name != 'configuration.py' and _path.name >= _Path(__file__).name:
-        continue
-    if 'PLUGINS_CONFIG' in vars(_module):
-        _previous.append((_path.name != 'configuration.py', _path.name,
-                          vars(_module)['PLUGINS_CONFIG']))
-if not _previous:
-    raise RuntimeError('Selectel test: no previous PLUGINS_CONFIG definition')
-PLUGINS_CONFIG = _deepcopy(sorted(_previous, key=lambda row: row[:2])[-1][2])
-if not isinstance(PLUGINS_CONFIG, dict) or 'netbox_guard' not in PLUGINS_CONFIG:
-    raise RuntimeError('Selectel test: existing netbox_guard configuration required')
-PLUGINS_CONFIG['netbox_guard']['selectel_native_reconcile'] = True
+BEGIN = "# BEGIN managed Selectel v2 test mode"
+END = "# END managed Selectel v2 test mode"
+BLOCK = BEGIN + "\n" + "PLUGINS_CONFIG.setdefault('netbox_guard', {})['selectel_native_reconcile'] = True\n" + END + "\n"
+
+
+def atomic_write(path, text):
+    info = path.stat()
+    fd, temporary = tempfile.mkstemp(prefix='.selectel-config-', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, stat.S_IMODE(info.st_mode))
+        if hasattr(os, 'chown'):
+            os.chown(temporary, info.st_uid, info.st_gid)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def configure(directory):
+    directory = Path(directory)
+    broken = directory / 'zzzz_selectel_v2_test.py'
+    candidates = []
+    paths = sorted(directory.glob('*.py'), key=lambda p: (p.name != 'configuration.py', p.name))
+    for path in paths:
+        if path.is_symlink():
+            raise RuntimeError('Symlink configuration is not supported')
+        if path == broken or path.name.startswith('__'):
+            continue
+        text = path.read_text(encoding='utf-8')
+        tree = ast.parse(text)
+        # Patch only an explicit module-level definition, not a guessed module.
+        for node in tree.body:
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
+            if any(isinstance(t, ast.Name) and t.id == 'PLUGINS_CONFIG' for t in targets):
+                candidates.append((path, text))
+                break
+    if not candidates:
+        raise RuntimeError('No module-level PLUGINS_CONFIG definition; no files changed')
+    path, text = candidates[-1]
+    if text.count(BEGIN) != text.count(END) or text.count(BEGIN) > 1:
+        raise RuntimeError('Invalid managed config block; no files changed')
+    if BEGIN in text:
+        start = text.index(BEGIN)
+        finish = text.index(END) + len(END)
+        text = text[:start] + text[finish:]
+    result = text.rstrip() + '\n\n' + BLOCK
+    ast.parse(result)
+    if broken.is_symlink():
+        raise RuntimeError('Symlink override refused')
+    atomic_write(path, result)
+    if broken.exists():
+        atomic_write(broken, '# Selectel setting is maintained in its defining configuration module.\n')
+    return path.name
+
+
+if __name__ == '__main__':
+    directory = Path(sys.argv[1]).resolve()
+    if not directory.is_relative_to(Path('/netbox-test')):
+        raise SystemExit('Not a test configuration directory')
+    print('Selectel test setting configured in: ' + configure(directory))
