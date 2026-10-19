@@ -225,6 +225,34 @@ production or deployment changes. This is the first entrypoint increment, not a
 rewrite of the 1000-line execution module. Next consider reporting and execution
 responsibilities separately before network reconciliation.
 
+## Stage 4b: shared synchronization execution
+
+Starts from main `b621104cdffcecf5db3751d81e8a99e597635aab` after PR #14.
+`sync_execution.py` owns the existing post-discovery execution pipeline shared by
+Proxmox and ESXi. The package-level `execute_discovered_source` retains its original
+signature and supplies existing collaborators per invocation. Provider connection,
+discovery, dispatch, legacy helpers and the actual planners/appliers stay unchanged.
+
+The extracted body is AST-identical, including duplicate-identity refusal, token
+selection, durable NetBox configuration, TLS setup, plan preflight, guarded writes,
+confirmation strings, failure stage tracking and the legacy fallback. All other
+package function definitions and the script guard match the baseline.
+
+Before extraction, 14 new routing tests passed on main. They cover all five partial
+apply scopes with correct/incorrect confirmation, invalid-scope refusal before
+credentials or connection, and inventory/plan read-token selection. After extraction,
+76 focused tests pass, including existing real local REST checks for blocked plans,
+write refusal without retries, retained plan evidence and ESXi dispatch. Existing
+assertions are unchanged. Full pytest on Windows/Python 3.14: 1733 passed,
+485 skipped, one existing Starlette warning. Linux, database and opt-in skips are
+not deployment acceptance. Error/fatal lint and whitespace checks pass. Local logs
+and comparison script are in `artifacts/sync-execution-evidence-20261019.zip`.
+
+Selectel remains experimental; no production/deployment changes. This step does not
+split the execution function internally or alter reconciliation rules. Provider
+connection/discovery and legacy reporting remain possible subsequent small steps;
+network planners/appliers should follow separately with their own safety evidence.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
