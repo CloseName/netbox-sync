@@ -1,0 +1,14 @@
+[
+  "=== SAFE INVENTORY MODE ===\n",
+  "No changes will be written to NetBox.\n",
+  "\n",
+  "NetBox inventory:\n",
+  "  Devices:          0\n",
+  "  Virtual machines: 0\n",
+  "  IP addresses:     0\n",
+  "  Prefixes:         0\n",
+  "  VLANs:            0\n",
+  "\n",
+  "Discovered infrastructure hosts: 0\n",
+  "\n"
+]

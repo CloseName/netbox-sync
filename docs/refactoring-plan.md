@@ -276,6 +276,31 @@ is saved locally in `artifacts/source-connection-evidence-20261019.zip`.
 Selectel remains experimental; no production/deployment changes. Next possible
 increment: legacy inventory/reporting helpers, before deeper reconciliation changes.
 
+## Stage 4d: legacy inventory and reports
+
+Starts from main `900ef50b1012bf72f0ad200d8cead4bde7ba3cd5` after PR #16.
+`legacy_inventory.py` owns `_load_nb_objects`, `_run_inventory` and the historical
+`_run_plan` report. Package aliases preserve loader/inventory access, and a wrapper
+keeps the plan signature and per-call CPU helper injection. The historical plan is
+retained for compatibility; it is not substituted for the current planner.
+No legacy write functions, source discovery, synchronization rules or CLI modes change.
+
+Four new tests pass on the original implementation and after extraction. Checked-in
+output fixtures capture empty/populated inventory; a mixed plan asserts exact
+CREATE/UPDATE/SKIP/BLOCKED output and unchanged records. The loader test verifies
+endpoint read order, index keys, duplicate overwrite behavior and record identity
+using endpoints without write methods. After extraction, 41 focused tests pass.
+All three extracted bodies and remaining package functions match their original ASTs.
+Existing assertions are unchanged. Full pytest on Windows/Python 3.14: 1749 passed,
+485 skipped, one existing Starlette warning. Linux, database and opt-in skips are
+not deployment acceptance. Error/fatal lint and whitespace checks pass. Four report
+tests also pass with the final JSON-encoded exact-output fixtures. Evidence is saved
+locally in `artifacts/legacy-reports-evidence-20261019.zip`.
+
+Selectel remains experimental; no production/deployment changes. Legacy mutation
+helpers remain separate future work and must not be deleted merely because they
+belong to an older path. Deeper network reconciliation remains a separate stage.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
