@@ -1,3 +1,4 @@
+from .vm_network_plan_vlan import plan_interface_vlan
 from .vm_network_plan_primary import plan_primary_ipv4
 from .vm_network_plan_ip import plan_interface_ips
 from .vm_network_plan_mac import plan_interface_mac
@@ -355,54 +356,9 @@ def plan_vm_networks(
                     f'name={interface_display_name(discovered_vm, nic)}'
                 )
 
-            print(
-                f'        bridge='
-                f'{nic.bridge or "-"}'
+            plan_interface_vlan(
+                nic, vlans_by_vid, site, counters, _select_scoped=_select_scoped,
             )
-
-            if nic.vlan_id is None:
-                print(
-                    '        vlan=-'
-                )
-            else:
-                vlan, vlan_state = (
-                    _select_scoped(
-                        vlans_by_vid.get(
-                            nic.vlan_id,
-                            [],
-                        ),
-                        site.id,
-                    )
-                )
-
-                if vlan_state == 'match':
-                    print(
-                        f'        MATCH VLAN '
-                        f'id={vlan.id} '
-                        f'vid={nic.vlan_id}'
-                    )
-                elif vlan_state == 'ambiguous':
-                    counters[
-                        'warnings'
-                    ] += 1
-
-                    print(
-                        f'        WARN VLAN '
-                        f'vid={nic.vlan_id} '
-                        f'ambiguous '
-                        f'action=not-set'
-                    )
-                else:
-                    counters[
-                        'warnings'
-                    ] += 1
-
-                    print(
-                        f'        WARN VLAN '
-                        f'vid={nic.vlan_id} '
-                        f'not-found '
-                        f'action=not-created'
-                    )
 
             plan_interface_mac(
                 nic, existing_interface, macs_by_address, counters,
