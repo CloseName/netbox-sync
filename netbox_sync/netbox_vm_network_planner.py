@@ -1,3 +1,4 @@
+from .vm_network_plan_interfaces import validate_plan_interfaces, match_plan_interface
 from .vm_network_plan_vlan import plan_interface_vlan
 from .vm_network_plan_primary import plan_primary_ipv4
 from .vm_network_plan_ip import plan_interface_ips
@@ -262,47 +263,11 @@ def plan_vm_networks(
             )
         )
 
-        try:
-            validate_interface_names(discovered_vm, existing_interfaces,
-                                     _interface_match, ValueError)
-        except (ValueError, RuntimeError) as exc:
-            counters['interface_conflict'] += 1
-            print(f'      CONFLICT INTERFACE {exc}')
-            continue
-
-        discovered_names = {}
-
-        for nic in discovered_vm.interfaces:
-            discovered_names.setdefault(
-                interface_display_name(discovered_vm, nic).casefold(),
-                [],
-            ).append(nic)
-
-        duplicate_source_names = [
-            name
-            for name, items
-            in discovered_names.items()
-            if len(items) > 1
-        ]
-
-        if duplicate_source_names:
-            counters[
-                'interface_conflict'
-            ] += len(
-                duplicate_source_names
-            )
-
-            print(
-                '      CONFLICT '
-                'duplicate discovered '
-                'interface names: '
-                + ','.join(
-                    sorted(
-                        duplicate_source_names
-                    )
-                )
-            )
-
+        if not validate_plan_interfaces(
+                discovered_vm, existing_interfaces, counters,
+                validate_interface_names=validate_interface_names,
+                _interface_match=_interface_match,
+        ):
             continue
 
         discovered_ipv4 = []
@@ -311,50 +276,12 @@ def plan_vm_networks(
             discovered_vm.interfaces,
             key=lambda item: item.name,
         ):
-            existing_matches = (
-                find_nic_sync_identity_matches(
-                    existing_interfaces, discovered_vm, nic,
-                )
+            can_continue, existing_interface = match_plan_interface(
+                discovered_vm, nic, existing_interfaces, counters,
+                find_nic_sync_identity_matches=find_nic_sync_identity_matches,
             )
-
-            existing_interface = None
-
-            if len(existing_matches) > 1:
-                counters[
-                    'interface_conflict'
-                ] += 1
-
-                print(
-                    f'      CONFLICT INTERFACE '
-                    f'name={interface_display_name(discovered_vm, nic)!r} '
-                    f'matches={len(existing_matches)}'
-                )
-
+            if not can_continue:
                 continue
-
-            if len(existing_matches) == 1:
-                existing_interface = (
-                    existing_matches[0]
-                )
-
-                counters[
-                    'interface_match'
-                ] += 1
-
-                print(
-                    f'      MATCH INTERFACE '
-                    f'id={existing_interface.id} '
-                    f'name={interface_display_name(discovered_vm, nic)}'
-                )
-            else:
-                counters[
-                    'interface_create'
-                ] += 1
-
-                print(
-                    f'      CREATE INTERFACE '
-                    f'name={interface_display_name(discovered_vm, nic)}'
-                )
 
             plan_interface_vlan(
                 nic, vlans_by_vid, site, counters, _select_scoped=_select_scoped,
