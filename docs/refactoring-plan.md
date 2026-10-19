@@ -534,6 +534,26 @@ Local evidence:
 `artifacts/vm-plan-inventory-evidence-20261019.zip`. Selectel remains experimental;
 no production access or deployment changes.
 
+## Stage 5j: per-interface MAC planning
+
+Starts from main `f9ce76084f0e7d013c9915f0770d7446772ea1e7` after PR #27.
+`vm_network_plan_mac.py` owns the original per-interface MAC decision/output and
+three counter increments. The planner supplies its canonicalization/assignment
+readers. MAC conflicts still report and continue into IP planning, unlike write
+preflight refusal; no write policy is reused or changed.
+
+Eight tests passed before extraction through the full planner: absent MAC,
+normalization/create, unassigned reuse, ownership match, foreign assignment, wrong
+object type, incomplete assignment and duplicate records. Exact MAC lines and
+counter values, subsequent IP planning and zero mutations are asserted.
+After extraction, 70 focused tests pass. AST comparison restores every original
+planner function after inlining the helper. Error/fatal lint passes.
+Full pytest on Windows/Python 3.14: 1880 passed, 485 skipped, one existing
+Starlette warning. Linux/database/opt-in skips are not deployment acceptance.
+Local evidence:
+`artifacts/vm-plan-mac-evidence-20261019.zip`. Selectel remains experimental;
+no production access or deployment changes.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
