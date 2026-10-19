@@ -27,6 +27,17 @@ Each stage is a separate reviewable PR. Changing features or fixing unrelated
 defects requires a separate change, so behavior changes are visible to reviewers.
 Do not combine the remaining stages into one repository-wide rewrite.
 
+## Stage 2 scope
+
+PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
+The [documentation map](README.md) separates entry points, contracts, historical
+evidence and proposals without moving or deleting existing files. The
+[verification baseline](verification-baseline.md) defines checks and limitations;
+the [stage 2 report](refactoring-stage2-validation.md) inventories browser failures.
+Runtime behavior, test assertions and deployment remain unchanged in this stage.
+Before restructuring API/UI code, repair the affected browser scenarios in a
+separate test-maintenance change and investigate unresolved behavior failures.
+
 ## Stage 1 scope
 
 Nine identical function definitions are replaced with two shared readers in

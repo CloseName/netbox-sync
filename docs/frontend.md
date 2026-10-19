@@ -1,12 +1,15 @@
-# Frontend foundation (UI-0 through UI-5)
+# Frontend
 
 The React application uses React Router in declarative BrowserRouter mode.
 Routes: Overview `/`, Sources `/sources`, registration `/sources/add`,
-source `/sources/:sourceInstance`, Runs `/runs`, run `/runs/:runId`,
-and Diagnostics `/diagnostics`. Add Source is an action within Sources.
-Settings is intentionally absent. Source detail and scheduling are organized into
-source sections below. Runs and Diagnostics use the existing read-only contracts;
-registration retains its existing workflow.
+source sections `/sources/:sourceInstance/*`, Runs `/runs`, run `/runs/:runId`,
+Diagnostics `/diagnostics`, and system health `/system`. Provider pages include
+`/sources/pfsense` and experimental `/sources/selectel`. Settings is `/settings`,
+with `section=teams`, `section=destinations`, and authentication sections;
+`/policy` redirects to destination settings. Directory users is `/users`.
+Routes and controls are permission-gated in `src/App.tsx` and `src/AuthGate.tsx`.
+Sources navigation expands provider links; the selected provider link carries
+`aria-current`, rather than a top-level Sources link.
 
 FastAPI serves the same built index only for the explicit frontend paths.
 Unknown API routes, missing assets and unknown frontend paths do not fall back
@@ -14,10 +17,10 @@ to HTML. Vite provides the local development fallback. No API DTO or privilege
 changes were made.
 
 Overview independently reads sources, diagnostics, and the latest 50 runs.
-It shows eight recent runs, up to five source attention items, up to three stale
-record links, and five next-expected schedules. Running counts cover only the
-returned recent records. Stale counts cover only the returned diagnostics
-selection (currently limited to 100); neither is a global live total.
+It shows five recent runs, up to five source attention items, a notice for earlier
+unfinished runs, and five next-expected schedules. Recorded running operations
+cover only the returned recent records. These sections are not global totals.
+The current overview does not display the old registered/healthy summary counters.
 Provider connectivity, persisted snapshots, changes-waiting and applied-in-24h
 metrics are not inferred. Expected schedule timestamps are not guaranteed starts.
 
@@ -31,6 +34,9 @@ stale, delayed, failed/blocked/locked outcome, other reported warnings.
 Sources search, provider/health/schedule/attention/site filters, sort/direction,
 page and 25/50/100 page size live in URL query parameters. Filtering and pagination
 apply to the complete returned source list, not to a partial run selection.
+The visible filter bar currently exposes search and sync status; provider links
+set provider scope. Other supported URL parameters can still restrict results
+even though they no longer have individual filter controls.
 Source links preserve the originating query in browser history state.
 Client-side operation is verified with 105 unit-test rows and 125 browser-fixture
 rows. At several hundred sources, measure payload, join/render time and diagnostics
@@ -46,6 +52,10 @@ Shared UI files under src/ui own health/schedule/outcome labels, attention/query
 derivations, human date/duration formatting, primitives and light/dark theme tokens.
 Unknown is neutral. Technical enums remain available as titles or technical details.
 Light/Dark/System preference and its verification are documented in UI-5 below.
+
+The later UI-stage sections retain implementation history. Check current route
+and rendering code before treating an older statement as a current UI contract.
+See the [verification baseline](verification-baseline.md) for known browser failures.
 
 Validation:
 - `npm test`: existing API client tests and deterministic projection tests.

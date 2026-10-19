@@ -1,11 +1,17 @@
 # NetBox Sync architecture
 
+Reading note (2026-10-19): this document accumulates several implementation stages.
+The opening foundation snapshot is not a complete description of today's runtime;
+later sections and the subject-specific contracts must be considered together.
+Use the [documentation map](README.md) and [verification baseline](verification-baseline.md)
+before a refactoring. Historical acceptance is not current deployment evidence.
+
 Status: the opt-in Web stack provides health, diagnostics, source visibility,
 discovery, confirmed manual synchronization and durable run history. The existing systemd
 registry-all scheduler remains the automatic execution authority. See
 [Web deployment](web.md) for boundaries and startup commands.
 
-## Current state, verified from code
+## Foundation snapshot (historical)
 
 - `netbox-sync = netbox_sync:main` is the installed entrypoint.
 - `source_bootstrap` selects legacy, registry or registry-all configuration.
