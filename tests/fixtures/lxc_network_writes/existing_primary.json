@@ -1,0 +1,21 @@
+{
+  "mutations": [
+    [
+      "update",
+      "virtualization.interfaces",
+      20,
+      {
+        "enabled": true
+      }
+    ],
+    [
+      "update",
+      "virtualization.virtual_machines",
+      80,
+      {
+        "primary_ip4": 2020
+      }
+    ]
+  ],
+  "output": "UPDATE INTERFACE id=20 name=vmbr0\nSET PRIMARY IPv4 lxc='lxc-100' address=vrf:42:10.20.30.50/24\n\nLXC NETWORK APPLY SUMMARY\n  interfaces_created=0\n  interfaces_updated=1\n  macs_created=0\n  macs_updated=0\n  ips_created=0\n  ips_updated=0\n  primary_updated=1\n  skipped=3\n"
+}

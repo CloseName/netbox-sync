@@ -488,6 +488,30 @@ Local evidence:
 `artifacts/vm-writes-evidence-20261019.zip`. Selectel remains experimental;
 no production access or deployment changes.
 
+## Stage 5h: LXC network writes
+
+Starts from main `a4fa8bcf79461ac8151a228f491209c9e0eff1dc` after PR #25.
+`lxc_network_writes.py` owns the original mutation loop, operation output and final
+counters. Target resolution, inventory, whole-batch preflight, precheck report and
+confirmation remain in the applier. VM code is unchanged. LXC still refuses primary
+MAC replacement during preflight, and its writer replaces existing primary IPv4
+with the unique discovered candidate instead of applying VM manual-primary policy.
+
+Thirteen new tests passed before extraction. Ten injected failure positions across
+two containers assert exception identity, stop-on-first-failure, exact completed-write
+order and no success summary. Three fixed snapshots preserve complete mutation
+payloads and output for creation, unassigned MAC/IP reuse and existing primary IPv4
+replacement with VRF 42. The old IP record remains present; successful cases replay
+without mutations. Snapshots are read-only during tests.
+After extraction, 108 focused tests pass, including VM write/report/preflight and
+network safety contracts. AST comparison restores every original applier function
+after inlining the writer. Error/fatal lint passes.
+Full pytest on Windows/Python 3.14: 1860 passed, 485 skipped, one existing
+Starlette warning. Linux/database/opt-in skips are not deployment acceptance.
+Local evidence:
+`artifacts/lxc-writes-evidence-20261019.zip`. Selectel remains experimental;
+no production access or deployment changes.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
