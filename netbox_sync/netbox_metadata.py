@@ -1,4 +1,5 @@
 MANAGED_DEVICE_CUSTOM_FIELDS = (
+    'hardware_identity',
     'sync_identities',
     'sync_original_names',
     'hypervisor_version',
@@ -9,6 +10,7 @@ MANAGED_DEVICE_CUSTOM_FIELDS = (
     'cpu_threads',
     'memory_mb',
     'esxi_host_network',
+    'proxmox_host_network',
 )
 
 from .source_identity import (
@@ -41,12 +43,17 @@ def sync_identity_match_rank(custom_fields, host):
 def find_sync_identity_matches(candidates, host):
     """Find best-ranked host records, retaining same-rank duplicates."""
 
-    return select_best_identity_matches(
+    candidates = list(candidates)
+    matched = select_best_identity_matches(
         candidates,
         lambda candidate: sync_identity_match_rank(
             getattr(candidate, 'custom_fields', None) or {}, host,
         ),
     )
+    if matched:
+        return matched
+    from .selectel_host_match import matches
+    return matches(candidates, host)
 
 
 def build_device_custom_fields(
@@ -64,6 +71,9 @@ def build_device_custom_fields(
     )
 
     result = dict(existing)
+    if host.hardware_identity is not None:
+        from copy import deepcopy
+        result['hardware_identity'] = deepcopy(host.hardware_identity)
 
     result.update({
         'sync_identities':
@@ -98,5 +108,9 @@ def build_device_custom_fields(
     if host.source == 'esxi' and host.esxi_host_network is not None:
         from copy import deepcopy
         result['esxi_host_network'] = deepcopy(host.esxi_host_network)
+
+    if host.source == 'proxmox' and host.proxmox_host_network is not None:
+        from copy import deepcopy
+        result['proxmox_host_network'] = deepcopy(host.proxmox_host_network)
 
     return result

@@ -8,6 +8,7 @@ import { applyTheme, readTheme } from "./ui/theme";
 import "./ui/tokens.css";
 import "./styles.css";
 import "./ui/foundation.css";
+import "./ui/workspace.css";
 applyTheme(readTheme());
 installAuthBoundary();
 const router = createBrowserRouter([{path:"*",element:<AuthGate><BootstrapGate><App /></BootstrapGate></AuthGate>}]);

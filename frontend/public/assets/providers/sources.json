@@ -1,0 +1,6 @@
+{
+  "esxi": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/vmware-esxi.svg",
+  "proxmox": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/proxmox.svg",
+  "pfsense": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/pfsense.svg",
+  "selectel": "https://brand.selectel.ru/wp-content/themes/blankslate/icons/favicon-32x32.png"
+}

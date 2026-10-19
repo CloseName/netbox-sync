@@ -32,6 +32,12 @@ for name in ('pfsense_inventory','pfsense_network'):
     field.ui_visible='always';field.save()
 configure_managed_fields()
 assert not CustomField.objects.filter(name__startswith='pfsense_',ui_visible='always').exists()
+field=CustomField.objects.get(name='esxi_host_network')
+assert field.type == 'json'
+assert set(field.object_types.values_list('app_label', 'model')) == {('dcim', 'device')}
+original_pk=field.pk
+configure_managed_fields()
+assert CustomField.objects.get(name='esxi_host_network').pk == original_pk
 suffix=uuid4().hex[:12]
 user=get_user_model().objects.create_user(username='requirements-admin-'+suffix,is_superuser=True)
 vrf=VRF.objects.create(name='requirements-'+suffix,enforce_unique=True)

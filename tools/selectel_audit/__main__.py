@@ -31,6 +31,8 @@ def main():
     parser = argparse.ArgumentParser(description='Selectel audit: read-only inventory, no synchronization')
     parser.add_argument('--version', action='version', version=VERSION)
     parser.add_argument('--output', default='/output')
+    parser.add_argument('--profile', choices=('all', 'servers'), default='all',
+                        help='servers: dedicated/cloud servers and supporting networks/storage; no S3 or DNS')
     parser.add_argument('--account', help='Selectel account number; credentials are still entered interactively')
     parser.add_argument('--netbox-url', default='https://netbox-test.indeed-id.hq')
     parser.add_argument('--netbox-ca', help='PEM CA file mounted read-only; TLS verification is always enabled')
@@ -64,7 +66,7 @@ def main():
     if requested:
         netbox_token = hidden('Токен NetBox с правами чтения (скрытый ввод): ')
     print('Чтение NetBox: ' + ('запрошено' if requested else 'пропущено по выбору пользователя'))
-    document = Collector(credentials).run()
+    document = Collector(credentials, profile=args.profile).run()
     document['netbox_read'] = {'requested': requested, 'status': 'not_requested'}
     if netbox_token:
         try:
@@ -84,6 +86,8 @@ def main():
     print(f'\nСохранено: {path}\nСерверов/ресурсов в обзоре: {len(rows)}.')
     print('Покрытие по категориям: ' + str(coverage['categories']))
     print('NetBox: ' + document['netbox_read']['status'])
+    print('Обзор продуктов и пробелов: account.json и раздел аккаунта в report.html.')
+    print('DNS-записи, контейнеры и настройки хранилища: dns-storage.json (внутренние данные).')
     print('Сначала пришлите summary.json. report.html открывается локально в браузере.')
     print('inventory.json и fields.json нужны для проектирования полей; не публикуйте их в Git.')
     return 0

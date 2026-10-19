@@ -53,6 +53,18 @@ def test_proxmox_identity_name_and_new_classification():
     review = build_proxmox_review(nb_api, [host], config)
     assert review.items[0].classification.value == 'MANAGED'
     assert review.items[0].future_action == 'none'
+    host.normalized_name = 'NODE-A'
+    host.proxmox_host_network = {'coverage': {'missing_references': [
+        {'source': 'guest', 'relation': 'bridge', 'target': 'customer-bridge'}]}}
+    review = build_proxmox_review(nb_api, [host], config)
+    assert review.items[0].classification.value == 'MANAGED'
+    assert review.items[1].reason_code == 'PROXMOX_NETWORK_REFERENCES_MISSING'
+    assert review.items[1].classification.value == 'UNSUPPORTED'
+    assert 'customer-bridge' in review.items[1].reason
+    from dataclasses import asdict
+    from netbox_sync.api.dto import DiscoveryResultDTO
+    public = DiscoveryResultDTO.model_validate(asdict(review))
+    assert public.items[1].reason_code == 'PROXMOX_NETWORK_REFERENCES_MISSING'
 
 
 def test_proxmox_management_ip_is_review_evidence_not_ownership():

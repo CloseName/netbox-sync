@@ -19,6 +19,7 @@ def test_child_database_roles_do_not_leak():
     assert child_environment('retirement_worker', values) == {}
 
 
+@pytest.mark.skipif(os.name != 'posix', reason='worker bundles run in Linux containers')
 @pytest.mark.parametrize('username', ['netbox-sync', 'netbox-sync-test'])
 @pytest.mark.parametrize('module', ['bootstrap_worker', 'pfsense_scheduler'])
 def test_collector_mode_survives_supervised_process(module, username, tmp_path):

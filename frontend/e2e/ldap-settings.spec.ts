@@ -19,7 +19,7 @@ test(`LDAP settings test save and roles ${lang} ${theme} ${width}`,async({page})
   }
   return route.fulfill({status:503,json:{error:{code:'UNAVAILABLE'}}});
  });
- await page.goto('/settings');await setLanguage(page,lang);
+ await page.goto('/settings?section=directory');await setLanguage(page,lang);
  const t=(en:string,ru:string)=>lang==='ru'?ru:en;
  const password=page.getByLabel(t('Bind account password','Пароль служебной записи'),{exact:true});
  await expect(password).toHaveValue('');
@@ -46,7 +46,7 @@ for(const role of ['viewer','operator'])test(`restricted navigation ${role}`,asy
   if(path.endsWith('/sources'))return route.fulfill({json:[]});
   return route.fulfill({status:503,json:{error:{code:'UNAVAILABLE'}}});
  });
- await page.goto('/settings');await setLanguage(page,'en');
+ await page.goto('/settings?section=directory');await setLanguage(page,'en');
  await expect(page.getByText('You do not have permission to open this section.')).toBeVisible();
  await expect(page.getByRole('link',{name:'Settings',exact:true})).toHaveCount(0);
  await page.goto('/sources/add');await expect(page.getByText('You do not have permission to open this section.')).toBeVisible();
@@ -63,7 +63,7 @@ for(const failure of ['AUTH_UNAVAILABLE','LDAP_TLS_FAILED','API_VALIDATION_FAILE
   if(path.endsWith('/settings/ldap'))return route.fulfill({json:{revision:1,config,bind_secret_present:true,roles:{viewer:read,operator:operate,admin}}});
   return route.fulfill({status:503,json:{error:{code:'AUTH_UNAVAILABLE'}}});
  });
- await page.goto('/settings');await expect(page.getByRole('heading',{name:'Corporate directory'})).toBeVisible();
+ await page.goto('/settings?section=directory');await expect(page.getByRole('heading',{name:'Corporate directory'})).toBeVisible();
  await page.getByLabel('Directory hostname',{exact:true}).fill('edited.example.test');
  await page.getByLabel('Bind account password',{exact:true}).fill('transient-secret');
  await page.getByLabel('Group DN',{exact:true}).fill('');
@@ -96,7 +96,7 @@ test('expired session restores only the same principal non-secret draft',async({
   if(path.endsWith('/settings/ldap'))return r.fulfill({json:{revision:1,config,bind_secret_present:true,roles:{viewer:read,operator:operate,admin}}});
   return r.fulfill({status:401,json:{error:{code:'AUTH_REQUIRED'}}});
  });
- await page.goto('/settings');await page.getByLabel('Directory hostname',{exact:true}).fill('retained.example.test');await page.getByLabel('Bind account password',{exact:true}).fill('memory-only-value');
+ await page.goto('/settings?section=directory');await page.getByLabel('Directory hostname',{exact:true}).fill('retained.example.test');await page.getByLabel('Bind account password',{exact:true}).fill('memory-only-value');
  for(const name of ['first','second']){
   signed=false;await page.evaluate(()=>fetch('/api/v1/policy'));
   await page.locator('[name=username]').fill(name);await page.locator('[name=password]').fill('temporary-login');await page.getByRole('button',{name:'Sign in',exact:true}).click();

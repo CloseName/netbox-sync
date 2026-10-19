@@ -16,7 +16,10 @@ def _permission(user, action, obj=None):
     if not user.is_authenticated:
         raise DependencyGuardBlocked('PERMISSION_DENIED')
     user = type(user).objects.get(pk=user.pk)
-    if not user.has_perm('netbox_guard.' + action, obj):
+    allowed = user.has_perm('netbox_guard.' + action, obj)
+    if action == 'manage_resourceregistry':
+        allowed = allowed or user.has_perm('netbox_guard.manage_providerresourceregistry', obj)
+    if not allowed:
         raise DependencyGuardBlocked('PERMISSION_DENIED')
     return str(user.pk)
 
@@ -94,6 +97,12 @@ def _parent_owner(resource, obj, source):
 
 
 def _claims(snapshot, source, cluster, check_budget=None):
+    from .models import ProviderBinding
+    # Refuse before any retirement writes; the SQL trigger is the final barrier.
+    for kind in ('device', 'vm'):
+        targets = [int(key.split(':')[1]) for key, _ in snapshot.objects if key.startswith(kind + ':')]
+        if targets and ProviderBinding.objects.filter(resource=kind, object_id__in=targets).exists():
+            raise DependencyGuardBlocked('PROVIDER_BOUND_OBJECT')
     for key, _ in snapshot.objects:
         if check_budget is not None: check_budget()
         resource, identifier = key.split(':')

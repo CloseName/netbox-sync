@@ -1,3 +1,7 @@
+> Current automated onboarding supports stable CE 2.6+ in the 2.x release family,
+> with capability checks. See [onboarding](../../docs/pfsense-web-onboarding.md).
+> The stages below describe historical implementation and manual rollout paths.
+
 # pfSense network snapshot, stage 1
 
 `network-v1.php` is a standalone read-only collector for testing on pfSense CE.

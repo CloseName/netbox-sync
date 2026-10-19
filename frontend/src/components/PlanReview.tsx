@@ -225,6 +225,16 @@ export function PlanReview({
   );
 }
 function PlanRow({ item,raw }: { item: SyncPlanItem;raw:SyncPlanItem }) {
+  const [language]=useLanguage();
+  const recreated=item.reason_code==='VM_RECREATED_NAME';
+  const replacing=item.reason_code==='VM_GENERATION_REPLACE';
+  const replacement=raw.before.find(([key])=>key==='replacement_evidence')?.[1] as {old_identity?:{external_id?:string};children?:unknown[]}|undefined;
+  const cardUrl=raw.before.find(([key])=>key==='replacement_card_url')?.[1];
+  const evidence=raw.before.find(([key])=>key==='matching_candidates')?.[1];
+  const candidates=Array.isArray(evidence)?evidence.filter((c):c is {id:number;name:string;url:string;external_ids:string[]}=>
+    c && Number.isInteger(c.id) && c.id>0 && typeof c.name==='string' && typeof c.url==='string' && Array.isArray(c.external_ids) && c.external_ids.every((v:unknown)=>typeof v==='string')):[];
+  const reason=replacing?(language==='ru'?'VM пересоздана. Обновим существующую карточку, сохранив её ID.':'VM recreated. Update its existing card and retain its ID.'):
+    recreated?(language==='ru'?'Имя занято сохранённой VM. Только эта машина пропущена; остальные могут синхронизироваться.':'Name belongs to a retained VM. Only this VM is skipped; other objects can synchronize.'):planReason(item);
   const fields = managedFields(item);
   return (
     <details className={"plan-row plan-" + item.action.toLowerCase()}>
@@ -234,10 +244,22 @@ function PlanRow({ item,raw }: { item: SyncPlanItem;raw:SyncPlanItem }) {
           <span className="muted">{tr(kindLabel(item.object_kind))}</span>
         </span>
         <Badge value={actionStatus(item.action)} />
-        <span className="plan-reason">{planReason(item)}</span>
+        <span className="plan-reason">{reason}</span>
         <span className="muted">{tr("Details")}{" "}</span>
       </summary>
       <div className="plan-row-body">
+        {replacing && <section aria-label={language==='ru'?'Замена пересозданной VM':'Recreated VM replacement'}>
+          <p>{language==='ru'?'Карточка NetBox':'NetBox card'}: {typeof cardUrl==='string' && /^https?:\/\//i.test(cardUrl)?<a href={cardUrl} target="_blank" rel="noopener noreferrer">{item.name} (#{item.matched_object_id})</a>:<span>#{item.matched_object_id}</span>}</p>
+          <p>{language==='ru'?'Прежний UUID':'Previous UUID'}: <code>{replacement?.old_identity?.external_id}</code><br/>{language==='ru'?'Новый UUID':'New UUID'}: <code>{item.external_id}</code></p>
+          <p>{language==='ru'?'Прежняя VM отсутствует в текущем сборе. Карточка создана Sync. Её старые интерфейсы и диски без внешних связей будут заменены компонентами новой VM. IP и внешние привязки не переносятся.':'The previous VM is absent from current discovery. Sync created this card. Its old unconnected interfaces and disks will be replaced with the new VM components. IPs and external bindings are not transferred.'}</p>
+        </section>}
+        {candidates.length>0 && <section aria-label={language==='ru'?'Совпадения в NetBox':'NetBox candidates'}>
+          <h4>{language==='ru'?'Связанные с конфликтом объекты NetBox':'Conflicting NetBox objects'}</h4>
+          <p>{language==='ru'?'UUID обнаруженной машины':'Discovered VM identity'}: <code>{item.external_id}</code></p>
+          <ul>{candidates.map(c=><li key={c.id}>{/^https?:\/\//i.test(c.url)?<a href={c.url} target="_blank" rel="noopener noreferrer">{c.name} (#{c.id})</a>:<span>{c.name} (#{c.id})</span>}
+            <div>UUID: {c.external_ids.map(id=><code key={id}>{id} </code>)}</div></li>)}</ul>
+          <p>{language==='ru'?(recreated?'Прежняя VM отсутствует в текущем сборе этого источника. Её карточка и привязки сохранены. Дайте новой VM уникальное имя на гипервизоре и перестройте план.':'Проверьте указанные карточки и идентификаторы. Если это разные машины, задайте новой VM уникальное имя и перестройте план. Не переносите привязки по совпадению имени.'):(recreated?'The previous VM is absent from this source inventory. Its record and bindings are retained. Give the new VM a unique name in the hypervisor and rebuild the plan.':'Review these records and identities. If these are different VMs, give the new VM a unique name and rebuild. Do not transfer bindings based on a name match.')}</p>
+        </section>}
         {item.action === "CREATE" && (
           <p>
             {tr("Will create managed object. Proposed managed values are shown only when provided.")}{" "}</p>
@@ -247,7 +269,7 @@ function PlanRow({ item,raw }: { item: SyncPlanItem;raw:SyncPlanItem }) {
         )}
         {item.action === "REVIEW_REQUIRED" && (
           <p className="sync-attention">
-            {tr("Needs operator review. No automatic adoption.")}{" "}{planReason(item)}
+            {tr("Needs operator review. No automatic adoption.")}{" "}{reason}
           </p>
         )}
         {item.action === "BLOCKED" && (

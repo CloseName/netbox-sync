@@ -10,6 +10,8 @@ FIELDS = {'sync_disk_identity': ('json', ('virtualization.virtualdisk',)),'cpu_c
  'cpu_threads': ('integer', ('dcim.device',)),
  'cpu_vendor': ('text', ('dcim.device',)),
  'esxi_host_network': ('json', ('dcim.device',)),
+ 'proxmox_host_network': ('json', ('dcim.device',)),
+ 'hardware_identity': ('json', ('dcim.device',)),
  'guest_architecture': ('text', ('virtualization.virtualmachine',)),
  'guest_kind': ('text', ('virtualization.virtualmachine',)),
  'guest_os_type': ('text', ('virtualization.virtualmachine',)),
@@ -48,14 +50,15 @@ def configure_managed_fields(using='default'):
         field = CustomField.objects.using(using).select_for_update().filter(name=name).first()
         if field is None:
             # pfSense prerequisites belong to Guard; other fields belong to Sync setup.
-            if name not in ('pfsense_inventory', 'pfsense_network', 'sync_disk_identity'):
+            if name not in ('pfsense_inventory', 'pfsense_network', 'sync_disk_identity', 'esxi_host_network', 'proxmox_host_network', 'hardware_identity'):
                 continue
             field = CustomField(name=name, type=kind, group_name='NetBox Sync',
                                 required=False, ui_visible='hidden', ui_editable='no')
             field.full_clean()
             field.save(using=using)
             field.object_types.add(field.object_types.model.objects.using(using).get(
-                app_label='virtualization', model='virtualdisk' if name=='sync_disk_identity' else 'virtualmachine'))
+                app_label='dcim' if name in ('esxi_host_network', 'proxmox_host_network', 'hardware_identity') else 'virtualization',
+                model='device' if name in ('esxi_host_network', 'proxmox_host_network', 'hardware_identity') else 'virtualdisk' if name == 'sync_disk_identity' else 'virtualmachine'))
         if not compatible(field, kind, models):
             LOGGER.warning('NetBox Sync: incompatible custom field %s; unchanged', name)
             continue

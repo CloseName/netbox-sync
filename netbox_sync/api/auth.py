@@ -10,6 +10,8 @@ from ..local_control import request, ControlError
 COOKIE = '__Host-netbox-sync-session'
 PUBLIC = {('GET', '/api/v1/health'), ('GET', '/api/v1/auth/status'), ('POST', '/api/v1/auth/login'), ('POST', '/api/v1/auth/enroll')}
 ROUTES = (
+    ('GET', r'/api/v1/selectel', 'bootstrap.manage'),
+    ('POST', r'/api/v1/selectel(?:/[0-9]{1,20}/(?:collect|schedule|enabled|lifecycle-review|lifecycle-execute))?', 'bootstrap.manage'),
     ('GET', r'/api/v1/pfsense', 'source.read'),
     ('GET', r'/api/v1/pfsense/[0-9]+/status', 'source.read'),
     ('POST', r'/api/v1/pfsense/[0-9]+/connect', 'source.register'),

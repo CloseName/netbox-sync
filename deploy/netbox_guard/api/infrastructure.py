@@ -14,6 +14,16 @@ class Infrastructure(APIView):
         except ValueError: raise Http404
         return Response(value)
 
+
+class ProviderNetworks(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, kind, pk):
+        from ..provider_network_display import document
+        if kind not in ('device', 'ipaddress', 'prefix', 'vlan'):
+            raise Http404
+        return Response(document(request.user, kind, pk))
+
 class FirewallInventory(APIView):
     permission_classes = [IsAuthenticated]
     def get(self,request,pk):

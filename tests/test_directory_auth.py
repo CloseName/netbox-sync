@@ -168,7 +168,7 @@ def test_http_endpoint_matrix_rejects_forbidden_before_handlers(role):
     with TestClient(app,base_url='https://localhost:8000') as http:
         http.cookies.set(COOKIE,token)
         for template,methods in app.openapi()['paths'].items():
-            path=re.sub(r'\{[^}]+\}','source-fixture',template.replace('{vm_id}','2609'))
+            path=re.sub(r'\{[^}]+\}','source-fixture',template.replace('{vm_id}','2609').replace('{account}','12345'))
             for method in methods:
                 verb=method.upper()
                 if (verb,path) in PUBLIC: continue

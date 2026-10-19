@@ -4,6 +4,18 @@ export interface Attention {
   priority: number;
   label: string;
 }
+/** Counts alone do not prove an actionable error. Keep limitations visible separately.
+ * Only suppress the aggregate DEGRADED presentation when independent operation
+ * evidence is available and no blocking, uncertain or scheduling condition exists.
+ */
+export function completedWithLimitations(source?: SourceDiagnostic): boolean {
+  return !!source && source.operation_evidence_available === true
+    && !source.plan_blocked && !source.outcome_unconfirmed
+    && !source.warning_count && !source.warnings.length
+    && source.latest_run?.status === 'SUCCEEDED'
+    && (source.latest_run.unsupported_count ?? 0) > 0
+    && ['HEALTHY','DEGRADED'].includes(source.status);
+}
 export function attention(source?: SourceDiagnostic): Attention | null {
   if (!source) return null;
   if(source.outcome_unconfirmed)return {priority:1,label:"Outcome unknown"};
@@ -31,7 +43,8 @@ export function attention(source?: SourceDiagnostic): Attention | null {
     ["FAILED", "FAILED_BEFORE_WRITE", "BLOCKED", "LOCKED"].includes(outcome)
   )
     return { priority: 5, label: "Last run needs attention" };
-  if((source.latest_run?.unsupported_count??0)>0)return {priority:6,label:'Review inventory limitations'};
+  if (completedWithLimitations(source)) return null;
+  if (source.operation_evidence_available === false) return {priority:6,label:'Status unavailable'};
   if (source.status === "DEGRADED" || source.warning_count)
     return { priority: 6, label: "Needs attention" };
   return null;

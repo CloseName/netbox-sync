@@ -94,6 +94,8 @@ def _print_plan(plan):
 def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write=None):
     """Reconcile managed and genuinely new objects; legacy candidates stay separate."""
     from .child_process import measured_phase
+    from .vm_replacement import configure, stage
+    configure(nb_api)
     read_api = PlanningNetBox(nb_api)
     with measured_phase('simulation_preflight'):
         from .application.inventory_order import canonical_hosts
@@ -113,6 +115,7 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write
         from .host_mapping import validate
         validate(read_api,config.target,hosts)
         try:
+            replacements = stage(read_api, hosts, config)
             plan = build_esxi_migration_plan(read_api, hosts, config)
             managed_ids = _managed_vm_ids(plan)
             filtered_hosts = _filtered_hosts(hosts, config, managed_ids)
@@ -129,7 +132,8 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write
         # interchangeable with the Proxmox host networking executor.
         host_ids = {item.external_id for item in plan.hosts
                     if item.classification == ObjectMigrationClassification.NEW
-                    or (config.target.onboarding_mapping
+                    or ((config.target.onboarding_mapping or any(
+                        'selectel_hardware_identity' in candidate.signals for candidate in item.candidates))
                         and item.classification == ObjectMigrationClassification.MANAGED)}
         network_host_ids = {item.external_id for item in plan.hosts
                             if item.classification in (ObjectMigrationClassification.NEW,
@@ -143,6 +147,11 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write
                                for host in hosts if host.source_id in host_ids)
 
     def stages(api):
+        for identifier, body in replacements:
+            if isinstance(api, PlanningNetBox):
+                api.simulate_vm_replacement(identifier, body)
+            else:
+                api.replace_vm(identifier, body)
         from .child_process import measured_phase
         from .esxi_events import apply_event_snapshots
         from .host_primary_ip import apply_esxi_primary

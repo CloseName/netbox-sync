@@ -25,6 +25,7 @@ class AdoptionClassification(str, Enum):
     REVIEW_REQUIRED = 'REVIEW_REQUIRED'
     AMBIGUOUS = 'AMBIGUOUS'
     UNMATCHED = 'UNMATCHED'
+    RETAINED_NAME = 'RETAINED_NAME'
 
 
 class EsxiHostIdentityChanged(ValueError):
@@ -79,6 +80,7 @@ class EsxiAdoptionPlan:
     site_id: object
     cluster_id: object
     items: tuple[EsxiAdoptionItem, ...]
+    netbox_url: str = ''
 
 
 def _object_id(value):
@@ -287,11 +289,18 @@ def _classify(discovered, kind, identity, all_records, target_records, network):
     managed = [
         record for record in all_records if _matches_identity(record, identity)
     ]
+    provider_match = False
+    if kind == 'host' and not managed:
+        from .selectel_host_match import matches
+        managed = matches(all_records, discovered)
+        provider_match = bool(managed)
     target_ids = {record.id for record in target_records}
     if managed:
         evidence = tuple(
             _evidence(record, False, (), ()) for record in managed
         )
+        if provider_match:
+            evidence = tuple(replace(row, signals=('selectel_hardware_identity',)) for row in evidence)
         if len(managed) == 1 and managed[0].id in target_ids:
             return EsxiAdoptionItem(
                 object_kind=kind,
@@ -437,7 +446,9 @@ def build_esxi_adoption_plan(nb_api, hosts, config):
         record for record in all_devices
         if (
             _object_id(_serialized(record).get('site')) == site.id
-            and _object_id(_serialized(record).get('cluster')) == cluster.id
+            and (_object_id(_serialized(record).get('cluster')) == cluster.id
+                 or (_object_id(_serialized(record).get('cluster')) is None
+                     and _custom_fields(record).get('selectel_refs')))
         )
     ]
     target_vms = [
@@ -469,11 +480,36 @@ def build_esxi_adoption_plan(nb_api, hosts, config):
                 target_vms,
                 network,
             ))
+    items = _mark_shared_claims_ambiguous(items)
+    # Only an absent identity owned by this exact source can be isolated.
+    # Network matches, foreign ownership and shared claims remain blockers.
+    from .source_identity import SourceIdentity
+    live_ids = {virtual_machine_source_identity(vm) for host in hosts
+                for vm in host.virtual_machines}
+    isolated = []
+    for item in items:
+        if (item.object_kind == 'vm'
+                and item.classification == AdoptionClassification.AMBIGUOUS
+                and len(item.candidates) == 1):
+            candidate = item.candidates[0]
+            raw = json.loads(candidate.custom_fields_snapshot).get('sync_identities', [])
+            identities = [SourceIdentity.from_record(value) for value in raw] if isinstance(raw, list) else []
+            if (candidate.signals == ('exact_name',)
+                    and 'existing_managed_identity' in candidate.conflicts
+                    and set(candidate.conflicts) <= {'existing_managed_identity', 'conflicting_ip', 'conflicting_mac'}
+                    and len(identities) == 1 and identities[0] is not None
+                    and identities[0].type == item.identity.type
+                    and identities[0].instance == item.identity.instance
+                    and identities[0].kind == 'vm'
+                    and identities[0] not in live_ids):
+                item = replace(item, classification=AdoptionClassification.RETAINED_NAME)
+        isolated.append(item)
     return EsxiAdoptionPlan(
         source_instance=config.source_instance,
         site_id=site.id,
         cluster_id=cluster.id,
-        items=_mark_shared_claims_ambiguous(items),
+        items=tuple(isolated),
+        netbox_url=str(getattr(nb_api, 'base_url', '') or '').rstrip('/').removesuffix('/api'),
     )
 
 

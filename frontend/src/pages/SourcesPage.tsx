@@ -36,6 +36,7 @@ export const sourceTabs = [
   "Overview",
   "Sync",
   "Schedule",
+  "Configuration",
 ];
 function RunEvidence({
   run,
@@ -59,7 +60,7 @@ export function SourcesPage() {
   const canConfigure = usePermission('source.configure'), canRemove = usePermission('source.remove');
   const [language]=useLanguage();
   const { sourceInstance = "", "*": suffix = "" } = useParams();
-  const legacy = ["runs","diagnostics","configuration"].includes(suffix);
+  const legacy = ["runs","diagnostics"].includes(suffix);
   const tab = legacy ? "Overview" : suffix
     ? sourceTabs.find((item) => item.toLowerCase() === suffix)
     : "Overview";
@@ -249,7 +250,7 @@ export function SourcesPage() {
             </dl>
           </header>
           <nav className="source-tabs" aria-label={tr("Source sections")}>
-            {sourceTabs.map((item) => (
+            {sourceTabs.filter(item=>item!=="Configuration"||canConfigure).map((item) => (
               <NavLink
                 key={item}
                 end
@@ -258,7 +259,7 @@ export function SourcesPage() {
                 }
                 state={{ from }}
               >
-                {tr(item)}
+                {tr(item === "Sync" ? "Changes" : item === "Configuration" ? "Connection" : item)}
               </NavLink>
             ))}
           </nav>
@@ -442,7 +443,7 @@ export function SourcesPage() {
               </details>
             </details>
           )}
-          {tab === "Overview" && canConfigure && (<details id="configuration" open={location.hash==="#configuration"}><summary>{language==='ru'?'Настройки источника':'Source settings'}</summary>
+          {(tab === "Configuration" || (tab === "Overview" && location.hash==="#configuration")) && canConfigure && (<details id="configuration" open><summary>{language==='ru'?'Настройки источника':'Source settings'}</summary>
             <TeamEditor source={detail.source_instance}/>
             <SourceConfiguration
               source={detail}

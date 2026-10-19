@@ -76,7 +76,15 @@ def endpoint(tmp_path, monkeypatch, count=147, delay=0, incomplete=False, identi
 
 
 def test_representative_inventory_request_count_and_exact_equivalence(tmp_path,monkeypatch):
-    from netbox_sync import esxi_inventory
+    from netbox_sync import esxi_inventory, hardware_identity
+    from datetime import datetime, timezone
+    captured_at = datetime.now(timezone.utc)
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return captured_at.astimezone(tz) if tz else captured_at.replace(tzinfo=None)
+    # Compare inventory contents under one observation time, not wall-clock drift.
+    monkeypatch.setattr(hardware_identity, 'datetime', FixedClock)
     phases=[]
     monkeypatch.setattr(esxi_inventory,'phase_progress',lambda name, elapsed=None, **stats: phases.append((name, elapsed, stats)))
     client=EsxiClient(resolver=FakeResolver())

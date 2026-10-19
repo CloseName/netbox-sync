@@ -1,5 +1,72 @@
 > Follow-up: local admin and destination policy now implemented; release gate pending: [contract](local-admin-policy.md), [evidence and pending gate](local-admin-policy-review.md). The original review below is retained as historical context.
 
+## 2026-10-13 — usability follow-up and defect repairs
+
+- Fixed the missing HTML route for `/users`; direct navigation and refresh use
+  the same application shell. API endpoints and authorization remain separate.
+- Sticky header and viewport-height sidebar share the measured header height.
+  Window scrolling, keyboard navigation and narrow-screen navigation remain.
+- Replaced provider letter badges with locally served brand marks; provenance
+  is included alongside the assets.
+- Overview now prioritizes source problems, Selectel collection failures, recent
+  outcomes and expected runs. Diagnostics becomes Problems, with named sources,
+  consequences and next actions. Component and support evidence is expandable.
+- Source lists show one primary result with a timestamp and schedule. Successful
+  runs with unsupported categories are explicitly labelled as limitations, not
+  silently healthy. Suppression of aggregate attention requires available
+  operation evidence and no blocking, uncertain, warning or failed condition.
+- Bulk selection actions appear after selection. Global schedule shutdown is
+  separate and requires confirmation. Existing removal review is preserved.
+- Connection settings get a dedicated source tab; Changes retains the reviewed
+  plan workflow. Settings is a hub; the profile menu only holds personal
+  preferences and sign-out. Users have a compact table and explicit role Save;
+  failed refresh disables edits of stale rows.
+- Selectel uses account cards, separate credential and collection actions, and
+  category results. Zero observations and unavailable evidence remain distinct.
+  Credentials are cleared after save/cancel and never returned to the form.
+
+Validation includes unit tests, API HTML-route tests, browser coverage of scroll
+geometry, explicit role save and stale-read refusal, desktop/mobile light/dark
+screens, source settings, LDAP, bulk actions, Selectel and synchronization safety.
+This is a UI change: provider writes, reconciliation, permissions and collection
+scheduling semantics are not replaced. Test deployment uses the existing
+`deploy/update-ui-test-no-backup.sh` with its test-host and target checks.
+
+## 2026-10-13 — quiet workspace implementation (initial iteration)
+
+User-approved direction: dark petrol surfaces, restrained teal accents, monochrome
+provider symbols; saturated warning/error colors only where attention is required.
+The light theme uses the same structure. Existing theme and language preferences remain.
+
+- Shared shell, tables, forms, source tabs, schedule and plan-review surfaces restyled.
+- Sources is a real expandable button with an accessible state and rotating chevron.
+  Provider links remain scoped to ESXi, Proxmox, pfSense and permitted Selectel access.
+- Settings and Users are direct permission-aware sidebar links. User menu exposes the
+  signed-in username, theme/language preferences and sign-out with keyboard dismissal.
+- Overview puts attention and upcoming runs before secondary activity counters, adds
+  provider entry points and retains evidence timestamps and unavailable states.
+- Diagnostics and System health have separate routes; legacy overview hash links redirect.
+- Selectel keeps save-credentials and collect as separate actions. Account errors appear
+  in the list, collection times use Moscow, zero observations differ from absent evidence,
+  and a completed account without summary no longer claims collection never happened.
+- No provider-write logic, automatic Selectel scheduling, permission expansion, or NetBox
+  schema migration is introduced by the redesign.
+
+Validation: frontend build, 89 unit tests and 118 distinct browser scenarios passed;
+the test updater passes `bash -n`. Browser coverage includes light/dark desktop/mobile,
+Selectel onboarding, independent zero/missing evidence, Moscow time from a different browser
+timezone, keyboard navigation, LDAP roles/drafts, bulk dialogs, pfSense refresh, calendars,
+plan review and uncertain outcomes. Screenshots use disposable API fixtures, not live hosts.
+Four existing browser assertions were aligned with already implemented calendar fields,
+visible Moscow timestamps and the specific diagnostics panel instead of the last panel.
+Test-server visual acceptance remains an operator step after deployment.
+
+Test update: `deploy/update-ui-test-no-backup.sh` uses the existing installer, verifies
+`netbox-test`, `/netbox-sync-test`, `/netbox-test` and both expected test URLs. It creates
+no backup and updates Sync only; NetBox/Guard is not rebuilt. Run from a clean pinned checkout.
+After updating, refresh the browser and inspect Overview, provider navigation, source Sync
+and Schedule, Selectel, Settings and the user menu in the preferred theme.
+
 # UX hardening audit — baseline 36c727d
 
 This is a repository and disposable-browser audit. No VM, real hypervisor or live

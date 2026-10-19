@@ -49,7 +49,8 @@ def prepare(monkeypatch,probe):
 
 
 @pytest.mark.parametrize('change,expected',[
-    ({'version':'2.8.1-RELEASE'},'UNSUPPORTED_VERSION'),
+    ({'version':'2.5.2-RELEASE'},'UNSUPPORTED_VERSION'),
+    ({'error':'UNSUPPORTED_CAPABILITIES'},'UNSUPPORTED_CAPABILITIES'),
     ({'ssh_enabled':False},'SSH_DISABLED'),
     ({'ifconfig':'ether 00:11:22:33:44:55'},'VM_IDENTITY_MISMATCH'),
 ])
@@ -60,12 +61,21 @@ def test_preflight_refuses_before_mutation(monkeypatch,change,expected):
     assert len(calls)==1
 
 
-def test_provision_uses_bundled_assets_and_no_admin_password(monkeypatch):
-    probe=dict(version='2.7.2-RELEASE',ssh_enabled=True,ifconfig='ether bc:24:11:90:8c:32',ssh_port=2233,host_key='ssh-ed25519 KEY')
+@pytest.mark.parametrize('version',['2.6.0-RELEASE','2.7.0-RELEASE','2.7.2-RELEASE','2.8.1-RELEASE'])
+def test_provision_uses_bundled_assets_and_no_admin_password(monkeypatch,version):
+    probe=dict(version=version,ssh_enabled=True,ifconfig='ether bc:24:11:90:8c:32',ssh_port=2233,host_key='ssh-ed25519 KEY')
     value,calls=prepare(monkeypatch,probe)
     assert m.setup(value,[{'mac':'BC:24:11:90:8C:32'}])==probe
     assert len(calls)==2 and 'SECRET' not in calls[1]
     assert 'restrict,command=' in calls[1] and 'USER_CONFLICT' in calls[1]
+    assert all('function ns_config_get' in code and 'ns_require_compat(' in code for code in calls)
+
+
+def test_version_policy_matches_shared_php_cases():
+    cases=json.loads((Path(__file__).parent/'fixtures/pfsense_versions.json').read_text())
+    for version,expected in cases.items():
+        assert m.supported_version(version) is expected, version
+    assert not m.supported_version(None)
 
 
 def test_changed_host_key_refused_before_provision(monkeypatch):

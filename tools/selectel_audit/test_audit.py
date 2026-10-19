@@ -210,7 +210,8 @@ class MatchingTests(unittest.TestCase):
             text = (target / 'report.html').read_text(encoding='utf8')
             self.assertNotIn('<script>alert(1)</script>', text)
             self.assertIn('&lt;script&gt;', text)
-            self.assertEqual(len(list(target.iterdir())), 5)
+            self.assertEqual({p.name for p in target.iterdir()}, {
+                'inventory.json', 'account.json', 'dns-storage.json', 'resource-registry.json', 'resource-registry.html', 'fields.json', 'summary.json', 'report.html', 'summary.txt'})
             with self.assertRaises(FileExistsError):
                 write_report(doc, target)
 

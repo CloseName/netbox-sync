@@ -1,0 +1,40 @@
+<div class="card">
+  <h2 class="card-header">Selectel · сети провайдера</h2>
+  <div class="card-body">
+    <p class="text-muted">Сохранённые связи Selectel, назначения NetBox и пути по конфигурации хоста показаны отдельно. Это не проверка доступности сети.</p>
+    <div class="mb-3">
+      <span class="badge text-bg-secondary">Связи провайдера: {{ provider_networks.summary.provider_links }}</span>
+      <span class="badge text-bg-secondary">Назначения IP: {{ provider_networks.summary.interface_assignments }}</span>
+      <span class="badge text-bg-secondary">Пути хоста: {{ provider_networks.summary.configured_paths }}</span>
+    </div>
+    <div class="alert alert-warning" role="note">
+      <strong>NIC ↔ порт Selectel: не подтверждено.</strong>
+      Нет проверенного соответствия адаптера хоста UUID порта провайдера.
+      Подтверждённые участки показаны ниже; неподтверждённый участок не создаёт кабель и не меняет назначение IP.
+    </div>
+    <div class="table-responsive"><table class="table table-hover">
+      <thead><tr><th>Связь</th><th>Объект IPAM</th><th>Сервер</th><th>Подсеть / VLAN</th><th>Назначение и путь</th><th>Основание связи</th></tr></thead>
+      <tbody>{% for link in provider_networks.links %}<tr>
+        <td>{% if link.relation == 'allocation' %}Выделенный IP{% elif link.relation == 'subnet' %}Сегмент провайдера{% else %}Подключение к сети{% endif %}</td>
+        <td><a href="{{ link.native.url }}">{{ link.native.label }}</a></td>
+        <td><a href="{{ link.device.url }}">{{ link.device.label }}</a></td>
+        <td>{% if link.prefix %}<a href="{{ link.prefix.url }}">{{ link.prefix.label }}</a>{% endif %}
+            {% if link.vlan %}<a href="{{ link.vlan.url }}">{{ link.vlan.label }}</a>{% endif %}</td>
+        <td>{% if link.assignment %}<a href="{{ link.assignment.url }}">{{ link.assignment.label }}</a>
+              {% if link.host_path %}<div class="small text-muted">{{ link.evidence_status.host_path.label }}:
+              {% for path in link.host_path.paths %}<div>{{ path|join:" → " }}</div>{% empty %}Недостаточно сведений.{% endfor %}
+              Путь не доказывает доступность или NAT.</div>{% else %}<div class="small text-muted">{{ link.evidence_status.host_path.label }}</div>{% endif %}
+            {% elif link.relation == 'allocation' %}{{ link.evidence_status.assignment.label }}
+            {% elif link.relation == 'attachment' %}{% for port in link.provider_ports %}<div>Порт: {{ port.port_name }} · {{ port.port_type }}
+              <div class="small text-muted">UUID: {{ port.uuid }}</div>
+              <div class="small">Административное состояние: {% if port.is_enabled == True %}включён{% elif port.is_enabled == False %}отключён{% else %}неизвестно{% endif %}; физический линк не проверен.</div></div>
+              {% empty %}Порты не представлены в сохранённой связи.{% endfor %}
+            {% else %}—{% endif %}</td>
+        <td>{{ link.evidence_status.provider.label }}
+          {% if link.assignment %}<div class="small">{{ link.evidence_status.assignment.label }}</div>{% endif %}
+          {% if link.relation == 'attachment' %}<div class="small text-warning">{{ link.evidence_status.physical.label }}</div>{% endif %}
+        </td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+</div>

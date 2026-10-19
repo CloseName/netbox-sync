@@ -7,6 +7,38 @@ from pathlib import Path
 from .review import inventory, match_candidates
 from .contextual_review import contextual_review
 from .coverage import summarize, resource_counts
+from .field_contract import ownership_review, CUSTOM_FIELDS
+from .account import account_overview, LABELS
+from .dns_storage import export as dns_storage_export
+from .resource_registry import registry, registry_html
+
+
+def account_html(document):
+    esc = lambda value: html.escape(str(value), quote=True)
+    overview = account_overview(document)
+    names = {p['id']: p.get('name', p['id']) for p in document.get('projects', [])}
+    rows = []
+    for product in overview['products']:
+        counts = ', '.join(f'{k}: {v}' for k, v in product['observations_by_collection'].items()) or '—'
+        scopes = ''.join('<li>' + esc(names.get(s['project'], s['project']) or 'Аккаунт') +
+            ' / ' + esc(s['region'] or 'Область без региона') + ': ' + esc(LABELS[s['state']]) +
+            '<ul>' + ''.join('<li>' + esc(f"{r['kind']}: {r['code']} ({r['observations']})") + '</li>'
+                            for r in s['sections']) + '</ul></li>' for s in product['scopes'])
+        detail = ('<details><summary>Области и результаты запросов</summary><ul>' + scopes +
+                  '</ul></details>') if scopes else ''
+        rows.append('<tr><td>' + esc(product['title']) + '</td><td>' +
+            esc('Частичная поддержка' if product['adapter'] == 'partial' else 'Не реализован') +
+            '<br>' + esc(product['limitations']) + '</td><td>' + esc(product['state_label']) +
+            detail + '</td><td>' + esc(counts) + '</td><td>' + esc(product['netbox_target']) + '</td></tr>')
+    unknown = ', '.join(overview['unmapped_catalog_services']) or 'Нет в полученном снимке'
+    return ('<h2>Аккаунт: продукты и возможности сбора</h2><p>Профиль: <b>' + esc(overview['profile']) +
+            '</b>. Успешный сбор относится только к реализованным разделам. '
+            'Счётчики — наблюдения списков; их нельзя складывать в общее число ресурсов.</p>'
+            '<div class="table"><table><thead><tr><th>Продукт</th><th>Возможности и ограничения</th>'
+            '<th>Результат сбора</th><th>Наблюдения</th><th>Представление в NetBox</th></tr></thead>'
+            '<tbody>' + ''.join(rows) + '</tbody></table></div><p>Другие сервисы каталога: ' + esc(unknown) +
+            '. Наличие сервиса в каталоге не доказывает наличие ресурсов. '
+            'Этот отчёт не применяет изменения в NetBox.</p>')
 
 
 def html_report(document, rows):
@@ -23,6 +55,10 @@ def html_report(document, rows):
             details += '<br>Связанные гостевые VM: ' + esc(', '.join(str(x['id']) + ' ' + x['name'] for x in row['related_vms']))
         if row.get('unscoped_ip_matches'):
             details += '<br>Совпадения частных IP без карты сетей: ' + esc(', '.join(x['name'] for x in row['unscoped_ip_matches']))
+        contract = ownership_review(row)
+        details += '<details><summary>Иерархия и владельцы полей</summary><p>' + esc(' → '.join(contract['hierarchy'])) + '</p>'
+        details += '<p>' + esc(contract['prerequisite']) + '</p><p>Связь не подтверждена; запись запрещена.</p><ul>'
+        details += ''.join('<li>' + esc(f"{r['field']}: {r['authority']}. {r['rule']}") + '</li>' for r in contract['field_rules']) + '</ul></details>'
         tr.append('<tr>' + ''.join('<td>' + esc(row[k]) + '</td>' for k in
             ('kind', 'name', 'project', 'region', 'provider_id')) +
             '<td>' + '<br>'.join(map(esc, row['addresses'])) + '</td><td><span class="badge">' +
@@ -67,6 +103,7 @@ h2{margin-top:30px}.muted{color:#53657b}footer{margin-top:24px;color:#53657b}
 <div class="note">Полнота всего аккаунта ещё не подтверждена. Данные ограничены правами учётной записи и поддержанными API.
 «Кандидат» не означает привязку. Имя и публичный IP — подсказки; приватный IP требует сопоставления сетевых областей.
 Ни одна запись NetBox не создана и не изменена.</div>
+''' + account_html(document) + '''
 <h2>Ресурсы и кандидаты NetBox</h2><input id="search" placeholder="Имя, адрес, проект или статус" aria-label="Поиск">
 <div class="table"><table id="resources"><thead><tr><th>Тип</th><th>Имя</th><th>Проект</th><th>Регион</th><th>ID Selectel</th><th>IP</th><th>Сопоставление</th></tr></thead><tbody>''' + ''.join(tr) + '''</tbody></table></div>
 <h2>NetBox</h2>''' + nb_html + '''
@@ -84,6 +121,12 @@ def write_report(document, directory, netbox=None):
         match_candidates(rows, netbox)
         rows = contextual_review(rows, netbox)
     document['review'] = rows
+    document['integration_contract'] = {
+        'stage': 'review_only', 'writes_enabled': False,
+        'resources': [ownership_review(row) for row in rows],
+        'custom_field_manifest': CUSTOM_FIELDS,
+        'schema_status': 'not_checked',
+    }
     if netbox:
         document['netbox'] = netbox
     def write(name, value):
@@ -92,6 +135,12 @@ def write_report(document, directory, netbox=None):
             stream.write(value)
         os.chmod(path, 0o600)
     write('inventory.json', json.dumps(document, ensure_ascii=False, indent=2))
+    account = account_overview(document)
+    write('account.json', json.dumps(account, ensure_ascii=False, indent=2))
+    write('dns-storage.json', json.dumps(dns_storage_export(document), ensure_ascii=False, indent=2))
+    resources = registry(document)
+    write('resource-registry.json', json.dumps(resources, ensure_ascii=False, indent=2))
+    write('resource-registry.html', registry_html(resources))
     fields = [{k: x.get(k) for k in ('service', 'kind', 'project', 'region', 'fields')}
               for x in document['datasets']]
     write('fields.json', json.dumps(fields, ensure_ascii=False, indent=2))
@@ -102,6 +151,12 @@ def write_report(document, directory, netbox=None):
         'collector_version': document.get('collector_version', 'unknown'),
         'coverage_summary': summarize(document['coverage']),
         'resource_counts': resource_counts(document),
+        'registry_counts': resources['counts'],
+        'registry_unconfirmed_relations': len(resources['unconfirmed_relations']),
+        'account_overview': {'schema': account['schema'], 'states': account['states'],
+            'unmapped_catalog_services': account['unmapped_catalog_services'],
+            'products': [{k: p[k] for k in ('product', 'adapter', 'state', 'observations_by_collection')}
+                         for p in account['products']]},
         'netbox_read': document.get('netbox_read', {'requested': bool(netbox), 'status': 'provided_snapshot' if netbox else 'not_requested'}),
         'netbox_coverage': netbox['coverage'] if netbox else document.get('netbox_read', {}).get('status', 'not_requested'),
         'limitations': document['limitations'],
@@ -111,6 +166,7 @@ def write_report(document, directory, netbox=None):
     lines = ['Selectel audit — только чтение', f"Аккаунт: {document['account']}",
              f"Доступных проектов: {len(document['projects'])}", f'Ресурсов в обзоре: {len(rows)}',
              'Полнота аккаунта НЕ подтверждена: см. coverage в summary.json.',
+             'Продукты и пробелы: account.json и раздел аккаунта в report.html.',
              'Секреты и свободные поля маскируются; файлы всё равно содержат внутренние данные.',
              'Нет записи в Selectel/NetBox. Кандидаты требуют проверки человеком.']
     write('summary.txt', '\n'.join(lines) + '\n')

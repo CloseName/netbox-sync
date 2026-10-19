@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 from .client import (AuditError, Client, IDENTITY, read_collection, sanitize,
                      field_shapes, validate_url)
 from . import VERSION
+from .dns_storage import collect_dns, collect_storage_details, collection, container
 
 DEDICATED = 'https://api.selectel.ru/servers/v2'
 PROJECTS = 'https://api.selectel.ru/iam/v1/projects'
@@ -92,13 +93,16 @@ class Credentials:
 
 
 class Collector:
-    def __init__(self, credentials, client=None, progress=print):
+    def __init__(self, credentials, client=None, progress=print, profile='all'):
+        if profile not in ('all', 'servers'):
+            raise ValueError('INVALID_PROFILE')
+        self.profile = profile
         self.credentials = credentials
         self.client = client or Client()
         self.progress = progress
         self.document = {
             'schema': 'selectel-audit-v1', 'collector_version': VERSION, 'started_at': stamp(),
-            'account': credentials.account, 'mode': 'read_only',
+            'account': credentials.account, 'mode': 'read_only', 'profile': profile,
             'scope': 'resources_visible_to_supplied_identity',
             'account_completeness': 'not_proven',
             'coverage': [], 'datasets': [], 'catalog': [], 'projects': [],
@@ -106,7 +110,7 @@ class Collector:
                 'API permissions may hide projects/resources even with HTTP 200.',
                 'Collected means enumeration succeeded for this endpoint, not full-account certification.',
                 'Catalog presence does not prove that a product has purchased resources.',
-                'No S3 objects, DNS record contents, secrets, user-data, console or guest files are read.',
+                'DNS records and allowlisted storage settings may be collected; no S3 object contents, console or guest files are requested.',
                 'Unsupported products are reported; no writes or automatic NetBox adoption occur.',
             ],
         }
@@ -128,7 +132,26 @@ class Collector:
             data, _ = self.client.request(url, token)
             if not isinstance(data, dict) or not isinstance(data.get('result'), dict):
                 raise AuditError('UNEXPECTED_RESPONSE_SHAPE')
-            items, status = [data['result']], 'collected'
+            value = data['result']
+            if kind == 'operating_system':
+                # This endpoint may also return passwords, SSH keys and scripts.
+                # Discard them before field discovery, sanitization or export.
+                value = {k: v for k, v in value.items() if k in {
+                    'arch', 'os_template', 'version', 'template_version', 'raid_type',
+                    'partitions', 'partitions_config', 'is_processing',
+                    *[prefix + suffix for prefix in ('', 'local_')
+                      for suffix in ('ipv4_address', 'ipv4_gateway', 'ipv4_netmask',
+                                     'ipv6_address', 'ipv6_gateway', 'ipv6_netmask')]}}
+                def scalar_fields(obj, names):
+                    return {k: v for k, v in obj.items() if k in names and
+                            (v is None or type(v) in (str, int, float, bool))} if isinstance(obj, dict) else {}
+                if isinstance(value.get('partitions'), list):
+                    value['partitions'] = [scalar_fields(v, ('expand', 'fstype', 'mount', 'size'))
+                                           for v in value['partitions']]
+                if isinstance(value.get('partitions_config'), dict):
+                    value['partitions_config'] = {k: scalar_fields(v, ('type', 'device', 'fstype', 'mount', 'size', 'level'))
+                                                  for k, v in value['partitions_config'].items()}
+            items, status = [value], 'collected'
         except AuditError as exc:
             items, status = [], str(exc)
         self.document['coverage'].append(dict(service='dedicated', kind=kind, project='',
@@ -150,6 +173,8 @@ class Collector:
         ]:
             self.collect('dedicated', kind, DEDICATED + path, token, mode=mode)
         for item in resources:
+            if self.profile == 'servers' and item.get('service_type') not in ('server', 'serverchip', 'custom', 'colocation'):
+                continue
             try:
                 ident = safe_id(item.get('uuid'))
             except AuditError:
@@ -159,6 +184,8 @@ class Collector:
             if resource_type in ('server', 'serverchip', 'custom', 'colocation', 'network_equipment', 'port'):
                 self.detail('resource_info', DEDICATED + '/resource/' + ident + '/info/' + resource_type,
                             token, ident)
+            if self.profile == 'servers' and resource_type in ('server', 'serverchip', 'custom'):
+                self.detail('operating_system', DEDICATED + '/boot/os/' + ident, token, ident)
 
     def collect_catalog(self, token, catalog, project):
         seen, types = set(), set()
@@ -182,6 +209,8 @@ class Collector:
                 region = endpoint.get('region_id') or endpoint.get('region') or ''
                 typ = 'volumev3' if catalog_type == 'volume' and '/v3/' in url else catalog_type
                 context = dict(service=typ, project=project, region=region, endpoint=url)
+                if self.profile == 'servers' and typ not in ('compute', 'network', 'volumev3', 'volumev2', 'image'):
+                    continue
                 if (typ, region, url) in seen:
                     self.document['coverage'].append({**context, 'kind': 'catalog',
                         'status': 'SKIPPED_DUPLICATE_ENDPOINT', 'count': 0})
@@ -193,7 +222,7 @@ class Collector:
                     self.document['coverage'].append({**context, 'kind': 'catalog',
                         'status': 'SKIPPED_LEGACY_API', 'count': 0})
                     continue
-                if typ == 'dnsv2':
+                if typ in ('dnsv2', 'storage'):
                     self.document['coverage'].append({**context, 'kind': 'catalog',
                         'status': 'DELEGATED_TO_PROJECT_ADAPTER', 'count': 0})
                     continue
@@ -210,10 +239,20 @@ class Collector:
                     continue
                 for kind, path, key in SERVICES[typ]:
                     actual_key = key.replace('-', '_') if key else None
+                    if typ == 'object-store':
+                        # Swift lists containers only at the scoped account path.
+                        # Refuse unexpected paths rather than accidentally list objects.
+                        if urlsplit(url).path.rstrip('/') != '/v1/' + project or urlsplit(url).query:
+                            self.document['coverage'].append({**context, 'kind': kind,
+                                'status': 'STORAGE_ACCOUNT_PATH_MISMATCH', 'count': 0})
+                            continue
+                        collection(self, typ, kind, url, token, None, 'swift', container, project, region)
+                        continue
                     self.collect(typ, kind, child_url(url, path), token, actual_key,
                                  mode='swift' if typ == 'object-store' else 'glance' if typ == 'image' else 'links',
                                  project=project, region=region)
-        for typ in ('compute', 'network', 'volumev3', 'object-store'):
+        for typ in (('compute', 'network', 'volumev3', 'image') if self.profile == 'servers'
+                    else ('compute', 'network', 'volumev3', 'object-store')):
             if typ not in types and not (typ == 'volumev3' and 'volumev2' in types):
                 self.document['coverage'].append(dict(service=typ, project=project, region='',
                     kind='catalog', status='NOT_IN_CATALOG', count=0))
@@ -246,14 +285,16 @@ class Collector:
             try:
                 scoped, catalog = self.credentials.authenticate(self.client, ident)
                 self.collect_catalog(scoped, catalog, ident)
-                self.collect('selectel-dns', 'zones', DNS + '/zones', scoped, 'result', 'offset', project=ident)
+                if self.profile == 'all':
+                    collect_dns(self, scoped, ident)
+                    collect_storage_details(self, scoped, catalog, ident)
             except AuditError as exc:
                 self.document['coverage'].append(dict(service='identity', kind='project_auth',
                     project=ident, region='', status=str(exc), count=0))
         if not merged:
             self.document['limitations'].append('No accessible projects discovered; cloud inventory is unverified.')
-        for product in ('managed-kubernetes', 'managed-databases', 'container-registry',
-                        'vmware-cloud-director', 'cdn', 'cloud-1c', 'mail', 'mobile-farm'):
+        for product in (('managed-kubernetes', 'managed-databases', 'container-registry',
+                        'vmware-cloud-director', 'cdn', 'cloud-1c', 'mail', 'mobile-farm') if self.profile == 'all' else ()):
             self.document['coverage'].append(dict(service=product, kind='product', project='',
                 region='', status='PRODUCT_ADAPTER_NOT_IMPLEMENTED', count=0))
         self.document['finished_at'] = stamp()

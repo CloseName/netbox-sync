@@ -3,13 +3,14 @@
 
 import hashlib
 import json
+from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 from enum import Enum
 from .inventory_conflicts import InventoryConflict
 
 
 PLAN_SCHEMA_VERSION = 1
-PLANNER_VERSION = 'web-5a-14'
+PLANNER_VERSION = 'web-5a-19'
 
 
 class SyncAction(str, Enum):
@@ -126,7 +127,7 @@ def plan_from_review(review, config):
         object_kind=item.object_kind, external_id=item.external_id, name=item.name,
         action=action_map[item.classification.value], reason_code=item.reason_code,
         reason=item.reason, matched_object_id=item.matched_object_id,
-        before=(() if item.matched_object_id is None else (
+        before=((('matching_candidates', item.properties['matching_candidates']),) if item.properties.get('matching_candidates') else ()) + (() if item.matched_object_id is None else (
             ('id', item.matched_object_id), ('name', item.matched_object_name))),
         after=(('name', item.name),) if item.future_action in ('create', 'update') else (),
     ) for item in review.items) + (SyncPlanItem(
@@ -148,6 +149,7 @@ def plan_from_review(review, config):
 
 def plan_from_mutations(review, config, mutations):
     """Build the exact plan emitted by guarded executors on a recording facade."""
+    mutations = canonical_mutation_baselines(mutations)
     review_plan = plan_from_review(review, config)
     items = [item for item in review_plan.items
              if item.action in (SyncAction.REVIEW_REQUIRED, SyncAction.BLOCKED,
@@ -172,10 +174,12 @@ def plan_from_mutations(review, config, mutations):
             object_kind=mutation.endpoint, external_id=str(external_id),
             name=str(mutation.after.get('name', object_names.get((mutation.endpoint, mutation.object_id), mutation.object_id))),
             action=SyncAction.CREATE if mutation.operation == 'create' else SyncAction.UPDATE,
-            reason_code='GUARDED_EXECUTOR_ACTION',
-            reason='Existing guarded executor would perform this managed-field mutation.',
+            reason_code='VM_GENERATION_REPLACE' if mutation.operation == 'replace' else 'GUARDED_EXECUTOR_ACTION',
+            reason=('Recreated VM: reuse its creation-proven NetBox card, replace the old UUID and rebuild unconnected owned components.'
+                    if mutation.operation == 'replace' else 'Existing guarded executor would perform this managed-field mutation.'),
             matched_object_id=None if mutation.operation == 'create' else mutation.object_id,
-            before=tuple(sorted(mutation.before.items())), after=tuple(sorted(mutation.after.items())),
+            before=tuple(sorted(mutation.before.items())),
+            after=tuple(sorted(planned_after(mutation.endpoint, mutation.after).items())),
         ))
     mutated_ids = {(item.object_kind, item.matched_object_id) for item in items
                    if item.action is SyncAction.UPDATE}
@@ -208,3 +212,46 @@ def plan_from_mutations(review, config, mutations):
             for mutation in sorted(mutations, key=lambda mutation: (mutation.endpoint, str(mutation.object_id)))]),
         items=ordered,
     )
+
+
+def planned_after(endpoint, values):
+    """Bind hardware content, not the wall clock of a fresh read, to confirmation.
+
+    Only the desired collector timestamp is symbolic. Stored before values and
+    every identity/status field stay exact. Executors still write the real fresh
+    observation; these canonical plan values are never an apply payload.
+    """
+    result = deepcopy(values)
+    fields = result.get('custom_fields')
+    doc = fields.get('hardware_identity') if isinstance(fields, dict) else None
+    if (endpoint == 'dcim.devices' and isinstance(doc, dict)
+            and doc.get('version') == 1 and doc.get('source') in ('esxi', 'proxmox')
+            and isinstance(doc.get('observed_at'), str)):
+        doc['observed_at'] = '<fresh-collection-time>'
+    return result
+
+
+def canonical_mutation_baselines(mutations):
+    """Normalize only clocks carried forward from an earlier simulated write.
+
+    The initial persisted baseline stays exact. A later before value is symbolic
+    only if it is identical to the preceding write for this same object/field.
+    Never alter the recording facade or payloads used by the real executor.
+    """
+    result = []
+    written = {}
+    for mutation in mutations:
+        key = (mutation.endpoint, mutation.object_id)
+        before = deepcopy(mutation.before)
+        fields = before.get('custom_fields')
+        if (key in written and isinstance(fields, dict)
+                and fields.get('hardware_identity') == written[key]):
+            before = planned_after(mutation.endpoint, before)
+        result.append(replace(mutation, before=before))
+        after_fields = mutation.after.get('custom_fields')
+        if isinstance(after_fields, dict):
+            if 'hardware_identity' in after_fields:
+                written[key] = deepcopy(after_fields['hardware_identity'])
+            else:
+                written.pop(key, None)
+    return result

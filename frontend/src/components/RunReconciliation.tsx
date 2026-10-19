@@ -1,8 +1,13 @@
-import {useState,useRef} from 'react';
+import {useState,useRef,useEffect} from 'react';
 import {Link} from 'react-router-dom';
 import {useLanguage} from '../ui/language';
 type Review={decisions:{operation_id:string;actor_id:string;created_at:string;valid:boolean;runs:string[]}[];digest:string;runs:{run_id:string;status:string;finished_at:string}[];inventory:{objects:{kind:string;id:number;present:boolean;claimed:boolean}[]}};
 const failures:Record<string,[string,string]>={
+ SOURCE_APPLY_ACTIVE:['Synchronization is still running. The scheduler does not need to be stopped. Retry the review after it finishes.','Синхронизация ещё выполняется. Останавливать планировщик не нужно. Повторите сверку после её завершения.'],
+ CONTROL_UNAVAILABLE:['The reconciliation service did not return a confirmed response. Check service availability, then review again.','Сервис сверки не вернул подтверждённый ответ. Проверьте доступность сервиса и повторите сверку.'],
+ LIFECYCLE_UNAVAILABLE:['The reconciliation service did not return a confirmed response. Check service availability, then review again.','Сервис сверки не вернул подтверждённый ответ. Проверьте доступность сервиса и повторите сверку.'],
+ SOURCE_NOT_FOUND:['The source no longer exists. Refresh the source list.','Источник больше не найден. Обновите список источников.'],
+
  AUTH_REQUIRED:['Sign in again, then review the saved decision. Do not repeat the old synchronization.','Войдите снова и проверьте сохранённое решение. Не повторяйте старую синхронизацию.'],
  AUTH_DENIED:['Only an administrator can accept a new baseline. The historical result is unchanged.','Принять новое состояние может только администратор. Исторический результат не изменён.'],
  SOURCE_OPERATION_ACTIVE:['A source operation is still active. Wait for bounded completion and review again; an active operation cannot be cleared here.','Операция источника ещё выполняется. Дождитесь её завершения и повторите сверку; здесь нельзя снять блокировку активной операции.'],
@@ -16,11 +21,25 @@ export function reconciliationFailure(code:string,language:string){return failur
 export function RunReconciliation({source,onSaved}:{source:string;onSaved:()=>void}){
  const [language]=useLanguage(),t=(en:string,ru:string)=>language==='ru'?ru:en;
  const [review,setReview]=useState<Review|null>(null),[operation,setOperation]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
+ const mounted=useRef(true);useEffect(()=>{mounted.current=true;return ()=>{mounted.current=false;};},[]);
  const [checks,setChecks]=useState([false,false,false]);const running=useRef(false);
  async function action(confirm=false){if(running.current)return;running.current=true;setBusy(true);setMessage('');if(!confirm){setReview(null);setChecks([false,false,false]);}
  try{const id=confirm?operation:crypto.randomUUID();if(!confirm)setOperation(id);
- const response=await fetch('/api/v1/sources/'+encodeURIComponent(source)+'/reconciliation-'+(confirm?'confirm':'review'),{method:'POST',headers:{'Content-Type':'application/json','X-NetBox-Sync-CSRF':'same-origin'},body:JSON.stringify({operation_id:id,...(confirm?{digest:review?.digest,old_writes_stopped:checks[0],outcome_stays_unknown:checks[1],fresh_plan_required:checks[2]}:{})}),signal:AbortSignal.timeout(65000)});
- const data=await response.json();if(!response.ok)throw new Error(typeof data?.error?.code==='string'?data.error.code:'');
+ const deadline=Date.now()+300000;
+ let response:Response;
+ let data:any;
+ while(true){
+ if(!mounted.current)return;
+ setMessage(t('Waiting for current synchronization, then checking the journal. The scheduler can remain enabled.','Ожидаем завершения текущей синхронизации, затем проверяем журнал. Планировщик можно оставить включённым.'));
+ response=await fetch('/api/v1/sources/'+encodeURIComponent(source)+'/reconciliation-'+(confirm?'confirm':'review'),{method:'POST',headers:{'Content-Type':'application/json','X-NetBox-Sync-CSRF':'same-origin'},body:JSON.stringify({operation_id:id,...(confirm?{digest:review?.digest,old_writes_stopped:checks[0],outcome_stays_unknown:checks[1],fresh_plan_required:checks[2]}:{})}),signal:AbortSignal.timeout(100000)});
+ data=await response.json();
+ if(!response.ok && data?.error?.code==='SOURCE_APPLY_ACTIVE' && Date.now()<deadline){
+   await new Promise(resolve=>setTimeout(resolve,500));continue;
+ }
+ break;
+ }
+ setMessage('');
+ if(!response.ok)throw new Error(typeof data?.error?.code==='string'?data.error.code:'');
  if(confirm){setReview(null);setMessage(t('Baseline accepted. Historical outcomes remain unknown. Scheduling is off; repair placement if needed and review and complete a fresh manual sync before scheduling.','Текущее состояние принято. Исторические результаты остаются неизвестными. Расписание выключено; при необходимости восстановите размещение и проверьте новый план и выполните ручную синхронизацию перед включением расписания.'));onSaved();}
  else {setReview(data);if(!data.runs.length)setMessage(t('No unresolved completed runs require a decision.','Нет завершённых запусков, требующих решения.'));}
  }catch(error){setReview(null);setMessage(reconciliationFailure(error instanceof Error?error.message:'',language));}finally{running.current=false;setBusy(false);}}
@@ -29,7 +48,7 @@ export function RunReconciliation({source,onSaved}:{source:string;onSaved:()=>vo
  <button type="button" disabled={busy} onClick={()=>void action()}>{t('Review journal and current objects','Сверить журнал и текущие объекты')}</button>
  {review&&review.decisions.length>0&&<details open><summary>{t('Recorded administrative decisions','Сохранённые административные решения')}</summary><ul>{review.decisions.map(d=><li key={d.operation_id}>{d.created_at} · {d.actor_id}: {d.valid?t('baseline accepted; historical outcome unproved','состояние принято; прежний результат не доказан'):t('new review required after restore','после восстановления нужна новая сверка')}<ul>{d.runs.map(id=><li key={id}><Link to={'/runs/'+id}>{id}</Link></li>)}</ul></li>)}</ul></details>}
  {review&&review.runs.length>0&&<><ul>{review.runs.map(run=><li key={run.run_id}><Link to={'/runs/'+run.run_id}>{run.run_id}</Link> — {run.status} · {run.finished_at}</li>)}</ul><details><summary>{t('Current source references','Текущие объекты источника')} ({review.inventory.objects.length})</summary><ul>{review.inventory.objects.map(row=><li key={row.kind+':'+row.id}>{row.kind} #{row.id}: {row.present?t('present','существует'):t('missing','отсутствует')}; {row.claimed?t('creation claim recorded','есть запись принадлежности при создании'):t('creation ownership unproved','принадлежность при создании не доказана')}</li>)}</ul></details>
- <p>{t('Unattributed legacy objects and later manual changes cannot establish the old result. No success will be recorded. Stop old workers and verify that no old writes can continue before accepting this baseline.','Неатрибутированные старые объекты и последующие ручные изменения не устанавливают прежний результат. Успех записан не будет. Перед принятием состояния остановите прежние процессы записи и убедитесь, что они не могут продолжить работу.')}</p>
+ <p>{t('Unattributed legacy objects and later manual changes cannot establish the old result. No success will be recorded. The system waits for the current managed writer and excludes concurrent writes during review and acceptance. Verify that the old operation will not be replayed outside this system.','Неатрибутированные старые объекты и последующие ручные изменения не устанавливают прежний результат. Успех записан не будет. Система дожидается текущей управляемой записи и исключает параллельную запись на время сверки и принятия состояния. Убедитесь, что прежнюю операцию не запустят повторно вне этой системы.')}</p>
  {[t('I verified that old writes have stopped and will not be replayed.','Я проверил: прежние процессы записи остановлены и не будут повторены.'),t('I accept the current baseline; the historical result remains unknown.','Принимаю текущее состояние; исторический результат остаётся неизвестным.'),t('I will review a fresh plan before any further synchronization.','Перед дальнейшей синхронизацией проверю новый план.')].map((label,index)=><label className="checkbox-label" key={index}><input type="checkbox" disabled={busy} checked={checks[index]} onChange={e=>setChecks(values=>values.map((v,i)=>i===index?e.target.checked:v))}/>{label}</label>)}
  <button type="button" disabled={busy||checks.some(v=>!v)} onClick={()=>void action(true)}>{t('Accept baseline and allow a new plan','Принять состояние и разрешить новый план')}</button></>}
  </section>;
