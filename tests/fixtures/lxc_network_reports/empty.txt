@@ -1,0 +1,15 @@
+=== LXC NETWORK APPLY PRECHECK ===
+target_site=Test Site cluster=Test Cluster
+
+
+LXC NETWORK PRECHECK SUMMARY
+  interface_create=0
+  interface_update=0
+  interface_skip=0
+  mac_create=0
+  mac_match=0
+  ip_create=0
+  ip_match=0
+  primary_candidates=0
+
+PRECHECK PASSED

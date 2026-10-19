@@ -1,0 +1,20 @@
+=== LXC NETWORK APPLY PRECHECK ===
+target_site=Test Site cluster=Test Cluster
+
+LXC id=80 vmid=100 name='lxc-100'
+  SKIP INTERFACE name=vmbr0 bridge=vmbr0 vlan=120
+    MATCH MAC AA:BB:CC:DD:EE:02
+    MATCH IP 10.20.30.50/24
+  PRIMARY IPv4 candidate=10.20.30.50/24
+
+LXC NETWORK PRECHECK SUMMARY
+  interface_create=0
+  interface_update=0
+  interface_skip=1
+  mac_create=0
+  mac_match=1
+  ip_create=0
+  ip_match=1
+  primary_candidates=1
+
+PRECHECK PASSED
