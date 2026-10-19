@@ -617,6 +617,27 @@ Local evidence:
 `artifacts/vm-plan-vlan-evidence-20261019.zip`. Selectel remains experimental;
 no production access or deployment changes.
 
+## Stage 5n: interface validation and matching
+
+Starts from main `9a82bbebcf83537a79de165d3793ab2420468ef9` after PR #31.
+`vm_network_plan_interfaces.py` separates VM-wide name validation from per-interface
+identity matching. Validation returns whether the VM may continue; matching returns
+an explicit continuation flag plus the existing interface, distinguishing creation
+(None) from conflict. Original exceptions, output/counters and skip boundaries stay
+unchanged. VM/NIC ordering and all downstream planning remain in the caller.
+
+Five new full-planner tests passed before extraction: create, match, manual name
+collision, duplicate identity and duplicate desired name. They assert counters,
+no downstream work on blocked VM, continued processing of the next VM and no writes.
+After extraction, 86 focused tests pass, including existing naming and network tests.
+AST comparison restores all original planner functions after inlining helpers and
+mapping their refusal returns back to the original continue statements.
+Error/fatal lint passes. Full pytest on Windows/Python 3.14: 1926 passed,
+485 skipped, one existing Starlette warning. Linux/database/opt-in skips are not
+deployment acceptance.
+Local evidence: `artifacts/vm-plan-interfaces-evidence-20261019.zip`.
+Selectel remains experimental; no production access or deployment changes.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
