@@ -349,6 +349,31 @@ Error/fatal lint and whitespace checks pass. Local evidence is saved in
 no production/deployment changes. Next candidate: equivalent LXC preparation,
 reviewing differences explicitly rather than automatically sharing VM rules.
 
+## Stage 5b: LXC network inventory preparation
+
+Starts from main `7286ab101031d58dfe24581aa5a6707b87e64fd6` after PR #19.
+`lxc_network_inventory.py` owns only LXC reads and four list/index collections.
+Unlike VM preparation, LXC reads all VMs across clusters and checks the matched
+container's cluster later. It retains its own IP canonicalizer (including string
+conversion) and does not introduce VM-specific interface/IP ID indexes. Both keep
+ordered duplicate lists and VRF-scoped IP keys. No shared abstraction changes these
+provider-specific semantics. Target validation, conflicts and writes stay in the applier.
+
+Nine new behavior tests passed before extraction, covering read order and failures,
+duplicate MAC/IP refusal, malformed addresses and matched identity outside the target
+cluster. One additional helper-contract test covers global VM retention, original
+records, orphan interfaces and scoped duplicate indexes (ten new tests total).
+After extraction, 55 focused tests pass, including VM contracts, network scopes,
+conflicts, first-sync and scheduled execution. Inlining the loader restores the
+original complete apply AST; other functions/error classes are unchanged.
+
+Full pytest on Windows/Python 3.14: 1775 passed, 485 skipped, one existing
+Starlette warning. Linux, database and opt-in skips are not deployment acceptance.
+Error/fatal lint and whitespace checks pass. Local evidence is saved in
+`artifacts/lxc-inventory-evidence-20261019.zip`. Selectel remains experimental;
+no production/deployment changes. Next consider read-only context/preflight preparation
+inside one applier, preserving all-before-write checks as a separate small increment.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.

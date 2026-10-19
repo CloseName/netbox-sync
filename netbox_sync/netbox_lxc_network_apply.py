@@ -1,3 +1,4 @@
+from .lxc_network_inventory import prepare_lxc_network_inventory
 from .netbox_record_values import object_id as _object_id
 from .interface_display import interface_display_name, validate_interface_names
 from .host_mapping import cluster_filter
@@ -242,81 +243,13 @@ def apply_lxc_networks(
 
     cluster = cluster_matches[0]
 
-    all_vms = list(
-        nb_api.virtualization
-        .virtual_machines
-        .all()
+    inventory = prepare_lxc_network_inventory(
+        nb_api, _canonical_mac=_canonical_mac, _canonical_ip=_canonical_ip,
     )
-
-    all_interfaces = list(
-        nb_api.virtualization
-        .interfaces
-        .all()
-    )
-
-    all_macs = list(
-        nb_api.dcim
-        .mac_addresses
-        .all()
-    )
-
-    all_ips = list(
-        nb_api.ipam
-        .ip_addresses
-        .all()
-    )
-
-    interfaces_by_vm = {}
-
-    for interface in all_interfaces:
-        vm_id = _object_id(
-            interface.serialize().get(
-                'virtual_machine'
-            )
-        )
-
-        if vm_id is not None:
-            interfaces_by_vm.setdefault(
-                vm_id,
-                [],
-            ).append(interface)
-
-    macs_by_address = {}
-
-    for mac in all_macs:
-        value = _canonical_mac(
-            mac.serialize().get(
-                'mac_address'
-            )
-        )
-
-        if value:
-            macs_by_address.setdefault(
-                value,
-                [],
-            ).append(mac)
-
-    ips_by_address = {}
-
-    for ip in all_ips:
-        value = ip.serialize().get(
-            'address'
-        )
-
-        if not value:
-            continue
-
-        try:
-            canonical = (
-                _canonical_ip(value)
-            )
-        except ValueError:
-            continue
-
-        ips_by_address.setdefault(
-            scope_key(canonical,scope_object_id(ip.serialize().get('vrf'))),
-            [],
-        ).append(ip)
+    all_vms = inventory.all_vms
+    interfaces_by_vm = inventory.interfaces_by_vm
+    macs_by_address = inventory.macs_by_address
+    ips_by_address = inventory.ips_by_address
 
     contexts = []
 
