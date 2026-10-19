@@ -94,6 +94,30 @@ modules scored 10.00/10; diff whitespace checks passed. Local evidence is saved 
 Next increment: guarded operation routes, followed by onboarding/catalog and
 shared error/request boundaries, each as a separate reviewable change.
 
+## Stage 3c: operation and confirmation routes
+
+Starts from main `a96ad0d39c3f1cd8a3c89ca5b5c37c8db204a99b` after PR #9.
+`api/operation_routes.py` registers the seven existing operation-list, plan-start,
+discovery-start, synchronous discovery, sync-plan, confirmation and apply routes.
+The two related helpers move with them. Services and clients are still created
+by the application factory and passed explicitly to the installer.
+
+The fresh apply permission check, actor binding, stale-plan invalidation, source
+identity checks and request-state run ID assignment remain unchanged. All nine
+handler/helper ASTs match their originals; the remaining factory and shared
+boundaries are unchanged. Complete OpenAPI schemas and ordered route metadata
+match in default and frontend/bootstrap configurations. No test assertions changed.
+
+Selectel remains experimental. No production or deployment changes are included.
+The frontend is unchanged; its previous 367-pass Chromium baseline is not rerun
+for this backend extraction. Full pytest on Windows/Python 3.14 completed with
+1687 passed, 485 skipped and the existing Starlette warning. Linux, database and
+opt-in integration skips do not establish deployment acceptance. Pylint scored
+10.00/10 and diff whitespace checks passed. Local evidence is saved in
+`artifacts/api-operation-routes-evidence-20261019.zip` in the task workspace.
+
+Next increment: onboarding/catalog routes, then shared error/request boundaries.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
