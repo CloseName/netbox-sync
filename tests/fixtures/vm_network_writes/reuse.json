@@ -1,0 +1,66 @@
+{
+  "mutations": [
+    [
+      "create",
+      "virtualization.interfaces",
+      1,
+      {
+        "virtual_machine": 10,
+        "name": "VM Network",
+        "enabled": true,
+        "custom_fields": {
+          "sync_identities": [
+            {
+              "schema": "v2",
+              "type": "esxi",
+              "instance": "esxi-infra-test",
+              "kind": "vm-nic",
+              "external_id": "503c5ad7-0000-1111-2222-0123456789ab:4000"
+            }
+          ],
+          "sync_original_names": {
+            "esxi/esxi-infra-test/vm-nic": "Network adapter 1"
+          },
+          "source_bridge": "VM Network",
+          "source_vlan_id": 120
+        },
+        "id": 1
+      }
+    ],
+    [
+      "update",
+      "dcim.mac_addresses",
+      801,
+      {
+        "assigned_object_type": "virtualization.vminterface",
+        "assigned_object_id": 1
+      }
+    ],
+    [
+      "update",
+      "virtualization.interfaces",
+      1,
+      {
+        "primary_mac_address": 801
+      }
+    ],
+    [
+      "update",
+      "ipam.ip_addresses",
+      802,
+      {
+        "assigned_object_type": "virtualization.vminterface",
+        "assigned_object_id": 1
+      }
+    ],
+    [
+      "update",
+      "virtualization.virtual_machines",
+      10,
+      {
+        "primary_ip4": 802
+      }
+    ]
+  ],
+  "output": "CREATE INTERFACE id=1 vm='APP-1' name=VM Network\nASSIGN MAC id=801 00:50:56:AA:BB:CC\nSET PRIMARY MAC interface=1 mac=801\nASSIGN IP id=802 address=192.0.2.51/24\nSET PRIMARY IPv4 vm='APP-1' address=vrf:42:192.0.2.51/24\n\nVM NETWORK APPLY SUMMARY\n  interfaces_created=1\n  interfaces_updated=1\n  macs_created=0\n  macs_updated=1\n  ips_created=0\n  ips_updated=1\n  primary_updated=1\n  skipped=0\n"
+}

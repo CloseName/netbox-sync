@@ -463,6 +463,31 @@ deployment acceptance.
 Local evidence: `artifacts/lxc-report-evidence-20261019.zip`.
 Selectel remains experimental; no production access or deployment changes.
 
+## Stage 5g: VM network writes
+
+Starts from main `567bac36287544e60dbc94c669942a10dd55ed50` after PR #24.
+`vm_network_writes.py` owns the unchanged ordered mutation loop and apply output,
+including final counters. The applier still resolves the target, loads inventory,
+validates the whole batch, prints precheck and enforces confirmation before calling
+the writer. The writer accepts already checked contexts; it is not a new public
+confirmation bypass. LXC code and provider-specific policies are unchanged.
+
+Thirteen new tests passed before extraction. Ten injected failure positions across
+two VMs assert exception identity, stop-on-first-failure, the exact completed-write
+prefix and absence of a success summary. Three fixed snapshots capture full mutation
+payloads and apply output for creation, reuse of unassigned MAC/IP, and preservation
+of manual primary IPv4, with VRF 42. Each successful scenario asserts mutation-free
+replay. Snapshots are read-only during tests. Existing tests continue to cover MAC
+replacement, ownership conflicts and no writes without confirmation.
+
+After extraction, 116 focused tests pass. AST comparison restores every original
+applier function after inlining the writer. Error/fatal lint passes.
+Full pytest on Windows/Python 3.14: 1847 passed, 485 skipped, one existing
+Starlette warning. Linux/database/opt-in skips are not deployment acceptance.
+Local evidence:
+`artifacts/vm-writes-evidence-20261019.zip`. Selectel remains experimental;
+no production access or deployment changes.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
