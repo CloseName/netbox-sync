@@ -154,6 +154,28 @@ checks pass. Evidence is saved locally in
 Browser tests are unchanged and were
 not rerun for this backend extraction. Next stage: shared error/request boundaries.
 
+## Registration refusal fix after stage 3d
+
+PR #11 was merged as `e54f5b789eae2eff601d3a29cf326c20472f8476`.
+The missing `HostRegistrationConflict` import is now present in the onboarding
+module. The existing exception boundary returns HTTP 409 with the domain code
+instead of an internal HTTP 500. No admission rule or exception mapping changed.
+
+Thirteen HTTP regressions cover direct and durable registration: closed sources,
+mismatched source identity, non-boolean closure status, unavailable/outdated Guard,
+foreign namespaces, and changed durable intent. They use real API middleware and
+auth policy with fake external services, and assert no reservation, credential
+consumption, job staging or registration writes occur after refusal. All thirteen
+failed before the import and pass after it. The production code change is one import.
+The separate E1136 type-flow finding remains outside this fix.
+
+Full pytest on Windows/Python 3.14: 1700 passed, 485 skipped, one existing Starlette
+warning. Linux, database and opt-in integration skips are not deployment acceptance.
+Undefined-variable lint and whitespace checks pass. Before/after and full-suite
+logs are saved locally in `artifacts/registration-refusal-evidence-20261019.zip`.
+Selectel remains experimental;
+no production or deployment changes. Continue boundary refactoring separately.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.

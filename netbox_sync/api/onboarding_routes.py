@@ -5,6 +5,7 @@ from ..application.observability import ErrorCode
 from ..application.onboarding import OnboardingError
 from ..application.sources import source_view
 from ..auth_policy import AuthError
+from ..host_registration import HostRegistrationConflict
 from .auth import COOKIE
 from .catalog import CatalogError
 from .dto import SourceDTO
