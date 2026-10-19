@@ -301,6 +301,30 @@ Selectel remains experimental; no production/deployment changes. Legacy mutation
 helpers remain separate future work and must not be deleted merely because they
 belong to an older path. Deeper network reconciliation remains a separate stage.
 
+## Stage 4e: retained legacy NetBox writes
+
+Starts from main `8a8ca0380af5829a69c1e9d6fb0ebd992081bcbb` after PR #17.
+`legacy_netbox_writes.py` contains the ten existing tag, VM, interface, MAC/IP/VLAN,
+disk and parsing/CPU helpers. Their package names remain imported aliases. Complete
+function definitions (including signatures) match their original ASTs; all remaining
+package functions and the script guard are unchanged. Modern guarded appliers,
+confirmation logic, source dispatch and the shared execution pipeline are untouched.
+
+Seven new tests pass before and after extraction. Local fake NetBox mutation traces
+freeze create/update ordering and create payloads; explicit assertions cover VM
+fields, primary IP and disk size. Other tests preserve failure propagation without
+cache insertion and historical decimal disk units. Sixty focused tests pass after
+extraction; existing assertions are unchanged. Full pytest on Windows/Python 3.14:
+1756 passed, 485 skipped, one existing Starlette warning. Error/fatal lint and
+whitespace checks pass. Local evidence is saved in
+`artifacts/legacy-writes-evidence-20261019.zip`.
+The tests use local fakes and do not establish real NetBox write acceptance.
+
+Selectel remains experimental; no production/deployment changes. This extraction
+retains historical write semantics, including their existing cache and parsing
+behavior. Any corrections require separately reviewed behavior fixes. Next review
+the now-small package facade before starting network planner/applier decomposition.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
