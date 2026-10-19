@@ -1,0 +1,7 @@
+=== HOST APPLY PRECHECK ===
+target_site=Test Site cluster=Test Cluster
+
+
+PRECHECK PASSED
+APPLY_CONFIRM=HOST_WRITE is not set.
+No changes were written to NetBox.

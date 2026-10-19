@@ -1,0 +1,18 @@
+=== HOST APPLY PRECHECK ===
+target_site=Test Site cluster=Test Cluster
+
+MATCH DEVICE NODE-A reason=sync_identity
+  managed_custom_fields_changed=0
+  interfaces=1
+  addresses=1
+  management=vmbr0:10.20.30.10/24
+CREATE DEVICE second-host
+  managed_custom_fields_changed=11
+  managed_custom_fields=hardware_identity,sync_identities,sync_original_names,hypervisor_version,cpu_model,cpu_vendor,cpu_sockets,cpu_cores,cpu_threads,memory_mb,proxmox_host_network
+  interfaces=1
+  addresses=1
+  management=vmbr0:10.20.30.10/24
+
+PRECHECK PASSED
+APPLY_CONFIRM=HOST_WRITE is not set.
+No changes were written to NetBox.

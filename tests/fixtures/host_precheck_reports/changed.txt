@@ -1,0 +1,13 @@
+=== HOST APPLY PRECHECK ===
+target_site=Test Site cluster=Test Cluster
+
+MATCH DEVICE NODE-A reason=sync_identity
+  managed_custom_fields_changed=2
+  managed_custom_fields=cpu_model,memory_mb
+  interfaces=1
+  addresses=1
+  management=vmbr0:10.20.30.10/24
+
+PRECHECK PASSED
+APPLY_CONFIRM=HOST_WRITE is not set.
+No changes were written to NetBox.
