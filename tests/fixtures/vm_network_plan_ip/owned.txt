@@ -1,0 +1,26 @@
+
+  QEMU VM NETWORK
+
+    VM id=10 vmid=503c5ad7-0000-1111-2222-0123456789ab name='APP-1'
+      MATCH INTERFACE id=20 name=VM Network
+        bridge=VM Network
+        vlan=-
+        MATCH MAC id=1020 00:50:56:AA:BB:CC
+        WARN PREFIX prefix=192.0.2.0/24 not-found action=not-created
+        MATCH IP id=2020 address=192.0.2.51/24
+      KEEP PRIMARY IPv4 192.0.2.51/24
+
+    VM NETWORK PLAN SUMMARY
+      vm_match=1
+      vm_blocked=0
+      interface_create=0
+      interface_match=1
+      interface_conflict=0
+      mac_create=0
+      mac_match=1
+      mac_conflict=0
+      ip_create=0
+      ip_match=1
+      ip_conflict=0
+      primary_set=0
+      warnings=1

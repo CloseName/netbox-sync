@@ -554,6 +554,28 @@ Local evidence:
 `artifacts/vm-plan-mac-evidence-20261019.zip`. Selectel remains experimental;
 no production access or deployment changes.
 
+## Stage 5k: per-interface IP and prefix planning
+
+Starts from main `d89f015af0c2ab5b9aae56124834c28afdc224bc` after PR #28.
+`vm_network_plan_ip.py` owns the original IP loop, prefix selection/reporting,
+IP counters and IPv4 candidate accumulation. The caller supplies the same helper
+functions and mutable collections. Primary IPv4 decision remains in the planner.
+Conflicts continue to later addresses; conflicting IPv4 addresses still contribute
+to primary candidates. Address-only indexing across VRFs and site/global prefix
+preference remain distinct from write policy. VM/LXC write code is unchanged.
+
+Twelve tests passed before extraction, comparing fixed full-output snapshots and
+independent counters: create/free/owned/foreign IP, duplicates across VRFs, ignored
+addresses, IPv6, site/global/foreign/ambiguous prefixes and conflicting primary
+candidate. Tests assert continued IP analysis and no mutations; snapshots are
+read-only during tests. After extraction, 82 focused tests pass. AST comparison
+restores all original planner functions after inlining the helper. Error/fatal lint passes.
+Full pytest on Windows/Python 3.14: 1892 passed, 485 skipped, one existing
+Starlette warning. Linux/database/opt-in skips are not deployment acceptance.
+Local evidence:
+`artifacts/vm-plan-ip-evidence-20261019.zip`. Selectel remains experimental;
+no production access or deployment changes.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.

@@ -1,0 +1,28 @@
+
+  QEMU VM NETWORK
+
+    VM id=10 vmid=503c5ad7-0000-1111-2222-0123456789ab name='APP-1'
+      CREATE INTERFACE name=VM Network
+        bridge=VM Network
+        vlan=-
+        CREATE MAC 00:50:56:AA:BB:CC
+        WARN PREFIX prefix=192.0.2.0/24 not-found action=not-created
+        CONFLICT IP id=801 address=192.0.2.51/24 assigned=virtualization.vminterface:999
+        WARN PREFIX prefix=198.51.100.0/24 not-found action=not-created
+        CREATE IP address=198.51.100.1/24
+      PRIMARY IPv4 action=unchanged reason=ambiguous candidates=192.0.2.51/24,198.51.100.1/24
+
+    VM NETWORK PLAN SUMMARY
+      vm_match=1
+      vm_blocked=0
+      interface_create=1
+      interface_match=0
+      interface_conflict=0
+      mac_create=1
+      mac_match=0
+      mac_conflict=0
+      ip_create=1
+      ip_match=0
+      ip_conflict=1
+      primary_set=0
+      warnings=2
