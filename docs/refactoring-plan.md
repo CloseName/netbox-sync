@@ -677,6 +677,28 @@ deployment acceptance.
 Local evidence: `artifacts/host-targets-evidence-20261019.zip`.
 Selectel remains experimental; no production access or deployment changes.
 
+## Stage 6b: host preflight context
+
+Starts from main `69ed2ec5edc6f9427bc4210ec805efe5314859d4` after PR #34.
+`host_apply_preflight.py` owns the unchanged per-host preflight body: device resolution,
+network checks, management binding, IP ownership and desired metadata. The existing
+`_preflight_host` signature stays as a wrapper supplying original helpers/error class.
+This preserves existing imports and monkeypatch boundaries without circular imports.
+The all-host loop remains before report/confirmation/writes in `apply_hosts`.
+The host_networking=False path still resolves identity/metadata but skips network checks.
+
+Eleven new tests passed before extraction: five second-host conflicts with/without
+confirmation (name adoption, duplicate interfaces, missing management address, foreign
+IP, duplicate IP) stop the entire batch before output/mutations. One test fixes the
+network-disabled behavior. After extraction, 77 focused tests pass and one skips.
+AST comparison restores all original host applier functions/classes after inlining
+the preflight body. Error/fatal lint passes. Full pytest on Windows/Python 3.14: 1953 passed,
+485 skipped, one existing Starlette warning. Linux/database/opt-in skips are not
+deployment acceptance.
+Local evidence: `artifacts/host-preflight-evidence-20261019.zip`.
+VM/LXC policies are unchanged. Selectel remains experimental; no production access
+or deployment changes.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
