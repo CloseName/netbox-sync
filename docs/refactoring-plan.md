@@ -200,6 +200,31 @@ production or deployment changes. Frontend/browser tests were not rerun for this
 backend extraction. Further decomposition should follow a fresh review rather than
 changing error mappings or admission rules as part of structural cleanup.
 
+## Stage 4a: entrypoint orchestration
+
+Starts from main `21b7b1d3cdc34ae9c5ea02cac164cabd603d69a0` after PR #13.
+Before extraction, 19 new tests passed against the existing implementation. They
+cover sync-mode defaults/normalization, invalid-mode exit 2, legacy and registry
+single-source dispatch, registry-all scheduler ordering, reader/writer DSN choice,
+execution gating, hidden executor output, exact summary text and failure exit 1.
+
+`entrypoint.py` owns mode selection, startup orchestration and summary output.
+`netbox_sync:main` remains the installed console entrypoint and passes callbacks
+resolved at invocation time. Existing package helper names remain available.
+Provider dispatch and all execution/planning/apply functions remain in the package
+for later increments, preserving their late-bound dependencies. The script guard,
+TLS-warning handling, packaging and environment variable names are unchanged.
+
+Extracted bodies and remaining execution functions match their original ASTs.
+The final full pytest run on Windows/Python 3.14 passed 1719 tests with 485 skips
+and one existing Starlette warning. Linux, database and opt-in skips are not
+deployment acceptance. All 41 focused tests pass; error/fatal lint and whitespace
+checks pass. Evidence is saved locally in `artifacts/entrypoint-evidence-20261019.zip`.
+Selectel remains experimental; no
+production or deployment changes. This is the first entrypoint increment, not a
+rewrite of the 1000-line execution module. Next consider reporting and execution
+responsibilities separately before network reconciliation.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
