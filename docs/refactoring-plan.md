@@ -394,6 +394,33 @@ Starlette warning. Linux, database and opt-in skips are not deployment acceptanc
 Local evidence: `artifacts/vm-preflight-evidence-20261019.zip`.
 Selectel remains experimental; no production or deployment changes.
 
+## Stage 5d: LXC network preflight
+
+Starts from main `9969909837233f3e8d48a96125a6a3748d623440` after PR #21.
+`lxc_network_preflight.py` prepares checked contexts for the complete LXC batch
+before reporting or writing. Existing errors and helper imports remain available
+from the applier. Report, confirmation and write code are unchanged.
+
+The LXC-specific checks remain separate from VM: identity lookup spans all clusters,
+then rejects a container outside the selected cluster; changing a primary MAC is
+refused. Existing primary IPv4 is not a preflight refusal: the unchanged writer can
+replace it with the unique discovered candidate. No VM manual-primary policy is
+introduced into LXC. IP normalization, VRF scopes, duplicate detection and check
+order are preserved.
+
+Fifteen new tests passed before extraction: fourteen combinations of later-container
+conflicts and confirmation modes prove no writes or report output on failure; one
+checks that existing primary IPv4 does not cause LXC preflight refusal. After
+extraction, 72 focused tests pass, including VM contracts and shared network tests.
+AST comparison confirms that inlining preparation restores the complete original
+apply function; moved helpers and error classes are unchanged. Error/fatal lint passes.
+
+Full pytest on Windows/Python 3.14: 1802 passed, 485 skipped, one existing
+Starlette warning. Linux, database and opt-in skips are not deployment acceptance.
+Local evidence:
+`artifacts/lxc-preflight-evidence-20261019.zip`. Selectel remains experimental;
+no production access or deployment changes.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
