@@ -638,6 +638,24 @@ deployment acceptance.
 Local evidence: `artifacts/vm-plan-interfaces-evidence-20261019.zip`.
 Selectel remains experimental; no production access or deployment changes.
 
+## Stage 5o: final VM network plan report
+
+Starts from main `aadc21518c5518e0c82d1c10fc0b3bd5d63fd4b4` after PR #32.
+`vm_network_plan_report.py` prints the unchanged final heading and thirteen counters
+in their original order. Counter initialization/increments and all decisions remain
+in their existing locations; the report is called at the original completion point.
+
+Five tests passed before extraction: empty, create, match, blocked and mixed VM
+batches. They assert the exact final output including whitespace, all counter values,
+only one summary, no trailing output and zero mutations. After extraction, 71 focused
+planner tests pass. AST comparison restores all original planner functions after
+inlining the reporter. Error/fatal lint passes.
+Full pytest on Windows/Python 3.14: 1931 passed, 485 skipped, one existing
+Starlette warning. Linux/database/opt-in skips are not deployment acceptance.
+Local evidence:
+`artifacts/vm-plan-summary-evidence-20261019.zip`. Selectel remains experimental;
+no production access or deployment changes.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.

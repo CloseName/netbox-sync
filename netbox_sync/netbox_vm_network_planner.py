@@ -1,3 +1,4 @@
+from .vm_network_plan_report import print_vm_network_plan_summary
 from .vm_network_plan_interfaces import validate_plan_interfaces, match_plan_interface
 from .vm_network_plan_vlan import plan_interface_vlan
 from .vm_network_plan_primary import plan_primary_ipv4
@@ -304,27 +305,4 @@ def plan_vm_networks(
             _existing_primary_ipv4=_existing_primary_ipv4,
         )
 
-    print()
-    print(
-        '    VM NETWORK PLAN SUMMARY'
-    )
-
-    for key in (
-        'vm_match',
-        'vm_blocked',
-        'interface_create',
-        'interface_match',
-        'interface_conflict',
-        'mac_create',
-        'mac_match',
-        'mac_conflict',
-        'ip_create',
-        'ip_match',
-        'ip_conflict',
-        'primary_set',
-        'warnings',
-    ):
-        print(
-            f'      {key}='
-            f'{counters[key]}'
-        )
+    print_vm_network_plan_summary(counters)
