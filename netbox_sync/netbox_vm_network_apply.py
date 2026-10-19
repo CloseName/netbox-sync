@@ -1,3 +1,4 @@
+from .netbox_record_values import object_id as _object_id
 from .interface_display import interface_display_name, validate_interface_names
 from .host_mapping import cluster_filter
 import ipaddress
@@ -27,19 +28,6 @@ class ManagedMACConflict(VMNetworkApplyError):
         self.mac = mac
         self.duplicate = duplicate
         super().__init__(f'Duplicate NetBox MAC {mac}' if duplicate else f'MAC {mac} already assigned to another interface')
-
-
-def _object_id(value):
-    if value is None:
-        return None
-
-    if isinstance(value, int):
-        return value
-
-    if isinstance(value, dict):
-        return value.get('id')
-
-    return getattr(value, 'id', None)
 
 
 def _canonical_mac(value):

@@ -1,3 +1,4 @@
+from .netbox_record_values import object_id as _object_id, choice_value as _choice_value
 import ipaddress
 
 from .netbox_metadata import (
@@ -9,32 +10,6 @@ from .netbox_metadata import (
 
 class HostApplyError(RuntimeError):
     pass
-
-
-def _object_id(value):
-    if value is None:
-        return None
-
-    if isinstance(value, int):
-        return value
-
-    if isinstance(value, dict):
-        return value.get('id')
-
-    return getattr(value, 'id', None)
-
-
-def _choice_value(value):
-    if value is None:
-        return None
-
-    if isinstance(value, str):
-        return value
-
-    if isinstance(value, dict):
-        return value.get('value')
-
-    return getattr(value, 'value', value)
 
 
 def _canonical_address(value):

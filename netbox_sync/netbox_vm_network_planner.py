@@ -1,22 +1,10 @@
+from .netbox_record_values import object_id as _object_id
 from .interface_display import interface_display_name, validate_interface_names
 from .netbox_vm_network_apply import _interface_match
 from .netbox_vm_interface_metadata import find_nic_sync_identity_matches
 import ipaddress
 
 from .netbox_vm_metadata import find_vm_sync_identity_matches
-
-
-def _object_id(value):
-    if value is None:
-        return None
-
-    if isinstance(value, int):
-        return value
-
-    if isinstance(value, dict):
-        return value.get('id')
-
-    return getattr(value, 'id', None)
 
 
 def _canonical_mac(value):
