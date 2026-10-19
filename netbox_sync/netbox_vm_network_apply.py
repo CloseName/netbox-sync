@@ -1,3 +1,4 @@
+from .vm_network_inventory import prepare_vm_network_inventory
 from .netbox_record_values import object_id as _object_id
 from .interface_display import interface_display_name, validate_interface_names
 from .host_mapping import cluster_filter
@@ -263,89 +264,13 @@ def apply_vm_networks(
 
     cluster = cluster_matches[0]
 
-    target_vms = list(
-        nb_api.virtualization
-        .virtual_machines
-        .filter(
-            cluster_id=cluster.id
-        )
-    )
-
-    all_interfaces = list(
-        nb_api.virtualization
-        .interfaces
-        .all()
-    )
-
-    all_macs = list(
-        nb_api.dcim
-        .mac_addresses
-        .all()
-    )
-
-    all_ips = list(
-        nb_api.ipam
-        .ip_addresses
-        .all()
-    )
-
-    interfaces_by_vm = {}
-    interfaces_by_id = {}
-
-    for interface in all_interfaces:
-        interfaces_by_id[interface.id] = interface
-        vm_id = _object_id(
-            interface.serialize().get(
-                'virtual_machine'
-            )
-        )
-
-        if vm_id is not None:
-            interfaces_by_vm.setdefault(
-                vm_id,
-                [],
-            ).append(interface)
-
-    macs_by_address = {}
-
-    for mac in all_macs:
-        value = _canonical_mac(
-            mac.serialize().get(
-                'mac_address'
-            )
-        )
-
-        if value:
-            macs_by_address.setdefault(
-                value,
-                [],
-            ).append(mac)
-
-    ips_by_address = {}
-    ips_by_id = {}
-
-    for ip in all_ips:
-        ips_by_id[ip.id] = ip
-        address = ip.serialize().get(
-            'address'
-        )
-
-        if not address:
-            continue
-
-        try:
-            canonical = str(
-                ipaddress.ip_interface(
-                    address
-                )
-            )
-        except ValueError:
-            continue
-
-        ips_by_address.setdefault(
-            scope_key(canonical,scope_object_id(ip.serialize().get('vrf'))),
-            [],
-        ).append(ip)
+    inventory = prepare_vm_network_inventory(nb_api, cluster, _canonical_mac=_canonical_mac)
+    target_vms = inventory.target_vms
+    interfaces_by_vm = inventory.interfaces_by_vm
+    interfaces_by_id = inventory.interfaces_by_id
+    macs_by_address = inventory.macs_by_address
+    ips_by_address = inventory.ips_by_address
+    ips_by_id = inventory.ips_by_id
 
     contexts = []
 

@@ -325,6 +325,30 @@ retains historical write semantics, including their existing cache and parsing
 behavior. Any corrections require separately reviewed behavior fixes. Next review
 the now-small package facade before starting network planner/applier decomposition.
 
+## Stage 5a: VM network inventory preparation
+
+Starts from main `3abe63f4225fcf56d36fad086165ccb039d46920` after PR #18.
+`vm_network_inventory.py` reads target VMs, interfaces, MACs and IPs in the original
+order and returns their original records and six index/list collections. The
+`apply_vm_networks` function retains site/cluster validation, conflict/ownership
+checks, preflight, confirmation and all writes. No reads are broadened or cached.
+Duplicate records remain ordered lists; IP keys retain VRF scope; invalid addresses
+remain in the ID index but are excluded from address lookup as before.
+
+Eight new behavior tests passed on main before extraction: read order, errors at
+each read, duplicate MAC/IP refusal before writes, and malformed unrelated IPs.
+After extraction, 67 focused tests pass. One additional helper-contract test verifies
+record identity, orphan interfaces, duplicate preservation, VRF separation and
+invalid-IP indexing (nine new tests total). Expanding the preparation call restores
+the complete original apply AST; other functions and error classes are unchanged.
+
+Full pytest on Windows/Python 3.14: 1765 passed, 485 skipped, one existing
+Starlette warning. Linux, database and opt-in skips are not deployment acceptance.
+Error/fatal lint and whitespace checks pass. Local evidence is saved in
+`artifacts/vm-inventory-evidence-20261019.zip`. Selectel remains experimental;
+no production/deployment changes. Next candidate: equivalent LXC preparation,
+reviewing differences explicitly rather than automatically sharing VM rules.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
