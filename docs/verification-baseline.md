@@ -50,3 +50,8 @@ browser attempt. Do not combine counts from interrupted and focused runs.
 
 Stage 2 local results and the complete browser failure inventory are recorded in
 [the stage 2 report](refactoring-stage2-validation.md).
+
+The subsequent [browser maintenance report](browser-maintenance-20261019.md)
+records updates to obsolete scenarios. Confirmed product findings remain
+[separate](browser-product-findings-20261019.md); the original stage 2 results
+remain unchanged as historical evidence.

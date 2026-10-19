@@ -63,7 +63,7 @@ test("direct routes, active navigation, Back/Forward and refresh", async ({
   await expect(
     page
       .getByRole("navigation", { name: "Main navigation" })
-      .getByRole("link", { name: "Sources" }),
+      .getByRole("link", { name: /^Proxmox/ }),
   ).toHaveAttribute("aria-current", "page");
   await page.getByRole("link", { name: "Source 051", exact: true }).click();
   await expect(page).toHaveURL(/sources\/source-51$/);
@@ -135,18 +135,19 @@ test("overview healthy, unknown, stale and partial error preserve epistemic boun
   await fixture(page, 1, { stale: true, unknown: true });
   await page.goto("/");
   await expect(
-    page.getByText("Some runs have unconfirmed completion."),
+    page.getByText("Earlier unfinished runs also need checking."),
   ).toBeVisible();
-  await expect(page.getByText("Not verified: 1")).toBeVisible();
+  await expect(page.locator(".attention-panel")).not.toContainText("Healthy");
   await expect(
-    page.getByText("Completion unconfirmed: 1"),
+    page.locator(".attention-panel").getByText("Completion unconfirmed", {exact:true}),
   ).toBeVisible();
   await page.route("**/api/v1/diagnostics", (route) =>
     route.fulfill({ status: 503, json: {} }),
   );
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("Showing data from");
-  await expect(page.getByText("1 registered")).toBeVisible();
+  await expect(page.locator(".attention-panel").getByRole("link", {name:"Source 001",exact:true})).toBeVisible();
+  await expect(page.locator(".attention-panel")).toContainText("Completion unconfirmed");
 });
 test("diagnostics unavailable preserves sources and never labels them healthy", async ({
   page,
@@ -157,7 +158,7 @@ test("diagnostics unavailable preserves sources and never labels them healthy", 
     page.getByRole("link", { name: "Source 001", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("Status unavailable", { exact: true }),
+    page.getByRole("table").getByText("Status unavailable", { exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("table")).not.toContainText("Healthy");
   await page.screenshot({
@@ -202,7 +203,8 @@ for (const width of [1440, 1280, 1024, 768])
       fullPage: true,
     });
     await page.goto("/");
-    await expect(page.getByText("55 registered")).toBeVisible();
+    await expect(page.getByRole("heading", {name:"Next scheduled runs",exact:true})).toBeVisible();
+    await expect(page.locator(".overview-grid").getByRole("link", {name:"Source 001",exact:true}).first()).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -224,7 +226,8 @@ test("one source and successful overview", async ({ page }) => {
     fullPage: true,
   });
   await page.goto("/");
-  await expect(page.getByText("Healthy: 1")).toBeVisible();
+  await expect(page.getByText("No source attention items reported.")).toBeVisible();
+  await expect(page.locator(".overview-grid .badge").filter({hasText:"Completed"})).toBeVisible();
 });
 test("source route remount isolates late discovery results", async ({
   page,
@@ -265,31 +268,27 @@ test("source route remount isolates late discovery results", async ({
   );
 });
 
-test("loading and empty run history do not flash zero metrics", async ({
+test("loading sources stays unknown and empty history is explicit", async ({
   page,
 }) => {
   await fixture(page, 1);
-  let release;
-  await page.route(
-    "**/api/v1/sources",
-    (route) =>
-      new Promise((resolve) => {
-        release = async () => {
-          await route.fulfill({ json: { sources: [source()] } });
-          resolve();
-        };
-      }),
-  );
+  let release: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/api/v1/sources", async route => {
+    await gate;
+    await route.fulfill({json:{sources:[source()]}});
+  });
   await page.route("**/api/v1/runs?*", (route) =>
     route.fulfill({ json: { runs: [], next_cursor: null } }),
   );
   await page.goto("/");
   await expect(
-    page.locator(".summary-panels > section").first().getByRole("status"),
+    page.getByText("Source attention cannot be fully evaluated.",{exact:true}),
   ).toBeVisible();
-  await expect(page.getByText("0 registered")).toHaveCount(0);
+  await expect(page.getByText("No source attention items reported.")).toHaveCount(0);
   await release();
-  await expect(page.getByText("1 registered")).toBeVisible();
+  await expect(page.getByText("No source attention items reported.")).toBeVisible();
+  await expect(page.getByRole("heading", {name:"Next scheduled runs", exact:true})).toBeVisible();
   await expect(page.getByText("No runs have been recorded yet.")).toBeVisible();
 });
 test("history failure leaves independent overview sections available", async ({
@@ -300,8 +299,8 @@ test("history failure leaves independent overview sections available", async ({
     route.fulfill({ status: 503, json: {} }),
   );
   await page.goto("/");
-  await expect(page.getByText("1 registered")).toBeVisible();
-  await expect(page.getByText("Recent activity unavailable.")).toBeVisible();
+  await expect(page.getByRole("heading", {name:"Next scheduled runs", exact:true})).toBeVisible();
+  await expect(page.locator(".overview-grid section").filter({has:page.getByRole("heading", {name:"Next scheduled runs",exact:true})}).getByRole("link", {name:"Source 001",exact:true})).toBeVisible();
   await expect(page.getByRole("alert")).toContainText(
     "Run history unavailable",
   );

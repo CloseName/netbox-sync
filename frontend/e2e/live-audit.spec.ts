@@ -63,6 +63,7 @@ test('address policy check sends no credentials and reports success separately f
  await fixture(page,[]);const requests=[];
  await page.route('**/api/v1/sources/check-destination',route=>{requests.push(route.request().postDataJSON());return route.fulfill({json:{allowed:true}});});
  await page.goto('/sources/add');await page.getByLabel('Source type').selectOption('esxi');await page.getByLabel('Hostname or IPv4 address').fill('esxi.example.test');
+ await page.getByText('Connection options',{exact:true}).click();
  await page.getByRole('button',{name:'Check address without credentials'}).click();
  await expect(page.getByText('Address allowed by current DNS and destination policy.',{exact:false})).toBeVisible();
  await expect(page.locator('[name=secret]')).toBeEmpty();await expect(page.locator('[name=username]')).toBeEmpty();

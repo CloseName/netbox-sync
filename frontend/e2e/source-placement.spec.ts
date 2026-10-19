@@ -1,3 +1,4 @@
+import {source,diagnostics} from '../tests/fixtures.mjs';
 import {openUserMenu,setLanguage} from './menu-helper';
 import {test,expect} from './operation-fixture';
 import {randomUUID} from 'node:crypto';
@@ -52,10 +53,10 @@ for(const scenario of ['generic','missing','heterogeneous'])test(`no invented mo
  await page.screenshot({path:`test-results/placement-${scenario}.png`,fullPage:true});
 });
 test('catalog empty, errors, ambiguity, pagination and keyboard preserve draft',async({page})=>{
- await fixture(page);await expect(page.getByRole('button',{name:'Check parameters again'})).toBeEnabled();await page.getByRole('combobox',{name:'Site',exact:true}).click();const search=page.getByRole('searchbox',{name:'Search: Site',exact:true});
+ await fixture(page);await expect(page.getByRole('button',{name:'Check parameters again'})).toBeEnabled();await page.getByRole('combobox',{name:'Placement site',exact:true}).click();const search=page.getByRole('searchbox',{name:'Search: Placement site',exact:true});
  for(const term of ['absent','denied','offline','ambiguous','large']){await search.fill(term);
  const section=search.locator('xpath=ancestor::section[1]');if(term==='absent')await expect(section).toContainText('No matches');else if(term==='denied')await expect(section).toContainText('read access was denied');else if(term==='offline')await expect(section).toContainText('Could not load');else if(term==='ambiguous')await expect(section.getByRole('option')).toHaveCount(2);else {await expect(section).toContainText('2000');await section.getByRole('button',{name:'Next',exact:true}).click();await expect(section).toContainText('21');}}
- await search.fill('');await expect(page.getByRole('listbox',{name:'Site',exact:true}).getByRole('option')).toHaveCount(1);await search.press('Enter');await expect(page.getByRole('combobox',{name:'Site',exact:true})).toContainText('Test site');
+ await search.fill('');await expect(page.getByRole('listbox',{name:'Placement site',exact:true}).getByRole('option')).toHaveCount(1);await search.press('Enter');await expect(page.getByRole('combobox',{name:'Placement site',exact:true})).toContainText('Test site');
  await page.evaluate(()=>document.documentElement.style.zoom='2');expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
 });
 
@@ -94,11 +95,11 @@ for(const code of ['ONBOARDING_TOKEN_INVALID','PROBE_RECEIPT_INVALID'])test(`exp
  await page.locator('[name=username]').fill('netbox-sync');await page.locator('[name=secret]').fill(randomUUID());
  await page.getByRole('button',{name:'Continue',exact:true}).click();
  await expect(page.getByLabel('Display name',{exact:true})).toHaveValue('Retained name');
- await expect(page.getByRole('combobox',{name:'Site',exact:true})).toContainText('Test site');
+ await expect(page.getByRole('combobox',{name:'Placement site',exact:true})).toContainText('Test site');
 });
 test('unknown registration checks server without another POST',async({page})=>{
  await fixture(page);let writes=0,reads=0;
- await page.route('**/api/v1/sources',route=>{writes++;return route.abort('connectionfailed');});
+ await page.route('**/api/v1/sources',route=>{if(route.request().method()!=='POST')return route.fallback();writes++;return route.abort('connectionfailed');});
  await page.route('**/api/v1/sources/registration-status',route=>{reads++;return route.fulfill({json:{status:'UNCERTAIN',server_continuing:true,resume_supported:false}});});
  await selectPlacement(page);
  await page.getByRole('button',{name:'Add source',exact:true}).click();
@@ -107,8 +108,29 @@ test('unknown registration checks server without another POST',async({page})=>{
  expect(writes).toBe(1);expect(reads).toBeGreaterThanOrEqual(1);
 });
 
+
+// Catalog creation remains available in existing-source placement, not automatic onboarding.
+async function editPlacement(page:any,lang='en'){
+ await fixture(page,'catalog');
+ const item={...source(),type:'esxi',name:'Retained catalog source'};
+ await page.route('**/api/v1/sources/source-1',route=>route.fulfill({json:item}));
+ await page.route('**/api/v1/sources',route=>route.request().method()==='GET'?route.fulfill({json:{sources:[item]}}):route.fallback());
+ await page.route('**/api/v1/diagnostics',route=>route.fulfill({json:diagnostics([item])}));
+ await page.route('**/api/v1/runs?*',route=>route.fulfill({json:{runs:[],next_cursor:null}}));
+ let saves=0;
+ await page.route('**/api/v1/sources/source-1/placement',route=>{
+  if(route.request().method()!=='GET'){saves++;return route.fulfill({status:409,json:{}});}
+  return route.fulfill({json:{revision:'fixture-revision',discovery_id:'fixture-discovery',preview:previewResult.preview,references:Object.fromEntries(['site','cluster','platform','device_role','cluster_type'].map(k=>[k,catalogRow(k)])),host_types:{'host-a':catalogRow('device_type')}}});
+ });
+ await page.goto('/sources/source-1/configuration');await setLanguage(page,lang);
+ await page.getByRole('button',{name:lang==='ru'?'Изменить сопоставления':'Edit placement',exact:true}).click();
+ const platform=page.getByRole('combobox',{name:lang==='ru'?'Платформа (Platform)':'Platform',exact:true});
+ await platform.click();
+ await platform.locator('..').getByRole('button',{name:lang==='ru'?'Создать…':'Create…',exact:true}).click();
+ return {saves:()=>saves};
+}
 for(const outcome of ['CREATED','REFUSED','UNCERTAIN','EXISTS_REVIEW_REQUIRED'])test(`explicit catalog creation ${outcome}`,async({page})=>{
- await fixture(page,'catalog');await page.getByLabel('Display name',{exact:true}).fill('Retained catalog draft');
+ const mapping=await editPlacement(page);
  let writes=0,checks=0;
  const created={...catalogRow('platform',12),name:'Custom platform'};
  await page.route('**/api/v1/catalog/platform',async route=>{
@@ -117,7 +139,7 @@ for(const outcome of ['CREATED','REFUSED','UNCERTAIN','EXISTS_REVIEW_REQUIRED'])
   await route.fulfill({json:{operation_id:body.operation_id,status:outcome,item:outcome==='CREATED'||outcome==='EXISTS_REVIEW_REQUIRED'?created:null,error:outcome==='REFUSED'?'PERMISSION_DENIED':null}});
  });
  await page.route('**/api/v1/catalog-operations/*',route=>{checks++;return route.fulfill({json:{operation_id:route.request().url().split('/').pop(),status:'EXISTS_REVIEW_REQUIRED',item:created}});});
- await page.getByRole('button',{name:'Create missing entry',exact:true}).click();
+
  const dialog=page.getByRole('dialog',{name:'Create in NetBox',exact:true});
  await dialog.getByLabel('Name *',{exact:true}).fill('Custom platform');await dialog.getByLabel('Slug *',{exact:true}).fill('custom-platform');
  await dialog.getByLabel('Separate temporary catalog write token *',{exact:true}).fill(randomUUID());
@@ -136,16 +158,13 @@ for(const outcome of ['CREATED','REFUSED','UNCERTAIN','EXISTS_REVIEW_REQUIRED'])
   await expect(dialog).toContainText('An object already exists');
   await dialog.getByRole('button',{name:'Choose this existing object',exact:true}).click();
  }
- await expect(page.getByRole('button',{name:'Check parameters again'})).toBeEnabled();
- expect(writes).toBe(1);await expect(page.getByLabel('Display name',{exact:true})).toHaveValue('Retained catalog draft');
- // Created names do not override verified automatic matching; the server resolves again.
- await expect(page.getByRole('combobox',{name:'Platform',exact:true})).toHaveCount(0);
+ expect(writes).toBe(1);expect(mapping.saves()).toBe(0);
+ await expect(page.getByRole('heading',{name:'Retained catalog source',exact:true})).toBeVisible();
+ await expect(page.getByRole('combobox',{name:'Platform',exact:true})).toContainText(outcome==='REFUSED'?'VMware ESXi':'Custom platform');
 });
 
 for(const lang of ['en','ru'])for(const theme of ['light','dark'] as const)for(const width of [1440,390])test(`catalog dialog ${lang} ${theme} ${width}`,async({page})=>{
- await page.setViewportSize({width,height:900});await page.emulateMedia({colorScheme:theme});await fixture(page,'catalog');
- await setLanguage(page,lang);
- await page.getByRole('button',{name:lang==='ru'?'Создать недостающую запись':'Create missing entry',exact:true}).click();
+ await page.setViewportSize({width,height:900});await page.emulateMedia({colorScheme:theme});const mapping=await editPlacement(page,lang);
  const dialog=page.getByRole('dialog',{name:lang==='ru'?'Создать в NetBox':'Create in NetBox',exact:true});
  await expect(dialog).toBeVisible();await expect(dialog.locator('input[type=password]')).toBeEmpty();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
@@ -153,7 +172,7 @@ for(const lang of ['en','ru'])for(const theme of ['light','dark'] as const)for(c
  await page.evaluate(()=>document.documentElement.style.zoom='2');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
  await dialog.getByRole('button',{name:lang==='ru'?'Закрыть':'Close',exact:true}).click();
- await expect(dialog).toHaveCount(0);await expect(page.getByRole('heading',{name:lang==='ru'?'Настройки источника':'Source settings',exact:true})).toBeVisible();
+ await expect(dialog).toHaveCount(0);await expect(page.getByRole('heading',{name:lang==='ru'?'Сопоставления источника':'Source placement',exact:true})).toBeVisible();expect(mapping.saves()).toBe(0);
 });
 
 test('placement refusal before confirmation retains edited name and points to cluster',async({page})=>{
