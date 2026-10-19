@@ -253,6 +253,29 @@ split the execution function internally or alter reconciliation rules. Provider
 connection/discovery and legacy reporting remain possible subsequent small steps;
 network planners/appliers should follow separately with their own safety evidence.
 
+## Stage 4c: provider connection and discovery
+
+Starts from main `a145797db245c59672793ddaead15fb7488f1e93` after PR #15.
+`proxmox_executor.py` now owns the existing Proxmox credentials, API connection,
+TLS setup, discovery and endpoint selection sequence, plus the unchanged token-name
+parser. The package keeps the original executor signature and token helper alias;
+collaborators are supplied per invocation to preserve existing injection points.
+ESXi already has `esxi_executor.py`, so its adapter/session lifetime is unchanged.
+Provider-specific discovery implementations and shared synchronization are untouched.
+
+Twelve new tests passed on main before extraction. They cover normal and legacy
+secret resolvers, exact connection parameters, ordering through reconciliation and
+immediate failure propagation at credentials, connection, TLS, discovery and endpoint
+selection. After extraction, 81 focused tests pass. The adapter body and token parser
+are AST-identical; all other package functions and the script guard are unchanged.
+Existing assertions are unchanged. Full pytest on Windows/Python 3.14: 1745 passed,
+485 skipped, one existing Starlette warning. Linux, database and opt-in skips are
+not deployment acceptance. Error/fatal lint and whitespace checks pass. Evidence
+is saved locally in `artifacts/source-connection-evidence-20261019.zip`.
+
+Selectel remains experimental; no production/deployment changes. Next possible
+increment: legacy inventory/reporting helpers, before deeper reconciliation changes.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
