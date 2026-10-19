@@ -46,3 +46,21 @@ was changed or declared obsolete merely because its controls moved.
 Mocked browser success does not resolve Selectel import/matching failures or
 native NetBox permission failures. [Selectel remains experimental](selectel-status.md).
 No production service was accessed or deployed during this work.
+
+## Contrast resolution follow-up
+
+After PR #6, the separate contrast change starts from main
+`08126e98d00196eee391cfd4863509b5af433228`. It changes only the light-theme
+`--control-border` token in `workspace.css` from `#819da6` to `#718d96`.
+The boundary-to-white ratio becomes **3.528**, with **3.107** against the light
+hover surface `#eaf2f3`. This gives margin above the existing 3.0 requirement
+without altering the dark-theme override or any interaction behavior.
+
+Desktop and mobile screenshots of destination settings and the source connection
+form were inspected. The existing contrast assertion remains unchanged; no tests
+are skipped or marked as expected failures. Validation results follow below.
+
+Validation: complete Chromium suite **367 passed, 0 failed, 0 skipped**,
+with three workers and retries disabled (`npx playwright test --workers=3 --reporter=json`).
+Frontend unit tests: 93 passed. Typecheck/build passed with the existing large-chunk
+warning. `git diff --check` passed. No deployment or live-provider acceptance is implied.
