@@ -27,10 +27,12 @@ from ..application.onboarding import EphemeralOnboardingStore, OnboardingError, 
 from .database import PostgresHealthProbe
 from .dto import ErrorDTO, ErrorDetailDTO
 from .read_routes import install_read_routes
+from .lifecycle_routes import install_lifecycle_routes
+from .schedule_routes import install_schedule_routes
 from .settings import ApiSettings, application_version
 from .lifecycle_adapters import ActiveSourceReader, LifecycleRegistrationRegistry
 from .dto import (ApplyRequestDTO, ApplyResultDTO, ConfirmationDTO, ConfirmationRequestDTO,
-                  DiscoveryResultDTO, ScheduleDTO, ScheduleUpdateDTO, SourceDTO,
+                  DiscoveryResultDTO, SourceDTO,
                   SyncPlanDTO)
 from .dto import SyncPlanRequestDTO
 from .discovery_client import DiscoveryRequestError, DiscoveryWorkerClient
@@ -41,7 +43,6 @@ from .onboarding_adapters import BrokerSecretStore, RegistrationRegistry, test_e
 from .run_reader import PostgresRunReader
 from .worker_health import WorkerHealthClient
 from .lifecycle_client import LifecycleClient, LifecycleRequestError
-from .operation_dto import LifecycleDTO, RemovalDTO, SourceNameDTO
 from .auth import AuthClient, COOKIE, PUBLIC, permission, routes as auth_routes
 from ..auth_policy import AuthError
 from .schedule_client import ScheduleRequestError, ScheduleWorkerClient
@@ -442,46 +443,12 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
     from .source_recovery import routes as recovery_routes
     app.include_router(recovery_routes(settings,onboarding_service,auth_client,lifecycle_client,source_service))
 
-    @router.get('/sources/{source_instance}/lifecycle', response_model=LifecycleDTO)
-    def source_lifecycle(source_instance: str):
-        return lifecycle_client.request(source_instance)
-
-    from .operation_dto import PlacementUpdateDTO
-
-    @router.get('/sources/{source_instance}/placement')
-    def source_placement(source_instance: str):
-        return lifecycle_client.placement(source_instance)
-
-    @router.patch('/sources/{source_instance}/placement', response_model=LifecycleDTO)
-    def update_source_placement(source_instance: str, payload: PlacementUpdateDTO):
-        current = lifecycle_client.placement(source_instance)
-        if current['revision'] != payload.revision or current['discovery_id'] != str(payload.discovery_id):
-            raise LifecycleRequestError('SOURCE_LIFECYCLE_CONFLICT')
-        mapping = catalog_validate(settings.bootstrap_socket, payload.references, payload.host_types, current['preview'])
-        if payload.ip_conflict_policy is not None:
-            mapping['ip_conflict_policy'] = payload.ip_conflict_policy
-        if payload.network_scope_rules is not None:
-            from .catalog import call
-            mapping['network_scope_rules']=call(settings.bootstrap_socket,{'action':'validate-scopes','rules':payload.network_scope_rules})['rules']
-        return lifecycle_client.request(source_instance, dict(revision=payload.revision,
-            discovery_id=str(payload.discovery_id), mapping=mapping), action='save_placement')
-
-    @router.patch('/sources/{source_instance}/name', response_model=LifecycleDTO)
-    def rename_source(source_instance: str, payload: SourceNameDTO):
-        return lifecycle_client.request(source_instance, payload.model_dump(), action='rename_source')
-
-    @router.post('/sources/{source_instance}/remove', response_model=LifecycleDTO)
-    def remove_source(source_instance: str, payload: RemovalDTO):
-        return lifecycle_client.request(source_instance, payload.model_dump())
-
-    @router.get('/sources/{source_instance}/schedule', response_model=ScheduleDTO)
-    def source_schedule(source_instance: str):
-        return ScheduleDTO.from_view(schedule_service.get(source_instance))
-
-    @router.patch('/sources/{source_instance}/schedule', response_model=ScheduleDTO)
-    def update_source_schedule(source_instance: str, payload: ScheduleUpdateDTO):
-        return ScheduleDTO.from_view(schedule_service.update(
-            source_instance, payload.model_dump()))
+    # Catalog helpers are bound later in this factory; resolve them per request.
+    install_lifecycle_routes(
+        router, settings=settings, lifecycle_client=lifecycle_client,
+        catalog_validate=lambda *args, **kwargs: catalog_validate(*args, **kwargs),
+    )
+    install_schedule_routes(router, schedule_service=schedule_service)
 
     def operation_view(value, source):
         from .operation_dto import OperationDTO

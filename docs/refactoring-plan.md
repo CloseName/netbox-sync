@@ -67,6 +67,33 @@ operations, onboarding/catalog, then shared error/request boundaries. Preserve
 initialization and route order, dependency injection, authorization and confirmation
 checks at each step; do not bundle these into one rewrite.
 
+## Stage 3b: lifecycle and schedule routes
+
+Starts from main `9f8c99d6d43f7de8e153ccaf670b3a20ff8b103b` after PR #8.
+`api/lifecycle_routes.py` registers the five existing lifecycle, placement, name
+and removal handlers; `api/schedule_routes.py` registers the two schedule handlers.
+Both installers use the existing router and factory-owned clients/services.
+Catalog validation remains resolved per request because its factory binding is
+initialized after route registration. Retirement, legacy admission and recovery
+routers retain their original inclusion points.
+
+All seven decorated handler ASTs match the originals. The remaining factory
+(excluding the installers and relocated DTO import) and shared boundaries are
+unchanged. Complete OpenAPI schemas and ordered route metadata match in default
+and frontend/bootstrap configurations. Existing tests and assertions are unchanged.
+Selectel remains experimental; no production or deployment changes are included.
+
+The frontend is unchanged. Its last browser baseline remains 367 passing Chromium
+scenarios; mocked browser checks are not a substitute for backend HTTP tests.
+Validation on Windows/Python 3.14: full pytest completed with 1687 passed,
+485 skipped and the existing Starlette warning. Linux, database and opt-in
+integration skips do not establish deployment acceptance. Pylint for both new
+modules scored 10.00/10; diff whitespace checks passed. Local evidence is saved in
+`artifacts/api-lifecycle-routes-evidence-20261019.zip` in the task workspace.
+
+Next increment: guarded operation routes, followed by onboarding/catalog and
+shared error/request boundaries, each as a separate reviewable change.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
