@@ -1,0 +1,32 @@
+[
+  [
+    "update",
+    "virtualization.virtual_machines",
+    1,
+    {}
+  ],
+  [
+    "update",
+    "ipam.ip_addresses",
+    1,
+    {}
+  ],
+  [
+    "update",
+    "virtualization.virtual_machines",
+    1,
+    {}
+  ],
+  [
+    "update",
+    "ipam.prefixes",
+    1,
+    {}
+  ],
+  [
+    "update",
+    "virtualization.virtual_disks",
+    1,
+    {}
+  ]
+]

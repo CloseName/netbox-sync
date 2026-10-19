@@ -1,0 +1,122 @@
+[
+  [
+    "create",
+    "extras.tags",
+    1,
+    {
+      "name": "Pool/PoolA",
+      "slug": "pool-poola",
+      "description": "Proxmox pool PoolA",
+      "id": 1
+    }
+  ],
+  [
+    "create",
+    "virtualization.virtual_machines",
+    1,
+    {
+      "serial": 100,
+      "name": "fixture-vm",
+      "site": 3,
+      "cluster": 1,
+      "device": 7,
+      "vcpus": 2,
+      "memory": 2048,
+      "status": "active",
+      "tags": [
+        1
+      ],
+      "custom_fields": {
+        "autostart": true,
+        "replicated": true,
+        "ha": false
+      },
+      "id": 1
+    }
+  ],
+  [
+    "create",
+    "virtualization.interfaces",
+    1,
+    {
+      "virtual_machine": 1,
+      "name": "net0",
+      "description": "AA:BB:CC:DD:EE:FF",
+      "id": 1
+    }
+  ],
+  [
+    "create",
+    "dcim.mac_addresses",
+    1,
+    {
+      "mac_address": "AA:BB:CC:DD:EE:FF",
+      "assigned_object_type": "virtualization.vminterface",
+      "assigned_object_id": 1,
+      "id": 1
+    }
+  ],
+  [
+    "update",
+    "virtualization.interfaces",
+    1,
+    {}
+  ],
+  [
+    "create",
+    "ipam.prefixes",
+    1,
+    {
+      "prefix": "10.0.0.0/24",
+      "id": 1
+    }
+  ],
+  [
+    "create",
+    "ipam.ip_addresses",
+    1,
+    {
+      "address": "10.0.0.5/24",
+      "assigned_object_type": "virtualization.vminterface",
+      "assigned_object_id": 1,
+      "dns_name": "",
+      "id": 1
+    }
+  ],
+  [
+    "update",
+    "virtualization.virtual_machines",
+    1,
+    {}
+  ],
+  [
+    "create",
+    "ipam.vlans",
+    1,
+    {
+      "vid": "12",
+      "name": "VLAN 12",
+      "id": 1
+    }
+  ],
+  [
+    "update",
+    "ipam.prefixes",
+    1,
+    {}
+  ],
+  [
+    "create",
+    "virtualization.virtual_disks",
+    1,
+    {
+      "name": "local:vm-100-disk-0",
+      "size": 8000,
+      "virtual_machine": 1,
+      "custom_fields": {
+        "backup": false
+      },
+      "id": 1
+    }
+  ]
+]
