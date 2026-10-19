@@ -25,14 +25,14 @@ from ..application.runs import RunHistoryService, RunReadError
 from ..application.schedules import ScheduleReadError, ScheduleService
 from ..application.onboarding import EphemeralOnboardingStore, OnboardingError, SourceOnboardingService
 from .database import PostgresHealthProbe
-from .dto import (DiagnosticsDTO, ErrorDTO, ErrorDetailDTO, LivenessDTO,
-                  SystemHealthDTO, VersionDTO)
+from .dto import ErrorDTO, ErrorDetailDTO
+from .read_routes import install_read_routes
 from .settings import ApiSettings, application_version
 from .lifecycle_adapters import ActiveSourceReader, LifecycleRegistrationRegistry
 from .dto import (ApplyRequestDTO, ApplyResultDTO, ConfirmationDTO, ConfirmationRequestDTO,
                   DiscoveryResultDTO, ScheduleDTO, ScheduleUpdateDTO, SourceDTO,
-                  SourceListDTO, SyncPlanDTO)
-from .dto import SyncPlanRequestDTO, SyncRunDTO, SyncRunListDTO
+                  SyncPlanDTO)
+from .dto import SyncPlanRequestDTO
 from .discovery_client import DiscoveryRequestError, DiscoveryWorkerClient
 from .apply_client import ApplyRequestError, ApplyWorkerClient
 from .onboarding_dto import ConnectionRequest, ConnectionResult, RegistrationRequest, RegistrationStatusRequest, PlacementResolutionRequest
@@ -428,54 +428,11 @@ def create_app(settings=None, service=None, source_service=None, onboarding_serv
     app.include_router(auth_routes(auth_client,source_service))
     router = APIRouter(prefix='/api/v1')
 
-    @router.get('/health', response_model=LivenessDTO)
-    def health():
-        return LivenessDTO()
-
-    @router.get('/system/health', response_model=SystemHealthDTO)
-    def system_health():
-        return SystemHealthDTO.from_result(service.check())
-
-    @router.get('/diagnostics', response_model=DiagnosticsDTO)
-    def diagnostics(request: Request):
-        result = diagnostics_service.check()
-        request.state.diagnostics_status = result.overall_status.value
-        return DiagnosticsDTO.from_result(result)
-
-    @router.get('/version', response_model=VersionDTO)
-    def version():
-        return VersionDTO(version=application_version())
-
-    @router.get('/runs', response_model=SyncRunListDTO)
-    def runs(source_instance: str | None = None, source_type: str | None = None,
-             trigger: str | None = None, status: str | None = None,
-             limit: int = Query(default=50), cursor: str | None = None):
-        records = run_service.list_runs(
-            source_instance=source_instance, source_type=source_type, trigger=trigger,
-            status=status, limit=limit, cursor=cursor,
-        )
-        return SyncRunListDTO(
-            runs=[SyncRunDTO.from_record(record) for record in records],
-            next_cursor=str(records[-1].run_id) if len(records) == limit else None,
-        )
-
-    @router.get('/runs/{run_id}', response_model=SyncRunDTO)
-    def run_detail(run_id: UUID, request: Request):
-        request.state.run_id = str(run_id)
-        return SyncRunDTO.from_record(run_service.get_run(run_id))
-
-    @router.get('/pfsense')
-    def pfsense_list(offset: int = Query(default=0, ge=0, le=10000)):
-        from .catalog import call
-        return call(settings.bootstrap_socket, {'action':'pfsense-list', 'offset':offset})
-
-    @router.get('/sources', response_model=SourceListDTO)
-    def sources():
-        return SourceListDTO(sources=[SourceDTO.from_view(view) for view in source_service.list_sources()])
-
-    @router.get('/sources/{source_instance}', response_model=SourceDTO)
-    def source_detail(source_instance: str):
-        return SourceDTO.from_view(source_service.get_source(source_instance))
+    install_read_routes(
+        router, settings=settings, service=service,
+        diagnostics_service=diagnostics_service, run_service=run_service,
+        source_service=source_service, application_version=lambda: application_version(),
+    )
 
     lifecycle_client = LifecycleClient(settings.lifecycle_socket)
     from .source_retirement import routes as retirement_routes
