@@ -597,6 +597,26 @@ deployment acceptance.
 Local evidence: `artifacts/vm-plan-primary-evidence-20261019.zip`.
 Selectel remains experimental; no production access or deployment changes.
 
+## Stage 5m: per-interface VLAN and bridge planning
+
+Starts from main `0c8b409a72c53939dc5188587f016bb05faf91ed` after PR #30.
+`vm_network_plan_vlan.py` owns bridge output and VLAN choice/reporting for one
+interface. The unchanged shared scope selector is passed by the planner; prefix
+selection and VM/LXC writes are unchanged. Missing/ambiguous VLAN remains a warning,
+with no creation and no interruption of subsequent MAC/IP planning.
+
+Eighteen tests passed before extraction: absent/missing/global/site VLAN, preference
+for a site VLAN over duplicate global candidates, foreign-only scope, ambiguous
+site/global candidates, VID zero, and present/absent bridge. Tests assert exact
+output/order, warning counts, continued MAC/IP planning and zero mutations.
+After extraction, 84 focused tests pass. AST comparison restores all original planner
+functions after inlining the helper. Error/fatal lint passes.
+Full pytest on Windows/Python 3.14: 1921 passed, 485 skipped, one existing
+Starlette warning. Linux/database/opt-in skips are not deployment acceptance.
+Local evidence:
+`artifacts/vm-plan-vlan-evidence-20261019.zip`. Selectel remains experimental;
+no production access or deployment changes.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
