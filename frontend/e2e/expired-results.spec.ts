@@ -7,6 +7,7 @@ for(const role of ['viewer','operator','admin'])test(`expired evidence with succ
   const path=new URL(r.request().url()).pathname;
   if(r.request().method()!=='GET')writes++;
   if(path.endsWith('/auth/me'))return r.fulfill({json:{principal_id:'person',username:'person',role,permissions:['source.read','run.read','diagnostics.read',...(role==='viewer'?[]:['source.plan','source.apply'])]}});
+  if(path.endsWith('/lifecycle'))return r.fulfill({json:{source_instance:item.source_instance,display_name:item.name,removed_at:null,revision:'a'.repeat(64),credential_state:null,removal_blocker:null}});
   if(path.endsWith('/operations'))return r.fulfill({json:{operations:['PLAN','DISCOVERY'].map((kind,i)=>({operation_id:`00000000-0000-4000-8000-00000000000${i}`,source_instance:item.source_instance,operation_kind:kind,status:kind==='PLAN'?'STALE':'FAILED',started_at:old,updated_at:old,finished_at:old,result:null,safe_error_code:'RESULT_EXPIRED'}))}});
   if(path==='/api/v1/sources')return r.fulfill({json:{sources:[item]}});
   if(path==='/api/v1/sources/source-1')return r.fulfill({json:item});

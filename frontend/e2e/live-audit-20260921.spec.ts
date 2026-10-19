@@ -10,13 +10,19 @@ for(const lang of ['en','ru'])for(const theme of ['light','dark'])test(`director
  if(path==='/api/v1/users/sync'){error=true;return route.fulfill({status:503,json:{error:{code:'LDAP_UNAVAILABLE'}}});}
  if(path==='/api/v1/users'){const filtered=users.filter(u=>u.username.includes(url.searchParams.get('q')||'')),offset=Number(url.searchParams.get('offset')||0);return route.fulfill({json:{users:filtered.slice(offset,offset+10),total:filtered.length,offset,revision,enabled:true,sync_interval_seconds:300,sync:{success_at:1789990000,error:error?'LDAP_UNAVAILABLE':null}}});}
  return route.fulfill({json:{}});});
- await page.goto('/users');await expect(page.getByRole('heading',{name:'Directory person 0',exact:true})).toBeVisible();
- await page.getByRole('combobox').first().selectOption('operator');await expect(page.getByRole('combobox').first()).toHaveValue('operator');
+ await page.goto('/users');const first=page.getByRole('row').filter({has:page.getByRole('rowheader',{name:/Directory person 0.*user-000/})});
+ await expect(first).toBeVisible();
+ await first.getByRole('button',{name:lang==='ru'?'Изменить роль':'Change role',exact:true}).click();
+ await first.getByRole('combobox').selectOption('operator');
+ await first.getByRole('button',{name:lang==='ru'?'Сохранить роль':'Save role',exact:true}).click();
+ await expect(first.getByRole('combobox')).toHaveCount(0);
+ await expect(first.getByRole('cell',{name:lang==='ru'?'Оператор':'Operator',exact:true})).toBeVisible();
  await page.screenshot({path:info.outputPath('users.png'),fullPage:true});
- await page.getByRole('searchbox').fill('user-059');await expect(page.getByRole('heading',{name:'Directory person 59'})).toBeVisible();await expect(page.getByRole('combobox')).toHaveCount(1);
- await page.getByRole('searchbox').fill('absent');await expect(page.getByRole('combobox')).toHaveCount(0);
- await page.getByRole('searchbox').fill('');await expect(page.getByRole('combobox')).toHaveCount(10);
- await page.getByRole('button',{name:lang==='ru'?'Синхронизировать пользователей':'Synchronize users'}).click();await expect(page.getByRole('alert').first()).toBeVisible();await expect(page.getByRole('combobox').first()).toHaveValue('operator');
+ await page.getByRole('searchbox').fill('user-059');await expect(page.getByRole('rowheader').filter({hasText:'Directory person 59'})).toBeVisible();await expect(page.getByRole('rowheader')).toHaveCount(1);
+ await page.getByRole('searchbox').fill('absent');await expect(page.getByRole('rowheader')).toHaveCount(0);
+ await page.getByRole('searchbox').fill('');await expect(page.getByRole('rowheader')).toHaveCount(10);
+ await page.getByRole('button',{name:lang==='ru'?'Синхронизировать пользователей':'Synchronize users'}).click();await expect(page.getByRole('alert').first()).toBeVisible();
+ await expect(first.getByRole('cell',{name:lang==='ru'?'Оператор':'Operator',exact:true})).toBeVisible();
  await page.keyboard.press('Tab');await expect(page.locator(':focus')).toBeVisible();
  await page.screenshot({path:info.outputPath('users-outage.png'),fullPage:true});
 });

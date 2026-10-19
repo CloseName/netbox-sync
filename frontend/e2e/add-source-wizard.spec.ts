@@ -329,13 +329,15 @@ for(const provider of ['esxi','proxmox'])test(`wizard removal and fresh generati
 });
 
 
-test('malformed lifecycle review does not crash Sources',async({page})=>{
+test('malformed lifecycle review does not crash source configuration',async({page})=>{
  await fixture(page);
  await page.route('**/api/v1/sources/lifecycle-review',route=>route.fulfill({json:{}}));
- await page.goto('/sources');await page.getByRole('button',{name:'Review registrations',exact:true}).click();
+ const existing={...source(),type:'esxi'};
+ await page.route('**/api/v1/sources/source-1',route=>route.fulfill({json:existing}));
+ await page.goto('/sources/source-1/configuration');
  await expect(page.getByRole('alert').filter({hasText:'Lifecycle review is unavailable'})).toBeVisible();
  await expect(page.getByText('Unexpected Application Error!',{exact:true})).toHaveCount(0);
- await expect(page.getByRole('link',{name:'Add Source',exact:true}).first()).toBeVisible();
+ await expect(page.getByRole('heading',{name:existing.name,exact:true})).toBeVisible();
 });
 
 

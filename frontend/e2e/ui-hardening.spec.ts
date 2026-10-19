@@ -335,6 +335,7 @@ test("themes follow system, persist explicit choice, and do not refetch resource
   const f = await fixture(page);
   await page.emulateMedia({ colorScheme: "dark" });
   await page.goto("/diagnostics");
+  await page.getByText("Component checks",{exact:true}).click();
   await expect(page.locator("#component-api")).toBeVisible();
   await expect(page.locator(":root")).toHaveAttribute("data-theme", "dark");
   const calls = f.requests.length;
@@ -384,19 +385,19 @@ test("keyboard operator journey navigates attention, tabs, plan, dialog and resu
   const f = await fixture(page);
   f.state.degraded = true;
   await page.goto("/");
-  await expect(page.locator(".overview-summary")).toContainText(
-    "Needs attention",
+  await expect(page.locator(".attention-panel")).toContainText(
+    "Completion unconfirmed",
   );
   const attention = page
     .getByRole("link", { name: "Source 001", exact: true })
     .first();
   await attention.focus();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/source-1$/);
+  await expect(page).toHaveURL(/source-1#diagnostics$/);
   await expect(page.locator("#content")).toBeFocused();
   const sync = page
     .getByRole("navigation", { name: "Source sections" })
-    .getByRole("link", { name: "Sync", exact: true });
+    .getByRole("link", { name: "Changes", exact: true });
   await sync.focus();
   await page.keyboard.press("Enter");
   await expect(page.locator("#content")).toBeFocused();
@@ -432,7 +433,7 @@ test("narrow navigation supports Escape and route focus without trapping sidebar
   await page.getByRole("button", { name: "Navigation", exact: true }).click();
   const link = page
     .getByRole("navigation", { name: "Main navigation" })
-    .getByRole("link", { name: "Runs", exact: true });
+    .getByRole("link", { name: "Run history", exact: true });
   await link.focus();
   await page.keyboard.press("Escape");
   await expect(
@@ -461,7 +462,7 @@ test("existing Add Source journey clears credentials, focuses review and links r
     .getByRole("button", { name: "Continue", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Detected hosts", exact: true }),
+    page.getByRole("heading", { name: "Source settings", exact: true }),
   ).toBeFocused();
   await expect(page.locator('input[name="secret"]')).toHaveCount(0);
   await selectPlacement(page);
@@ -662,14 +663,15 @@ for (const scenario of ["exact", "foreign source", "unavailable history"]) {
     await fixture(page);
     const data = diagnostics([source()]);
     data.sources[0].latest_run = run("RUNNING");
-    data.sources[0].warnings = ["STALE_RUNNING"];
-    data.sources[0].warning_count = 1;
+    // Per-source diagnostics must agree with the stale evidence being modelled.
+    data.sources[0].warnings = scenario === "exact" ? ["STALE_RUNNING"] : [];
+    data.sources[0].warning_count = scenario === "exact" ? 1 : 0;
     data.stale_runs = [{ ...staleWarning, source_instance: scenario === "foreign source" ? "source-2" : "source-1" }];
     if (scenario === "unavailable history") data.components.run_history.status = "UNAVAILABLE";
     await page.route("**/api/v1/diagnostics", route => route.fulfill({ json: data }));
     await page.route("**/api/v1/runs?*", route => route.fulfill({ json: { runs: [run("RUNNING")], next_cursor: null } }));
     await page.goto("/");
-    await expect(page.getByRole("table").locator(".badge").filter({ hasText: scenario === "exact" ? "Completion unconfirmed" : "Recorded as running" })).toBeVisible();
+    await expect(page.locator(".overview-grid section").filter({has:page.getByRole("heading",{name:"Recent runs",exact:true})}).locator(".badge").filter({ hasText: scenario === "exact" ? "Completion unconfirmed" : "Recorded as running" })).toBeVisible();
     await page.goto("/sources");
     const table = page.getByRole("table");
     if (scenario === "unavailable history") {
@@ -716,7 +718,7 @@ test(`Overview editorial ordinary ${lang} ${theme} ${width}`,async({page})=>{
  await page.route('**/api/v1/diagnostics',route=>route.fulfill({json:ordinary}));
  await page.goto('/');await setLanguage(page,lang);
  await expect(page.getByRole('heading',{name:lang==='ru'?'Ближайшие запуски':'Next scheduled runs'})).toBeVisible();
- await expect(page.getByText(lang==='ru'?'По данным диагностики. Подключение к источникам здесь не проверяется.':'Diagnostic snapshot; source connectivity is not tested here.')).toBeVisible();
- await expect(page.getByText(/100/)).toBeVisible();await overflow(page);
+ await expect(page.getByText(lang==='ru'?'Ожидаемое время: очередь или блокировка могут отложить запуск.':'Expected start times; queued or blocked runs may start later.')).toBeVisible();
+ await expect(page.locator('.overview-grid').getByRole('link',{name:'Source 001',exact:true}).first()).toBeVisible();await overflow(page);
  await page.screenshot({path:`test-results/review-overview-ordinary-${lang}-${theme}-${width}.png`,fullPage:true});
 });

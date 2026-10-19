@@ -12,6 +12,8 @@ test('list scope, refresh feedback, modal close controls and teams settings',asy
   return route.fulfill({status:404,json:{}});
  });
  await page.goto('/sources?provider=proxmox&site=obsolete&schedule=off&team=missing&attention=yes');
+ await expect(page.getByText('No sources match these filters.',{exact:true})).toBeVisible();
+ await page.goto('/sources?provider=proxmox');
  await expect(page.getByRole('link',{name:'Source 001',exact:true})).toBeVisible();
  await expect(page.getByRole('link',{name:'Source 002',exact:true})).toHaveCount(0);
  await expect(page.getByText('Registration lifecycle',{exact:true})).toHaveCount(0);
