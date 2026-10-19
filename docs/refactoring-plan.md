@@ -699,6 +699,25 @@ Local evidence: `artifacts/host-preflight-evidence-20261019.zip`.
 VM/LXC policies are unchanged. Selectel remains experimental; no production access
 or deployment changes.
 
+## Stage 6c: host precheck report
+
+Starts from main `00c41dd645b47d612ebd547676caad35ee8cc027` after PR #35.
+`host_precheck_report.py` prints the original report for all checked host contexts.
+It preserves device actions/reasons, changed-field order/count, interface/address
+counts, management binding and PRECHECK PASSED. The original host-type lookup is
+retained. Confirmation messages, the gate and writes remain in the applier.
+
+Six tests passed before extraction against fixed exact-output snapshots: empty,
+create, match, changed metadata, mixed hosts and networking disabled. They include
+the exact no-confirmation suffix and assert zero mutations. Snapshots are read-only.
+After extraction, 73 focused tests pass and one skips. AST comparison restores all
+original applier functions/classes after inlining the report. Error/fatal lint passes.
+Full pytest on Windows/Python 3.14: 1959 passed, 485 skipped, one existing
+Starlette warning. Linux/database/opt-in skips are not deployment acceptance.
+Local evidence:
+`artifacts/host-report-evidence-20261019.zip`. Selectel remains experimental;
+no production access or deployment changes.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
