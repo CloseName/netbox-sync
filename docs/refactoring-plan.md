@@ -118,6 +118,42 @@ opt-in integration skips do not establish deployment acceptance. Pylint scored
 
 Next increment: onboarding/catalog routes, then shared error/request boundaries.
 
+## Stage 3d: onboarding and catalog routes
+
+Starts from main `d85639a13ee12cd0a89ad2884fd8c570aa06eb74` after PR #10.
+`api/catalog_routes.py` registers three catalog handlers. `api/onboarding_routes.py`
+registers eight onboarding handlers and owns their unchanged registration helpers,
+job initialization and continuation lifespan. The factory still creates services,
+clients and settings; the installer runs at the original registration position.
+Catalog exception translation stays in the factory for the boundary refactor.
+
+Expanding both installer bodies reproduces the entire original factory AST,
+including receipt checks, actor binding, namespace checks, registration guards,
+job setup and thread shutdown. Complete OpenAPI schemas and ordered route metadata
+match in default and frontend/bootstrap configurations. Existing tests are unchanged.
+Selectel remains experimental; no production or deployment changes are included.
+
+### Existing findings, outside this refactor
+
+Pylint reports the same nine undefined `HostRegistrationConflict` references in
+both the original factory and extracted onboarding module. The only original
+import is local to `_install_boundaries`, so these rejection paths can raise
+`NameError` instead of their intended domain exception. Fix this separately with
+regression coverage for namespace/closed-source and registration-intent conflicts;
+this extraction deliberately does not change those responses.
+
+The `saved` indexing diagnostic (E1136) also exists in the original connection-test
+handler; it requires a separate type-flow review. These findings are not suppressed,
+and this stage does not claim a clean Pylint result.
+
+Full pytest on Windows/Python 3.14: 1687 passed, 485 skipped, one existing
+Starlette warning. Linux, database and opt-in skips are not deployment acceptance.
+Error/fatal lint diagnostics exactly match the baseline (10 findings); whitespace
+checks pass. Evidence is saved locally in
+`artifacts/api-onboarding-routes-evidence-20261019.zip` in the task workspace.
+Browser tests are unchanged and were
+not rerun for this backend extraction. Next stage: shared error/request boundaries.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
