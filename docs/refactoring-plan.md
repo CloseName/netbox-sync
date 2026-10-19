@@ -176,6 +176,30 @@ logs are saved locally in `artifacts/registration-refusal-evidence-20261019.zip`
 Selectel remains experimental;
 no production or deployment changes. Continue boundary refactoring separately.
 
+## Stage 3e: shared request and error boundaries
+
+Starts from main `37e3fbde842ece3b384facc239651f7aec7cc3c5` after PR #12.
+`api/request_boundaries.py` now owns the existing `_error` response helper,
+`_install_boundaries` and catalog exception registration. The factory imports the
+private helpers for compatibility and installs each boundary at its original point.
+The shared logger retains its name and object identity; logger setup stays in the
+factory. Source-provider and frontend route registration remain unchanged.
+
+The response helper, middleware and exception handler ASTs are unchanged. The
+remaining factory matches after expanding the catalog installer and accounting for
+its relocated exception import. Complete OpenAPI schemas, ordered routes, exception
+handler registries and middleware order/dispatch names match in default and
+frontend/bootstrap configurations. Existing tests and assertions are unchanged.
+
+Full pytest on Windows/Python 3.14: 1700 passed, 485 skipped, one existing
+Starlette warning. Linux, database and opt-in skips are not deployment acceptance.
+Pylint error/fatal checks report no findings in the new module; whitespace checks
+pass. Evidence is saved locally in `artifacts/api-boundaries-evidence-20261019.zip`.
+Selectel remains experimental; no
+production or deployment changes. Frontend/browser tests were not rerun for this
+backend extraction. Further decomposition should follow a fresh review rather than
+changing error mappings or admission rules as part of structural cleanup.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
