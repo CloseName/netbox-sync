@@ -89,3 +89,37 @@ def test_catalog_case_insensitive_candidates_and_fixed_links(monkeypatch):
     assert [r['name'] for r in result['items']]==names
     assert all(r['url'].startswith('https://nb.test/') and 'custom_fields' not in r for r in result['items'])
     assert 'name__ic=pfsense' in seen[0]
+
+
+@pytest.mark.parametrize('status,body,expected',[(403,{'code':'PERMISSION_DENIED'},'PERMISSION_DENIED'),(404,{},'GUARD_UPGRADE_REQUIRED')])
+def test_netbox_preflight_precedes_appliance_mutation(monkeypatch,status,body,expected):
+    session=N(post=lambda *a,**k:N(status_code=status,json=lambda:body))
+    monkeypatch.setattr(m.requests,'Session',lambda:nullcontext(session))
+    monkeypatch.setattr(m,'configure_session',lambda *a:None)
+    monkeypatch.setattr(m,'pinned_dns',lambda *a:nullcontext())
+    monkeypatch.setattr(m,'EgressPolicy',lambda **kw:N(resolve=lambda *a:('nb.test','10.0.0.1')))
+    monkeypatch.setattr(m,'fetch',lambda session,url,token: {'name':'pfSense'} if 'virtual-machines/' in url else {'count':0,'results':[]})
+    monkeypatch.setattr(m,'setup',lambda *a:pytest.fail('Appliance must remain unchanged'))
+    with pytest.raises(m.SetupError,match=expected):
+        m.run(dict(url='https://nb.test',vm_id=1,read_token='read',apply_token='apply',guard_instance='guard'))
+
+
+def test_import_failure_preserves_preparation_and_selected_interval(monkeypatch):
+    posts=[]
+    def post(url,**kw):
+        posts.append((url,kw))
+        return N(status_code=200 if len(posts)==1 else 403,json=lambda:{'status':'READY'} if len(posts)==1 else {'code':'PERMISSION_DENIED'})
+    monkeypatch.setattr(m.requests,'Session',lambda:nullcontext(N(post=post)))
+    monkeypatch.setattr(m,'configure_session',lambda *a:None)
+    monkeypatch.setattr(m,'pinned_dns',lambda *a:nullcontext())
+    monkeypatch.setattr(m,'EgressPolicy',lambda **kw:N(resolve=lambda *a:('nb.test','10.0.0.1')))
+    monkeypatch.setattr(m,'fetch',lambda session,url,token: {'name':'pfSense'} if 'virtual-machines/' in url else {'count':0,'results':[]})
+    monkeypatch.setattr(m,'setup',lambda *a:{'ssh_port':2233,'host_key':'pinned'})
+    monkeypatch.setattr(m,'collect',lambda *a:{'network':{}})
+    monkeypatch.setattr(m,'build_preview',lambda *a:{'all_interfaces_matched':True,'unmatched_vm_interfaces':[]})
+    progress={}
+    with pytest.raises(m.SetupError,match='PERMISSION_DENIED'):
+        m.run(dict(url='https://nb.test',vm_id=1,read_token='read',apply_token='apply',guard_instance='guard',
+                   operation='connect',state={},data={'interval_minutes':10},policy={}),progress)
+    assert progress=={'ssh_port':2233,'host_key':'pinned'}
+    assert posts[1][1]['json']['snapshot']['collection_interval_seconds']==600

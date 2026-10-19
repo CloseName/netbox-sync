@@ -19,6 +19,22 @@ def test_child_database_roles_do_not_leak():
     assert child_environment('retirement_worker', values) == {}
 
 
+@pytest.mark.parametrize('username', ['netbox-sync', 'netbox-sync-test'])
+@pytest.mark.parametrize('module', ['bootstrap_worker', 'pfsense_scheduler'])
+def test_collector_mode_survives_supervised_process(module, username, tmp_path):
+    environment = child_environment(module, dict(os.environ,
+        NETBOX_SYNC_PFSENSE_USER=username, UNRELATED_SECRET='must-not-pass'))
+    assert 'UNRELATED_SECRET' not in environment
+    result = subprocess.run([sys.executable, '-c',
+        'from pathlib import Path; from types import SimpleNamespace; '
+        'from netbox_sync.pfsense_control import collector_username, state_root; '
+        'print(collector_username()); print(state_root(SimpleNamespace(root=Path("state"))))'],
+        env=environment, capture_output=True, text=True, check=True)
+    assert result.stdout.splitlines() == [username, str(Path('state/pfsense/test' if username.endswith('-test') else 'state/pfsense'))]
+    for other in ('retirement_worker', 'discovery_worker', 'apply_worker'):
+        assert 'NETBOX_SYNC_PFSENSE_USER' not in child_environment(other, environment)
+
+
 ISOLATED = os.name == 'posix' and Path('/.dockerenv').exists() and os.environ.get('NETBOX_SYNC_BUNDLE_TEST') == '1'
 
 

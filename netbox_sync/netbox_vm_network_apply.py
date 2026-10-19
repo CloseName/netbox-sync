@@ -19,6 +19,16 @@ class VMNetworkApplyError(RuntimeError):
     pass
 
 
+class ManagedMACConflict(VMNetworkApplyError):
+    """Closed operator-facing context, separate from arbitrary exception text."""
+    def __init__(self, vm, nic, mac, *, duplicate=False):
+        self.vm_name = vm.original_name
+        self.nic_name = nic.name
+        self.mac = mac
+        self.duplicate = duplicate
+        super().__init__(f'Duplicate NetBox MAC {mac}' if duplicate else f'MAC {mac} already assigned to another interface')
+
+
 def _object_id(value):
     if value is None:
         return None
@@ -459,10 +469,7 @@ def apply_vm_networks(
                     )
 
                     if len(mac_matches) > 1:
-                        raise VMNetworkApplyError(
-                            f'Duplicate NetBox MAC '
-                            f'{mac_value}'
-                        )
+                        raise ManagedMACConflict(vm, nic, mac_value, duplicate=True)
 
                     if len(mac_matches) == 1:
                         existing_mac = (
@@ -491,34 +498,12 @@ def apply_vm_networks(
                             allowed = True
 
                         if not allowed:
-                            raise VMNetworkApplyError(
-                                f'MAC {mac_value} '
-                                f'already assigned to '
-                                f'{assigned_type}:'
-                                f'{assigned_id}'
-                            )
+                            raise ManagedMACConflict(vm, nic, mac_value)
 
-                    current_primary_mac = (
-                        _current_primary_mac_id(
-                            existing
-                        )
-                    )
-
-                    if (
-                        current_primary_mac
-                        is not None
-                        and (
-                            existing_mac is None
-                            or current_primary_mac
-                            != existing_mac.id
-                        )
-                    ):
-                        raise VMNetworkApplyError(
-                            f'Existing primary MAC '
-                            f'conflicts on '
-                            f'{vm.original_name}:'
-                            f'{interface_display_name(vm, nic)}'
-                        )
+                    # The interface was matched by stable source/VM/NIC identity.
+                    # A changed MAC is a normal update. The desired MAC has already
+                    # passed assignment checks above. Keep the old MAC record and
+                    # its history; only switch this managed interface's primary.
 
                 ip_contexts = []
 

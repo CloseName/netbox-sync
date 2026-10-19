@@ -10,3 +10,13 @@ def invalidate_claim(sender, instance, using, **kwargs):
                      if label.lower() == sender._meta.label_lower), None)
     if resource is not None:
         CreationClaim.objects.using(using).filter(resource=resource, object_id=instance.pk).delete()
+
+
+from django.db.models.signals import post_migrate
+
+
+@receiver(post_migrate, dispatch_uid='netbox_guard_prepare_managed_fields')
+def prepare_managed_fields(sender, using, **kwargs):
+    if sender.name == 'netbox_guard':
+        from .managed_fields import configure_managed_fields
+        configure_managed_fields(using)

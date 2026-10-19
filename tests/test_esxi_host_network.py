@@ -102,6 +102,23 @@ def test_new_host_roundtrip_and_readonly_plan(fake_netbox):
                     if r.action.value in ('CREATE', 'UPDATE')]
 
 
+def test_mac_conflict_is_a_named_blocked_plan_without_writes(fake_netbox,monkeypatch):
+    from netbox_sync.netbox_vm_network_apply import ManagedMACConflict
+    import netbox_sync.application.runtime_plan as runtime
+    config=target(fake_netbox,_config())
+    hosts=discover_hosts(fake_esxi_service(),config)
+    vm=hosts[0].virtual_machines[0]
+    def conflict(*args,**kwargs):
+        raise ManagedMACConflict(vm,vm.interfaces[0],'00:50:56:AA:CC:DD')
+    monkeypatch.setattr(runtime,'execute_esxi_runtime',conflict)
+    plan=runtime.build_runtime_plan(fake_netbox,hosts,config)
+    assert not plan.apply_allowed
+    row=next(r for r in plan.items if r.reason_code=='MAC_ASSIGNED_ELSEWHERE')
+    assert vm.original_name in row.name
+    assert row.after==(('mac_address','00:50:56:AA:CC:DD'),)
+    assert fake_netbox.mutations==[]
+
+
 @pytest.mark.parametrize('mode', ['missing', 'wrong_type', 'provisioning'])
 def test_field_preparation_blocks_before_any_writes(fake_netbox, mode):
     config = target(fake_netbox, _config())

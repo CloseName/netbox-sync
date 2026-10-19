@@ -46,6 +46,7 @@ RUN_COLUMN_LIST = ', '.join(f'"{column}"' for column in RUN_COLUMNS)
 ERROR_STATUS = {
     'APPLY_LOCKED': RunStatus.LOCKED,
     'PLAN_BLOCKED': RunStatus.BLOCKED,
+    'SOURCE_RECONCILIATION_REQUIRED': RunStatus.BLOCKED,
     'FAILED_BEFORE_WRITE': RunStatus.FAILED_BEFORE_WRITE,
     'PARTIALLY_APPLIED': RunStatus.PARTIALLY_APPLIED,
     'OUTCOME_UNCERTAIN': RunStatus.OUTCOME_UNCERTAIN,
@@ -53,6 +54,7 @@ ERROR_STATUS = {
 SAFE_ERROR_MESSAGES = {
     'APPLY_LOCKED': 'Another synchronization is already running.',
     'PLAN_BLOCKED': 'The synchronization plan contains blocking conditions.',
+    'SOURCE_RECONCILIATION_REQUIRED': 'Scheduled synchronization is blocked by unresolved previous writes or a pending manual sync after baseline acceptance. Review source recovery. No new plan was built and no writes were started.',
     'PLAN_STALE': 'The synchronization plan is no longer current.',
     'CONFIRMATION_EXPIRED': 'The synchronization confirmation expired.',
     'CONFIRMATION_INVALID': 'The synchronization confirmation is invalid.',

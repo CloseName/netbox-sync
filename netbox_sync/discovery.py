@@ -75,6 +75,7 @@ class DiscoveredHost:
     interfaces: list[DiscoveredHostInterface] = field(default_factory=list)
     virtual_machines: list['DiscoveredVirtualMachine'] = field(default_factory=list)
     containers: list['DiscoveredContainer'] = field(default_factory=list)
+    esxi_events: dict | None = None
     esxi_host_network: dict | None = None
     connection_management: dict | None = None
 
@@ -84,6 +85,7 @@ class DiscoveredVirtualDisk:
     name: str
     storage: Optional[str]
     size_bytes: int
+    external_id: Optional[str] = None
 
 
 @dataclass

@@ -1,7 +1,7 @@
 import {test,expect} from './auth-fixture';
 import {source,diagnostics} from '../tests/fixtures.mjs';
 import {setLanguage} from './menu-helper';
-for(const language of ['en','ru'])test(`source team create assign filter conflict ${language}`,async({page})=>{
+for(const language of ['en','ru'])test(`source team create assign conflict and obsolete filter ignored ${language}`,async({page})=>{
  await page.setViewportSize({width:390,height:900});
  const a=source(),b={...source(),source_instance:'source-2',name:'Other source'};
  let data:any={version:1,revision:0,teams:{},assignments:{}},conflict=false;
@@ -25,8 +25,8 @@ for(const language of ['en','ru'])test(`source team create assign filter conflic
  });
  await page.goto('/sources');if(language==='ru')await setLanguage(page,'ru');
  await expect(page.getByRole('combobox',{name:language==='ru'?'Команда':'Team',exact:true})).toHaveCount(0);
- await page.getByRole('button',{name:language==='ru'?'Управление командами':'Manage teams',exact:true}).click();
- await page.getByRole('dialog').getByText(language==='ru'?'Управление командами':'Manage teams',{exact:true}).click();
+ await page.goto('/settings?section=teams');
+ await page.getByText(language==='ru'?'Управление командами':'Manage teams',{exact:true}).click();
  await page.getByLabel(language==='ru'?'Название команды':'Team name',{exact:true}).fill('Compute QA');
  await page.getByRole('button',{name:language==='ru'?'Создать команду':'Create team',exact:true}).click();
  await expect(page.getByLabel(language==='ru'?'Команда для переименования':'Team to rename')).toContainText('Compute QA');
@@ -37,8 +37,7 @@ for(const language of ['en','ru'])test(`source team create assign filter conflic
  conflict=true;await page.getByLabel(language==='ru'?'Назначенная команда':'Assigned team').selectOption('');
  await expect(page.getByText(language==='ru'?'Изменение не подтверждено или команды изменены другим администратором. Обновите перед повтором.':'Change not confirmed or another administrator changed teams. Reload before retrying.')).toBeVisible();
  await expect(page.getByLabel(language==='ru'?'Назначенная команда':'Assigned team')).toBeDisabled();
- await page.goto('/sources?team=team-1');await expect(page.getByRole('link',{name:a.name,exact:true})).toBeVisible();await expect(page.getByRole('link',{name:b.name,exact:true})).toHaveCount(0);
- await page.getByRole('combobox',{name:language==='ru'?'Команда':'Team',exact:true}).selectOption('none');await expect(page.getByRole('link',{name:b.name,exact:true})).toBeVisible();await expect(page.getByRole('link',{name:a.name,exact:true})).toHaveCount(0);
+ await page.goto('/sources?team=team-1');await expect(page.getByRole('link',{name:a.name,exact:true})).toBeVisible();await expect(page.getByRole('link',{name:b.name,exact:true})).toBeVisible();
  await page.screenshot({path:`test-results/source-teams-${language}.png`,fullPage:true});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
 });

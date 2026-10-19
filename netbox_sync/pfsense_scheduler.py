@@ -3,11 +3,11 @@ import os
 import time
 from .bootstrap_state import BootstrapStore
 from .local_control import request
-from .pfsense_control import handle
+from .pfsense_control import handle, state_root
 
 
 def tick(store, lock_path):
-    root = store.root / 'pfsense'
+    root = state_root(store)
     if not root.exists(): return
     if root.is_symlink(): raise ValueError('Invalid state directory')
     for path in sorted(root.glob('*.json')):

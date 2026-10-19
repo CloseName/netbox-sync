@@ -42,7 +42,7 @@ PASSWORD_FILES = {
 RESTORE_BOOTSTRAP_FILE = 'postgres_bootstrap_password_next'
 SOURCE_COLUMNS = (
     'id', 'source_instance', 'name', 'source_type', 'address', 'enabled',
-    'sync_enabled', 'sync_interval_seconds', 'verify_ssl', 'site_slug',
+    'sync_enabled', 'sync_interval_seconds', 'sync_calendar', 'schedule_changed_at', 'verify_ssl', 'site_slug',
     'device_role_slug', 'platform_slug', 'device_type_slug', 'cluster_type_slug',
     'cluster_name', 'username', 'token_id_provider', 'token_id_key',
     'token_secret_provider', 'token_secret_key', 'legacy_identity_owner', 'settings',
@@ -50,7 +50,7 @@ SOURCE_COLUMNS = (
 )
 PUBLIC_SOURCE_COLUMNS = (
     'source_instance', 'source_type', 'name', 'address', 'enabled',
-    'sync_enabled', 'verify_ssl', 'sync_interval_seconds', 'site_slug',
+    'sync_enabled', 'verify_ssl', 'sync_interval_seconds', 'sync_calendar', 'schedule_changed_at', 'site_slug',
     'cluster_name', 'platform_slug', 'device_role_slug', 'device_type_slug',
     'cluster_type_slug', 'legacy_identity_owner',
 )
@@ -407,10 +407,10 @@ def apply_grants(environ=None):
             _grant_columns(cursor, 'UPDATE', runs, RUN_UPDATE_COLUMNS,
                            DATABASE_ROLES['run_writer'])
             _grant_columns(cursor, 'SELECT', sources,
-                           ('source_instance', 'sync_enabled', 'sync_interval_seconds'),
+                           ('source_instance', 'sync_enabled', 'sync_interval_seconds', 'sync_calendar', 'schedule_changed_at'),
                            DATABASE_ROLES['schedule_writer'])
             _grant_columns(cursor, 'UPDATE', sources,
-                           ('sync_enabled', 'sync_interval_seconds'),
+                           ('sync_enabled', 'sync_interval_seconds', 'sync_calendar', 'schedule_changed_at'),
                            DATABASE_ROLES['schedule_writer'])
 
             auth_role = sql.Identifier(DATABASE_ROLES['auth_writer'])

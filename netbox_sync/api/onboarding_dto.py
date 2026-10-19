@@ -183,6 +183,7 @@ class RegistrationStatusRequest(PublicModel):
 
 
 class PlacementResolutionRequest(PublicModel):
+    prepare: bool = False
     onboarding_token: str = Field(min_length=20,max_length=128,repr=False,exclude=True)
     host_types: dict[str, dict] = Field(default_factory=dict, max_length=16)
     name: str = Field(max_length=100)

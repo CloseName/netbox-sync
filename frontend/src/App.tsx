@@ -1,3 +1,4 @@
+import {TeamsSettings} from './pages/TeamsSettings';
 import {SourceNavigation} from './ui/SourceNavigation';
 import {PfSensePage} from './pages/PfSensePage';
 import {DirectoryUsersPage} from './pages/DirectoryUsersPage';
@@ -124,7 +125,7 @@ export function App() {
             <Route path="/runs" element={<RunRoute />} />
             <Route path="/runs/:runId" element={<RunRoute />} />
             <Route path="/users" element={<Permission permission="identity.manage"><DirectoryUsersPage/></Permission>}/>
-            <Route path="/settings" element={<Permission permission="identity.manage">{location.search.includes('section=destinations')?<DestinationPolicyPage/>:<AuthenticationSettings/>}</Permission>} />
+            <Route path="/settings" element={new URLSearchParams(location.search).get("section")==="teams"?<Permission permission="source.configure"><TeamsSettings/></Permission>:<Permission permission="identity.manage">{location.search.includes('section=destinations')?<DestinationPolicyPage/>:<AuthenticationSettings/>}</Permission>} />
             <Route path="/policy" element={<Navigate replace to="/settings?section=destinations"/>} />
             <Route path="/system" element={<Navigate replace to="/#health"/>} />
             <Route path="/diagnostics" element={<Navigate replace to="/#diagnostics"/>} />

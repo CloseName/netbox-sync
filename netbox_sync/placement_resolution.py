@@ -1,7 +1,7 @@
 """Exact, bounded read-only placement resolution; never adopts inventory by name."""
 from .bootstrap_probe import ProbeError
 
-def resolve(payload, listing, project, retrieve=None):
+def resolve(payload, listing, project, retrieve=None, ensure=None):
     provider=payload.get('provider'); hosts=payload.get('hosts'); name=payload.get('name','')
     if provider not in ('esxi','proxmox') or not isinstance(hosts,list) or not 1<=len(hosts)<=16 or not isinstance(name,str) or len(name)>100:
         raise ProbeError('SELECTION_REQUIRED')
@@ -21,6 +21,9 @@ def resolve(payload, listing, project, retrieve=None):
         return [project(kind,row) for row in result['results']]
     def exact(kind,text):
         matches=[row for row in choices(kind,text) if row['name'].casefold()==text.casefold() or row['slug'].casefold()==text.casefold()]
+        if not matches and ensure and 'site' in refs and not any(i['kind']==kind for i in issues):
+            created=ensure(kind, {'name':text})
+            if created:matches=[created]
         if len(matches)==1:refs[kind]=matches[0]
         else:issues.append({'kind':kind,'code':'MISSING' if not matches else 'AMBIGUOUS'})
     sites=choices('site','')
@@ -46,6 +49,9 @@ def resolve(payload, listing, project, retrieve=None):
         matches=[]
         if model and manufacturer:
             matches=[row for row in choices('device_type',model) if row['name'].casefold()==model.casefold() and (row.get('manufacturer') or {}).get('name','').casefold()==manufacturer.casefold()]
+        if not matches and ensure and 'site' in refs and not any(i['kind']=='device_type' for i in issues):
+            created=ensure('device_type', {'model':model or 'Оборудование не определено', 'manufacturer_name':manufacturer or 'Unknown'})
+            if created:matches=[created]
         if len(matches)==1:types[host['id']]=matches[0]
         else:issues.append({'kind':'device_type','host_id':host['id'],'code':'MISSING' if not matches else 'AMBIGUOUS'})
     create=False
@@ -55,5 +61,5 @@ def resolve(payload, listing, project, retrieve=None):
         if len(clusters)==1 and len(compatible)==1:refs['cluster']=compatible[0]
         elif clusters:issues.append({'kind':'cluster','code':'CONFLICT'})
         elif not any(i['kind']=='cluster' for i in issues):create=True
-    else:issues.append({'kind':'cluster','code':'NAME_REQUIRED'})
+    elif not name.strip():issues.append({'kind':'cluster','code':'NAME_REQUIRED'})
     return {'references':refs,'host_types':types,'sites':sites,'create_cluster':create,'issues':issues}

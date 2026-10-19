@@ -17,6 +17,7 @@ class ScheduleView:
     scheduler_state: str
     last_scheduled_run_at: object | None
     next_expected_at: object | None
+    sync_calendar: dict | None = None
 
 
 class ScheduleReadError(RuntimeError):
@@ -50,14 +51,17 @@ class ScheduleService:
         decision = evaluate_schedule(source, latest, running, self._clock(), self._stale_seconds)
         return ScheduleView(instance, source.sync_enabled, source.sync_interval_seconds,
                             decision.state.value, decision.last_scheduled_run_at,
-                            decision.next_expected_at)
+                            decision.next_expected_at, source.sync_calendar)
 
     def update(self, instance, values):
         source, latest, running = self._context(instance)
         committed = self._control.update(instance, values)
         updated = replace(source, sync_enabled=committed['sync_enabled'],
-                          sync_interval_seconds=committed['sync_interval_seconds'])
+                          sync_interval_seconds=committed['sync_interval_seconds'],
+                          sync_calendar=committed.get('sync_calendar'),
+                          schedule_changed_at=(datetime.fromisoformat(committed['schedule_changed_at'])
+                              if isinstance(committed.get('schedule_changed_at'), str) else committed.get('schedule_changed_at')))
         decision = evaluate_schedule(updated, latest, running, self._clock(), self._stale_seconds)
         return ScheduleView(instance, updated.sync_enabled, updated.sync_interval_seconds,
                             decision.state.value, decision.last_scheduled_run_at,
-                            decision.next_expected_at)
+                            decision.next_expected_at, updated.sync_calendar)

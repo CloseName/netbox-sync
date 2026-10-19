@@ -261,3 +261,33 @@ def test_compose_mounts_esxi_password_at_fixed_runtime_path():
         '../secrets/esxi_infra_sync_password:'
         '/run/secrets/netbox-sync/esxi_infra_sync_password:ro'
     ) in compose
+
+
+@pytest.mark.parametrize('fail_in_preflight', [True, False])
+def test_scheduled_esxi_read_failure_respects_write_boundary(fake_netbox, monkeypatch, fail_in_preflight):
+    import netbox_sync.esxi_runtime as runtime
+    from netbox_sync.application.planning_netbox import PlanningNetBox
+    from netbox_sync.scheduled_failure import mark
+    from netbox_sync.orchestrator import run_sources
+    from netbox_sync.run_history import RunStatus
+    from tests.test_orchestrator import RunRecorder
+    hosts, _, _ = _setup(fake_netbox, review=False)
+    fake_netbox.clear_mutations()
+    original = runtime.apply_vm_networks
+    def fail(api, *args, **kwargs):
+        if isinstance(api, PlanningNetBox) == fail_in_preflight:
+            raise RuntimeError('simulated GET MAC gateway failure')
+        return original(api, *args, **kwargs)
+    monkeypatch.setattr(runtime, 'apply_vm_networks', fail)
+    recorder = RunRecorder()
+    def execute(config):
+        mark('planning')
+        return runtime.execute_esxi_runtime(fake_netbox, hosts, config, confirmed=True,
+            before_write=lambda: mark('apply'))
+    run_sources((_config(),), execute, run_repository=recorder)
+    expected = RunStatus.FAILED_BEFORE_WRITE if fail_in_preflight else RunStatus.OUTCOME_UNCERTAIN
+    assert recorder.finished[0][1] is expected
+    if fail_in_preflight:
+        assert fake_netbox.mutations == []
+    else:
+        assert fake_netbox.mutations

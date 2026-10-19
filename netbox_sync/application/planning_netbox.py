@@ -103,7 +103,10 @@ class PlanningEndpoint:
         if key not in self._reads:
             # Materialize completely before committing: a failed page is never
             # cached as an empty or partial successful response.
-            self._reads[key] = list(getattr(self._endpoint, method)(**filters))
+            from ..child_process import planning_read
+            with planning_read() as metrics:
+                self._reads[key] = list(getattr(self._endpoint, method)(**filters))
+                metrics['objects'] = len(self._reads[key])
         return self._reads[key]
 
     def all(self):
@@ -112,10 +115,10 @@ class PlanningEndpoint:
 
     @staticmethod
     def _matches(record, filters):
-        values = record.serialize()
+        # Inspect only compared fields; serializing deep-copies every snapshot.
         for key, expected in filters.items():
             field = key[:-3] if key.endswith('_id') else key
-            actual = values.get(field)
+            actual = record._changes.get(field, record._original.get(field))
             if isinstance(actual, dict):
                 actual = actual.get('id')
             elif hasattr(actual, 'id'):
@@ -172,6 +175,19 @@ class PlanningEndpoint:
     def get(self, *args, **filters):
         if len(args) > 1 or (args and filters):
             raise TypeError('Use one ID or keyword filters')
+        # An exact known ID is already complete evidence in this dry-run.
+        # Never share it across plans or cache a lower layer's mutable overlay.
+        identifier = args[0] if args else filters.get('id') if set(filters) == {'id'} else None
+        if isinstance(identifier, str) and identifier.lstrip('-').isdigit():
+            identifier = int(identifier)
+        if type(identifier) is int:
+            if identifier in self._wrapped:
+                return self._wrapped[identifier]
+            for record in self._created:
+                if record.id == identifier:
+                    return record
+            if isinstance(self._endpoint, PlanningEndpoint):
+                return self._wrap(self._endpoint.get(identifier))
         records = self.filter(**({'id': args[0]} if args else filters))
         if len(records) > 1:
             raise ValueError('Multiple records match')

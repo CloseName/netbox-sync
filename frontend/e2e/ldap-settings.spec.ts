@@ -91,6 +91,8 @@ test('expired session restores only the same principal non-secret draft',async({
   if(path.endsWith('/auth/me'))return r.fulfill({status:signed?200:401,json:signed?{principal_id:actor,username:actor,role:'admin',permissions:admin}:{error:{code:'AUTH_REQUIRED'}}});
   if(path.endsWith('/auth/login')){signed=true;actor=r.request().postDataJSON().username;return r.fulfill({json:{authenticated:true}});}
   if(path.endsWith('/bootstrap'))return r.fulfill({json:{revision:1,status:'READY',completed:true,url:'https://netbox.example.test',read_token_present:true,apply_token_present:true,safe_code:null,checks:[]}});
+  if(signed&&path.endsWith('/sources'))return r.fulfill({json:{sources:[]}});
+  if(signed&&path.endsWith('/pfsense'))return r.fulfill({json:{count:0,items:[]}});
   if(path.endsWith('/settings/ldap'))return r.fulfill({json:{revision:1,config,bind_secret_present:true,roles:{viewer:read,operator:operate,admin}}});
   return r.fulfill({status:401,json:{error:{code:'AUTH_REQUIRED'}}});
  });

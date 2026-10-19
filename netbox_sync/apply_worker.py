@@ -110,21 +110,26 @@ def execute_child(payload):
     from .guarded_creation import for_run
     nb_api = for_run(nb_api, config, instance=payload.get('guard_instance'),
                      run_id=payload.get('run_id'), url=payload['netbox_url'], token=payload['netbox_token'])
-    # Prove all provider-specific prechecks before entering the write call.
+    # Executors run their complete preflight once, then signal the write boundary.
+    write_started = False
+
+    def before_write():
+        nonlocal write_started
+        from .child_process import phase_progress
+        write_started = True
+        phase_progress('write_boundary')
+
     try:
         if config.source_type == 'proxmox':
-            apply_full_sync(nb_api, hosts, config.target, confirmed=False)
+            apply_full_sync(nb_api, hosts, config.target, confirmed=True,
+                            before_write=before_write)
         else:
-            execute_esxi_runtime(nb_api, hosts, config, confirmed=False)
+            execute_esxi_runtime(nb_api, hosts, config, confirmed=True,
+                                 before_write=before_write)
     except Exception as exc:
-        raise ApplyWorkerError('FAILED_BEFORE_WRITE', diagnostic=_failure(exc, 'preflight')) from exc
-    try:
-        if config.source_type == 'proxmox':
-            apply_full_sync(nb_api, hosts, config.target, confirmed=True)
-        else:
-            execute_esxi_runtime(nb_api, hosts, config, confirmed=True)
-    except Exception as exc:
-        raise ApplyWorkerError('OUTCOME_UNCERTAIN', diagnostic=_failure(exc, 'apply')) from exc
+        code = 'OUTCOME_UNCERTAIN' if write_started else 'FAILED_BEFORE_WRITE'
+        raise ApplyWorkerError(code, diagnostic=_failure(
+            exc, 'apply' if write_started else 'preflight')) from exc
     return {'status': 'SUCCEEDED', 'plan_digest': plan.digest,
             'network_complete': not any(item.reason_code in ('IP_OBSERVATION_ONLY','MAC_OBSERVATION_ONLY') for item in plan.items),
             'ipam_complete': not any(item.reason_code == 'IP_OBSERVATION_ONLY' for item in plan.items),

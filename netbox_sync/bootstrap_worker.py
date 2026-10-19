@@ -73,6 +73,21 @@ class BootstrapControl:
             try:
                 with apply_lock(self.lock_path):return CatalogCreation(self.store).execute(payload)
             except ProbeError as exc:return {'error':exc.code}
+        if action == 'catalog-prepare' and set(payload)=={'action','query'}:
+            from .bootstrap_state import runtime_netbox
+            if payload['query'].get('action') != 'resolve-placement':
+                raise ControlError('BOOTSTRAP_INVALID')
+            with apply_lock(self.lock_path), self.store.locked():
+                url, read_token = runtime_netbox(self.store.path, 'read')
+                _, apply_token = runtime_netbox(self.store.path, 'apply')
+                try:
+                    result = subprocess.run([sys.executable, '-B', '-m', 'netbox_sync.netbox_catalog'],
+                        input=json.dumps({'url':url, 'read_token':read_token, 'apply_token':apply_token, 'query':payload['query']}).encode(),
+                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=90, check=True,
+                        env=_safe_environment(), preexec_fn=_drop_privileges(10001,10001))
+                    if len(result.stdout)>24576: raise ValueError()
+                    return json.loads(result.stdout)
+                except Exception: return {'error':'NETWORK_UNREACHABLE'}
         if action == 'catalog' and set(payload)=={'action','query'}:
             from .bootstrap_state import runtime_netbox
             from contextlib import ExitStack

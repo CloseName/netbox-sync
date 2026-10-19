@@ -1,5 +1,6 @@
 """Bounded child cleanup; never replace the original timeout with kill errors."""
 from contextlib import contextmanager
+from contextvars import ContextVar
 import os
 import json
 import time
@@ -57,7 +58,13 @@ def stop_child(process, lock_fd=None):
 
 PHASES = ('provider', 'netbox', 'planning', 'preflight', 'apply', 'esxi_connect', 'esxi_inventory',
           'esxi_properties', 'esxi_additional', 'esxi_conversion', 'esxi_disconnect',
-          'netbox_mapping', 'netbox_review', 'netbox_simulation')
+          'netbox_mapping', 'netbox_review', 'netbox_simulation',
+          'esxi_events', 'simulation_preflight', 'simulation_host_metadata', 'simulation_host_network',
+          'simulation_events', 'simulation_primary_ip', 'simulation_vms',
+          'simulation_vm_networks', 'simulation_placement', 'simulation_disks')
+PHASES += ('write_boundary',) + tuple(
+    phase.replace('simulation_', 'apply_', 1) for phase in PHASES
+    if phase.startswith('simulation_') and phase != 'simulation_preflight')
 
 
 def phase_progress(stage, elapsed=None, *, failed=False, requests=None, objects=None):
@@ -97,7 +104,7 @@ def read_progress(process):
                     rows.append(row)
             except (ValueError, AttributeError):
                 pass
-    process._phases = rows[-32:]
+    process._phases = rows[-64:]
     return process._phases
 
 
@@ -108,6 +115,8 @@ def child_process(popen, *args, **kwargs):
     if os.name == 'posix':
         read_fd, write_fd = os.pipe()
         os.set_blocking(read_fd, False)
+        # Diagnostics must never stall the child when the parent is waiting.
+        os.set_blocking(write_fd, False)
         kwargs['pass_fds'] = (*kwargs.get('pass_fds', ()), write_fd)
         kwargs['env'] = dict(kwargs.get('env', {}), NETBOX_SYNC_PROGRESS_FD=str(write_fd))
     process = None
@@ -131,15 +140,35 @@ def child_process(popen, *args, **kwargs):
                 os.close(fd)
 
 
+_planning_metrics = ContextVar('planning_metrics', default=None)
+
+
+@contextmanager
+def planning_read():
+    """Count materialized endpoint reads, not individual HTTP pages; no payloads."""
+    metrics = {'objects': 0}
+    parent = _planning_metrics.get()
+    if parent is not None:
+        parent['requests'] += 1
+    try:
+        yield metrics
+    finally:
+        if parent is not None:
+            parent['objects'] += metrics['objects']
+
+
 @contextmanager
 def measured_phase(stage):
     """Timing-only nested stage; preserve the original exception and classification."""
     import time
     started = time.monotonic()
+    metrics = {'requests': 0, 'objects': 0}
+    token = _planning_metrics.set(metrics)
     phase_progress(stage)
     failed = True
     try:
         yield
         failed = False
     finally:
-        phase_progress(stage, time.monotonic() - started, failed=failed)
+        _planning_metrics.reset(token)
+        phase_progress(stage, time.monotonic() - started, failed=failed, **metrics)

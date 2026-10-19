@@ -1814,7 +1814,7 @@ body, .setup-workspace { font-family: Inter, system-ui, sans-serif; }
 .auth-panel button svg{margin-right:.35rem;vertical-align:middle}
 
 .extra-filters {min-width:14rem}.extra-filters[open] {display:flex;flex-wrap:wrap;gap:.8rem}.extra-filters summary {cursor:pointer}
-.source-list-table table {table-layout:fixed;min-width:0;width:100%}.source-list-table th,.source-list-table td {overflow-wrap:anywhere;white-space:normal;padding:.65rem}.source-list-table th:first-child {width:18%}.source-list-table th:last-child {width:10%}
+.source-list-table table {table-layout:fixed;min-width:0;width:100%}.source-list-table th,.source-list-table td {overflow-wrap:anywhere;white-space:normal;padding:.65rem}.source-list-table th:first-child {width:2.75rem}.source-list-table th:nth-child(2) {width:18%}.source-list-table th:last-child {width:10%}
 @media(max-width:760px){.source-list-table table {min-width:650px}}
 
 .catalog-options [aria-disabled="true"]{opacity:.65;cursor:not-allowed}
@@ -1849,3 +1849,14 @@ input[aria-invalid=true],select[aria-invalid=true]{border:2px solid #b42318;}
 
 .sources-actions { display:flex; align-items:center; gap:1rem; margin:1rem 0; }
 .sources-actions > button:last-child { margin-left:auto; }
+
+.schedule-panel .schedule-calendar-field { display: grid; gap: .5rem; margin-block: 1rem; max-width: 24rem; }
+
+.bulk-schedule-form { display: grid; gap: 1rem; }
+.bulk-schedule-form label { display: grid; gap: .4rem; }
+
+.refresh-control { display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap; }
+.refresh-control [role="status"] { font-size:0.875rem; }
+.sync-dialog .dialog-heading { position:sticky; top:-24px; background:var(--surface-muted); z-index:2; margin:-24px -24px 16px; padding:16px 24px; border-bottom:1px solid var(--border); }
+.dialog-heading h2 { margin:0; padding-right:3rem; }
+.dialog-close { float:right; font-size:1.5rem; line-height:1; min-width:2.5rem; min-height:2.5rem; }

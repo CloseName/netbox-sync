@@ -36,7 +36,7 @@ def test_correlated_diagnostic_and_failed_run_keep_computed_plan(capsys):
     assert not any(s in captured.err+repr(result)+repr(history.finished) for s in ('PRIVATE','netbox.invalid','Authorization'))
     assert history.finished[0][2]['plan_digest']=='a'*64
     assert history.finished[0][2]['planner_version']=='reviewed'
-    assert history.finished[0][1].value=='FAILED'  # zero counts do not prove no writes
+    assert history.finished[0][1].value=='OUTCOME_UNCERTAIN'  # zero counts do not prove no writes
 
 
 def test_evidence_does_not_leak_into_next_source(capsys):

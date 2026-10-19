@@ -91,67 +91,92 @@ def _print_plan(plan):
     print('disappearance=RETAIN_ONLY')
 
 
-def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False):
+def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write=None):
     """Reconcile managed and genuinely new objects; legacy candidates stay separate."""
-    from .application.inventory_order import canonical_hosts
-    hosts = canonical_hosts(hosts)
-    from .esxi_vm_identity import resolve_vm_identities
-    hosts, identity_conflicts = resolve_vm_identities(nb_api, hosts, config)
-    if identity_conflicts:
-        raise EsxiRuntimeError("ESXi VM identity requires review; no writes allowed")
-    from .application.ip_observations import executable_inventory
-    hosts, _ = executable_inventory(nb_api, hosts, config)
+    from .child_process import measured_phase
+    read_api = PlanningNetBox(nb_api)
+    with measured_phase('simulation_preflight'):
+        from .application.inventory_order import canonical_hosts
+        hosts = canonical_hosts(hosts)
+        from .esxi_vm_identity import resolve_vm_identities
+        hosts, identity_conflicts = resolve_vm_identities(read_api, hosts, config)
+        if identity_conflicts:
+            raise EsxiRuntimeError("ESXi VM identity requires review; no writes allowed")
+        from .application.ip_observations import executable_inventory
+        hosts, _ = executable_inventory(read_api, hosts, config)
 
-    if config.source_type != 'esxi':
-        raise EsxiRuntimeError('ESXi runtime requires source_type=esxi')
-    if not isinstance(confirmed, bool):
-        raise TypeError('confirmed must be a boolean')
+        if config.source_type != 'esxi':
+            raise EsxiRuntimeError('ESXi runtime requires source_type=esxi')
+        if not isinstance(confirmed, bool):
+            raise TypeError('confirmed must be a boolean')
 
-    from .host_mapping import validate
-    validate(nb_api,config.target,hosts)
-    try:
-        plan = build_esxi_migration_plan(nb_api, hosts, config)
-        managed_ids = _managed_vm_ids(plan)
-        filtered_hosts = _filtered_hosts(hosts, config, managed_ids)
-    except EsxiHostIdentityChanged:
-        raise
-    except EsxiRuntimeError:
-        raise
-    except Exception as exc:
-        raise EsxiRuntimeError(f'ESXi runtime preflight failed: {exc}') from exc
+        from .host_mapping import validate
+        validate(read_api,config.target,hosts)
+        try:
+            plan = build_esxi_migration_plan(read_api, hosts, config)
+            managed_ids = _managed_vm_ids(plan)
+            filtered_hosts = _filtered_hosts(hosts, config, managed_ids)
+        except EsxiHostIdentityChanged:
+            raise
+        except EsxiRuntimeError:
+            raise
+        except Exception as exc:
+            raise EsxiRuntimeError(f'ESXi runtime preflight failed: {exc}') from exc
 
-    _print_plan(plan)
+        _print_plan(plan)
 
-    # Host networking remains report-only: VMkernel/vSwitch topology is not
-    # interchangeable with the Proxmox host networking executor.
-    host_ids = {item.external_id for item in plan.hosts
-                if item.classification == ObjectMigrationClassification.NEW
-                or (config.target.onboarding_mapping
-                    and item.classification == ObjectMigrationClassification.MANAGED)}
-    network_host_ids = {item.external_id for item in plan.hosts
-                        if item.classification in (ObjectMigrationClassification.NEW,
-                                                   ObjectMigrationClassification.MANAGED)}
-    network_hosts = tuple(host for host in hosts if host.source_id in network_host_ids
-                          and host.esxi_host_network is not None)
-    from .esxi_host_network import require_host_network_field, apply_host_network_snapshots
-    if network_hosts:
-        require_host_network_field(nb_api)
-    metadata_hosts = tuple(replace(host, interfaces=[], management_ip=None)
-                           for host in hosts if host.source_id in host_ids)
+        # Host networking remains report-only: VMkernel/vSwitch topology is not
+        # interchangeable with the Proxmox host networking executor.
+        host_ids = {item.external_id for item in plan.hosts
+                    if item.classification == ObjectMigrationClassification.NEW
+                    or (config.target.onboarding_mapping
+                        and item.classification == ObjectMigrationClassification.MANAGED)}
+        network_host_ids = {item.external_id for item in plan.hosts
+                            if item.classification in (ObjectMigrationClassification.NEW,
+                                                       ObjectMigrationClassification.MANAGED)}
+        network_hosts = tuple(host for host in hosts if host.source_id in network_host_ids
+                              and host.esxi_host_network is not None)
+        from .esxi_host_network import require_host_network_field, apply_host_network_snapshots
+        if network_hosts:
+            require_host_network_field(read_api)
+        metadata_hosts = tuple(replace(host, interfaces=[], management_ip=None)
+                               for host in hosts if host.source_id in host_ids)
 
     def stages(api):
-        if metadata_hosts:
-            apply_hosts(api, metadata_hosts, config.target, confirmed=True, host_networking=False)
-        apply_host_network_snapshots(api, network_hosts)
+        from .child_process import measured_phase
+        from .esxi_events import apply_event_snapshots
         from .host_primary_ip import apply_esxi_primary
-        apply_esxi_primary(api, network_hosts)
-        apply_virtual_machines(api, filtered_hosts, config.target, confirmed=True)
-        apply_vm_networks(api, filtered_hosts, config, confirmed=True)
+        from .guest_placement import apply_guest_placement
+        from .virtual_disks import apply_virtual_disks
+
+        def phase(name):
+            return measured_phase(name if isinstance(api, PlanningNetBox)
+                                  else name.replace('simulation_', 'apply_', 1))
+
+        with phase('simulation_host_metadata'):
+            if metadata_hosts:
+                apply_hosts(api, metadata_hosts, config.target, confirmed=True, host_networking=False)
+        with phase('simulation_host_network'):
+            apply_host_network_snapshots(api, network_hosts)
+        with phase('simulation_events'):
+            apply_event_snapshots(api, hosts)
+        with phase('simulation_primary_ip'):
+            apply_esxi_primary(api, network_hosts)
+        with phase('simulation_vms'):
+            apply_virtual_machines(api, filtered_hosts, config.target, confirmed=True)
+        with phase('simulation_vm_networks'):
+            apply_vm_networks(api, filtered_hosts, config, confirmed=True)
+        with phase('simulation_placement'):
+            apply_guest_placement(api, filtered_hosts, config, confirmed=True)
+        with phase('simulation_disks'):
+            apply_virtual_disks(api, filtered_hosts, config, confirmed=True)
 
     # Simulate dependent creates and every network ownership check before writes.
-    stages(PlanningNetBox(nb_api))
+    stages(PlanningNetBox(read_api))
     if not confirmed:
         print('ESXi runtime preflight completed. No changes were written to NetBox.')
         return plan
+    if before_write is not None:
+        before_write()
     stages(nb_api)
     return plan
