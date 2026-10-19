@@ -1,3 +1,4 @@
+from .netbox_record_values import object_id as _object_id
 from .host_mapping import cluster_filter
 from .netbox_vm_metadata import (
     vm_identity_source_id,
@@ -103,23 +104,6 @@ def _identity_label(identity):
             f'{identity.kind}/{identity.external_id}'
         )
     return f'{identity[0]}:{identity[1]}'
-
-
-def _object_id(value):
-    if value is None:
-        return None
-
-    if isinstance(value, int):
-        return value
-
-    if isinstance(value, dict):
-        return value.get('id')
-
-    return getattr(
-        value,
-        'id',
-        None,
-    )
 
 
 def report_missing_managed_objects(

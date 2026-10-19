@@ -1,3 +1,4 @@
+from .netbox_record_values import object_id as _object_id
 from .host_mapping import cluster_filter
 import ipaddress
 import json
@@ -107,19 +108,6 @@ def _address_ip(value):
         return str(ipaddress.ip_interface(str(value)).ip)
     except ValueError:
         return str(value).split('/', 1)[0]
-
-
-def _object_id(value):
-    if value is None:
-        return None
-
-    if isinstance(value, int):
-        return value
-
-    if isinstance(value, dict):
-        return value.get('id')
-
-    return getattr(value, 'id', None)
 
 
 def _find_site_vlan(nb_api, site, vlan_id):
