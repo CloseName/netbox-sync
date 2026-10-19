@@ -1,0 +1,72 @@
+{
+  "mutations": [
+    [
+      "create",
+      "virtualization.interfaces",
+      1,
+      {
+        "virtual_machine": 80,
+        "name": "vmbr0",
+        "enabled": true,
+        "custom_fields": {
+          "sync_identities": [
+            {
+              "schema": "v2",
+              "type": "proxmox",
+              "instance": "pve-infra-test",
+              "kind": "lxc-nic",
+              "external_id": "100:net0"
+            }
+          ],
+          "sync_original_names": {
+            "proxmox/pve-infra-test/lxc-nic": "eth0"
+          },
+          "source_bridge": "vmbr0",
+          "source_vlan_id": 120
+        },
+        "id": 1
+      }
+    ],
+    [
+      "create",
+      "dcim.mac_addresses",
+      1,
+      {
+        "mac_address": "AA:BB:CC:DD:EE:02",
+        "assigned_object_type": "virtualization.vminterface",
+        "assigned_object_id": 1,
+        "id": 1
+      }
+    ],
+    [
+      "update",
+      "virtualization.interfaces",
+      1,
+      {
+        "primary_mac_address": 1
+      }
+    ],
+    [
+      "create",
+      "ipam.ip_addresses",
+      1,
+      {
+        "address": "10.20.30.50/24",
+        "vrf": 42,
+        "status": "active",
+        "assigned_object_type": "virtualization.vminterface",
+        "assigned_object_id": 1,
+        "id": 1
+      }
+    ],
+    [
+      "update",
+      "virtualization.virtual_machines",
+      80,
+      {
+        "primary_ip4": 1
+      }
+    ]
+  ],
+  "output": "CREATE INTERFACE id=1 lxc='lxc-100' name=vmbr0\nCREATE MAC id=1 AA:BB:CC:DD:EE:02\nSET PRIMARY MAC interface=1 mac=1\nCREATE IP id=1 address=10.20.30.50/24\nSET PRIMARY IPv4 lxc='lxc-100' address=vrf:42:10.20.30.50/24\n\nLXC NETWORK APPLY SUMMARY\n  interfaces_created=1\n  interfaces_updated=1\n  macs_created=1\n  macs_updated=0\n  ips_created=1\n  ips_updated=0\n  primary_updated=1\n  skipped=0\n"
+}
