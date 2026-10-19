@@ -576,6 +576,27 @@ Local evidence:
 `artifacts/vm-plan-ip-evidence-20261019.zip`. Selectel remains experimental;
 no production access or deployment changes.
 
+## Stage 5l: primary IPv4 planning
+
+Starts from main `a05394e3d98050e53108c1a1b843c703f3057d05` after PR #29.
+`vm_network_plan_primary.py` owns candidate deduplication/sorting and the original
+KEEP/SET/unchanged output and counter. The existing primary reader is supplied by
+the planner. Decisions still compare canonical address including mask, without
+write-side ownership or manual-primary preservation policy. Conflicting discovered
+IPs can still be primary candidates. VM/LXC writes remain unchanged.
+
+Eleven tests passed before extraction: no addresses, IPv6-only, set, keep despite
+ownership conflict, replace, missing/empty current record, duplicate candidates,
+sorted ambiguity, mask change and malformed current address. Tests assert exact
+primary output/counter, original ValueError/no summary on malformed current data,
+unchanged VM records and zero mutations. After extraction, 93 focused tests pass.
+AST comparison restores all original planner functions after inlining the helper.
+Error/fatal lint passes. Full pytest on Windows/Python 3.14: 1903 passed,
+485 skipped, one existing Starlette warning. Linux/database/opt-in skips are not
+deployment acceptance.
+Local evidence: `artifacts/vm-plan-primary-evidence-20261019.zip`.
+Selectel remains experimental; no production access or deployment changes.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
