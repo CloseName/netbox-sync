@@ -421,6 +421,27 @@ Local evidence:
 `artifacts/lxc-preflight-evidence-20261019.zip`. Selectel remains experimental;
 no production access or deployment changes.
 
+## Stage 5e: VM network precheck report
+
+Starts from main `8add53216ceab6db287f3a9661df97f6fc02e8d4` after PR #22.
+`vm_network_report.py` prints validated VM network contexts and all ten summary
+counters. The existing confirmation gate, mutation loop and final apply summary
+remain in the applier. LXC code and its distinct primary MAC/IP policies are unchanged.
+
+Sixteen tests passed before extraction against eight fixed output snapshots captured
+from the original implementation. Independent expected counters cover create, update,
+skip, primary set/match/preserve, absent MAC/IP, IPv6-only, mixed VM batches and empty
+input. Every scenario runs both confirmed and unconfirmed; unconfirmed runs assert
+zero mutations and the exact confirmation message. Snapshots are read-only during tests.
+After extraction, 87 focused tests pass. AST comparison confirms all applier functions
+are identical after inlining the reporter. Error/fatal lint passes.
+
+Full pytest on Windows/Python 3.14: 1818 passed, 485 skipped, one existing
+Starlette warning. Linux, database and opt-in skips are not deployment acceptance.
+Local evidence:
+`artifacts/vm-report-evidence-20261019.zip`. Selectel remains experimental;
+no production access or deployment changes.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.

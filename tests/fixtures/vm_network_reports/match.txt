@@ -1,0 +1,22 @@
+=== VM NETWORK APPLY PRECHECK ===
+target_site=Test Site cluster=Test Cluster
+
+VM id=10 vmid=503c5ad7-0000-1111-2222-0123456789ab name='APP-1'
+  SKIP INTERFACE name=VM Network bridge=VM Network vlan=120
+    MATCH MAC 00:50:56:AA:BB:CC
+    MATCH IP 192.0.2.51/24
+  PRIMARY IPv4 MATCH candidate=192.0.2.51/24
+
+PRECHECK SUMMARY
+  interface_create=0
+  interface_update=0
+  interface_skip=1
+  mac_create=0
+  mac_match=1
+  ip_create=0
+  ip_match=1
+  primary_set=0
+  primary_match=1
+  primary_preserve_manual=0
+
+PRECHECK PASSED
