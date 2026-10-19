@@ -19,19 +19,6 @@ def build_runtime_plan(nb_api, hosts, config):
     from ..vm_replacement import configure, stage
     configure(nb_api)
     nb_api=PlanningNetBox(nb_api)
-    from ..netbox_metadata import find_sync_identity_matches
-    from ..selectel_host_match import SelectelMatchError
-    try:
-        devices = list(nb_api.dcim.devices.all())
-        for host in hosts:
-            find_sync_identity_matches(devices, host)
-    except SelectelMatchError as error:
-        return SyncPlan(source_instance=config.source_instance,source_id=config.id,source_type=config.source_type,
-            source_fingerprint=safe_source_fingerprint(config),target_fingerprint=target_fingerprint(config),
-            provider_fingerprint=stable_fingerprint(error.code),netbox_fingerprint=stable_fingerprint(None),
-            items=(SyncPlanItem(object_kind='host',external_id=host.source_id,name=host.original_name,
-                action=SyncAction.BLOCKED,reason_code=error.code,
-                reason='Selectel hardware matching requires review. Refresh provider inventory and check duplicate hardware identifiers and existing source bindings.'),))
     from ..esxi_vm_identity import resolve_vm_identities
     hosts, identity_conflicts = resolve_vm_identities(nb_api, hosts, config)
     try:hosts=scoped_inventory(nb_api,hosts,config)
@@ -56,6 +43,19 @@ def build_runtime_plan(nb_api, hosts, config):
                 name=config.name, action=SyncAction.BLOCKED, reason_code=c.kind,
                 reason='Inventory conflict. Resolve the ambiguity and build a new plan.')
                 for c in conflicts))
+    from ..netbox_metadata import find_sync_identity_matches
+    from ..selectel_host_match import SelectelMatchError
+    try:
+        devices = list(nb_api.dcim.devices.all())
+        for host in hosts:
+            find_sync_identity_matches(devices, host)
+    except SelectelMatchError as error:
+        return SyncPlan(source_instance=config.source_instance,source_id=config.id,source_type=config.source_type,
+            source_fingerprint=safe_source_fingerprint(config),target_fingerprint=target_fingerprint(config),
+            provider_fingerprint=stable_fingerprint(error.code),netbox_fingerprint=stable_fingerprint(None),
+            items=(SyncPlanItem(object_kind='host',external_id=host.source_id,name=host.original_name,
+                action=SyncAction.BLOCKED,reason_code=error.code,
+                reason='Selectel hardware matching requires review. Refresh provider inventory and check duplicate hardware identifiers and existing source bindings.'),))
     # The native VM writer requires unique display names in the target cluster.
     # Surface the conflict in the review instead of a generic simulation failure.
     from ..netbox_vm_name import netbox_vm_name

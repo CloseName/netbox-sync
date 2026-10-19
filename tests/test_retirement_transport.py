@@ -169,7 +169,8 @@ def test_unknown_or_malformed_code_keeps_http_status_without_remote_content(remo
     assert 'code' not in caught.value.guard_detail
 
 
-@pytest.mark.parametrize('raw',[b'private proxy HTML',b'[]',b'x'*(MAX_RESPONSE+1)])
+@pytest.mark.parametrize('raw',[b'private proxy HTML',b'[]',b'x'*(MAX_RESPONSE+1)],
+                         ids=['html', 'array', 'oversized'])
 def test_invalid_http_body_retains_status_but_no_response_content(raw):
     response=Response(409,{})
     response.body=raw

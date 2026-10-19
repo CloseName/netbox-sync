@@ -14,6 +14,14 @@ Synchronize infrastructure from multiple virtualization sources, including Proxm
 - Versioned backup, verification, and fresh-restore workflow
 - Source-scoped credential references with root-protected secret storage
 
+## Experimental Selectel integration
+
+Selectel is experimental and has not passed end-to-end acceptance. Account import
+can finish with an unconfirmed result; automatic retries remain blocked until the
+original operation is reconciled. Native resource matching and port/NIC evidence
+remain incomplete. See [current status and limits](docs/selectel-status.md).
+Merging this code does not authorize a production deployment.
+
 ## Supported sources
 
 - Proxmox VE: hosts, QEMU VMs, LXC containers, disks, interfaces, MACs, and IPs

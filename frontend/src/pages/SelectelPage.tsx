@@ -62,6 +62,7 @@ export function SelectelPage(){
  async function collect(id:string){setBusy(true);setError('');try{await request('/'+id+'/collect',{});resource.refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  async function configure(id:string,operation:string,value:unknown){setBusy(true);setError('');try{await request('/'+id+'/'+operation,value);resource.refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  return <main className="selectel-workspace"><div className="page-heading"><div><h1><ProviderIcon provider="selectel"/> Selectel</h1><p className="muted">Серверы, DNS и объектное хранилище ваших аккаунтов.</p></div></div>
+ <p role="note">Экспериментальная интеграция. Сопоставление ресурсов и подтверждение импорта ещё проходят проверку. При неопределённом результате повторный запуск заблокирован до сверки операции.</p>
  <div className="sources-actions"><button className="primary" onClick={()=>{setDraft({account:'',name:'',username:'',password:''});setForm(true);}}>Подключить аккаунт</button>
  <RefreshControl loading={resource.loading} error={resource.error} received={resource.received} refresh={resource.refresh}/></div>
  {(error||resource.error)&&<p role="alert">{error||'Не удалось загрузить аккаунты.'}</p>}

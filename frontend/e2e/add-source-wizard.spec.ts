@@ -179,7 +179,7 @@ test('lost final response checks the actor-bound journal without another registr
  await expect(page.getByRole('checkbox',{name:'Create the cluster when adding this source',exact:true})).toHaveCount(0);
  await page.getByRole('button',{name:'Continue',exact:true}).click();
  let posts=0,checks=0;
- await page.route('**/api/v1/sources',route=>{posts++;return route.fulfill({status:503,json:{error:{code:'REGISTRATION_UNCERTAIN'}}});});
+ await page.route('**/api/v1/sources',route=>{if(route.request().method()!=='POST')return route.fallback();posts++;return route.fulfill({status:503,json:{error:{code:'REGISTRATION_UNCERTAIN'}}});});
  await page.route('**/api/v1/sources/esxi-aabbccddeeff',route=>route.fulfill({status:404,json:{error:{code:'SOURCE_NOT_FOUND'}}}));
  await page.route('**/api/v1/sources/registration-status',route=>{checks++;expect(Object.keys(route.request().postDataJSON()).sort()).toEqual(['registration_id','source_instance']);return route.fulfill({json:{status:'UNCERTAIN',server_continuing:true,resume_supported:false,catalog_status:'CREATED'}});});
  await page.getByRole('button',{name:'Add source',exact:true}).click();
