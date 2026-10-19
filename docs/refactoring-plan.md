@@ -374,6 +374,26 @@ Error/fatal lint and whitespace checks pass. Local evidence is saved in
 no production/deployment changes. Next consider read-only context/preflight preparation
 inside one applier, preserving all-before-write checks as a separate small increment.
 
+## Stage 5c: VM network preflight
+
+Starts from main `05ea9ec27a6b47fe7208b0ebe5502297ae2ea2f6` after PR #20.
+`vm_network_preflight.py` prepares checked contexts for the entire VM batch before
+reporting or writing. It preserves identity/name validation, MAC/IP ownership and
+duplicate checks, VRF scopes and primary IPv4 decisions. Existing error classes and
+helper imports remain available from the applier. LXC semantics are unchanged.
+
+Twelve new tests passed before extraction: conflicts on the second VM prevent any
+writes or report output, with and without confirmation. They cover duplicate
+source MAC/IP, foreign MAC/IP ownership, foreign primary IPv4 and missing identity.
+After extraction, 88 focused tests pass. AST comparison confirms that inlining the
+new preparation function restores the original apply function exactly, and all
+moved helpers/error classes are unchanged. Error/fatal lint passes.
+
+Full pytest on Windows/Python 3.14: 1787 passed, 485 skipped, one existing
+Starlette warning. Linux, database and opt-in skips are not deployment acceptance.
+Local evidence: `artifacts/vm-preflight-evidence-20261019.zip`.
+Selectel remains experimental; no production or deployment changes.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
