@@ -656,6 +656,27 @@ Local evidence:
 `artifacts/vm-plan-summary-evidence-20261019.zip`. Selectel remains experimental;
 no production access or deployment changes.
 
+## Stage 6a: host apply target preparation
+
+Starts from main `512c9a8a76f24a0483507dc10764eb91014c6b09` after PR #33.
+`host_apply_targets.py` resolves site, role, platform, per-host device types and
+cluster into an immutable container of original records. Mapping validation and
+lookups keep their original order and lazy import. The applier supplies its existing
+required-object and cluster resolvers, preserving aliases and injected behavior.
+Host preflight, report, confirmation and writes remain in the applier. VM/LXC policy
+and host_networking behavior are unchanged.
+
+Eleven tests passed before extraction: ordered legacy/explicit-ID selection (with
+stale name/slug values), missing prerequisites, foreign scope/type and duplicate
+clusters. Failures precede host checks, output and mutations. After extraction,
+76 focused tests pass and 33 environment-dependent tests skip. AST comparison
+restores all original host applier functions after inlining preparation.
+Error/fatal lint passes. Full pytest on Windows/Python 3.14: 1942 passed,
+485 skipped, one existing Starlette warning. Linux/database/opt-in skips are not
+deployment acceptance.
+Local evidence: `artifacts/host-targets-evidence-20261019.zip`.
+Selectel remains experimental; no production access or deployment changes.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
