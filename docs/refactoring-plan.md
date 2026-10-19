@@ -512,6 +512,28 @@ Local evidence:
 `artifacts/lxc-writes-evidence-20261019.zip`. Selectel remains experimental;
 no production access or deployment changes.
 
+## Stage 5i: VM network planner inventory
+
+Starts from main `37c1ddd49aa404a4ff323808d11c3699a1687237` after PR #26.
+`vm_network_plan_inventory.py` owns the six ordered reads and seven collections
+used by the legacy VM network planner. Planning decisions, counters and output
+stay unchanged. This is separate from write inventory: planner IP keys are address
+only (not VRF scoped), VLAN keys use integer VID, and prefix keys use literal strings.
+Duplicates retain order and original record references; invalid IPs remain in the
+ID index, and invalid VLAN conversion still raises. No shared loader changes policy.
+
+Eleven behavioral tests passed before extraction: each read failure, exact read
+order/filter, duplicate records, malformed IP/VLAN data, fixed output snapshots and
+zero mutations. One additional helper test verifies original references, address-only
+IP grouping across VRFs, invalid-IP ID retention and VLAN/prefix duplicates.
+After extraction, 58 focused tests pass. AST comparison restores every original
+planner function after inlining preparation. Error/fatal lint passes.
+Full pytest on Windows/Python 3.14: 1872 passed, 485 skipped, one existing
+Starlette warning. Linux/database/opt-in skips are not deployment acceptance.
+Local evidence:
+`artifacts/vm-plan-inventory-evidence-20261019.zip`. Selectel remains experimental;
+no production access or deployment changes.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
