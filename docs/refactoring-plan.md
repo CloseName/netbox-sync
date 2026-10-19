@@ -27,6 +27,46 @@ Each stage is a separate reviewable PR. Changing features or fixing unrelated
 defects requires a separate change, so behavior changes are visible to reviewers.
 Do not combine the remaining stages into one repository-wide rewrite.
 
+## Stage 3a: read-only API routes
+
+Starts from main `5503d84bf94e745238ea08731d6a6d9ca50fe867` after PR #7.
+The preceding contrast change passed all 367 Chromium scenarios without skips;
+see the [contrast resolution](browser-product-findings-20261019.md#contrast-resolution-follow-up).
+
+`netbox_sync/api/read_routes.py` now registers nine existing GET handlers:
+`/health`, `/system/health`, `/diagnostics`, `/version`, `/runs`, `/runs/{run_id}`,
+`/pfsense`, `/sources`, and `/sources/{source_instance}`, all under `/api/v1`.
+The factory supplies its already-created services and settings to this module.
+Registration still uses the same router, at the same position, with the same
+names, DTOs, query defaults and request-state assignments. Version lookup remains
+late-bound and evaluated on each request.
+
+An AST comparison confirmed all nine decorated functions are identical to their
+original definitions, and the rest of the factory and shared boundaries are
+unchanged. Complete OpenAPI schemas and ordered route metadata matched before
+and after in both default and frontend/bootstrap configurations. The comparison
+does not replace HTTP tests: 123 focused health, sources, history, diagnostics,
+authorization, directory and frontend-route tests passed.
+
+No existing assertion was changed. Shared middleware, authentication, errors,
+onboarding, write operations and Selectel remain in their existing locations.
+The frontend is unchanged; its mocked browser suite is not evidence for backend
+equivalence and is not rerun for this extraction. API tests exercise the real
+factory with injected services. No production service or deployment is involved.
+
+Validation on Windows/Python 3.14: full `pytest tests -q --tb=short` completed with
+1687 passed, 485 skipped and the existing Starlette deprecation warning. The skips
+include Linux, database and opt-in integrations; they do not establish deployment
+acceptance. Pylint for the extracted module scored 10.00/10, preserving the
+factory's signature-related exemptions and the lazy catalog import. `git diff
+--check` passed. Raw schema snapshots, comparison scripts and test logs are saved
+locally in `artifacts/api-read-routes-evidence-20261019.zip` in the task workspace.
+
+Next API increments should remain separate: lifecycle/schedule routes, guarded
+operations, onboarding/catalog, then shared error/request boundaries. Preserve
+initialization and route order, dependency injection, authorization and confirmation
+checks at each step; do not bundle these into one rewrite.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.
