@@ -55,6 +55,8 @@ functions: one function can produce several findings.
   Control-flow/doc findings resolved; public serve arguments retained.
 - Host device conflict checks: 2346 tests passed, 491 skipped; Pylint 9.17/10.
   Control-flow/doc findings resolved in netbox_apply.
+- VM/LXC network reports: 2348 tests passed, 491 skipped; Pylint 9.19/10.
+  No findings remain in either report module; distinct primary-IP output retained.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,
