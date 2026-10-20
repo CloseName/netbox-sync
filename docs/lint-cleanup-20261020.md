@@ -191,3 +191,21 @@ remain unchanged.
 
 Full suite: 2114 passed, 485 skipped, one existing Starlette warning. Full Pylint
 passes at 9.04/10 with zero Error/Fatal; Black and whitespace checks pass.
+
+## Stage 11: network scope observations
+
+Separate inventory evidence indexing, MAC conflict annotations, IP conflict
+annotations and guest iteration. Keep scope selection, VRF verification and
+deep-copy behavior in the entry point. Document exact-type selectors, inventory
+read order, malformed evidence errors and differing ambiguous-NIC handling:
+IP observations reset while existing MAC observations remain for executor refusal.
+
+Fifteen new VM/LXC characterization cases pass before and after extraction.
+All 42 scope/observation tests, including local HTTP integration scenarios, pass.
+AST comparison confirms unchanged rule/value helpers and extracted evidence,
+MAC and IP blocks. Retain mask/VRF conflicts, ID ordering and read-only behavior;
+no provider apply policies or global lint suppressions are changed.
+
+Full suite: 2129 passed, 485 skipped, one existing Starlette warning. Full Pylint
+passes at 9.04/10 with zero Error/Fatal; Black and whitespace checks pass.
+No complexity or missing-docstring findings remain in network_scopes.
