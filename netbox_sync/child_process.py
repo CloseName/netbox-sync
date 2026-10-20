@@ -107,6 +107,19 @@ def phase_progress(stage, elapsed=None, *, failed=False, requests=None, objects=
         pass
 
 
+def _progress_row(value):
+    """Project one recognized phase record with bounded exact-integer metadata."""
+    if value.get("phase") in PHASES and value.get("state") in ("started", "finished", "failed"):
+        row = {"phase": value["phase"], "state": value["state"]}
+        if type(value.get("duration_ms")) is int and 0 <= value["duration_ms"] <= 86400000:
+            row["duration_ms"] = value["duration_ms"]
+        for key in ("requests", "objects"):
+            if type(value.get(key)) is int and 0 <= value[key] <= 10000000:
+                row[key] = value[key]
+        return row
+    return None
+
+
 def read_progress(process):
     """Retain at most 64 allowlisted child phase records with bounded numeric metadata."""
 
@@ -120,13 +133,8 @@ def read_progress(process):
         for line in raw.splitlines():
             try:
                 value = json.loads(line)
-                if value.get("phase") in PHASES and value.get("state") in ("started", "finished", "failed"):
-                    row = {"phase": value["phase"], "state": value["state"]}
-                    if type(value.get("duration_ms")) is int and 0 <= value["duration_ms"] <= 86400000:
-                        row["duration_ms"] = value["duration_ms"]
-                    for key in ("requests", "objects"):
-                        if type(value.get(key)) is int and 0 <= value[key] <= 10000000:
-                            row[key] = value[key]
+                row = _progress_row(value)
+                if row is not None:
                     rows.append(row)
             except (ValueError, AttributeError):
                 pass
