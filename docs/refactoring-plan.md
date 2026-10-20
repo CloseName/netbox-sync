@@ -718,6 +718,27 @@ Local evidence:
 `artifacts/host-report-evidence-20261019.zip`. Selectel remains experimental;
 no production access or deployment changes.
 
+## Stage 6d: host writes
+
+Starts from main `a375cb4929ee70badf163d77c71c612adec01819` after PR #36.
+`host_apply_writes.py` owns the original device/interface/IP writes, late IP conflict
+checks, primary assignment and operation/summary output. The applier supplies its
+existing helpers and error class. All-host preflight, report and confirmation gate
+remain in the caller. The network-disabled path and VM/LXC behavior are unchanged.
+
+Nine tests passed before extraction: four write failure boundaries, three exact
+payload/output snapshots (create, free-IP reuse, network-disabled) with mutation-free
+replay, and duplicate/foreign IP appearing after preflight. Test discovery timestamps
+are fixed before execution for deterministic payloads. Late conflicts preserve the
+completed device/interface writes and stop without a success summary. Snapshots are
+read-only during tests. After extraction, 82 focused tests pass and one skips.
+AST comparison restores all original applier functions/classes after inlining writes.
+Error/fatal lint passes. Full pytest on Windows/Python 3.14: 1968 passed,
+485 skipped, one existing Starlette warning. Linux/database/opt-in skips are not
+deployment acceptance.
+Local evidence: `artifacts/host-writes-evidence-20261019.zip`.
+Selectel remains experimental; no production access or deployment changes.
+
 ## Stage 2 scope
 
 PR #4 was merged as `f67d5622b3618ea9986e837feb5cc7d490175310`.

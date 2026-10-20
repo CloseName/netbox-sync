@@ -1,0 +1,125 @@
+{
+  "mutations": [
+    [
+      "create",
+      "dcim.devices",
+      1,
+      {
+        "name": "NODE-A",
+        "device_type": 6,
+        "role": 4,
+        "site": 1,
+        "platform": 5,
+        "cluster": 3,
+        "status": "active",
+        "custom_fields": {
+          "hardware_identity": {
+            "version": 1,
+            "source": "proxmox",
+            "status": "unsupported_api",
+            "observed_at": "2026-01-01T00:00:00+00:00",
+            "identifiers": [],
+            "conflicts": []
+          },
+          "sync_identities": [
+            {
+              "schema": "v2",
+              "type": "proxmox",
+              "instance": "pve-infra-test",
+              "kind": "host",
+              "external_id": "node-a"
+            }
+          ],
+          "sync_original_names": {
+            "proxmox/pve-infra-test/host": "node-a"
+          },
+          "hypervisor_version": "8.3.2",
+          "cpu_model": "Example CPU",
+          "cpu_vendor": "GenuineIntel",
+          "cpu_sockets": 1,
+          "cpu_cores": 8,
+          "cpu_threads": 16,
+          "memory_mb": 32768,
+          "proxmox_host_network": {
+            "version": 1,
+            "available": true,
+            "basis": "api_network_configuration",
+            "coverage": {
+              "status": "missing_references",
+              "scope": "known_references_only",
+              "missing_references": [
+                {
+                  "source": "vmbr0",
+                  "relation": "bridge_port",
+                  "target": "eno1"
+                },
+                {
+                  "source": "vmbr0",
+                  "relation": "bridge_port",
+                  "target": "eno2"
+                }
+              ]
+            },
+            "pending_state": "unknown_response_metadata_not_available",
+            "interfaces": [
+              {
+                "name": "vmbr0",
+                "type": "bridge",
+                "active": true,
+                "bridge_ports": [
+                  "eno1",
+                  "eno2"
+                ],
+                "bond_slaves": [],
+                "bond_mode": null,
+                "vlan_parent": null,
+                "vlan_id": null,
+                "vlan_aware": true,
+                "mtu": null,
+                "mac": null,
+                "cidr": "10.20.30.10/24",
+                "cidr6": null,
+                "pending": null
+              }
+            ]
+          }
+        },
+        "id": 1
+      }
+    ],
+    [
+      "create",
+      "dcim.interfaces",
+      1,
+      {
+        "device": 1,
+        "name": "vmbr0",
+        "type": "virtual",
+        "enabled": true,
+        "description": "Management bridge",
+        "id": 1
+      }
+    ],
+    [
+      "create",
+      "ipam.ip_addresses",
+      1,
+      {
+        "address": "10.20.30.10/24",
+        "status": "active",
+        "assigned_object_type": "dcim.interface",
+        "assigned_object_id": 1,
+        "id": 1
+      }
+    ],
+    [
+      "update",
+      "dcim.devices",
+      1,
+      {
+        "primary_ip4": 1
+      }
+    ]
+  ],
+  "output": "CREATE DEVICE id=1 name=NODE-A\nCREATE INTERFACE id=1 name=vmbr0\nCREATE IP id=1 address=10.20.30.10/24 interface=vmbr0\nSET PRIMARY IPv4 device=NODE-A address=10.20.30.10/24\n\nAPPLY SUMMARY created=3 updated=1 skipped=0\n"
+}
