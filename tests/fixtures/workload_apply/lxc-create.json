@@ -1,0 +1,71 @@
+{
+  "output": "=== LXC APPLY PRECHECK ===\ntarget_site=Test Site cluster=Test Cluster\n\nCREATE LXC vmid=101 name='second-workload'\nCREATE LXC vmid=100 name='lxc-100'\n\nLXC PRECHECK SUMMARY\n  create=2\n  update=0\n  skip=0\n\nPRECHECK PASSED\n\n=== LXC APPLY ===\nCREATE LXC id=1 vmid=101 name='second-workload'\nCREATE LXC id=2 vmid=100 name='lxc-100'\n\nLXC APPLY SUMMARY\n  created=2\n  updated=0\n  skipped=0\n",
+  "mutations": [
+    [
+      "create",
+      "virtualization.virtual_machines",
+      1,
+      {
+        "name": "second-workload",
+        "cluster": 3,
+        "status": "offline",
+        "vcpus": 2,
+        "memory": 2048,
+        "disk": 8192,
+        "start_on_boot": "off",
+        "custom_fields": {
+          "sync_identities": [
+            {
+              "schema": "v2",
+              "type": "proxmox",
+              "instance": "pve-infra-test",
+              "kind": "lxc",
+              "external_id": "101"
+            }
+          ],
+          "sync_original_names": {
+            "proxmox/pve-infra-test/lxc": "second-workload"
+          },
+          "guest_kind": "lxc",
+          "guest_architecture": "amd64",
+          "guest_os_type": "debian",
+          "swap_mb": 512
+        },
+        "id": 1
+      }
+    ],
+    [
+      "create",
+      "virtualization.virtual_machines",
+      2,
+      {
+        "name": "lxc-100",
+        "cluster": 3,
+        "status": "offline",
+        "vcpus": 2,
+        "memory": 2048,
+        "disk": 8192,
+        "start_on_boot": "off",
+        "custom_fields": {
+          "sync_identities": [
+            {
+              "schema": "v2",
+              "type": "proxmox",
+              "instance": "pve-infra-test",
+              "kind": "lxc",
+              "external_id": "100"
+            }
+          ],
+          "sync_original_names": {
+            "proxmox/pve-infra-test/lxc": "lxc-100"
+          },
+          "guest_kind": "lxc",
+          "guest_architecture": "amd64",
+          "guest_os_type": "debian",
+          "swap_mb": 512
+        },
+        "id": 2
+      }
+    ]
+  ]
+}

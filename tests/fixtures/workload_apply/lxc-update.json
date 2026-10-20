@@ -1,0 +1,23 @@
+{
+  "output": "=== LXC APPLY PRECHECK ===\ntarget_site=Test Site cluster=Test Cluster\n\nUPDATE LXC vmid=101 name='second-workload'\n  fields=memory,vcpus\nUPDATE LXC vmid=100 name='lxc-100'\n  fields=memory,vcpus\n\nLXC PRECHECK SUMMARY\n  create=0\n  update=2\n  skip=0\n\nPRECHECK PASSED\n\n=== LXC APPLY ===\nUPDATE LXC id=1 vmid=101 name='second-workload'\nUPDATE LXC id=2 vmid=100 name='lxc-100'\n\nLXC APPLY SUMMARY\n  created=0\n  updated=2\n  skipped=0\n",
+  "mutations": [
+    [
+      "update",
+      "virtualization.virtual_machines",
+      1,
+      {
+        "vcpus": 2,
+        "memory": 2048
+      }
+    ],
+    [
+      "update",
+      "virtualization.virtual_machines",
+      2,
+      {
+        "vcpus": 2,
+        "memory": 2048
+      }
+    ]
+  ]
+}

@@ -804,3 +804,29 @@ helper; error/fatal lint checks passed. VM behavior is unchanged, Selectel remai
 experimental, and no production deployment is included.
 
 Full suite: 1995 passed, 485 skipped, one existing Starlette deprecation warning.
+
+## Workload application stages
+
+After PR #39, VM and LXC application each have separate preparation, preflight,
+precheck report and write modules. The public appliers retain confirmation and
+orchestration. Existing helper callbacks preserve patch points and error classes.
+VM sorting, duplicate-name checks, aggregated blocked reports and native-disk
+suppression remain distinct from LXC input-order processing and immediate refusal.
+Seventeen new baseline tests cover exact output/payloads, replay, confirmation,
+partial write failures and native disks; 64 focused tests pass. AST round-trip
+comparison verifies unchanged executable bodies after inlining all six helpers.
+
+## Completion scope for the remaining structural pass
+
+1. Finish VM/LXC application stages (above).
+2. Separate remaining read-only planning and disappearance responsibilities.
+3. Review provider discovery boundaries, extracting mixed conversion responsibilities
+   where useful without merging provider-specific rules.
+4. Audit maintained entrypoints, scripts, compatibility paths and documentation;
+   record retention decisions and final verification. Do not remove code solely
+   because static search finds no direct caller.
+
+Already separated preflight/write modules may remain long when they implement one
+ordered safety policy. Registration functions containing nested API routes are not
+split merely to meet a line-count target. This pass preserves behavior and excludes
+Selectel feature completion, unrelated bug fixes and production deployment.

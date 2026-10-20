@@ -1,0 +1,4 @@
+{
+  "output": "=== LXC APPLY PRECHECK ===\ntarget_site=Test Site cluster=Test Cluster\n\nCREATE LXC vmid=101 name='second-workload'\nCREATE LXC vmid=100 name='lxc-100'\n\nLXC PRECHECK SUMMARY\n  create=2\n  update=0\n  skip=0\n\nPRECHECK PASSED\nAPPLY_CONFIRM=LXC_WRITE is not set.\nNo changes were written to NetBox.\n",
+  "mutations": []
+}

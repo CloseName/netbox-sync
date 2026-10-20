@@ -1,0 +1,4 @@
+{
+  "output": "=== LXC APPLY PRECHECK ===\ntarget_site=Test Site cluster=Test Cluster\n\nSKIP LXC vmid=101 name='second-workload'\nSKIP LXC vmid=100 name='lxc-100'\n\nLXC PRECHECK SUMMARY\n  create=0\n  update=0\n  skip=2\n\nPRECHECK PASSED\n\n=== LXC APPLY ===\n\nLXC APPLY SUMMARY\n  created=0\n  updated=0\n  skipped=2\n",
+  "mutations": []
+}
