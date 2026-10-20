@@ -45,6 +45,8 @@ functions: one function can produce several findings.
   No complexity or missing-doc findings remain in worker_failure.
 - Bootstrap probe stages: 2283 tests passed, 485 skipped; Pylint 9.14/10.
   No complexity or missing-doc findings remain in bootstrap_probe.
+- Setup journal stages: 2289 tests passed, 491 skipped; Pylint 9.15/10.
+  No complexity or missing-doc findings remain in bootstrap_setup.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,

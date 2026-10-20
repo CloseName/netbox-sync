@@ -404,3 +404,34 @@ def test_executor_create_session_exit_failure_remains_uncertain(executor, monkey
     monkeypatch.setattr(type(session), '__exit__', fail_exit)
     assert module.operate({**value, 'action': 'create', 'name': 'cpu_model'}) == {'code': 'UNCERTAIN'}
     assert len(session.calls) == 1
+
+@pytest.mark.parametrize('field,value', [('confirm', False), ('revision', True), ('digest', 'wrong')])
+def test_setup_validation_refusal_precedes_running_state_and_token_cleanup(setup, field, value):
+    store, remote, control = setup
+    payload = confirm(store, control)
+    payload[field] = value
+    before = store.read()
+    with pytest.raises(ControlError):
+        control.apply(payload)
+    assert store.read() == before
+    assert 'setup_token' in payload
+    assert not any(call['action'] in ('identify', 'create', 'revoke') for call in remote.calls)
+
+
+@pytest.mark.parametrize('failed_action', ['inspect', 'identify', 'create'])
+def test_running_setup_failure_clears_payload_token_and_preserves_send_marker(setup, failed_action):
+    store, remote, control = setup
+    payload = confirm(store, control)
+    original = control.execute
+    def execute(value):
+        if value['action'] == failed_action:
+            raise RuntimeError('fixture private failure')
+        return original(value)
+    control.execute = execute
+    result = control.apply(payload)['preparation']
+    assert result['status'] == 'UNCERTAIN'
+    assert result['local_secret'] == 'NOT_STORED'
+    assert result['revocation'] == 'UNCONFIRMED'
+    assert result['uncertain'] == (next(iter(FIELDS)) if failed_action == 'create' else None)
+    assert 'setup_token' not in payload
+    assert 'fixture private failure' not in json.dumps(store.read())
