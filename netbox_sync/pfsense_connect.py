@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 import requests
 from .api.egress import EgressPolicy, pinned_dns
-from .bootstrap_probe import fetch, ProbeError
+from .bootstrap_probe import fetch
 from .netbox_tls import configure_session
 from .source_tls import CA_FILE
 from .netbox_auth import authorization
@@ -157,7 +157,12 @@ def setup(value, interfaces):
             name: base64.b64encode((ASSETS / name).read_bytes()).decode()
             for name in ("network-v1.php", "inventory-v1.php", "pf-runtime-v1.php")
         }
-        payload = dict(username=state["username"], owner=state["owner"], public_key=state["public_key"], files=files)
+        payload = {
+            "username": state["username"],
+            "owner": state["owner"],
+            "public_key": state["public_key"],
+            "files": files,
+        }
         code = (
             compat
             + '$ns_input=json_decode(base64_decode("'
@@ -254,12 +259,12 @@ def run(value, progress=None):
         if page.get("next") or page["count"] != len(page["results"]):
             raise SetupError("VM_INTERFACES_INVALID")
         interfaces = [
-            dict(
-                id=r["id"],
-                vm_id=value["vm_id"],
-                name=r["name"],
-                mac=(r.get("primary_mac_address") or {}).get("mac_address"),
-            )
+            {
+                "id": r["id"],
+                "vm_id": value["vm_id"],
+                "name": r["name"],
+                "mac": (r.get("primary_mac_address") or {}).get("mac_address"),
+            }
             for r in page["results"]
         ]
         response = session.post(
@@ -334,7 +339,7 @@ def run(value, progress=None):
         result = response.json()
         if result.get("status") not in ("SAVED", "UNCHANGED"):
             raise SetupError("NETBOX_IMPORT_FAILED")
-    return dict(collected_at=snapshot["collected_at"], ssh_port=state["ssh_port"], host_key=state["host_key"])
+    return {"collected_at": snapshot["collected_at"], "ssh_port": state["ssh_port"], "host_key": state["host_key"]}
 
 
 def main():

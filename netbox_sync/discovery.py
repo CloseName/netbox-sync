@@ -1,3 +1,5 @@
+"""Provider-neutral discovery records for hosts, guests, disks and interfaces."""
+
 from dataclasses import dataclass, field
 from typing import Optional
 

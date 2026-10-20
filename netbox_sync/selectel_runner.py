@@ -101,11 +101,16 @@ def main():
                     return
             url, _ = runtime_netbox(store.path, "read")
             token = read(base / "netbox-token.json")["token"]
-            access = dict(url=url, token=token, guard_instance=os.environ.get("NETBOX_SYNC_GUARD_INSTANCE", ""))
+            access = {"url": url, "token": token, "guard_instance": os.environ.get("NETBOX_SYNC_GUARD_INSTANCE", "")}
             result = child(dict(operation="preflight", **access), 90)
             if result.get("ready") is True:
                 result = child(
-                    dict(operation="collect", account=account, username=state["username"], password=state["password"]),
+                    {
+                        "operation": "collect",
+                        "account": account,
+                        "username": state["username"],
+                        "password": state["password"],
+                    },
                     2800,
                 )
             elif "error" not in result:
@@ -125,15 +130,18 @@ def main():
                     token = read(base / "netbox-token.json")["token"]
                     import_started = True
                     imported = child(
-                        dict(
-                            operation="import",
-                            url=url,
-                            token=token,
-                            guard_instance=os.environ.get("NETBOX_SYNC_GUARD_INSTANCE", ""),
-                            payload=dict(
-                                account=account, nonce=run_id, document=result["document"], registry=result["registry"]
-                            ),
-                        ),
+                        {
+                            "operation": "import",
+                            "url": url,
+                            "token": token,
+                            "guard_instance": os.environ.get("NETBOX_SYNC_GUARD_INSTANCE", ""),
+                            "payload": {
+                                "account": account,
+                                "nonce": run_id,
+                                "document": result["document"],
+                                "registry": result["registry"],
+                            },
+                        },
                         90,
                     )
                 if "error" in imported:

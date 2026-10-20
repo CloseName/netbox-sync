@@ -1,3 +1,5 @@
+"""Orchestrate VM preparation, preflight, confirmation and writes."""
+
 from .vm_apply_writes import write_virtual_machines
 from .vm_apply_report import report_vm_precheck
 from .vm_apply_preflight import prepare_vm_contexts

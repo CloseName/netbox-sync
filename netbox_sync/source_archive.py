@@ -41,7 +41,11 @@ def close_generation(store, connection, record):
     mode = "LEGACY_RETAIN" if receipt["manifest"].get("format") == 4 else "FULL_DELETE"
     connection.execute(
         sql.SQL(
-            "INSERT INTO {} (source_instance,operation_id,actor_id,mode,guard_instance,receipt) VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING"
+            (
+                "INSERT INTO {} (source_instance,operation_id,actor_id,mode,guard_"
+                "instance,receipt) VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT DO "
+                "NOTHING"
+            )
         ).format(store.table("source_archives")),
         (source, record["operation_id"], record["actor_id"], mode, record["guard_instance"], Jsonb(receipt)),
     )
@@ -62,7 +66,11 @@ def close_generation(store, connection, record):
     )
     connection.execute(
         sql.SQL(
-            "UPDATE {} SET status='STALE',result=NULL,safe_error_code='PLAN_STALE',updated_at=clock_timestamp() WHERE source_instance=%s AND status='READY'"
+            (
+                "UPDATE {} SET status='STALE',result=NULL,safe_error_code='PLAN_ST"
+                "ALE',updated_at=clock_timestamp() WHERE source_instance=%s AND "
+                "status='READY'"
+            )
         ).format(store.table("source_operations")),
         (source,),
     )
@@ -95,7 +103,10 @@ def generations(store):
             raise LifecycleError("SOURCE_LIFECYCLE_REVIEW_LIMIT")
         reservations = connection.execute(
             sql.SQL(
-                "SELECT provider,anchor,source_instance FROM {} WHERE released_at IS NULL ORDER BY source_instance LIMIT 1001"
+                (
+                    "SELECT provider,anchor,source_instance FROM {} WHERE released_at "
+                    "IS NULL ORDER BY source_instance LIMIT 1001"
+                )
             ).format(store.table("host_reservations"))
         ).fetchall()
         if len(reservations) > 1000:
@@ -103,11 +114,11 @@ def generations(store):
     from .host_registration import legacy_anchor, registration_anchor
 
     sources = [
-        dict(
-            source_instance=r["source_instance"],
-            name=r["name"],
-            source_type=r["source_type"],
-            state=(
+        {
+            "source_instance": r["source_instance"],
+            "name": r["name"],
+            "source_type": r["source_type"],
+            "state": (
                 "ARCHIVED"
                 if r["archive_mode"]
                 else (
@@ -124,13 +135,13 @@ def generations(store):
                     )
                 )
             ),
-            archive_mode=r["archive_mode"],
-            requires_recheck=bool(r["archive_mode"] and r["verified_at"] is None),
-            removed=r["removed_at"] is not None,
-            observed_uuid=registration_anchor(r["settings"]) if r["source_type"] == "esxi" else None,
-            verified_identity=legacy_anchor(r["settings"]) is not None,
-            credential_state=r["credential_state"],
-        )
+            "archive_mode": r["archive_mode"],
+            "requires_recheck": bool(r["archive_mode"] and r["verified_at"] is None),
+            "removed": r["removed_at"] is not None,
+            "observed_uuid": registration_anchor(r["settings"]) if r["source_type"] == "esxi" else None,
+            "verified_identity": legacy_anchor(r["settings"]) is not None,
+            "credential_state": r["credential_state"],
+        }
         for r in rows
     ]
     by_id = {r["source_instance"]: r for r in sources}
@@ -142,18 +153,18 @@ def generations(store):
         claims.setdefault((row["provider"], row["anchor"]), set()).add(row["source_instance"])
         if row["source_instance"] not in by_id:
             sources.append(
-                dict(
-                    source_instance=row["source_instance"],
-                    name=row["source_instance"],
-                    source_type=row["provider"],
-                    state="REGISTRATION_PENDING",
-                    archive_mode=None,
-                    requires_recheck=False,
-                    removed=False,
-                    observed_uuid=row["anchor"],
-                    verified_identity=False,
-                    credential_state=None,
-                )
+                {
+                    "source_instance": row["source_instance"],
+                    "name": row["source_instance"],
+                    "source_type": row["provider"],
+                    "state": "REGISTRATION_PENDING",
+                    "archive_mode": None,
+                    "requires_recheck": False,
+                    "removed": False,
+                    "observed_uuid": row["anchor"],
+                    "verified_identity": False,
+                    "credential_state": None,
+                }
             )
     for row in sources:
         row["conflicting_sources"] = (

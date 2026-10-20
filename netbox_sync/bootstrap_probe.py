@@ -9,6 +9,8 @@ from .api.egress import EgressPolicy, pinned_dns
 from .netbox_tls import configure_session
 from .tls_config import TLSConfigurationError
 
+# Compatibility exports retained after staged extraction.
+# pylint: disable-next=unused-import
 from .prerequisites import FIELDS, reconcile
 from .netbox_auth import authorization
 

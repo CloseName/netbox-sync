@@ -60,7 +60,11 @@ class RegistrationRegistry:
             with connection.cursor(row_factory=dict_row) as cursor:
                 cursor.execute(
                     sql.SQL(
-                        "SELECT source_instance,site_slug,cluster_name,settings FROM {} WHERE source_type='esxi' AND NOT EXISTS (SELECT 1 FROM {} a WHERE a.source_instance=sources.source_instance)"
+                        (
+                            "SELECT source_instance,site_slug,cluster_name,settings FROM {} "
+                            "WHERE source_type='esxi' AND NOT EXISTS (SELECT 1 FROM {} a "
+                            "WHERE a.source_instance=sources.source_instance)"
+                        )
                     ).format(sql.Identifier(self._schema, "sources"), sql.Identifier(self._schema, "source_archives"))
                 )
                 for row in cursor.fetchall():
@@ -206,7 +210,12 @@ class BrokerSecretStore:
         """Send bounded secret bytes without exposing the storage path."""
         operation = operation_id or secrets.token_urlsafe(24)
         result = self._request(
-            dict(action="create", operation_id=operation, key=key, value=base64.b64encode(value.encode()).decode())
+            {
+                "action": "create",
+                "operation_id": operation,
+                "key": key,
+                "value": base64.b64encode(value.encode()).decode(),
+            }
         )
         receipt = SecretReceipt(key, result["rollback_token"])
         self._operations[receipt.key] = operation
@@ -215,12 +224,12 @@ class BrokerSecretStore:
     def rollback(self, receipt):
         """Only use the exact create-operation receipt."""
         self._request(
-            dict(
-                action="rollback",
-                operation_id=self._operations[receipt.key],
-                key=receipt.key,
-                rollback_token=receipt.rollback_token,
-            )
+            {
+                "action": "rollback",
+                "operation_id": self._operations[receipt.key],
+                "key": receipt.key,
+                "rollback_token": receipt.rollback_token,
+            }
         )
         self._operations.pop(receipt.key, None)
 

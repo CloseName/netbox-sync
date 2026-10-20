@@ -29,3 +29,36 @@ or import-error disable is used.
 
 Full analysis at this stage has **zero Error/Fatal findings**, score **8.87/10**.
 The unchanged 9.0 threshold is not met yet; remaining style cleanup is next.
+
+## Stage 3: safe style cleanup and the restored gate
+
+Replace 118 builtin `dict()`/keyword-only constructions with literals. Do not
+rewrite positional or unpacked constructors, whose validation can differ. Split
+long literal strings with exact constant-value preservation, including SQL and
+public messages. Add module-purpose docstrings. Remove unused internal imports;
+keep documented/previously preserved import aliases, with a regression test for
+alias identity. Keep evaluation of unused prerequisite lookups under explicit
+underscore names instead of deleting those checks.
+
+Normalized AST comparisons of all 83 changed modules allow only dict-literal
+syntax, unused local names, reviewed imports and documentation differences.
+Focused output/payload and compatibility tests pass. Black check is now part of
+Forgejo CI alongside the existing Pylint and test commands.
+
+The original command `pylint --fail-under=9.0 --max-line-length=120 netbox_sync`
+now passes with **9.02/10**, **zero Error/Fatal findings**, without lowering the
+threshold. This is a passing project gate, not a claim of zero recommendations.
+The full report still contains 186 warnings, 553 refactoring recommendations and
+1149 conventions. Their principal remaining groups are function/class docstrings,
+complexity/argument counts, intentional lazy imports, exact-type checks and
+cross-module private access. Do not replace `type(x) is int` with `isinstance`
+where rejecting booleans/subclasses is part of validation. Do not merge differing
+VM/LXC safety policies merely to satisfy a duplicate-code recommendation.
+
+Broad exception boundaries close worker/authentication/transport failures;
+changing their coverage requires separate behavioral review. Historical public
+aliases remain available. The lint report is an ongoing maintenance input; the
+existing aggregate gate intentionally permits these recommendations while making
+runtime errors fatal. No global complexity/docstring/typecheck disable was added.
+
+Final full suite: 2036 passed, 485 skipped, one existing Starlette warning.

@@ -19,7 +19,7 @@ def configure(api):
             + "/plugins/netbox-sync-guard/vm-replacements/"
             + str(identifier)
             + "/review/?"
-            + urlencode(dict(source_instance=source, cluster_id=cluster))
+            + urlencode({"source_instance": source, "cluster_id": cluster})
         )
         with api.http_session.get(
             url,
@@ -73,13 +73,13 @@ def stage(api, hosts, config):
         ):
             raise ValueError("Invalid replacement evidence")
         vm = vms[item.identity]
-        body = dict(
-            source_instance=config.source_instance,
-            cluster_id=plan.cluster_id,
-            expected=expected,
-            new_identity=item.identity.to_record(),
-            name=vm.original_name[:64],
-        )
+        body = {
+            "source_instance": config.source_instance,
+            "cluster_id": plan.cluster_id,
+            "expected": expected,
+            "new_identity": item.identity.to_record(),
+            "name": vm.original_name[:64],
+        }
         api.simulate_vm_replacement(candidate.object_id, body)
         replacements.append((candidate.object_id, body))
     return tuple(replacements)

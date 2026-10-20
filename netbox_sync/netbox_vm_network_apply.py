@@ -1,16 +1,31 @@
+"""Orchestrate VM network writes while preserving primary-IP ownership."""
+
 from .vm_network_writes import write_vm_networks
 from .vm_network_report import print_vm_network_precheck
 from .vm_network_inventory import prepare_vm_network_inventory
 from .netbox_record_values import object_id as _object_id
+
+# Compatibility exports retained after staged extraction.
+# pylint: disable-next=unused-import
 from .interface_display import interface_display_name, validate_interface_names
 from .host_mapping import cluster_filter
+
+# Compatibility exports retained after staged extraction.
+# pylint: disable-next=unused-import
 import ipaddress
+
+# Compatibility exports retained after staged extraction.
+# pylint: disable-next=unused-import
 from .network_scopes import scope_key, object_id as scope_object_id
 
+# Compatibility exports retained after staged extraction.
+# pylint: disable-next=unused-import
 from .netbox_vm_metadata import (
     find_vm_sync_identity_matches,
 )
 
+# Compatibility exports retained after staged extraction.
+# pylint: disable-next=unused-import
 from .netbox_vm_interface_metadata import (
     MANAGED_VM_INTERFACE_CUSTOM_FIELDS,
     build_nic_custom_fields,
@@ -19,6 +34,8 @@ from .netbox_vm_interface_metadata import (
 )
 
 
+# Compatibility exports retained after staged extraction.
+# pylint: disable-next=unused-import
 from .vm_network_preflight import (
     VMNetworkApplyError,
     ManagedMACConflict,
@@ -52,7 +69,7 @@ def apply_vm_networks(
     *,
     confirmed=False,
 ):
-    site_slug, cluster_name = resolve_vm_network_target(config)
+    site_slug, _cluster_name = resolve_vm_network_target(config)
     site = nb_api.dcim.sites.get(slug=site_slug)
 
     if site is None:

@@ -248,14 +248,14 @@ class CatalogCreation:
         if str(os.environ.get("NETBOX_SYNC_GUARD_INSTANCE", "")) != guard["instance"]:
             raise ProbeError("CATALOG_CHANGED")
         result = self.child(
-            dict(
-                action="resume-registration" if continue_missing else "receipt",
-                url=url,
-                kind=recorded["kind"],
-                object=recorded["object"],
-                guard=guard,
-                write_token=runtime_netbox(self.store.path, "apply")[1],
-            )
+            {
+                "action": "resume-registration" if continue_missing else "receipt",
+                "url": url,
+                "kind": recorded["kind"],
+                "object": recorded["object"],
+                "guard": guard,
+                "write_token": runtime_netbox(self.store.path, "apply")[1],
+            }
         )
         if result.get("status") == "CREATED":
             recorded.update(status="CREATED", item=result["item"])
@@ -297,9 +297,13 @@ class CatalogCreation:
                 if recorded.get("guard"):
                     return self._reconcile_guard(recorded, journal, url)
                 result = self.child(
-                    dict(
-                        action="read", url=url, read_token=read_token, kind=recorded["kind"], object=recorded["object"]
-                    )
+                    {
+                        "action": "read",
+                        "url": url,
+                        "read_token": read_token,
+                        "kind": recorded["kind"],
+                        "object": recorded["object"],
+                    }
                 )
                 # Even an exact match after a lost response requires explicit review;
                 # never claim that this request created somebody else's concurrent row.

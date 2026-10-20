@@ -186,24 +186,24 @@ class DiscoverySupervisor:
         if process.returncode or len(output) > MAX_RESPONSE:
             raise WorkerError(
                 "DISCOVERY_FAILED",
-                dict(
-                    phase="child_response",
-                    termination="exit" if process.returncode else "response_too_large",
-                    returncode=process.returncode,
-                    duration_ms=int((time.monotonic() - started) * 1000),
-                ),
+                {
+                    "phase": "child_response",
+                    "termination": "exit" if process.returncode else "response_too_large",
+                    "returncode": process.returncode,
+                    "duration_ms": int((time.monotonic() - started) * 1000),
+                },
             )
         try:
             result = json.loads(output)
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise WorkerError(
                 "DISCOVERY_FAILED",
-                dict(
-                    phase="child_response",
-                    termination="invalid_response",
-                    returncode=process.returncode,
-                    duration_ms=int((time.monotonic() - started) * 1000),
-                ),
+                {
+                    "phase": "child_response",
+                    "termination": "invalid_response",
+                    "returncode": process.returncode,
+                    "duration_ms": int((time.monotonic() - started) * 1000),
+                },
             ) from None
         if not isinstance(result, dict) or set(result) - {"result", "error", "diagnostic", "evidence"}:
             raise WorkerError("DISCOVERY_FAILED")
@@ -334,15 +334,15 @@ def _host_evidence(hosts):
     evidence = []
     if 1 <= len(hosts) <= MAX_HOSTS:
         evidence = [
-            dict(
-                id=host.source_id,
-                name=text(host.original_name),
-                manufacturer=text(host.manufacturer),
-                model=text(host.model),
-                version=text(host.hypervisor_version),
-                cpu=text(host.cpu.model),
-                memory_bytes=max(0, host.memory_bytes),
-            )
+            {
+                "id": host.source_id,
+                "name": text(host.original_name),
+                "manufacturer": text(host.manufacturer),
+                "model": text(host.model),
+                "version": text(host.hypervisor_version),
+                "cpu": text(host.cpu.model),
+                "memory_bytes": max(0, host.memory_bytes),
+            }
             for host in hosts
         ]
     return evidence

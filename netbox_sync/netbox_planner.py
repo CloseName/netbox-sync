@@ -1,3 +1,5 @@
+"""Plan host and guest infrastructure without writing NetBox objects."""
+
 from .host_plan_report import report_host_plans
 from .host_plan_report import print_host_plan_targets
 from .host_plan_targets import prepare_host_plan_targets

@@ -29,7 +29,10 @@ class RetirementContinuation:
                 # Resolve the active operation before legacy busy refusals; the DB
                 # unique index permits only one active nonce per source.
                 # Two legacy nonces must never race each other after a restart.
-                pending = "(r.state IN ('SENDING','UNCERTAIN','SUCCEEDED') OR (r.state='BLOCKED' AND r.safe_code='SOURCE_OPERATION_ACTIVE'))"
+                pending = (
+                    "(r.state IN ('SENDING','UNCERTAIN','SUCCEEDED') OR "
+                    "(r.state='BLOCKED' AND r.safe_code='SOURCE_OPERATION_ACTIVE'))"
+                )
                 older = pending.replace("r.", "older.")
                 row = connection.execute(
                     sql.SQL(

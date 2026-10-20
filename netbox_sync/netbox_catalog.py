@@ -39,21 +39,24 @@ def project(kind, row):
             else None
         )
 
-    value = dict(
-        id=row["id"],
-        name=short(row.get("model") if kind == "device_type" else row.get("name")),
-        slug=short(row.get("slug")),
-        manufacturer=related(row.get("manufacturer")),
-        type=related(row.get("type")),
-        scope_type=row.get("scope_type"),
-        scope_id=row.get("scope_id"),
-        site=related(row.get("site")),
-        scope=related(row.get("scope")),
-    )
+    value = {
+        "id": row["id"],
+        "name": short(row.get("model") if kind == "device_type" else row.get("name")),
+        "slug": short(row.get("slug")),
+        "manufacturer": related(row.get("manufacturer")),
+        "type": related(row.get("type")),
+        "scope_type": row.get("scope_type"),
+        "scope_id": row.get("scope_id"),
+        "site": related(row.get("site")),
+        "scope": related(row.get("scope")),
+    }
     if kind == "vrf":
-        value = dict(
-            id=row["id"], name=short(row.get("name")), rd=row.get("rd"), enforce_unique=row.get("enforce_unique", True)
-        )
+        value = {
+            "id": row["id"],
+            "name": short(row.get("name")),
+            "rd": row.get("rd"),
+            "enforce_unique": row.get("enforce_unique", True),
+        }
         if value["rd"] is not None and (not isinstance(value["rd"], str) or len(value["rd"]) > 64):
             raise ProbeError("RESPONSE_INVALID")
         if type(value["enforce_unique"]) is not bool:
@@ -83,7 +86,15 @@ def query(value, session_factory=requests.Session):
                 session,
                 value["url"]
                 + "/api/virtualization/virtual-machines/?"
-                + urlencode(dict(name__ic="pfsense", limit=50, offset=offset, ordering="id", exclude="config_context")),
+                + urlencode(
+                    {
+                        "name__ic": "pfsense",
+                        "limit": 50,
+                        "offset": offset,
+                        "ordering": "id",
+                        "exclude": "config_context",
+                    }
+                ),
                 value["read_token"],
             )
             result = []
@@ -91,16 +102,16 @@ def query(value, session_factory=requests.Session):
                 if "pfsense" not in row["name"].casefold():
                     raise ProbeError("RESPONSE_INVALID")
                 result.append(
-                    dict(
-                        id=row["id"],
-                        name=row["name"],
-                        cluster=(row.get("cluster") or {}).get("name", ""),
-                        site=(row.get("site") or {}).get("name", ""),
-                        address=((row.get("primary_ip4") or {}).get("address") or "").split("/")[0],
-                        url=value["url"] + "/virtualization/virtual-machines/" + str(row["id"]) + "/",
-                    )
+                    {
+                        "id": row["id"],
+                        "name": row["name"],
+                        "cluster": (row.get("cluster") or {}).get("name", ""),
+                        "site": (row.get("site") or {}).get("name", ""),
+                        "address": ((row.get("primary_ip4") or {}).get("address") or "").split("/")[0],
+                        "url": value["url"] + "/virtualization/virtual-machines/" + str(row["id"]) + "/",
+                    }
                 )
-            return dict(items=result, count=page["count"])
+            return {"items": result, "count": page["count"]}
         if action == "validate-scopes":
             from .network_scopes import rules, NetworkScopeError
 
@@ -232,23 +243,23 @@ def query(value, session_factory=requests.Session):
             offset = payload.get("offset", 0)
             if not isinstance(search, str) or len(search) > 100 or type(offset) is not int or not 0 <= offset <= 10000:
                 raise ProbeError("RESPONSE_INVALID")
-            result = get(kind, "?" + urlencode(dict(q=search, limit=20, offset=offset, ordering="id")))
+            result = get(kind, "?" + urlencode({"q": search, "limit": 20, "offset": offset, "ordering": "id"}))
             rows = result.get("results")
             count = result.get("count")
             if not isinstance(rows, list) or len(rows) > 20 or type(count) is not int:
                 raise ProbeError("RESPONSE_INVALID")
-            return dict(
-                items=[project(kind, r) for r in rows],
-                count=count,
-                offset=offset,
-                more=result.get("next") is not None,
-                url=value["url"] + "/" + ENDPOINTS[kind] + "/",
-            )
+            return {
+                "items": [project(kind, r) for r in rows],
+                "count": count,
+                "offset": offset,
+                "more": result.get("next") is not None,
+                "url": value["url"] + "/" + ENDPOINTS[kind] + "/",
+            }
         if action == "resolve-placement":
             from .placement_resolution import resolve
 
             def listing(kind, search):
-                return get(kind, "?" + urlencode(dict(q=search, limit=20, ordering="id")))
+                return get(kind, "?" + urlencode({"q": search, "limit": 20, "ordering": "id"}))
 
             preparation_issues = []
             ensure = None
@@ -269,7 +280,7 @@ def query(value, session_factory=requests.Session):
                 for endpoint in ("dcim/devices", "virtualization/virtual-machines"):
                     existing = fetch(
                         session,
-                        value["url"] + "/api/" + endpoint + "/?" + urlencode(dict(cluster_id=cluster["id"], limit=1)),
+                        value["url"] + "/api/" + endpoint + "/?" + urlencode({"cluster_id": cluster["id"], "limit": 1}),
                         value["read_token"],
                     )
                     if type(existing.get("count")) is not int:
@@ -299,7 +310,7 @@ def query(value, session_factory=requests.Session):
                 for endpoint in ("dcim/devices", "virtualization/virtual-machines"):
                     existing = fetch(
                         session,
-                        value["url"] + "/api/" + endpoint + "/?" + urlencode(dict(cluster_id=cluster_id, limit=1)),
+                        value["url"] + "/api/" + endpoint + "/?" + urlencode({"cluster_id": cluster_id, "limit": 1}),
                         value["read_token"],
                     )
                     if type(existing.get("count")) is not int:

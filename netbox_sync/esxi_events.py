@@ -50,16 +50,16 @@ def normalize(event, source, host):
     argument = getattr(event, "vm", None)
     reference = getattr(getattr(argument, "vm", None), "_moId", None)
     actor = text(getattr(event, "userName", None)) or None
-    row = dict(
-        provider_event_id=key,
-        occurred_at=timestamp,
-        event_type=kind,
-        action=TYPES[kind],
-        actor=actor,
-        actor_status="reported" if actor else "unknown",
-        vm_reference=text(reference) or None,
-        vm_name=text(getattr(argument, "name", None)) or None,
-    )
+    row = {
+        "provider_event_id": key,
+        "occurred_at": timestamp,
+        "event_type": kind,
+        "action": TYPES[kind],
+        "actor": actor,
+        "actor_status": "reported" if actor else "unknown",
+        "vm_reference": text(reference) or None,
+        "vm_name": text(getattr(argument, "name", None)) or None,
+    }
     # Include time/type to tolerate provider event-key reuse after reset/restore.
     row["event_id"] = hashlib.sha256(
         json.dumps([source, host, key, timestamp, kind], separators=(",", ":")).encode()
@@ -77,7 +77,7 @@ def normalize(event, source, host):
         device_kind = type(device).__name__.split(".")[-1]
         key = getattr(device, "key", None)
         if operation in ("add", "edit", "remove") and isinstance(key, int):
-            detail = dict(operation=operation, device_type=text(device_kind, 64), key=key)
+            detail = {"operation": operation, "device_type": text(device_kind, 64), "key": key}
             capacity = getattr(device, "capacityInBytes", None)
             if not isinstance(capacity, int):
                 kb = getattr(device, "capacityInKB", None)
@@ -104,7 +104,7 @@ def collect_events(content, host_object, source, host_id, *, now=None):
     try:
         manager = getattr(content, "eventManager", None)
         if manager is None:
-            return dict(status="unsupported", events=[])
+            return {"status": "unsupported", "events": []}
         spec = vim.event.EventFilterSpec(
             entity=vim.event.EventFilterSpec.ByEntity(entity=host_object, recursion="all"),
             time=vim.event.EventFilterSpec.ByTime(beginTime=begin, endTime=now),
@@ -139,7 +139,7 @@ def collect_events(content, host_object, source, host_id, *, now=None):
                 pass
     if status != "available":
         LOGGER.warning("ESXi event collection status=%s", status)
-    return dict(status=status, events=sorted(rows.values(), key=lambda r: (r["occurred_at"], r["event_id"]))[-LIMIT:])
+    return {"status": status, "events": sorted(rows.values(), key=lambda r: (r["occurred_at"], r["event_id"]))[-LIMIT:]}
 
 
 def merge_events(previous, observed, source, host):
@@ -161,17 +161,17 @@ def merge_events(previous, observed, source, host):
             rows[event["event_id"]] = {**event, "alert_eligible": bool(initialized and event["occurred_at"] > boundary)}
     # A partial first read is still a baseline; do not silently label it complete.
     initialized = initialized or observed["status"] in ("available", "partial")
-    return dict(
-        version=1,
-        source_instance=source,
-        host_id=host,
-        status=observed["status"],
-        initialized=initialized,
-        baseline_through=boundary,
-        lookback_days=LOOKBACK_DAYS,
-        retention_limit=LIMIT,
-        events=sorted(rows.values(), key=lambda r: (r["occurred_at"], r["event_id"]))[-LIMIT:],
-    )
+    return {
+        "version": 1,
+        "source_instance": source,
+        "host_id": host,
+        "status": observed["status"],
+        "initialized": initialized,
+        "baseline_through": boundary,
+        "lookback_days": LOOKBACK_DAYS,
+        "retention_limit": LIMIT,
+        "events": sorted(rows.values(), key=lambda r: (r["occurred_at"], r["event_id"]))[-LIMIT:],
+    }
 
 
 def apply_event_snapshots(api, hosts):

@@ -44,17 +44,17 @@ def observation(source, values, *, status=None, observed_at=None):
     for kind, value, path in values:
         normalized = canonical(kind, value)
         if normalized:
-            identifiers.append(dict(kind=kind, value=normalized, field=path))
+            identifiers.append({"kind": kind, "value": normalized, "field": path})
     identifiers = sorted({(r["kind"], r["value"], r["field"]) for r in identifiers})
     conflicts = [kind for kind in KINDS if len({v for k, v, p in identifiers if k == kind}) > 1]
-    return dict(
-        version=1,
-        source=source,
-        status="conflict" if conflicts else status or ("collected" if identifiers else "not_reported"),
-        observed_at=observed_at or datetime.now(timezone.utc).isoformat(),
-        identifiers=[dict(kind=k, value=v, field=p) for k, v, p in identifiers],
-        conflicts=conflicts,
-    )
+    return {
+        "version": 1,
+        "source": source,
+        "status": "conflict" if conflicts else status or ("collected" if identifiers else "not_reported"),
+        "observed_at": observed_at or datetime.now(timezone.utc).isoformat(),
+        "identifiers": [{"kind": k, "value": v, "field": p} for k, v, p in identifiers],
+        "conflicts": conflicts,
+    }
 
 
 def tokens(document, *, now=None):

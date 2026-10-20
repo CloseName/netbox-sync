@@ -1,7 +1,6 @@
 """LDAPS settings and sessions inside the serialized auth transaction."""
 
 import copy
-import hashlib
 import json
 import secrets
 import uuid
@@ -110,9 +109,13 @@ class DirectoryAuth(DirectoryUsers):
         self.state.setdefault("ldap_users", {})[user["identity"]] = user
         attempts.pop()  # Successful corporate logins do not consume the failure budget.
         actor = str(uuid.uuid5(uuid.UUID(config["directory_id"]), user["identity"]))
-        principal = dict(
-            id=actor, username=user["username"], identity=user["identity"], role=user["role"], provider="ldap"
-        )
+        principal = {
+            "id": actor,
+            "username": user["username"],
+            "identity": user["identity"],
+            "role": user["role"],
+            "provider": "ldap",
+        }
         sessions = {
             k: v
             for k, v in self.state.get("ldap_sessions", {}).items()
@@ -121,9 +124,13 @@ class DirectoryAuth(DirectoryUsers):
         if len(sessions) >= 256:
             del sessions[min(sessions, key=lambda k: sessions[k]["last_seen"])]
         token = secrets.token_urlsafe(32)
-        sessions[digest(token)] = dict(
-            principal=principal, issued=self.now, last_seen=self.now, expires=self.now + 28800, checked=self.now
-        )
+        sessions[digest(token)] = {
+            "principal": principal,
+            "issued": self.now,
+            "last_seen": self.now,
+            "expires": self.now + 28800,
+            "checked": self.now,
+        }
         self.state["ldap_sessions"] = sessions
         self.event("ldap.login", actor, role=principal["role"])
         return {"session": token, "max_age": 28800}

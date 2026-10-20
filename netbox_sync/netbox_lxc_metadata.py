@@ -1,3 +1,5 @@
+"""Build and match managed LXC identity and custom-field metadata."""
+
 MANAGED_LXC_CUSTOM_FIELDS = (
     "sync_identities",
     "sync_original_names",

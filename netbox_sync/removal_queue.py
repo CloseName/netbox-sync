@@ -63,7 +63,11 @@ class RemovalQueue:
                 raise LifecycleError("SOURCE_RECOVERY_OUTCOME_UNCERTAIN")
             if connection.execute(
                 sql.SQL(
-                    "SELECT 1 FROM {} WHERE source_instance=%s AND (state IN ('SENDING','UNCERTAIN','SUCCEEDED') OR (state='BLOCKED' AND safe_code='SOURCE_OPERATION_ACTIVE'))"
+                    (
+                        "SELECT 1 FROM {} WHERE source_instance=%s AND (state IN "
+                        "('SENDING','UNCERTAIN','SUCCEEDED') OR (state='BLOCKED' AND "
+                        "safe_code='SOURCE_OPERATION_ACTIVE'))"
+                    )
                 ).format(self.store.table("source_retirements")),
                 (source,),
             ).fetchone():
@@ -78,14 +82,21 @@ class RemovalQueue:
             if saved:
                 saved = connection.execute(
                     sql.SQL(
-                        "UPDATE {} SET operation_id=%s,actor_id=%s,revision=%s,display_name=%s,state='WAITING',safe_code=NULL WHERE source_instance=%s RETURNING *"
+                        (
+                            "UPDATE {} SET operation_id=%s,actor_id=%s,revision=%s,display_nam"
+                            "e=%s,state='WAITING',safe_code=NULL WHERE source_instance=%s "
+                            "RETURNING *"
+                        )
                     ).format(self.store.table("source_removal_requests")),
                     values,
                 ).fetchone()
             else:
                 saved = connection.execute(
                     sql.SQL(
-                        "INSERT INTO {} (operation_id,actor_id,revision,display_name,source_instance) VALUES (%s,%s,%s,%s,%s) RETURNING *"
+                        (
+                            "INSERT INTO {} (operation_id,actor_id,revision,display_name,sourc"
+                            "e_instance) VALUES (%s,%s,%s,%s,%s) RETURNING *"
+                        )
                     ).format(self.store.table("source_removal_requests")),
                     values,
                 ).fetchone()
@@ -117,7 +128,11 @@ class RemovalQueue:
         with self.store.connect() as connection:
             rows = connection.execute(
                 sql.SQL(
-                    "SELECT operation_kind,operation_id FROM {} WHERE source_instance=%s AND status='RUNNING' AND updated_at<clock_timestamp()-interval '180 seconds'"
+                    (
+                        "SELECT operation_kind,operation_id FROM {} WHERE "
+                        "source_instance=%s AND status='RUNNING' AND "
+                        "updated_at<clock_timestamp()-interval '180 seconds'"
+                    )
                 ).format(self.store.table("source_operations")),
                 (source,),
             ).fetchall()
@@ -130,7 +145,11 @@ class RemovalQueue:
                 ).fetchone()["free"]:
                     connection.execute(
                         sql.SQL(
-                            "UPDATE {} SET status='FAILED',safe_error_code='OPERATION_INTERRUPTED',result=NULL,updated_at=clock_timestamp(),finished_at=clock_timestamp() WHERE operation_id=%s AND status='RUNNING'"
+                            (
+                                "UPDATE {} SET status='FAILED',safe_error_code='OPERATION_INTERRUP"
+                                "TED',result=NULL,updated_at=clock_timestamp(),finished_at=clock_t"
+                                "imestamp() WHERE operation_id=%s AND status='RUNNING'"
+                            )
                         ).format(self.store.table("source_operations")),
                         (row["operation_id"],),
                     )
@@ -179,7 +198,10 @@ class RemovalQueue:
                     with self.store.connect() as connection:
                         connection.execute(
                             sql.SQL(
-                                "UPDATE {} SET state='BLOCKED',safe_code=%s WHERE source_instance=%s AND operation_id=%s"
+                                (
+                                    "UPDATE {} SET state='BLOCKED',safe_code=%s WHERE "
+                                    "source_instance=%s AND operation_id=%s"
+                                )
                             ).format(self.store.table("source_removal_requests")),
                             (exc.code, source, operation),
                         )

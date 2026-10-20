@@ -135,3 +135,11 @@ Four regression cases were run first: the existing VM case passed and the two
 missing guards plus multi-host orchestration failed. After the fix all four pass,
 and the 13 planning/report contracts pass. The previous failure fixture was
 updated to require successful, read-only completion rather than catch an error.
+
+## Follow-up: lint gate restored — 2026-10-20
+
+The full-project lint limitation recorded above is resolved at the existing 9.0
+threshold: the command now passes at 9.02 with no Error/Fatal findings. Platform
+and dynamic-model exceptions are narrowly documented and tested; error findings
+cannot be compensated for by the score. See the [lint cleanup report](lint-cleanup-20261020.md)
+for the three stages, retained recommendations and compatibility decisions.

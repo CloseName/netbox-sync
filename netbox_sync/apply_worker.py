@@ -306,34 +306,34 @@ class ApplySupervisor:
         if process.returncode or len(output) > MAX_RESPONSE:
             raise ApplyWorkerError(
                 "FAILED_BEFORE_WRITE" if operation == "plan" else "OUTCOME_UNCERTAIN",
-                diagnostic=dict(
-                    phase="child_response",
-                    termination="exit" if process.returncode else "response_too_large",
-                    returncode=process.returncode,
-                    duration_ms=int((time.monotonic() - started) * 1000),
-                ),
+                diagnostic={
+                    "phase": "child_response",
+                    "termination": "exit" if process.returncode else "response_too_large",
+                    "returncode": process.returncode,
+                    "duration_ms": int((time.monotonic() - started) * 1000),
+                },
             )
         try:
             response = json.loads(output)
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise ApplyWorkerError(
                 "FAILED_BEFORE_WRITE" if operation == "plan" else "OUTCOME_UNCERTAIN",
-                diagnostic=dict(
-                    phase="child_response",
-                    termination="invalid_response",
-                    returncode=process.returncode,
-                    duration_ms=int((time.monotonic() - started) * 1000),
-                ),
+                diagnostic={
+                    "phase": "child_response",
+                    "termination": "invalid_response",
+                    "returncode": process.returncode,
+                    "duration_ms": int((time.monotonic() - started) * 1000),
+                },
             ) from None
         if not isinstance(response, dict) or set(response) - {"result", "error", "reason", "categories", "diagnostic"}:
             raise ApplyWorkerError(
                 "FAILED_BEFORE_WRITE" if operation == "plan" else "OUTCOME_UNCERTAIN",
-                diagnostic=dict(
-                    phase="child_response",
-                    termination="invalid_response",
-                    returncode=process.returncode,
-                    duration_ms=int((time.monotonic() - started) * 1000),
-                ),
+                diagnostic={
+                    "phase": "child_response",
+                    "termination": "invalid_response",
+                    "returncode": process.returncode,
+                    "duration_ms": int((time.monotonic() - started) * 1000),
+                },
             )
         if response.get("error"):
             allowed = {
@@ -353,12 +353,12 @@ class ApplySupervisor:
         if not isinstance(response.get("result"), dict):
             raise ApplyWorkerError(
                 "FAILED_BEFORE_WRITE" if operation == "plan" else "OUTCOME_UNCERTAIN",
-                diagnostic=dict(
-                    phase="child_response",
-                    termination="invalid_response",
-                    returncode=process.returncode,
-                    duration_ms=int((time.monotonic() - started) * 1000),
-                ),
+                diagnostic={
+                    "phase": "child_response",
+                    "termination": "invalid_response",
+                    "returncode": process.returncode,
+                    "duration_ms": int((time.monotonic() - started) * 1000),
+                },
             )
         return response["result"]
 
@@ -475,7 +475,7 @@ class ApplySupervisor:
                             # A response-contract mismatch is therefore not a pre-write stale plan.
                             raise ApplyWorkerError(
                                 "OUTCOME_UNCERTAIN",
-                                diagnostic=dict(phase="result_validation", termination="invalid_response"),
+                                diagnostic={"phase": "result_validation", "termination": "invalid_response"},
                             )
                 except OperationError as exc:
                     raise ApplyWorkerError(exc.code, getattr(exc, "reason", None)) from None

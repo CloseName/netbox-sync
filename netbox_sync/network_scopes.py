@@ -139,7 +139,7 @@ def scoped_inventory(api, hosts, config):
                         if address in wanted and object_id(value.get("vrf")) != nic.ip_vrf_id:
                             conflicting[value["id"]] = value
                     nic.ip_scope_conflicts = [
-                        dict(address=value["address"], vrf_id=object_id(value.get("vrf")), netbox_id=value["id"])
+                        {"address": value["address"], "vrf_id": object_id(value.get("vrf")), "netbox_id": value["id"]}
                         for _, value in sorted(conflicting.items())
                     ]
     return result

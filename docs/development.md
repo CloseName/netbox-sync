@@ -7,6 +7,7 @@ entrypoint and existing tests intact. From repository root:
 python -m pip install -e .
 python -m pip install -r requirements-dev.txt
 pytest -q
+python -m black --check netbox_sync
 pylint --fail-under=9.0 --max-line-length=120 netbox_sync
 git diff --check
 ```
@@ -25,3 +26,7 @@ for the optional API/frontend, and [architecture](architecture.md) and
 
 Before a refactoring PR, follow the [verification baseline](verification-baseline.md).
 See the [documentation map](README.md) for historical reports and current guides.
+
+The [lint cleanup report](lint-cleanup-20261020.md) records platform allowances,
+compatibility exports and the unchanged score threshold. Error/Fatal findings
+fail independently of the aggregate score. Format code with `python -m black netbox_sync`.

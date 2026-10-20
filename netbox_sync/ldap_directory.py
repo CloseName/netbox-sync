@@ -21,22 +21,22 @@ class DirectoryError(RuntimeError):
         super().__init__(self.code)
 
 
-DEFAULT = dict(
-    enabled=False,
-    host="",
-    port=636,
-    bind_dn="",
-    user_base="",
-    group_base="",
-    user_attribute="sAMAccountName",
-    user_object_class="user",
-    group_object_class="group",
-    member_attribute="member",
-    identity_attribute="objectGUID",
-    account_control_attribute="userAccountControl",
-    ca_pem="",
-    group_dn="",
-)
+DEFAULT = {
+    "enabled": False,
+    "host": "",
+    "port": 636,
+    "bind_dn": "",
+    "user_base": "",
+    "group_base": "",
+    "user_attribute": "sAMAccountName",
+    "user_object_class": "user",
+    "group_object_class": "group",
+    "member_attribute": "member",
+    "identity_attribute": "objectGUID",
+    "account_control_attribute": "userAccountControl",
+    "ca_pem": "",
+    "group_dn": "",
+}
 
 
 def validate(value):

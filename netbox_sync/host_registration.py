@@ -109,7 +109,11 @@ class HostReservations:
             raise HostRegistrationConflict("HOST_ARCHIVE_RECHECK_REQUIRED", pending["source_instance"])
         cursor.execute(
             sql.SQL(
-                "SELECT source_instance,settings,enabled,sync_enabled FROM {} WHERE source_type=%s AND NOT EXISTS (SELECT 1 FROM {} a WHERE a.source_instance=sources.source_instance)"
+                (
+                    "SELECT source_instance,settings,enabled,sync_enabled FROM {} "
+                    "WHERE source_type=%s AND NOT EXISTS (SELECT 1 FROM {} a WHERE "
+                    "a.source_instance=sources.source_instance)"
+                )
             ).format(sql.Identifier(self.schema, "sources"), sql.Identifier(self.schema, "source_archives")),
             ("esxi",),
         )
@@ -180,7 +184,10 @@ class HostReservations:
                     raise HostRegistrationConflict("HOST_REGISTRY_REVIEW_REQUIRED", unknown[0])
                 cursor.execute(
                     sql.SQL(
-                        "SELECT source_instance,operation_id,actor_id FROM {} WHERE provider=%s AND anchor=%s AND released_at IS NULL"
+                        (
+                            "SELECT source_instance,operation_id,actor_id FROM {} WHERE "
+                            "provider=%s AND anchor=%s AND released_at IS NULL"
+                        )
                     ).format(sql.Identifier(self.schema, "host_reservations")),
                     ("esxi", anchor),
                 )
@@ -255,7 +262,10 @@ class HostReservations:
                 else:
                     cursor.execute(
                         sql.SQL(
-                            "INSERT INTO {} (provider,anchor,source_instance,operation_id,actor_id) VALUES (%s,%s,%s,%s,%s)"
+                            (
+                                "INSERT INTO {} (provider,anchor,source_instance,operation_id,acto"
+                                "r_id) VALUES (%s,%s,%s,%s,%s)"
+                            )
                         ).format(table),
                         ("esxi", anchor, source_instance, operation_id, actor_id),
                     )
@@ -353,7 +363,10 @@ class HostReservations:
                         raise HostRegistrationConflict("HOST_REGISTRATION_RESERVED", source_instance)
                     cursor.execute(
                         sql.SQL(
-                            "SELECT source_instance,operation_id,actor_id FROM {} WHERE provider=%s AND anchor=%s AND released_at IS NULL"
+                            (
+                                "SELECT source_instance,operation_id,actor_id FROM {} WHERE "
+                                "provider=%s AND anchor=%s AND released_at IS NULL"
+                            )
                         ).format(sql.Identifier(self.schema, "host_reservations")),
                         ("esxi", anchor),
                     )
@@ -422,7 +435,11 @@ class HostReservations:
             table = sql.Identifier(self.schema, "registration_intents")
             cursor.execute(
                 sql.SQL(
-                    "INSERT INTO {} (source_instance,operation_id,actor_id,anchor,fingerprint,request) VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING"
+                    (
+                        "INSERT INTO {} (source_instance,operation_id,actor_id,anchor,fing"
+                        "erprint,request) VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT DO "
+                        "NOTHING"
+                    )
                 ).format(table),
                 (source, operation, actor, anchor, fingerprint, Jsonb(request) if request is not None else None),
             )
@@ -449,7 +466,12 @@ class HostReservations:
         with self.connector() as connection, connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
                 sql.SQL(
-                    "SELECT i.source_instance,i.operation_id,i.request,i.created_at FROM {} i LEFT JOIN {} s ON s.source_instance=i.source_instance WHERE i.actor_id=%s AND s.source_instance IS NULL ORDER BY i.created_at DESC LIMIT 100"
+                    (
+                        "SELECT i.source_instance,i.operation_id,i.request,i.created_at "
+                        "FROM {} i LEFT JOIN {} s ON s.source_instance=i.source_instance "
+                        "WHERE i.actor_id=%s AND s.source_instance IS NULL ORDER BY "
+                        "i.created_at DESC LIMIT 100"
+                    )
                 ).format(sql.Identifier(self.schema, "registration_intents"), sql.Identifier(self.schema, "sources")),
                 (actor,),
             )
@@ -463,11 +485,11 @@ class HostReservations:
                 value = RegistrationRequest.model_validate({**request, "onboarding_token": "x" * 32})
                 request = value.durable_request()
             result.append(
-                dict(
-                    source_instance=row["source_instance"],
-                    registration_id=str(row["operation_id"]),
-                    request=request,
-                    created_at=row["created_at"].isoformat(),
-                )
+                {
+                    "source_instance": row["source_instance"],
+                    "registration_id": str(row["operation_id"]),
+                    "request": request,
+                    "created_at": row["created_at"].isoformat(),
+                }
             )
         return result

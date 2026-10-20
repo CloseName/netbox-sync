@@ -7,7 +7,7 @@ from uuid import UUID
 from .run_gates import blocking_runs
 from psycopg import sql
 from psycopg.types.json import Jsonb
-from .host_registration import legacy_anchor, registration_anchor, esxi_anchor, HostRegistrationConflict
+from .host_registration import registration_anchor, esxi_anchor, HostRegistrationConflict
 from .source_lifecycle import LifecycleError
 from .source_operations import source_gate
 from .placement_control import row as active_row
@@ -21,7 +21,12 @@ class IdentityVerification:
     def _evidence(self, connection, source):
         operation = connection.execute(
             sql.SQL(
-                "SELECT operation_id,result,finished_at FROM {} WHERE source_instance=%s AND operation_kind='DISCOVERY' AND status='SUCCEEDED' AND finished_at>clock_timestamp()-interval '10 minutes'"
+                (
+                    "SELECT operation_id,result,finished_at FROM {} WHERE "
+                    "source_instance=%s AND operation_kind='DISCOVERY' AND "
+                    "status='SUCCEEDED' AND finished_at>clock_timestamp()-interval "
+                    "'10 minutes'"
+                )
             ).format(self.store.table("source_operations")),
             (source,),
         ).fetchone()
@@ -93,7 +98,10 @@ class IdentityVerification:
                     raise LifecycleError("SOURCE_OPERATION_ACTIVE")
                 if connection.execute(
                     sql.SQL(
-                        "SELECT 1 FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')"
+                        (
+                            "SELECT 1 FROM {} WHERE source_instance=%s AND status IN "
+                            "('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')"
+                        )
                     ).format(blocking_runs(connection, self.store.schema)),
                     (source,),
                 ).fetchone():
@@ -111,7 +119,12 @@ class IdentityVerification:
                     raise LifecycleError("SOURCE_IDENTITY_UNPROVED")
                 others = connection.execute(
                     sql.SQL(
-                        "SELECT s.settings FROM {} s WHERE s.source_type='esxi' AND s.source_instance<>%s AND NOT EXISTS (SELECT 1 FROM {} a WHERE a.source_instance=s.source_instance AND a.verified_at IS NOT NULL)"
+                        (
+                            "SELECT s.settings FROM {} s WHERE s.source_type='esxi' AND "
+                            "s.source_instance<>%s AND NOT EXISTS (SELECT 1 FROM {} a WHERE "
+                            "a.source_instance=s.source_instance AND a.verified_at IS NOT "
+                            "NULL)"
+                        )
                     ).format(self.store.table("sources"), self.store.table("source_archives")),
                     (source,),
                 ).fetchall()
@@ -135,19 +148,30 @@ class IdentityVerification:
                 }
                 connection.execute(
                     sql.SQL(
-                        "INSERT INTO {} (operation_id,source_instance,actor_id,revision,anchor,proof) VALUES (%s,%s,%s,%s,%s,%s)"
+                        (
+                            "INSERT INTO {} (operation_id,source_instance,actor_id,revision,an"
+                            "chor,proof) VALUES (%s,%s,%s,%s,%s,%s)"
+                        )
                     ).format(self.store.table("source_identity_verifications")),
                     (operation, source, actor, revision, meta["host_uuid"], Jsonb(proof)),
                 )
                 connection.execute(
                     sql.SQL(
-                        "UPDATE {} SET settings=jsonb_set(COALESCE(settings,'{{}}'::jsonb)-'legacy_admission','{{provider_identity}}',%s) WHERE source_instance=%s"
+                        (
+                            "UPDATE {} SET settings=jsonb_set(COALESCE(settings,'{{}}'::jsonb)"
+                            "-'legacy_admission','{{provider_identity}}',%s) WHERE "
+                            "source_instance=%s"
+                        )
                     ).format(self.store.table("sources")),
                     (Jsonb(identity), source),
                 )
                 connection.execute(
                     sql.SQL(
-                        "UPDATE {} SET status='STALE',result=NULL,safe_error_code='PLAN_STALE',updated_at=clock_timestamp() WHERE source_instance=%s AND operation_kind='PLAN' AND status='READY'"
+                        (
+                            "UPDATE {} SET status='STALE',result=NULL,safe_error_code='PLAN_ST"
+                            "ALE',updated_at=clock_timestamp() WHERE source_instance=%s AND "
+                            "operation_kind='PLAN' AND status='READY'"
+                        )
                     ).format(self.store.table("source_operations")),
                     (source,),
                 )

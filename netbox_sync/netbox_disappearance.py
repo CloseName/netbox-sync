@@ -1,3 +1,5 @@
+"""Report source-scoped missing objects without deleting retained inventory."""
+
 from .disappearance_report import print_disappearance_report
 from .disappearance_report import find_missing_objects
 from .disappearance_inventory import load_disappearance_inventory
@@ -99,7 +101,7 @@ def report_missing_managed_objects(
     hosts,
     config,
 ):
-    site, cluster = resolve_disappearance_target(
+    _site, cluster = resolve_disappearance_target(
         nb_api,
         config,
         cluster_filter=cluster_filter,

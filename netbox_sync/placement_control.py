@@ -31,7 +31,14 @@ def row(store, connection, source):
 def evidence(store, connection, source):
     operation = connection.execute(
         sql.SQL(
-            "SELECT operation_id,result,status FROM {} WHERE source_instance=%s AND operation_kind='DISCOVERY' AND (status='SUCCEEDED' OR (status='FAILED' AND safe_error_code='NETBOX_PLACEMENT_MISSING')) AND finished_at>clock_timestamp()-interval '24 hours' ORDER BY finished_at DESC, operation_id DESC LIMIT 1"
+            (
+                "SELECT operation_id,result,status FROM {} WHERE "
+                "source_instance=%s AND operation_kind='DISCOVERY' AND "
+                "(status='SUCCEEDED' OR (status='FAILED' AND "
+                "safe_error_code='NETBOX_PLACEMENT_MISSING')) AND "
+                "finished_at>clock_timestamp()-interval '24 hours' ORDER BY "
+                "finished_at DESC, operation_id DESC LIMIT 1"
+            )
         ).format(store.table("source_operations")),
         (source,),
     ).fetchone()
@@ -67,21 +74,21 @@ def read(store, source):
             for host in hosts
             if host["id"] in mapping.get("host_types", {})
         }
-        return dict(
-            source_instance=source,
-            revision=store.revision(current),
-            discovery_id=identifier,
-            preview=dict(
-                provider=current["source_type"],
-                name=hosts[0]["name"] if len(hosts) == 1 else None,
-                cluster=None,
-                hosts=hosts,
-            ),
-            references=refs,
-            host_types=types,
-            ip_conflict_policy=mapping.get("ip_conflict_policy", "strict"),
-            network_scope_rules=mapping.get("network_scope_rules", []),
-        )
+        return {
+            "source_instance": source,
+            "revision": store.revision(current),
+            "discovery_id": identifier,
+            "preview": {
+                "provider": current["source_type"],
+                "name": hosts[0]["name"] if len(hosts) == 1 else None,
+                "cluster": None,
+                "hosts": hosts,
+            },
+            "references": refs,
+            "host_types": types,
+            "ip_conflict_policy": mapping.get("ip_conflict_policy", "strict"),
+            "network_scope_rules": mapping.get("network_scope_rules", []),
+        }
 
 
 def save(store, source, revision, discovery_id, mapping):
@@ -99,7 +106,10 @@ def save(store, source, revision, discovery_id, mapping):
                 raise LifecycleError("SOURCE_OPERATION_ACTIVE")
             if connection.execute(
                 sql.SQL(
-                    "SELECT 1 FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')"
+                    (
+                        "SELECT 1 FROM {} WHERE source_instance=%s AND status IN "
+                        "('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')"
+                    )
                 ).format(blocking_runs(connection, store.schema)),
                 (source,),
             ).fetchone():
@@ -140,18 +150,23 @@ def save(store, source, revision, discovery_id, mapping):
                 raise LifecycleError("REQUEST_INVALID") from None
             if any(r["host_id"] not in {h["id"] for h in old_hosts + hosts} for r in scopes):
                 raise LifecycleError("REQUEST_INVALID")
-            retained = dict(
-                version=1,
-                ip_conflict_policy=policy,
-                references=refs,
-                host_types={**previous.get("host_types", {}), **types},
-                hosts=old_hosts + hosts,
-            )
+            retained = {
+                "version": 1,
+                "ip_conflict_policy": policy,
+                "references": refs,
+                "host_types": {**previous.get("host_types", {}), **types},
+                "hosts": old_hosts + hosts,
+            }
             if scopes or "network_scope_rules" in previous or "network_scope_rules" in mapping:
                 retained["network_scope_rules"] = scopes
             connection.execute(
                 sql.SQL(
-                    "UPDATE {} SET site_slug=%s,cluster_name=%s,platform_slug=%s,device_role_slug=%s,cluster_type_slug=%s,device_type_slug=%s,settings=jsonb_set(COALESCE(settings,'{{}}'::jsonb),'{{onboarding_mapping}}',%s) WHERE source_instance=%s"
+                    (
+                        "UPDATE {} SET site_slug=%s,cluster_name=%s,platform_slug=%s,devic"
+                        "e_role_slug=%s,cluster_type_slug=%s,device_type_slug=%s,settings="
+                        "jsonb_set(COALESCE(settings,'{{}}'::jsonb),'{{onboarding_mapping}"
+                        "}',%s) WHERE source_instance=%s"
+                    )
                 ).format(store.table("sources")),
                 (
                     refs["site"]["slug"],
@@ -166,7 +181,11 @@ def save(store, source, revision, discovery_id, mapping):
             )
             connection.execute(
                 sql.SQL(
-                    "UPDATE {} SET status='STALE',result=NULL,safe_error_code='PLAN_STALE',updated_at=clock_timestamp() WHERE source_instance=%s AND operation_kind='PLAN' AND status='READY'"
+                    (
+                        "UPDATE {} SET status='STALE',result=NULL,safe_error_code='PLAN_ST"
+                        "ALE',updated_at=clock_timestamp() WHERE source_instance=%s AND "
+                        "operation_kind='PLAN' AND status='READY'"
+                    )
                 ).format(store.table("source_operations")),
                 (source,),
             )

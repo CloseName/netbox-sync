@@ -74,14 +74,14 @@ def routes(settings, auth, lifecycle):
         ).credentials()
         preview = remote_test_authorized(settings.probe_socket, credentials, session, policy["revision"], preview=True)
         anchor = esxi_anchor(preview)
-        token = evidence.issue(None, dict(source=source, revision=meta["revision"], actor=actor, anchor=anchor))
-        return dict(
-            evidence_token=token,
-            host_uuid=anchor,
-            comparison="OBSERVED_AT_RECORDED_ENDPOINT",
-            physical_identity_proved=False,
-            object_ownership_proved=False,
-        )
+        token = evidence.issue(None, {"source": source, "revision": meta["revision"], "actor": actor, "anchor": anchor})
+        return {
+            "evidence_token": token,
+            "host_uuid": anchor,
+            "comparison": "OBSERVED_AT_RECORDED_ENDPOINT",
+            "physical_identity_proved": False,
+            "object_ownership_proved": False,
+        }
 
     @router.post("/{source}/legacy-confirm")
     def confirm(source: str, payload: Decision, http: Request):

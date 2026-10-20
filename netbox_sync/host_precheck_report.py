@@ -9,7 +9,7 @@ def print_host_precheck(contexts, site, cluster, host_types):
 
     for context in contexts:
         host = context["host"]
-        device_type = host_types[host.source_id]
+        _device_type = host_types[host.source_id]
         device = context["device"]
 
         action = "MATCH" if device is not None else "CREATE"

@@ -6,7 +6,6 @@ import secrets
 import subprocess
 import sys
 import time
-from pathlib import Path
 from .bootstrap_state import runtime_netbox
 from .local_control import ControlError
 from .source_lifecycle import apply_lock
@@ -165,17 +164,17 @@ def handle(store, lock_path, payload, *, scheduled_policy=None):
         atomic(path, state)  # Persist key before any remote mutation; retries reuse it.
         url, read_token = runtime_netbox(store.path, "read")
         _, apply_token = runtime_netbox(store.path, "apply")
-        value = dict(
-            vm_id=vm,
-            operation=operation,
-            state=state,
-            data=data,
-            policy=policy,
-            url=url,
-            read_token=read_token,
-            apply_token=apply_token,
-            guard_instance=os.environ.get("NETBOX_SYNC_GUARD_INSTANCE", ""),
-        )
+        value = {
+            "vm_id": vm,
+            "operation": operation,
+            "state": state,
+            "data": data,
+            "policy": policy,
+            "url": url,
+            "read_token": read_token,
+            "apply_token": apply_token,
+            "guard_instance": os.environ.get("NETBOX_SYNC_GUARD_INSTANCE", ""),
+        }
         try:
             with child_process(
                 subprocess.Popen,

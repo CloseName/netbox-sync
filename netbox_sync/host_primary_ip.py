@@ -52,9 +52,11 @@ def select_endpoint(hosts, config, resolver=None):
         print("HOST PRIMARY IP: endpoint does not match one host interface; retaining existing primary")
         return hosts
     host, name, address = matches[0]
-    host.connection_management = dict(
-        interface=name, address=address, dns_name="" if config.address == endpoint else config.address
-    )
+    host.connection_management = {
+        "interface": name,
+        "address": address,
+        "dns_name": "" if config.address == endpoint else config.address,
+    }
     if host.source == "proxmox":
         host.management_ip = endpoint
     return hosts

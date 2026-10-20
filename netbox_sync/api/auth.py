@@ -31,7 +31,14 @@ ROUTES = (
     ("POST", r"/api/v1/sources/identity-audit", "source.remove"),
     (
         "POST",
-        r"/api/v1/sources/[^/]+/(archive-check|archive-review|legacy-review|legacy-probe|legacy-confirm|retirement-context|inventory-review|identity-records|reconciliation-review|reconciliation-confirm|recovery-review|recover|recovery-abandon|recovery-status|identity-review|identity-confirm|removal-request|removal-status|retirement-review|retirement-status|retirement-resume|retire)",
+        (
+            "/api/v1/sources/[^/]+/(archive-check|archive-review|legacy-review"
+            "|legacy-probe|legacy-confirm|retirement-context|inventory-review|"
+            "identity-records|reconciliation-review|reconciliation-confirm|rec"
+            "overy-review|recover|recovery-abandon|recovery-status|identity-re"
+            "view|identity-confirm|removal-request|removal-status|retirement-r"
+            "eview|retirement-status|retirement-resume|retire)"
+        ),
         "source.remove",
     ),
     ("GET", r"/api/v1/users", "identity.manage"),

@@ -13,20 +13,20 @@ def install_catalog_routes(router, *, settings, catalog_call, catalog_create_cal
     def create_catalog(kind: str, payload: CatalogCreateDTO):
         return catalog_create_call(
             settings.bootstrap_socket,
-            dict(
-                action="catalog-create",
-                operation_id=str(payload.operation_id),
-                kind=kind,
-                object=payload.object,
-                write_token=payload.write_token.get_secret_value(),
-                confirm=payload.confirm,
-            ),
+            {
+                "action": "catalog-create",
+                "operation_id": str(payload.operation_id),
+                "kind": kind,
+                "object": payload.object,
+                "write_token": payload.write_token.get_secret_value(),
+                "confirm": payload.confirm,
+            },
         )
 
     @router.get("/catalog-operations/{operation_id}")
     def reconcile_catalog(operation_id: UUID):
         return catalog_create_call(
-            settings.bootstrap_socket, dict(action="catalog-reconcile", operation_id=str(operation_id))
+            settings.bootstrap_socket, {"action": "catalog-reconcile", "operation_id": str(operation_id)}
         )
 
     @router.get("/catalog/{kind}")

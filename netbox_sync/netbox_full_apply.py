@@ -1,3 +1,5 @@
+"""Sequence host, guest and network writes for confirmed full synchronization."""
+
 from .guest_placement import apply_guest_placement
 from .virtual_disks import apply_virtual_disks
 from .netbox_apply import apply_hosts

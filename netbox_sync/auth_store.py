@@ -3,7 +3,7 @@
 import re
 from psycopg import connect, sql
 from psycopg.types.json import Jsonb
-from .auth_policy import AuthPolicy, AuthError, initial_state
+from .auth_policy import AuthPolicy, AuthError
 from .ldap_directory import DirectoryClient
 from .auth_secrets import AuthSecrets
 

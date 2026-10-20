@@ -6,6 +6,8 @@ import logging
 from functools import partial
 from pathlib import Path
 
+# Compatibility exports retained after staged extraction.
+# pylint: disable-next=unused-import
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -23,11 +25,17 @@ from .schedule_routes import install_schedule_routes
 from .operation_routes import install_operation_routes
 from .catalog_routes import install_catalog_routes
 from .onboarding_routes import install_onboarding_routes
+
+# Compatibility exports retained after staged extraction.
+# pylint: disable-next=unused-import
 from .request_boundaries import _error, _install_boundaries, install_catalog_error_handler
 from .settings import ApiSettings, application_version
 from .lifecycle_adapters import ActiveSourceReader, LifecycleRegistrationRegistry
 from .discovery_client import DiscoveryWorkerClient
 from .apply_client import ApplyWorkerClient
+
+# Compatibility exports retained after staged extraction.
+# pylint: disable-next=unused-import
 from .onboarding_adapters import BrokerSecretStore, RegistrationRegistry, test_esxi, test_proxmox
 from .run_reader import PostgresRunReader
 from .worker_health import WorkerHealthClient

@@ -113,11 +113,11 @@ class GuardClient:
                 allow_redirects=False,
                 stream=True,
             ) as response:
-                context = dict(
-                    http_status=response.status_code,
-                    resource=(body or {}).get("resource"),
-                    nonce=(body or {}).get("nonce"),
-                )
+                context = {
+                    "http_status": response.status_code,
+                    "resource": (body or {}).get("resource"),
+                    "nonce": (body or {}).get("nonce"),
+                }
                 raw = bytearray()
                 for part in response.iter_content(8192):
                     raw.extend(part)
