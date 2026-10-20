@@ -142,7 +142,7 @@ def report_missing_managed_objects(
         _object_id=_object_id,
     )
 
-    managed_guests, missing_guests, managed_interfaces, missing_interfaces = find_missing_objects(
+    missing = find_missing_objects(
         target_vms,
         interfaces_by_vm,
         discovered_guests,
@@ -151,10 +151,7 @@ def report_missing_managed_objects(
     )
 
     print_disappearance_report(
-        managed_guests,
-        missing_guests,
-        managed_interfaces,
-        missing_interfaces,
+        *missing,
         discovered_guests,
         discovered_interfaces,
         _identity_label=_identity_label,

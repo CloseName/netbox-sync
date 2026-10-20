@@ -668,3 +668,14 @@ Tests cover receipt ordering, complete reverse rollback despite failures and
 uncertain deterministic registration without deleting persistent secrets.
 Full suite: 2543 passed, 491 skipped, one existing warning; Pylint 9.40/10,
 zero Error/Fatal. Black and whitespace checks pass. Production remains untouched.
+
+## Stage 59: disappearance identity collection
+
+Collect each guest and NIC with explicit VM/LXC callback groups; keep the ordered
+missing-object result together until rendering. Three new tests pass on original
+code; seven focused tests pass before and after. They assert legacy/v2 callback
+order, distinct VM/LXC rules, the ordinary tuple contract and exact report output.
+Full suite: 2546 passed, 491 skipped, one existing warning; Pylint 9.40/10,
+zero Error/Fatal. Local-variable findings resolved in the changed functions.
+Existing injected identity callback signatures are retained for compatibility.
+Black and whitespace checks pass; no deletion or production operations occurred.

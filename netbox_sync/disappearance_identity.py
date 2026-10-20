@@ -1,5 +1,34 @@
 """Read-only planning stages preserving existing selection and output contracts."""
 
+from typing import NamedTuple
+
+
+class _DiscoveredIdentities(NamedTuple):
+    """Keep legacy scopes and discovered object sets together during collection."""
+
+    scopes: set
+    instances: set
+    guests: set
+    interfaces: set
+
+
+class _GuestIdentityRules(NamedTuple):
+    """Retain provider-specific guest and interface identity callbacks."""
+
+    legacy_guest: object
+    guest: object
+    legacy_nic: object
+    nic: object
+
+
+def _collect_guest_identities(guest, discovered, rules):
+    """Collect one guest and its NICs in legacy-then-v2 callback order."""
+    discovered.guests.add((str(guest.source), rules.legacy_guest(guest)))
+    discovered.guests.add(rules.guest(guest))
+    for nic in guest.interfaces:
+        discovered.interfaces.add((str(guest.source), rules.legacy_nic(guest, nic)))
+        discovered.interfaces.add(rules.nic(guest, nic))
+
 
 def collect_discovered_identities(
     hosts,
@@ -15,68 +44,33 @@ def collect_discovered_identities(
 ):
     """Collect legacy and v2 guest/NIC identities with their permitted source scopes."""
 
-    source_scopes = set()
-    source_instances = set()
-    discovered_guests = set()
-    discovered_interfaces = set()
-
+    discovered = _DiscoveredIdentities(set(), set(), set(), set())
     for host in hosts:
         source = str(host.source)
-        source_instances.add((source, str(host.source_instance)))
-
+        discovered.instances.add((source, str(host.source_instance)))
         host_source_id = _local_source_id(host)
-
         if host.legacy_identity_owner:
-            source_scopes.add(
-                (
-                    source,
-                    host_source_id + ":",
-                )
-            )
-
+            discovered.scopes.add((source, host_source_id + ":"))
         for vm in host.virtual_machines:
-            guest_identity = (
-                str(vm.source),
-                vm_identity_source_id(vm),
+            _collect_guest_identities(
+                vm,
+                discovered,
+                _GuestIdentityRules(
+                    vm_identity_source_id,
+                    virtual_machine_source_identity,
+                    nic_identity_source_id,
+                    virtual_machine_nic_source_identity,
+                ),
             )
-
-            discovered_guests.add(guest_identity)
-            discovered_guests.add(virtual_machine_source_identity(vm))
-
-            for nic in vm.interfaces:
-                discovered_interfaces.add(
-                    (
-                        str(vm.source),
-                        nic_identity_source_id(
-                            vm,
-                            nic,
-                        ),
-                    )
-                )
-                discovered_interfaces.add(virtual_machine_nic_source_identity(vm, nic))
-
         for container in host.containers:
-            guest_identity = (
-                str(container.source),
-                lxc_identity_source_id(container),
+            _collect_guest_identities(
+                container,
+                discovered,
+                _GuestIdentityRules(
+                    lxc_identity_source_id, lxc_source_identity, nic_identity_source_id, lxc_nic_source_identity
+                ),
             )
-
-            discovered_guests.add(guest_identity)
-            discovered_guests.add(lxc_source_identity(container))
-
-            for nic in container.interfaces:
-                discovered_interfaces.add(
-                    (
-                        str(container.source),
-                        nic_identity_source_id(
-                            container,
-                            nic,
-                        ),
-                    )
-                )
-                discovered_interfaces.add(lxc_nic_source_identity(container, nic))
-
-    return source_scopes, source_instances, discovered_guests, discovered_interfaces
+    return tuple(discovered)
 
 
 def build_managed_identity_resolver(source_scopes, source_instances, *, _identities, _v2_identities):
