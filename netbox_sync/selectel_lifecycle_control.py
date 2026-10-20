@@ -8,6 +8,8 @@ from .source_lifecycle import apply_lock, LifecycleError
 
 
 def handle(store, lock_path, operation, data):
+    """Persist confirmed account lifecycle intent and retain its nonce until the outcome is proved."""
+
     from .selectel_control import root, read, write, running
     from .selectel_runner import child
 

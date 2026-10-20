@@ -22,11 +22,17 @@ ASSETS = Path("/app/deploy/pfsense")
 
 
 class SetupError(Exception):
+    """Report pfSense setup or collection refusal to the parent worker."""
+
     pass
 
 
 class Page(HTMLParser):
+    """Extract GUI CSRF tokens and preformatted command-result content from HTML."""
+
     def __init__(self, text):
+        """Parse the page and support either input or script-provided CSRF tokens."""
+
         super().__init__()
         self.token = None
         self.pre = False
@@ -38,6 +44,8 @@ class Page(HTMLParser):
                 self.token = match[1]
 
     def handle_starttag(self, tag, attrs):
+        """Capture CSRF input values and enter preformatted command output."""
+
         attrs = dict(attrs)
         if tag == "input" and attrs.get("name") == "__csrf_magic":
             self.token = attrs.get("value")
@@ -45,14 +53,20 @@ class Page(HTMLParser):
             self.pre = True
 
     def handle_endtag(self, tag):
+        """Stop collecting output at the closing preformatted tag."""
+
         if tag == "pre":
             self.pre = False
 
     def handle_data(self, data):
+        """Accumulate only text inside preformatted output."""
+
         if self.pre:
             self.output.append(data)
 
     def result(self):
+        """Decode exactly one base64 JSON command-result marker."""
+
         matches = re.findall(r"NS_RESULT:([A-Za-z0-9+/=]+)", "".join(self.output))
         if len(matches) != 1:
             raise SetupError("GUI_COMMAND_FAILED")
@@ -60,6 +74,8 @@ class Page(HTMLParser):
 
 
 def gui_request(session, url, data=None):
+    """Fetch bounded GUI content without following redirects that could expose credentials."""
+
     with session.request(
         "POST" if data else "GET", url, data=data, timeout=(5, 15), allow_redirects=False, stream=True
     ) as response:
@@ -77,6 +93,8 @@ def gui_request(session, url, data=None):
 
 
 def php(session, base, code):
+    """Submit an authenticated GUI PHP command with the current CSRF token."""
+
     page = Page(gui_request(session, base + "/diag_command.php"))
     if not page.token:
         raise SetupError("GUI_ACCESS_DENIED")
@@ -107,6 +125,8 @@ echo 'NS_RESULT:' . base64_encode(json_encode([
 
 
 def supported_version(version):
+    """Recognize supported pfSense CE 2.x release syntax starting at minor version six."""
+
     if not isinstance(version, str):
         return False
     match = re.fullmatch(r"2\.([0-9]+)\.([0-9]+)-RELEASE(?:-p[0-9]+)?", version)
@@ -114,6 +134,8 @@ def supported_version(version):
 
 
 def setup(value, interfaces):
+    """Verify VM MAC identity and pinned SSH identity before installing the restricted collector."""
+
     state = value["state"]
     data = value["data"]
     port = state["port"]
@@ -188,6 +210,8 @@ def setup(value, interfaces):
 
 
 def collect(state, policy):
+    """Read bounded inventory through pinned-key SSH with deadline and exit-status checks."""
+
     import paramiko
 
     host, address = EgressPolicy(**policy).resolve(state["address"], state["ssh_port"])
@@ -240,6 +264,8 @@ def collect(state, policy):
 
 
 def run(value, progress=None):
+    """Check guard readiness and VM identity before setup, collection and guarded import."""
+
     parsed = urlsplit(value["url"])
     host, address = EgressPolicy(allowed_hosts=(parsed.hostname,)).resolve(parsed.hostname, parsed.port or 443)
     with pinned_dns(host, address, parsed.port or 443), requests.Session() as session:
@@ -343,6 +369,8 @@ def run(value, progress=None):
 
 
 def main():
+    """Return JSON outcome plus any verified SSH preparation retained before failure."""
+
     progress = {}
     try:
         result = run(json.loads(sys.stdin.buffer.read(32769)), progress)

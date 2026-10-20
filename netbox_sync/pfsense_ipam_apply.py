@@ -18,6 +18,8 @@ TEST_BINDINGS = {
 
 
 def reviewed_addresses(preview, expected, now=None):
+    """Require fresh complete MAC/interface/IPv4 bindings to match the explicit reviewed set."""
+
     now = now or datetime.now(timezone.utc)
     stamp = datetime.fromisoformat(preview["collected_at"].replace("Z", "+00:00"))
     if stamp.tzinfo is None or not -120 <= (now - stamp).total_seconds() <= 900:
@@ -45,6 +47,8 @@ def reviewed_addresses(preview, expected, now=None):
 
 
 def import_test(snapshot_path, apply=False):
+    """Preview or atomically create only reviewed test-VM IPv4 assignments without reassignment."""
+
     from django.contrib.contenttypes.models import ContentType
     from django.db import connection, transaction
     from django.db.models import CharField, F, Func

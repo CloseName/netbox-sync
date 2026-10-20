@@ -488,3 +488,11 @@ mutation-trace cases pass before/after. Full suite: 2385 passed, 491 skipped, on
 existing warning. Pylint 9.34/10, zero Error/Fatal; no complexity or documentation
 findings remain in legacy_netbox_writes. Black and whitespace pass. Legacy behavior
 is intentionally not replaced with modern VM/LXC rules.
+## Stage 41: complete provider contract descriptions
+
+Add 49 descriptions in 11 pfSense and experimental Selectel modules. Executable
+AST unchanged in all files. Full suite: 2385 passed, 491 skipped, one existing
+warning. Pylint 9.36/10, zero Error/Fatal; no missing class or function descriptions
+remain. Black checks all 227 modules; whitespace passes. Complexity audit remains
+open: 32 branch, 26 statement, 74 local-variable, 14 return and 32 boolean-expression
+findings, plus argument/record-shape compatibility metrics. Counts overlap.

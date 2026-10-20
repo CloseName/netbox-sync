@@ -18,6 +18,8 @@ from .selectel_payload import MAX_BYTES
 
 def child_result(output, returncode, operation):
     # Once import started, an abnormal response cannot prove that no writes ran.
+    """Validate bounded child output while preserving uncertainty for possible write operations."""
+
     def failure(code):
         return {"error": "IMPORT_UNCONFIRMED" if operation in ("import", "lifecycle-execute") else code}
 
@@ -44,6 +46,8 @@ def child_result(output, returncode, operation):
 @contextmanager
 def locked_store(store):
     # The launcher still holds this lock briefly after starting our process.
+    """Retry the launcher-held bootstrap lock briefly before entering account state work."""
+
     with ExitStack() as stack:
         for attempt in range(101):
             try:
@@ -57,6 +61,8 @@ def locked_store(store):
 
 
 def child(value, timeout):
+    """Run a resource-limited collector and preserve uncertain outcomes on write timeouts."""
+
     def sandbox():
         import resource
 
@@ -87,6 +93,8 @@ def child(value, timeout):
 
 
 def main():
+    """Serialize collection and import, recheck account activation and persist the run outcome."""
+
     store = BootstrapStore(sys.argv[1])
     account, run_id, lock = sys.argv[2:]
     base = root(store)
