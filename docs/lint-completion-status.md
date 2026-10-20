@@ -73,6 +73,8 @@ functions: one function can produce several findings.
   Control-flow/doc findings resolved; public result fields retained.
 - Prerequisite comparison: 2403 tests passed, 491 skipped; Pylint 9.37/10.
   No complexity/doc findings remain; conflict order and exact IDs retained.
+- Legacy plan comparison: 2405 tests passed, 491 skipped; Pylint 9.37/10.
+  No findings remain in legacy_inventory; exact reports/counters retained.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,

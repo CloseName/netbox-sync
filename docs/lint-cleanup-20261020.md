@@ -523,3 +523,11 @@ Six new cases and existing preparation checks pass before/after (53 passed,
 20 environment-dependent skips). Full suite: 2403 passed, 491 skipped, one existing
 warning. Pylint 9.37/10, zero Error/Fatal; no complexity/doc findings remain in
 prerequisites. Black and whitespace pass.
+## Stage 45: legacy plan field comparison
+
+Separate desired VM report values and ordered comparison from plan iteration.
+Keep numeric fallbacks, status projection, exact text and per-invocation counters.
+Two new replay/numeric cases and four existing golden report/index cases pass
+before/after. Full suite: 2405 passed, 491 skipped, one existing warning. Pylint
+9.37/10, zero Error/Fatal; no findings remain in legacy_inventory. Black and
+whitespace pass.
