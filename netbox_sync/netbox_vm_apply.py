@@ -1,3 +1,4 @@
+from .vm_apply_inventory import prepare_vm_apply_inventory
 from .netbox_record_values import object_id as _object_id, choice_value as _choice_value
 from .netbox_vm_name import netbox_vm_name
 from .netbox_vm_metadata import (
@@ -469,39 +470,13 @@ def apply_virtual_machines(
         *,
         confirmed=False,
 ):
-    site = _required(
-        nb_api.dcim.sites,
-        'site',
-        slug=config.site_slug,
+    inventory = prepare_vm_apply_inventory(
+        nb_api, config, _required=_required, _resolve_cluster=_resolve_cluster,
     )
-
-    cluster_type = _required(
-        nb_api.virtualization.cluster_types,
-        'cluster type',
-        slug=config.cluster_type_slug,
-    )
-
-    cluster = _resolve_cluster(
-        nb_api,
-        site,
-        cluster_type,
-        config.cluster_name,
-        getattr(config,'onboarding_mapping',{}).get('references',{}).get('cluster',{}).get('id'),
-    )
-
-    all_vms = list(
-        nb_api.virtualization
-        .virtual_machines
-        .all()
-    )
-
-    target_vms = list(
-        nb_api.virtualization
-        .virtual_machines
-        .filter(
-            cluster_id=cluster.id
-        )
-    )
+    site = inventory.site
+    cluster = inventory.cluster
+    all_vms = inventory.all_vms
+    target_vms = inventory.target_vms
 
     discovered = []
 

@@ -765,3 +765,22 @@ An AST comparison verifies that the extracted bodies match the originals and
 that the remaining executable code in all seven callers is unchanged.
 Validation results for this stage are recorded in its PR. No API/frontend,
 Selectel policy, migrations, deployment or production changes are part of stage 1.
+
+## VM apply: target preparation and inventory
+
+Extracted `prepare_vm_apply_inventory` from `apply_virtual_machines`, starting
+from main `4fbafab264fea97aef043019f0a589ce1db8ed6a` (PR #37).
+The helper retains prerequisite lookup order, cluster name/explicit-ID selection,
+site and cluster-type validation, and independent eager all-VM/cluster-VM reads.
+Existing prerequisite and cluster-resolution helpers remain injected from the
+original module. Discovery, preflight, native-disk handling, reports, confirmation
+and writes remain in the caller; LXC behavior is unchanged.
+
+Eleven characterization tests passed before extraction and cover read order,
+independent selections, explicit cluster mapping, prerequisite failures, scope/type
+mismatches, duplicate clusters and read failures before discovery or writes.
+The focused suite passed 61 tests after extraction. AST comparison after inlining
+the helper confirms unchanged original function and class bodies.
+Selectel remains experimental; this change does not deploy to production.
+
+Full suite: 1979 passed, 485 skipped, one existing Starlette deprecation warning.
