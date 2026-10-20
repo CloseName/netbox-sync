@@ -61,6 +61,8 @@ functions: one function can produce several findings.
   Control-flow/doc findings resolved in netbox_planner.
 - Bounded evidence collection: 2368 tests passed, 491 skipped; Pylint 9.27/10.
   Nested-block findings eliminated; public conflict evidence fields retained.
+- VM/LXC network write stages: 2378 tests passed, 491 skipped; Pylint 9.28/10.
+  No findings remain in either write module; provider-specific primary policies retained.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,
