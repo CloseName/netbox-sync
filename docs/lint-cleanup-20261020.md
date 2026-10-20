@@ -314,3 +314,11 @@ Twenty-two new cases pass on main; focused suite: 55 passed. Full final suite:
 2277 passed, 485 skipped, one existing warning. Pylint 9.12/10, zero Error/Fatal;
 no complexity or missing-doc findings remain in worker_failure. Black and whitespace
 pass. Unknown stage values are not consulted before a known provider fault matches.
+
+## Stage 22: guard transport and scheduled diagnostic documentation
+
+Add 28 descriptions covering guard protocol validation, request uncertainty,
+receipt formats, bounded diagnostic fields and scheduled context lifetime.
+Executable AST unchanged. Focused tests: 90 passed before and after. Full Pylint:
+9.13/10, zero Error/Fatal. Missing docs remaining: 63 classes and 337 functions.
+Black and whitespace pass. Last full executable-code suite: 2277 passed, 485 skipped.

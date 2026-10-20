@@ -36,11 +36,15 @@ _current = ContextVar("scheduled_execution", default=None)
 
 
 class ScheduledPlanBlocked(RuntimeError):
+    """A scheduled plan refused before apply because its safety checks are blocked."""
+
     code = "PLAN_BLOCKED"
 
 
 @dataclass
 class ExecutionEvidence:
+    """Per-context scheduled execution stage, plan and possible-write evidence."""
+
     stage: str = "dispatch"
     plan: object = None
     writes_possible: bool = False
@@ -48,15 +52,21 @@ class ExecutionEvidence:
 
 
 def begin(run_id=None):
+    """Install fresh execution evidence and return the token needed to restore the prior context."""
+
     evidence = ExecutionEvidence(run_id=run_id)
     return evidence, _current.set(evidence)
 
 
 def end(token):
+    """Restore the execution context identified by the token from begin."""
+
     _current.reset(token)
 
 
 def mark(stage, plan=None):
+    """Record an allowlisted stage and retain that writes became possible once apply began."""
+
     if stage not in _STAGES:
         raise ValueError("Unknown scheduled stage")
     evidence = _current.get()
@@ -69,6 +79,8 @@ def mark(stage, plan=None):
 
 
 def _http(exc):
+    """Extract bounded status, method and known endpoint without response bodies or URLs."""
+
     # RequestError.req is a Response. Never read text/json/reason/headers/body.
     response = getattr(exc, "req", None)
     if response is None:
@@ -94,6 +106,8 @@ def _http(exc):
 
 
 def record(exc, evidence, run_id):
+    """Build a closed failure record, inspecting at most four linked exceptions for safe metadata."""
+
     try:
         identifier = str(UUID(str(run_id)))
     except (ValueError, TypeError, AttributeError):
@@ -127,9 +141,13 @@ def record(exc, evidence, run_id):
 
 
 def emit(exc, evidence, run_id):
+    """Write the closed scheduled failure record as one flushed JSON line to stderr."""
+
     print(json.dumps(record(exc, evidence, run_id), sort_keys=True), file=sys.stderr, flush=True)
 
 
 def current_run_id():
+    """Return the active scheduled run identifier, or None outside an execution context."""
+
     evidence = _current.get()
     return evidence.run_id if evidence is not None else None

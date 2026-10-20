@@ -49,7 +49,9 @@ functions: one function can produce several findings.
   executable AST and 52 schemas unchanged apart from descriptions. Pylint 9.09/10.
 - Control API/client documentation: 56 descriptions added; 95 focused tests pass,
   27 skipped, executable AST and 25 schemas unchanged apart from descriptions.
-- Remaining documentation: 68 classes and 360 functions; compatibility metrics pending.
+- Guard/scheduled diagnostic documentation: 28 descriptions added; 90 tests pass,
+  executable AST unchanged; Pylint 9.13/10.
+- Remaining documentation: 63 classes and 337 functions; compatibility metrics pending.
 
 Detailed per-PR verification remains in [the cleanup log](lint-cleanup-20261020.md).
 This file must not be interpreted as a completed audit until all pending entries
