@@ -15,18 +15,26 @@ from .netbox_metadata import (
 
 
 class HostApplyError(RuntimeError):
+    """A host target, ownership or preflight requirement could not be satisfied."""
+
     pass
 
 
 def _canonical_address(value):
+    """Normalize an interface address while preserving its prefix length."""
+
     return str(ipaddress.ip_interface(str(value)))
 
 
 def _address_ip(value):
+    """Extract the normalized IP without its interface prefix."""
+
     return str(ipaddress.ip_interface(str(value)).ip)
 
 
 def _required(endpoint, description, **filters):
+    """Require a prerequisite lookup to return a visible NetBox object."""
+
     result = endpoint.get(**filters)
 
     if result is None:
@@ -42,6 +50,8 @@ def _resolve_cluster(
     cluster_name,
     cluster_id=None,
 ):
+    """Require exactly one cluster with the reviewed type and site scope."""
+
     matches = []
 
     for cluster in nb_api.virtualization.clusters.filter(
@@ -62,11 +72,62 @@ def _resolve_cluster(
     return matches[0]
 
 
+def _management_ip_matches(devices, host):
+    """Find primary IPv4 matches, ignoring absent and malformed addresses."""
+    ip_matches = []
+
+    if host.management_ip:
+        for candidate in devices:
+            primary = getattr(
+                candidate,
+                "primary_ip4",
+                None,
+            )
+
+            if primary is None:
+                continue
+
+            try:
+                current_ip = _address_ip(primary)
+            except ValueError:
+                continue
+
+            if current_ip == host.management_ip:
+                ip_matches.append(candidate)
+
+    return ip_matches
+
+
+def _reject_unowned_device(devices, host):
+    """Reject address or name adoption candidates without inferring ownership."""
+    # 2. Management IP
+    ip_matches = _management_ip_matches(devices, host)
+
+    if len(ip_matches) > 1:
+        raise HostApplyError(f"Management IP conflict: " f"{host.management_ip} " f"matches={len(ip_matches)}")
+
+    if ip_matches:
+        raise HostApplyError(
+            f"Device adoption candidate exists without sync identity: " f"management_ip={host.management_ip!r}"
+        )
+
+    # A name is useful conflict evidence, never ownership evidence.
+    name_matches = [candidate for candidate in devices if candidate.name.casefold() == host.normalized_name.casefold()]
+
+    if len(name_matches) > 1:
+        raise HostApplyError(f"Device name conflict: " f"{host.normalized_name!r} " f"matches={len(name_matches)}")
+
+    if name_matches:
+        raise HostApplyError(f"Device adoption candidate exists without sync identity: " f"{host.normalized_name!r}")
+
+
 def _resolve_device(
     nb_api,
     host,
     site,
 ):
+    """Resolve stable ownership first and reject unowned adoption candidates."""
+
     devices = list(nb_api.dcim.devices.all())
 
     # 1. Stable source identity
@@ -82,48 +143,7 @@ def _resolve_device(
         reason = "sync_identity"
 
     else:
-        # 2. Management IP
-        ip_matches = []
-
-        if host.management_ip:
-            for candidate in devices:
-                primary = getattr(
-                    candidate,
-                    "primary_ip4",
-                    None,
-                )
-
-                if primary is None:
-                    continue
-
-                try:
-                    current_ip = _address_ip(primary)
-                except ValueError:
-                    continue
-
-                if current_ip == host.management_ip:
-                    ip_matches.append(candidate)
-
-        if len(ip_matches) > 1:
-            raise HostApplyError(f"Management IP conflict: " f"{host.management_ip} " f"matches={len(ip_matches)}")
-
-        if ip_matches:
-            raise HostApplyError(
-                f"Device adoption candidate exists without sync identity: " f"management_ip={host.management_ip!r}"
-            )
-
-        # A name is useful conflict evidence, never ownership evidence.
-        name_matches = [
-            candidate for candidate in devices if candidate.name.casefold() == host.normalized_name.casefold()
-        ]
-
-        if len(name_matches) > 1:
-            raise HostApplyError(f"Device name conflict: " f"{host.normalized_name!r} " f"matches={len(name_matches)}")
-
-        if name_matches:
-            raise HostApplyError(
-                f"Device adoption candidate exists without sync identity: " f"{host.normalized_name!r}"
-            )
+        _reject_unowned_device(devices, host)
 
         return None, None
 
@@ -146,6 +166,8 @@ def _load_existing_interfaces(
     nb_api,
     device,
 ):
+    """Index device interfaces by unique name, refusing duplicates."""
+
     if device is None:
         return {}
 
@@ -164,6 +186,8 @@ def _find_ip_matches(
     nb_api,
     address,
 ):
+    """Find canonical address matches only in the global routing table."""
+
     canonical = _canonical_address(address)
 
     result = []
@@ -176,6 +200,8 @@ def _find_ip_matches(
 
 
 def _management_binding(host):
+    """Require one discovered interface address for the host management IP."""
+
     matches = []
 
     for interface in host.interfaces:
@@ -199,6 +225,8 @@ def _management_binding(host):
 def _desired_interface_type(
     interface,
 ):
+    """Map discovered bridge and VLAN interfaces to the virtual NetBox type."""
+
     if interface.interface_type in {
         "bridge",
         "vlan",
@@ -212,6 +240,8 @@ def _managed_metadata(
     host,
     device,
 ):
+    """Build managed custom fields while retaining existing unrelated values."""
+
     existing = {}
 
     if device is not None:
@@ -245,6 +275,8 @@ def _preflight_host(
     *,
     host_networking=True,
 ):
+    """Prepare host context through the legacy-compatible helper bindings."""
+
     return prepare_host_context(
         nb_api,
         host,
@@ -271,6 +303,8 @@ def _device_changes(
     desired_custom_fields,
     changed_custom_fields,
 ):
+    """Build changed device fields while respecting Selectel-owned placement."""
+
     data = device.serialize()
     changes = {}
 
@@ -303,6 +337,8 @@ def _interface_changes(
     interface,
     discovered,
 ):
+    """Build interface type, enabled and explicit-description changes."""
+
     data = interface.serialize()
 
     desired_type = _desired_interface_type(discovered)
@@ -336,6 +372,8 @@ def apply_hosts(
     confirmed=False,
     host_networking=True,
 ):
+    """Preflight and report every host before any explicitly confirmed writes."""
+
     targets = prepare_host_apply_targets(
         nb_api,
         hosts,

@@ -53,6 +53,8 @@ functions: one function can produce several findings.
   Pylint 9.16/10; no complexity or missing-doc findings remain in bootstrap_state.
 - Local control transport: 2336 tests passed, 491 skipped; Pylint 9.16/10.
   Control-flow/doc findings resolved; public serve arguments retained.
+- Host device conflict checks: 2346 tests passed, 491 skipped; Pylint 9.17/10.
+  Control-flow/doc findings resolved in netbox_apply.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,
@@ -63,7 +65,7 @@ functions: one function can produce several findings.
   executable AST unchanged; Pylint 9.13/10.
 - Hardware identity/mapping documentation: 14 descriptions, executable AST unchanged;
   90 focused tests passed, 52 skipped; Pylint 9.17/10.
-- Remaining documentation: 56 classes and 302 functions; compatibility metrics pending.
+- Remaining documentation: 55 classes and 301 functions; compatibility metrics pending.
 
 Detailed per-PR verification remains in [the cleanup log](lint-cleanup-20261020.md).
 This file must not be interpreted as a completed audit until all pending entries
