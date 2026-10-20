@@ -784,3 +784,23 @@ the helper confirms unchanged original function and class bodies.
 Selectel remains experimental; this change does not deploy to production.
 
 Full suite: 1979 passed, 485 skipped, one existing Starlette deprecation warning.
+
+## LXC apply: target preparation and inventory
+
+Extracted `prepare_lxc_apply_inventory` from `apply_lxc_containers`, starting
+from main `963a2f22d5bfe17d2693502348ef7eb26d4e5504` (PR #38).
+The helper retains site lookup, cluster name/explicit-ID selection and site scope
+validation without adding VM-style cluster-type checks. It reads the global VM
+inventory once and derives target membership using the original `cluster.id`
+attribute comparison, preserving record references and order. Existing error
+class and cluster-filter callback remain available in the original module.
+Discovery, identity checks, reports, confirmation and writes remain in the caller.
+
+Sixteen characterization tests passed before extraction, covering read order,
+explicit selection, object/dictionary/missing cluster relationships, target
+failures and read errors before discovery or writes. The focused suite passed
+47 tests after extraction. Original function/class ASTs match after inlining the
+helper; error/fatal lint checks passed. VM behavior is unchanged, Selectel remains
+experimental, and no production deployment is included.
+
+Full suite: 1995 passed, 485 skipped, one existing Starlette deprecation warning.

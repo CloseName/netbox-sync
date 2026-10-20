@@ -1,3 +1,4 @@
+from .lxc_apply_inventory import prepare_lxc_apply_inventory
 from .host_mapping import cluster_filter
 from .netbox_lxc_metadata import (
     MANAGED_LXC_CUSTOM_FIELDS,
@@ -170,67 +171,13 @@ def apply_lxc_containers(
     *,
     confirmed=False,
 ):
-    site = nb_api.dcim.sites.get(
-        slug=config.site_slug
+    inventory = prepare_lxc_apply_inventory(
+        nb_api, config, cluster_filter=cluster_filter, LXCApplyError=LXCApplyError,
     )
-
-    if site is None:
-        raise LXCApplyError(
-            'Target site not found'
-        )
-
-    clusters = list(
-        nb_api.virtualization.clusters.filter(
-            **cluster_filter(config)
-        )
-    )
-
-    target_clusters = []
-
-    for cluster in clusters:
-        data = cluster.serialize()
-
-        if (
-            data.get('scope_type')
-            == 'dcim.site'
-            and data.get(
-                'scope_id'
-            ) == site.id
-        ):
-            target_clusters.append(
-                cluster
-            )
-
-    if len(target_clusters) != 1:
-        raise LXCApplyError(
-            'Expected exactly one '
-            'target cluster'
-        )
-
-    cluster = target_clusters[0]
-
-    all_vms = list(
-        nb_api.virtualization
-        .virtual_machines
-        .all()
-    )
-
-    target_vms = [
-        vm
-        for vm in all_vms
-        if (
-            getattr(
-                getattr(
-                    vm,
-                    'cluster',
-                    None,
-                ),
-                'id',
-                None,
-            )
-            == cluster.id
-        )
-    ]
+    site = inventory.site
+    cluster = inventory.cluster
+    all_vms = inventory.all_vms
+    target_vms = inventory.target_vms
 
     contexts = []
 
