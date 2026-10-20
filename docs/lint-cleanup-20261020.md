@@ -679,3 +679,13 @@ Full suite: 2546 passed, 491 skipped, one existing warning; Pylint 9.40/10,
 zero Error/Fatal. Local-variable findings resolved in the changed functions.
 Existing injected identity callback signatures are retained for compatibility.
 Black and whitespace checks pass; no deletion or production operations occurred.
+
+## Stage 60: experimental Selectel account dispatch
+
+Separate listing, activation, scheduling, credential saving and collection gates.
+Preserve authorization and lock order, stale-run projection without persistence,
+uncertain-import state and scheduling during active collection. Ten new tests pass
+before extraction; 18 focused tests pass after, one platform test skipped.
+Full suite: 2556 passed, 491 skipped, one existing warning; Pylint 9.40/10,
+zero Error/Fatal. No control-flow complexity remains in selectel_control.
+Black and whitespace pass. Selectel remains experimental; production untouched.

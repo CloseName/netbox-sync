@@ -139,11 +139,141 @@ def launch(store, lock_path, path, state, trigger="manual"):
     return public(state)
 
 
+def _list_accounts(base, url):
+    """Project account status without persisting interrupted-run observations."""
+    items = []
+    for p in sorted(base.glob("*.json")):
+        if re.fullmatch(r"[0-9]{1,20}", p.stem):
+            state = read(p)
+            if state.get("status") == "running" and not running(state):
+                state.update(status="attention", error="RUN_INTERRUPTED", next_run=None)
+            items.append(
+                {
+                    **public(state),
+                    "url": url.rstrip("/") + "/plugins/netbox-sync-guard/providers/" + p.stem + "/",
+                }
+            )
+    return {"items": items, "import_ready": (base / "netbox-token.json").is_file()}
+
+
+def _set_enabled(path, state, data):
+    """Change activation while retaining any already-running job."""
+    if set(data) != {"account", "enabled"} or type(data["enabled"]) is not bool:
+        raise ControlError("CONTROL_REQUEST_INVALID")
+    if not state:
+        return {"error": "SETUP_REQUIRED"}
+    if data["enabled"] and not state.get("password"):
+        return {"error": "SETUP_REQUIRED"}
+    from .selectel_schedule import next_run
+
+    state["enabled"] = data["enabled"]
+    state["next_run"] = next_run(state.get("schedule", {"kind": "off"}), time.time()) if data["enabled"] else None
+    write(path, state)
+    return public(state)
+
+
+def _set_schedule(path, state, data):
+    """Validate scheduling without blocking on an active collection."""
+    if set(data) != {"account", "schedule"} or not state:
+        raise ControlError("CONTROL_REQUEST_INVALID")
+    from .selectel_schedule import validate, next_run
+
+    try:
+        schedule = validate(data["schedule"])
+        due = next_run(schedule, time.time())
+    except (ValueError, OverflowError):
+        return {"error": "SCHEDULE_INVALID"}
+    state.update(schedule=schedule, next_run=due if state.get("enabled", True) else None)
+    write(path, state)
+    return public(state)
+
+
+def _save_account(base, path, state, data):
+    """Save validated credentials without clearing uncertain import outcomes."""
+    from .api.selectel import Account
+
+    if not state and len(list(base.glob("[0-9]*.json"))) >= 100:
+        return {"error": "ACCOUNT_LIMIT"}
+    parsed = Account(**data)
+    # Pydantic validates this descriptor into the declared field type.
+    # pylint: disable-next=no-member
+    if not parsed.name.strip() or not parsed.username.strip():
+        raise ControlError("CONTROL_REQUEST_INVALID")
+    state.update(
+        account=parsed.account,
+        # Pydantic validates this descriptor into the declared field type.
+        # pylint: disable-next=no-member
+        name=parsed.name.strip(),
+        # Pydantic validates this descriptor into the declared field type.
+        # pylint: disable-next=no-member
+        username=parsed.username.strip(),
+        # Pydantic validates this descriptor into the declared field type.
+        # pylint: disable-next=no-member
+        password=parsed.password.get_secret_value(),
+    )
+    # Changing credentials cannot resolve an unconfirmed write.
+    if state.get("error") not in ("IMPORT_UNCONFIRMED", "RUN_INTERRUPTED"):
+        state.update(status="configured", error=None)
+    write(path, state)
+    return public(state)
+
+
+def _collect_account(store, lock_path, base, path, state):
+    """Require settled enabled state and no concurrent collection before launch."""
+    if not state or not state.get("password") or not (base / "netbox-token.json").is_file():
+        return {"error": "SETUP_REQUIRED"}
+    if len(list(base.glob("[0-9]*.json"))) > 100:
+        return {"error": "ACCOUNT_LIMIT"}
+    if not state.get("enabled", True):
+        return {"error": "ACCOUNT_DISABLED"}
+    if state.get("status") == "running" or state.get("error") in ("IMPORT_UNCONFIRMED", "RUN_INTERRUPTED"):
+        return {"error": "IMPORT_UNCONFIRMED"}
+    # Serialize accounts too: the runner's collection lock remains the final guard.
+    if any(running(read(p)) for p in base.glob("[0-9]*.json")):
+        return {"error": "COLLECTION_BUSY"}
+    return launch(store, lock_path, path, state)
+
+
+def _account_error(state):
+    """Reject unresolved lifecycle outcomes and permanently deleted accounts first."""
+    if state.get("lifecycle_pending"):
+        return {"error": "LIFECYCLE_UNCONFIRMED"}
+    if state.get("deleted"):
+        return {"error": "ACCOUNT_DELETED"}
+    return None
+
+
+def _handle_account(store, lock_path, base, operation, data):
+    """Dispatch validated account commands under the existing store lock."""
+    if (
+        not isinstance(data, dict)
+        or not isinstance(data.get("account"), str)
+        or not re.fullmatch(r"[0-9]{1,20}", data["account"])
+    ):
+        raise ControlError("CONTROL_REQUEST_INVALID")
+    path = base / (data["account"] + ".json")
+    state = read(path) if path.exists() else {}
+    error = _account_error(state)
+    if error is not None:
+        return error
+    if operation == "enabled":
+        return _set_enabled(path, state, data)
+    if operation == "schedule":
+        return _set_schedule(path, state, data)
+    if running(state):
+        return {"error": "RUN_ACTIVE"}
+    if state.get("status") == "running":
+        state.update(status="attention", error="RUN_INTERRUPTED", next_run=None)
+        write(path, state)
+    if operation == "save":
+        return _save_account(base, path, state, data)
+    return _collect_account(store, lock_path, base, path, state)
+
+
 def handle(store, lock_path, payload):
     """Authorize and serialize experimental account configuration, scheduling and collection."""
 
     from .api.auth import AuthClient
-    from .api.selectel import Account
 
     if set(payload) != {"action", "operation", "session", "data"} or payload["operation"] not in (
         "list",
@@ -167,98 +297,5 @@ def handle(store, lock_path, payload):
         base = root(store)
         url, _ = runtime_netbox(store.path, "read")
         if operation == "list":
-            items = []
-            for p in sorted(base.glob("*.json")):
-                if re.fullmatch(r"[0-9]{1,20}", p.stem):
-                    state = read(p)
-                    if state.get("status") == "running" and not running(state):
-                        state.update(status="attention", error="RUN_INTERRUPTED", next_run=None)
-                    items.append(
-                        {
-                            **public(state),
-                            "url": url.rstrip("/") + "/plugins/netbox-sync-guard/providers/" + p.stem + "/",
-                        }
-                    )
-            return {"items": items, "import_ready": (base / "netbox-token.json").is_file()}
-        if (
-            not isinstance(data, dict)
-            or not isinstance(data.get("account"), str)
-            or not re.fullmatch(r"[0-9]{1,20}", data["account"])
-        ):
-            raise ControlError("CONTROL_REQUEST_INVALID")
-        path = base / (data["account"] + ".json")
-        state = read(path) if path.exists() else {}
-        if state.get("lifecycle_pending"):
-            return {"error": "LIFECYCLE_UNCONFIRMED"}
-        if state.get("deleted"):
-            return {"error": "ACCOUNT_DELETED"}
-        if operation == "enabled":
-            if set(data) != {"account", "enabled"} or type(data["enabled"]) is not bool:
-                raise ControlError("CONTROL_REQUEST_INVALID")
-            if not state:
-                return {"error": "SETUP_REQUIRED"}
-            if data["enabled"] and not state.get("password"):
-                return {"error": "SETUP_REQUIRED"}
-            from .selectel_schedule import next_run
-
-            state["enabled"] = data["enabled"]
-            state["next_run"] = (
-                next_run(state.get("schedule", {"kind": "off"}), time.time()) if data["enabled"] else None
-            )
-            write(path, state)
-            return public(state)
-        if operation == "schedule":
-            if set(data) != {"account", "schedule"} or not state:
-                raise ControlError("CONTROL_REQUEST_INVALID")
-            from .selectel_schedule import validate, next_run
-
-            try:
-                schedule = validate(data["schedule"])
-                due = next_run(schedule, time.time())
-            except (ValueError, OverflowError):
-                return {"error": "SCHEDULE_INVALID"}
-            state.update(schedule=schedule, next_run=due if state.get("enabled", True) else None)
-            write(path, state)
-            return public(state)
-        if running(state):
-            return {"error": "RUN_ACTIVE"}
-        if state.get("status") == "running":
-            state.update(status="attention", error="RUN_INTERRUPTED", next_run=None)
-            write(path, state)
-        if operation == "save":
-            if not state and len(list(base.glob("[0-9]*.json"))) >= 100:
-                return {"error": "ACCOUNT_LIMIT"}
-            parsed = Account(**data)
-            # Pydantic validates this descriptor into the declared field type.
-            # pylint: disable-next=no-member
-            if not parsed.name.strip() or not parsed.username.strip():
-                raise ControlError("CONTROL_REQUEST_INVALID")
-            state.update(
-                account=parsed.account,
-                # Pydantic validates this descriptor into the declared field type.
-                # pylint: disable-next=no-member
-                name=parsed.name.strip(),
-                # Pydantic validates this descriptor into the declared field type.
-                # pylint: disable-next=no-member
-                username=parsed.username.strip(),
-                # Pydantic validates this descriptor into the declared field type.
-                # pylint: disable-next=no-member
-                password=parsed.password.get_secret_value(),
-            )
-            # Changing credentials cannot resolve an unconfirmed write.
-            if state.get("error") not in ("IMPORT_UNCONFIRMED", "RUN_INTERRUPTED"):
-                state.update(status="configured", error=None)
-            write(path, state)
-            return public(state)
-        if not state or not state.get("password") or not (base / "netbox-token.json").is_file():
-            return {"error": "SETUP_REQUIRED"}
-        if len(list(base.glob("[0-9]*.json"))) > 100:
-            return {"error": "ACCOUNT_LIMIT"}
-        if not state.get("enabled", True):
-            return {"error": "ACCOUNT_DISABLED"}
-        if state.get("status") == "running" or state.get("error") in ("IMPORT_UNCONFIRMED", "RUN_INTERRUPTED"):
-            return {"error": "IMPORT_UNCONFIRMED"}
-        # Serialize accounts too: the runner's collection lock remains the final guard.
-        if any(running(read(p)) for p in base.glob("[0-9]*.json")):
-            return {"error": "COLLECTION_BUSY"}
-        return launch(store, lock_path, path, state)
+            return _list_accounts(base, url)
+        return _handle_account(store, lock_path, base, operation, data)
