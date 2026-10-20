@@ -122,10 +122,10 @@ functions: one function can produce several findings.
 - Provider contracts: 49 descriptions, executable AST unchanged; full suite 2385 passed,
   491 skipped; Pylint 9.36/10. No missing class/function documentation remains.
 - Later stages cover diagnostics, registration, provider control, disappearance
-  reports, native VM field comparison and control workflows (Stages 42-63).
-- Latest complexity audit: 14 branch, 14 statement, 45 local-variable and 10
+  reports, native VM field comparison and control workflows (Stages 42-64).
+- Latest complexity audit: 14 branch, 14 statement, 40 local-variable and 10
   return-count findings remain; nested-block findings and missing class/function
-  documentation are zero. This is 83 of the original 205 primary control-flow
+  documentation are zero. This is 78 of the original 205 primary control-flow
   findings, not a percentage of total project completion.
 - Boolean predicates and signature/schema compatibility metrics also remain under
   review. No blanket suppressions or threshold reductions have been introduced.
@@ -135,3 +135,13 @@ functions: one function can produce several findings.
 Detailed per-PR verification remains in [the cleanup log](lint-cleanup-20261020.md).
 This file must not be interpreted as a completed audit until all pending entries
 have been resolved and the final report has been checked.
+
+## User-requested stopping point
+
+Work pauses after Stage 64 (Proxmox inventory and VM IP planning). The user asked
+to finish the current PR and stop; no additional stage should begin without a new
+request. The refactor is not complete. The latest primary complexity count is 78;
+remaining boolean and interface/schema metrics still require individual review.
+Continue with related changes grouped into reviewable PRs, preserving tests-first
+validation, VM/LXC differences and experimental Selectel status. Production has
+not been accessed or deployed by this work.

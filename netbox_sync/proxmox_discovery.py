@@ -12,6 +12,10 @@ from .discovery import (
     DiscoveredHost,
     DiscoveredStorage,
     DiscoveredHostInterface,
+    DiscoveredInterface,
+    DiscoveredVirtualDisk,
+    DiscoveredVirtualMachine,
+    DiscoveredContainer,
 )
 
 
@@ -111,11 +115,8 @@ def _discover_host_interfaces(pve_api, node_name, rows=None):
     return discovered
 
 
-def discover_hosts(pve_api, source_config) -> list[DiscoveredHost]:
-    """Collect Proxmox nodes, resources and separate VM/LXC inventories with host topology."""
-
-    cluster_status = pve_api.cluster.status.get()
-
+def _node_addresses(cluster_status):
+    """Index named cluster nodes in provider order, retaining the last address."""
     node_ips = {}
 
     for item in cluster_status:
@@ -127,37 +128,61 @@ def discover_hosts(pve_api, source_config) -> list[DiscoveredHost]:
         if node_name:
             node_ips[node_name] = item.get("ip")
 
+    return node_ips
+
+
+def _host_resources(status):
+    """Build the CPU projection with the original numeric coercions."""
+    cpu_info = status.get("cpuinfo", {})
+    memory = status.get("memory", {})
+
+    cpu = DiscoveredCPU(
+        model=cpu_info.get("model"),
+        vendor=cpu_info.get("vendor"),
+        sockets=int(cpu_info.get("sockets", 0)),
+        cores=int(cpu_info.get("cores", 0)),
+        logical_cpus=int(cpu_info.get("cpus", 0)),
+    )
+
+    return cpu, memory
+
+
+def _host_storages(pve_api, node_name):
+    """Read and project node storage before network and guest discovery."""
+    storages = []
+
+    for storage in pve_api.nodes(node_name).storage.get():
+        storages.append(
+            DiscoveredStorage(
+                name=storage["storage"],
+                storage_type=storage.get("type"),
+                content=storage.get("content"),
+                total_bytes=int(storage.get("total", 0)),
+                used_bytes=int(storage.get("used", 0)),
+                available_bytes=int(storage.get("avail", 0)),
+                active=bool(storage.get("active")),
+            )
+        )
+
+    return storages
+
+
+def discover_hosts(pve_api, source_config) -> list[DiscoveredHost]:
+    """Collect Proxmox nodes, resources and separate VM/LXC inventories with host topology."""
+
+    cluster_status = pve_api.cluster.status.get()
+
+    node_ips = _node_addresses(cluster_status)
+
     hosts = []
 
     for node in pve_api.nodes.get():
         node_name = node["node"]
 
         status = pve_api.nodes(node_name).status.get()
-        cpu_info = status.get("cpuinfo", {})
-        memory = status.get("memory", {})
+        cpu, memory = _host_resources(status)
 
-        cpu = DiscoveredCPU(
-            model=cpu_info.get("model"),
-            vendor=cpu_info.get("vendor"),
-            sockets=int(cpu_info.get("sockets", 0)),
-            cores=int(cpu_info.get("cores", 0)),
-            logical_cpus=int(cpu_info.get("cpus", 0)),
-        )
-
-        storages = []
-
-        for storage in pve_api.nodes(node_name).storage.get():
-            storages.append(
-                DiscoveredStorage(
-                    name=storage["storage"],
-                    storage_type=storage.get("type"),
-                    content=storage.get("content"),
-                    total_bytes=int(storage.get("total", 0)),
-                    used_bytes=int(storage.get("used", 0)),
-                    available_bytes=int(storage.get("avail", 0)),
-                    active=bool(storage.get("active")),
-                )
-            )
+        storages = _host_storages(pve_api, node_name)
 
         pve_version = status.get("pveversion")
 
@@ -256,12 +281,6 @@ def _discover_virtual_machines(
 ):
     from proxmoxer import ResourceException
 
-    from .discovery import (
-        DiscoveredInterface,
-        DiscoveredVirtualDisk,
-        DiscoveredVirtualMachine,
-    )
-
     discovered_vms = []
 
     for vm in pve_api.nodes(node_name).qemu.get():
@@ -330,12 +349,6 @@ def _discover_containers(
     node_name: str,
     source_config,
 ):
-    from .discovery import (
-        DiscoveredContainer,
-        DiscoveredInterface,
-        DiscoveredVirtualDisk,
-    )
-
     discovered_containers = []
 
     for container in pve_api.nodes(node_name).lxc.get():

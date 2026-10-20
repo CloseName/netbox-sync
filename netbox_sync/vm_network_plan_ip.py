@@ -3,6 +3,83 @@
 import ipaddress
 
 
+def _report_prefix(network, prefixes_by_prefix, site, counters, _select_scoped):
+    """Report prefix selection before inspecting IP ownership."""
+    prefix, prefix_state = _select_scoped(
+        prefixes_by_prefix.get(
+            network,
+            [],
+        ),
+        site.id,
+    )
+
+    if prefix_state == "match":
+        print(f"        MATCH PREFIX " f"id={prefix.id} " f"prefix={network}")
+
+    elif prefix_state == "ambiguous":
+        counters["warnings"] += 1
+
+        print(f"        WARN PREFIX " f"prefix={network} " f"ambiguous " f"action=not-created")
+
+    else:
+        counters["warnings"] += 1
+
+        print(f"        WARN PREFIX " f"prefix={network} " f"not-found " f"action=not-created")
+
+
+def _report_ip(address, ips_by_address, existing_interface, counters, _assigned_object):
+    """Retain duplicate and assignment decisions without changing planner ownership policy."""
+    ip_matches = ips_by_address.get(
+        address,
+        [],
+    )
+
+    if len(ip_matches) > 1:
+        counters["ip_conflict"] += 1
+
+        print(f"        CONFLICT IP " f"{address} " f"matches=" f"{len(ip_matches)}")
+
+        return
+
+    if len(ip_matches) == 1:
+        ip = ip_matches[0]
+
+        (
+            assigned_type,
+            assigned_id,
+        ) = _assigned_object(ip)
+
+        allowed = assigned_type is None and assigned_id is None
+
+        if (
+            existing_interface is not None
+            and assigned_type == "virtualization.vminterface"
+            and assigned_id == existing_interface.id
+        ):
+            allowed = True
+
+        if allowed:
+            counters["ip_match"] += 1
+
+            print(f"        MATCH IP " f"id={ip.id} " f"address={address}")
+        else:
+            counters["ip_conflict"] += 1
+
+            print(
+                f"        CONFLICT IP "
+                f"id={ip.id} "
+                f"address={address} "
+                f"assigned="
+                f"{assigned_type}:"
+                f"{assigned_id}"
+            )
+
+    else:
+        counters["ip_create"] += 1
+
+        print(f"        CREATE IP " f"address={address}")
+
+
 def plan_interface_ips(
     nic,
     existing_interface,
@@ -36,73 +113,6 @@ def plan_interface_ips(
 
         network = _network_of(address)
 
-        prefix, prefix_state = _select_scoped(
-            prefixes_by_prefix.get(
-                network,
-                [],
-            ),
-            site.id,
-        )
+        _report_prefix(network, prefixes_by_prefix, site, counters, _select_scoped)
 
-        if prefix_state == "match":
-            print(f"        MATCH PREFIX " f"id={prefix.id} " f"prefix={network}")
-
-        elif prefix_state == "ambiguous":
-            counters["warnings"] += 1
-
-            print(f"        WARN PREFIX " f"prefix={network} " f"ambiguous " f"action=not-created")
-
-        else:
-            counters["warnings"] += 1
-
-            print(f"        WARN PREFIX " f"prefix={network} " f"not-found " f"action=not-created")
-
-        ip_matches = ips_by_address.get(
-            address,
-            [],
-        )
-
-        if len(ip_matches) > 1:
-            counters["ip_conflict"] += 1
-
-            print(f"        CONFLICT IP " f"{address} " f"matches=" f"{len(ip_matches)}")
-
-            continue
-
-        if len(ip_matches) == 1:
-            ip = ip_matches[0]
-
-            (
-                assigned_type,
-                assigned_id,
-            ) = _assigned_object(ip)
-
-            allowed = assigned_type is None and assigned_id is None
-
-            if (
-                existing_interface is not None
-                and assigned_type == "virtualization.vminterface"
-                and assigned_id == existing_interface.id
-            ):
-                allowed = True
-
-            if allowed:
-                counters["ip_match"] += 1
-
-                print(f"        MATCH IP " f"id={ip.id} " f"address={address}")
-            else:
-                counters["ip_conflict"] += 1
-
-                print(
-                    f"        CONFLICT IP "
-                    f"id={ip.id} "
-                    f"address={address} "
-                    f"assigned="
-                    f"{assigned_type}:"
-                    f"{assigned_id}"
-                )
-
-        else:
-            counters["ip_create"] += 1
-
-            print(f"        CREATE IP " f"address={address}")
+        _report_ip(address, ips_by_address, existing_interface, counters, _assigned_object)
