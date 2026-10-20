@@ -67,6 +67,8 @@ functions: one function can produce several findings.
   Control-flow/doc findings resolved; existing public signature retained.
 - Legacy network writes: 2385 tests passed, 491 skipped; Pylint 9.34/10.
   No complexity/doc findings remain; historical address/prefix rules retained.
+- pfSense preview stages: 2395 tests passed, 491 skipped; Pylint 9.37/10.
+  No complexity/doc findings remain; MAC-only matching and limits retained.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,
