@@ -127,11 +127,12 @@ class DiagnosticWarningDTO(PublicModel):
 
 
 class SourceDiagnosticDTO(PublicModel):
+    """Allowlisted per-source diagnostic state."""
+
     plan_blocked: bool = False
     plan_checked_at: datetime | None = None
     outcome_unconfirmed: bool = False
     operation_evidence_available: bool = False
-    """Allowlisted per-source diagnostic state."""
 
     source_instance: str
     source_type: Literal["proxmox", "esxi"]
@@ -290,6 +291,8 @@ class ScheduleUpdateDTO(PublicModel):
     @field_validator("sync_calendar", "expected_sync_calendar")
     @classmethod
     def calendar(cls, value):
+        """Validate an optional calendar through the shared schedule contract."""
+
         from ..calendar_schedule import validate_calendar
 
         return validate_calendar(value)
@@ -320,6 +323,8 @@ class ScheduleDTO(PublicModel):
 
 
 class DiscoveryInterfaceDTO(PublicModel):
+    """Guest interface name, addresses and optional layer-two observations."""
+
     name: str
     addresses: list[str] = Field(default_factory=list)
     mac_address: str | None = None
@@ -328,11 +333,15 @@ class DiscoveryInterfaceDTO(PublicModel):
 
 
 class DiscoveryDiskDTO(PublicModel):
+    """Discovered guest disk with a strictly positive byte capacity."""
+
     name: str
     size_bytes: int = Field(gt=0)
 
 
 class DiscoveryPropertiesDTO(PublicModel):
+    """Allowlisted host or guest properties included in discovery review."""
+
     vcpus: int | None = Field(default=None, gt=0)
     memory_bytes: int | None = Field(default=None, gt=0)
     cpu: str | None = None
@@ -348,6 +357,8 @@ class DiscoveryPropertiesDTO(PublicModel):
 
 
 class DiscoveryItemDTO(PublicModel):
+    """Classified provider object with its proposed action and optional NetBox match."""
+
     properties: DiscoveryPropertiesDTO = Field(default_factory=DiscoveryPropertiesDTO)
     object_kind: Literal["host", "host_network", "qemu", "lxc", "vm"]
     name: str
@@ -363,6 +374,8 @@ class DiscoveryItemDTO(PublicModel):
 
 
 class DiscoveryHostDTO(PublicModel):
+    """Bounded host identity and hardware summary used during placement."""
+
     id: str = Field(min_length=1, max_length=200)
     name: str | None = Field(default=None, max_length=200)
     manufacturer: str | None = Field(default=None, max_length=200)
@@ -373,6 +386,8 @@ class DiscoveryHostDTO(PublicModel):
 
 
 class DiscoveryResultDTO(PublicModel):
+    """Validated discovery review items and host summaries for one source."""
+
     source_instance: str
     source_type: Literal["proxmox", "esxi"]
     site_slug: str
@@ -403,6 +418,8 @@ class SyncPlanItemDTO(PublicModel):
 
 
 class ConflictParticipantDTO(PublicModel):
+    """Source object and interface involved in an identity or network conflict."""
+
     vrf_id: int | None = None
     netbox_id: int | None = None
     name: str
@@ -415,6 +432,8 @@ class ConflictParticipantDTO(PublicModel):
 
 
 class InventoryConflictDTO(PublicModel):
+    """Typed inventory conflict with the value and all observed participants."""
+
     kind: Literal["VM_IDENTITY", "IP_ASSIGNMENT", "MAC_ASSIGNMENT"]
     value: str
     participants: list[ConflictParticipantDTO]
@@ -472,9 +491,10 @@ class ApplyRequestDTO(PublicModel):
 
 
 class ApplyResultDTO(PublicModel):
+    """Explicit non-transactional synchronization result."""
+
     network_complete: bool = True
     ipam_complete: bool = True
-    """Explicit non-transactional synchronization result."""
 
     status: Literal["SUCCEEDED", "FAILED_BEFORE_WRITE", "PARTIALLY_APPLIED", "OUTCOME_UNCERTAIN"]
     plan_digest: str = Field(pattern=r"^[a-f0-9]{64}$")

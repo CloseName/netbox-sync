@@ -6,6 +6,8 @@ from typing import Optional
 
 @dataclass
 class DiscoveredDisk:
+    """Physical disk observations, with byte capacity and optional hardware identity/health."""
+
     path: str
     model: Optional[str]
     serial: Optional[str]
@@ -16,6 +18,8 @@ class DiscoveredDisk:
 
 @dataclass
 class DiscoveredStorage:
+    """Provider storage-pool capacity and availability observed during discovery."""
+
     name: str
     storage_type: Optional[str]
     content: Optional[str]
@@ -27,6 +31,8 @@ class DiscoveredStorage:
 
 @dataclass
 class DiscoveredCPU:
+    """Host processor identity and physical/logical topology reported by the provider."""
+
     model: Optional[str]
     vendor: Optional[str]
     sockets: int
@@ -36,6 +42,8 @@ class DiscoveredCPU:
 
 @dataclass
 class DiscoveredHostInterface:
+    """Host network observations including addresses, bridge ports and management use."""
+
     name: str
     interface_type: str | None = None
     active: bool = False
@@ -53,6 +61,8 @@ class DiscoveredHostInterface:
 
 @dataclass
 class DiscoveredHost:
+    """Source-bound host inventory with separate VM and LXC collections and provider evidence."""
+
     source: str
     source_instance: str
     legacy_identity_owner: bool
@@ -86,6 +96,8 @@ class DiscoveredHost:
 
 @dataclass
 class DiscoveredVirtualDisk:
+    """Guest disk capacity in bytes with optional storage and stable provider identifier."""
+
     name: str
     storage: Optional[str]
     size_bytes: int
@@ -94,6 +106,8 @@ class DiscoveredVirtualDisk:
 
 @dataclass
 class DiscoveredInterface:
+    """Guest NIC observations with IP/VRF scope and recorded MAC/IP conflicts."""
+
     name: str
     mac_address: Optional[str]
     bridge: Optional[str]
@@ -108,6 +122,8 @@ class DiscoveredInterface:
 
 @dataclass
 class DiscoveredVirtualMachine:
+    """VM identity, resources and networks; provider-specific ESXi identifiers remain optional."""
+
     source: str
     source_instance: str
     legacy_identity_owner: bool
@@ -134,6 +150,8 @@ class DiscoveredVirtualMachine:
 
 @dataclass
 class DiscoveredContainer:
+    """LXC identity, architecture, OS, swap and privilege state alongside guest resources."""
+
     source: str
     source_instance: str
     legacy_identity_owner: bool

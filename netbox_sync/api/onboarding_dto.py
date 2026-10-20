@@ -12,6 +12,8 @@ from .egress import validate_host
 
 
 class RegistrationResume(PublicModel):
+    """Identify the exact source registration to continue."""
+
     source_instance: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{1,62}$")
     registration_id: UUID
 
@@ -33,11 +35,15 @@ class ConnectionRequest(PublicModel):
     @field_validator("address")
     @classmethod
     def endpoint(cls, value):
+        """Validate the destination without rewriting the submitted address."""
+
         validate_host(value)
         return value
 
     @model_validator(mode="after")
     def credentials_valid(self):
+        """Enforce provider-specific credential fields and exclusive resume/recovery modes."""
+
         if self.registration_resume and self.recovery_source:
             raise ValueError("Registration continuation cannot restore a removed source")
         values = [self.username.get_secret_value(), self.secret.get_secret_value()]
@@ -119,12 +125,16 @@ class RegistrationRequest(PublicModel):
     @field_validator("confirm_sync_disabled", mode="before")
     @classmethod
     def explicit_confirmation(cls, value):
+        """Require literal boolean confirmation rather than coercible truthy input."""
+
         if value is not True:
             raise ValueError("Explicit boolean confirmation required")
         return value
 
     @model_validator(mode="after")
     def public_fields(self):
+        """Validate source metadata and bind cluster creation to the confirmed registration."""
+
         if self.create_cluster and (
             not self.registration_id
             or self.cluster_name != self.name
@@ -172,6 +182,8 @@ class RegistrationRequest(PublicModel):
         return value
 
     def intent_fingerprint(self):
+        """Hash the canonical durable registration request without onboarding credentials."""
+
         import hashlib, json
 
         return hashlib.sha256(
@@ -209,6 +221,8 @@ class PlacementReviewRequest(PublicModel):
 
 
 class DestinationRequest(PublicModel):
+    """Provider destination used for an egress-policy check without credentials."""
+
     source_type: Literal["proxmox", "esxi"]
     address: str = Field(min_length=1, max_length=253)
     port: int | None = Field(default=None, strict=True, ge=1, le=65535)
@@ -216,15 +230,21 @@ class DestinationRequest(PublicModel):
     @field_validator("address")
     @classmethod
     def endpoint(cls, value):
+        """Return the canonical host accepted by the destination validator."""
+
         return validate_host(value)
 
 
 class RegistrationStatusRequest(PublicModel):
+    """Identify a source registration whose durable progress is requested."""
+
     source_instance: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{1,62}$")
     registration_id: UUID
 
 
 class PlacementResolutionRequest(PublicModel):
+    """Request bounded placement resolution using an opaque onboarding capability."""
+
     prepare: bool = False
     onboarding_token: str = Field(min_length=20, max_length=128, repr=False, exclude=True)
     host_types: dict[str, dict] = Field(default_factory=dict, max_length=16)

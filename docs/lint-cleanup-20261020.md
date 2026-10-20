@@ -264,3 +264,14 @@ and pre-send/post-send errors; 42 focused tests pass on main and after extractio
 (14 platform skips). Full suite: 2244 passed, 485 skipped, one existing warning.
 Pylint: 9.07/10, zero Error/Fatal. No complexity or missing-doc findings remain in
 bootstrap_setup_probe. Black and whitespace checks pass.
+
+## Stage 17: discovery and API contract documentation
+
+Add 38 descriptions across discovery records and public DTOs, including provider
+identity differences, secret exclusion, confirmation semantics and coherent results.
+Move two existing misplaced descriptions ahead of fields. Executable AST is
+unchanged; all 52 API model schemas match after removing description metadata.
+Existing focused suite: 132 passed before and after. Full lint: 9.09/10, zero
+Error/Fatal; missing-doc findings reduced to 98 classes and 384 functions. Black
+and whitespace checks pass. Full suite was green immediately before this
+pure documentation change (2244 passed, 485 skipped).
