@@ -284,3 +284,13 @@ assignment/prefix checks, ambiguity refusals and idempotence. Three new ambiguit
 cases pass before and after extraction; focused suite: 47 passed. Full suite:
 2247 passed, 485 skipped, one existing warning. Pylint: 9.09/10, zero Error/Fatal;
 changed module: 10/10. Black and whitespace checks pass.
+
+## Stage 19: control API contracts and lifecycle client documentation
+
+Describe bootstrap/authentication inputs and projections, recovery/retirement
+confirmations, administrator identity checks and bounded lifecycle RPC methods.
+56 descriptions added, including constructors. Executable AST and 25 model schemas
+are unchanged apart from documentation metadata. Focused suite before and after:
+95 passed, 27 platform skips, one existing warning. Full Pylint: 9.12/10, zero
+Error/Fatal. Remaining missing docs: 68 classes and 360 functions. Black and
+whitespace pass. Last full executable-code suite: 2247 passed, 485 skipped.

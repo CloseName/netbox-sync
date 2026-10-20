@@ -7,11 +7,15 @@ from ..local_control import request, ControlError
 
 
 class Revision(BaseModel):
+    """Exact bootstrap state revision required for optimistic updates."""
+
     model_config = ConfigDict(extra="forbid")
     revision: int = Field(ge=0, strict=True)
 
 
 class Configuration(Revision):
+    """NetBox URL and separate read/apply credentials for local bootstrap configuration."""
+
     url: str = Field(max_length=2048)
     read_token: SecretStr = Field(min_length=8, max_length=4096)
     apply_token: SecretStr = Field(min_length=8, max_length=4096)
@@ -19,12 +23,16 @@ class Configuration(Revision):
 
 
 class SetupApply(Revision):
+    """Confirmed prerequisite plan and ephemeral setup credential."""
+
     digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     confirm: StrictBool
     setup_token: SecretStr = Field(min_length=8, max_length=4096)
 
 
 class Check(BaseModel):
+    """Expected custom-field type and models with its observed readiness."""
+
     model_config = ConfigDict(extra="forbid")
     name: str
     type: Literal["text", "integer", "json"]
@@ -33,18 +41,24 @@ class Check(BaseModel):
 
 
 class AccessCheck(BaseModel):
+    """Named connection or authorization check and its bounded evidence status."""
+
     model_config = ConfigDict(extra="forbid")
     name: Literal["network", "tls", "read_auth", "apply_auth", "permissions", "prerequisites", "guard"]
     status: Literal["not_run", "passed", "failed", "preliminary", "pending"]
 
 
 class Translation(BaseModel):
+    """English and Russian descriptions shown in bootstrap guidance."""
+
     model_config = ConfigDict(extra="forbid")
     en: str
     ru: str
 
 
 class FieldDifference(BaseModel):
+    """One expected-versus-observed custom-field property mismatch."""
+
     model_config = ConfigDict(extra="forbid")
     property: str
     expected: str
@@ -52,6 +66,8 @@ class FieldDifference(BaseModel):
 
 
 class PreparationField(BaseModel):
+    """Prerequisite field status, differences and bilingual purpose."""
+
     model_config = ConfigDict(extra="forbid")
     name: str
     type: Literal["text", "integer", "json"]
@@ -65,6 +81,8 @@ class PreparationField(BaseModel):
 
 
 class PreparationState(BaseModel):
+    """Durable prerequisite progress, uncertainty and setup-token revocation status."""
+
     model_config = ConfigDict(extra="forbid")
     version: int | None = None
     status: Literal[
@@ -93,6 +111,8 @@ class PreparationState(BaseModel):
 
 
 class State(BaseModel):
+    """Public bootstrap state exposing credential presence rather than credential values."""
+
     model_config = ConfigDict(extra="forbid")
     revision: int
     status: Literal["FRESH", "CONFIGURED", "VALIDATING", "VALIDATED", "READY", "ATTENTION"]
@@ -124,10 +144,16 @@ class State(BaseModel):
 
 
 class BootstrapClient:
+    """Bounded local-control client validating every bootstrap state response."""
+
     def __init__(self, path):
+        """Bind the configured local-control socket path."""
+
         self.path = path
 
     def call(self, action, payload=None):
+        """Call one bootstrap verb with its timeout and validate the returned projection."""
+
         try:
             response = request(
                 self.path,
@@ -146,6 +172,8 @@ class BootstrapClient:
 
 
 def routes(client):
+    """Build bootstrap configuration, validation and prerequisite preparation endpoints."""
+
     router = APIRouter(prefix="/api/v1/bootstrap")
 
     @router.get("", response_model=State)
