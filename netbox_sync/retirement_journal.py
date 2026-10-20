@@ -16,7 +16,11 @@ from .source_lifecycle import LifecycleError
 
 
 class RetirementJournal:
+    """Persist actor-bound retirement reviews, dispatch state and verified receipts."""
+
     def __init__(self, store):
+        """Bind the database-only lifecycle store."""
+
         self.store = store
 
     def _row(self, connection, source):
@@ -101,6 +105,8 @@ class RetirementJournal:
         return row
 
     def prepare(self, source, operation, actor, revision, guard_instance, remote):
+        """Validate and persist an immutable source-generation-bound remote review."""
+
         operation = UUID(str(operation))
         guard_instance = UUID(str(guard_instance))
         if not isinstance(actor, str) or not actor or len(actor) > 200:
@@ -152,6 +158,8 @@ class RetirementJournal:
             ).fetchone()
 
     def begin(self, source, operation, actor, digest, confirmed_source, remove_credentials):
+        """Recheck consent and blockers before marking a reviewed operation as sending."""
+
         if type(remove_credentials) is not bool:
             raise LifecycleError("REQUEST_INVALID")
         with (
@@ -291,6 +299,8 @@ class RetirementJournal:
             )
 
     def uncertain(self, source, operation, actor, code="RETIREMENT_UNCERTAIN"):
+        """Record an allowlisted uncertain outcome only for a dispatched operation."""
+
         if code not in {"RETIREMENT_UNCERTAIN", "RETIREMENT_SERVER_BUSY"}:
             raise LifecycleError("REQUEST_INVALID")
         with (
@@ -308,6 +318,8 @@ class RetirementJournal:
             )
 
     def resolve(self, source, operation, actor, guard_instance, receipt):
+        """Accept only a successful receipt matching the exact reviewed manifest and guard instance."""
+
         with (
             self.store.connect() as connection,
             source_gate(connection, self.store.schema, source, allow_retirement=True),
@@ -349,6 +361,8 @@ class RetirementJournal:
             ).fetchone()
 
     def blocked(self, source, operation, actor, code="RETIREMENT_BLOCKED"):
+        """Record a definite remote refusal without treating it as a successful retirement."""
+
         if code not in DEFINITE_REFUSALS:
             raise LifecycleError("REQUEST_INVALID")
         with (
@@ -366,6 +380,8 @@ class RetirementJournal:
             )
 
     def finalized(self, source, operation, actor):
+        """Close a verified removed generation only after required local cleanup evidence."""
+
         with (
             self.store.connect() as connection,
             source_gate(connection, self.store.schema, source, allow_retirement=True),

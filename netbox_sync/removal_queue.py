@@ -8,19 +8,27 @@ from .run_gates import blocking_runs
 
 
 class RemovalQueue:
+    """Persist confirmed removal requests while admitted work finishes safely."""
+
     def __init__(self, coordinator):
+        """Bind the coordinator and initialize the fair operation cursor."""
+
         self.coordinator = coordinator
         self.store = coordinator.store
         self.after = UUID(int=0)
 
     @staticmethod
     def public(row):
+        """Project only source, operation, queue state and safe failure code."""
+
         return {key: str(row[key]) for key in ("source_instance", "operation_id", "state")} | {
             "queued": True,
             "safe_code": row["safe_code"],
         }
 
     def enqueue(self, source, operation, actor, revision, confirmed):
+        """Fence future scheduling and persist removal consent without waiting for an active apply."""
+
         if confirmed is not True or not isinstance(actor, str) or not actor or len(actor) > 200:
             raise LifecycleError("REQUEST_INVALID")
         operation = UUID(str(operation))
@@ -103,6 +111,8 @@ class RemovalQueue:
             return self.public(saved)
 
     def status(self, source, operation, actor):
+        """Read actor-bound queued state or delegate an existing retirement operation."""
+
         with self.store.connect() as connection:
             saved = connection.execute(
                 sql.SQL("SELECT * FROM {} WHERE source_instance=%s").format(
@@ -125,6 +135,8 @@ class RemovalQueue:
     def reconcile_abandoned_reads(self, source):
         # Same 180-second admission lease as OperationStore.latest. This journal
         # contains read-only DISCOVERY/PLAN work, never an apply/write run.
+        """Fail only expired, unlocked read operations without reclassifying write outcomes."""
+
         with self.store.connect() as connection:
             rows = connection.execute(
                 sql.SQL(
@@ -155,6 +167,8 @@ class RemovalQueue:
                     )
 
     def tick(self):
+        """Advance one waiting request, preserving consent and deferring active or unavailable work."""
+
         with self.store.connect() as connection:
             rows = connection.execute(
                 sql.SQL(

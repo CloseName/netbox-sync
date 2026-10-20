@@ -15,6 +15,8 @@ def prepare_host_context(
     _find_ip_matches,
     HostApplyError,
 ):
+    """Resolve host ownership and validate all enabled network bindings before writes."""
+
     device, match_reason = _resolve_device(
         nb_api,
         host,

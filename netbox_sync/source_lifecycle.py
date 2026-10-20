@@ -15,7 +15,11 @@ from .source_registry import SCHEMA_NAME_PATTERN
 
 
 class LifecycleError(RuntimeError):
+    """A lifecycle request failed with a machine-readable refusal code."""
+
     def __init__(self, code):
+        """Retain the lifecycle failure code for the closed control boundary."""
+
         self.code = code
         super().__init__(code)
 
@@ -52,22 +56,32 @@ def initialize_tombstones(connection, schema):
 
 
 class LifecycleStore:
+    """Coordinate source tombstones, metadata changes and exclusive credential cleanup."""
+
     def __init__(self, dsn, schema, lock_path, connector=psycopg.connect, lock=apply_lock):
+        """Validate writer settings and bind database and shared apply-lock dependencies."""
+
         if not dsn or not SCHEMA_NAME_PATTERN.fullmatch(schema or ""):
             raise LifecycleError("LIFECYCLE_UNAVAILABLE")
         self.dsn, self.schema, self.lock_path = dsn, schema, lock_path
         self.connector, self.lock = connector, lock
 
     def connect(self):
+        """Open a database connection with bounded connection, statement and lock waits."""
+
         return self.connector(
             self.dsn, connect_timeout=3, row_factory=dict_row, options="-c statement_timeout=5000 -c lock_timeout=3000"
         )
 
     def table(self, name):
+        """Return a safely quoted table identifier in the registry schema."""
+
         return sql.Identifier(self.schema, name)
 
     @staticmethod
     def revision(row):
+        """Hash the canonical serialized source row for optimistic concurrency."""
+
         return hashlib.sha256(
             json.dumps(dict(row), sort_keys=True, default=str, separators=(",", ":")).encode()
         ).hexdigest()
@@ -119,6 +133,8 @@ class LifecycleStore:
         return None
 
     def read(self, source):
+        """Project lifecycle state, revision and removal blockers without exposing credentials."""
+
         with self.connect() as connection:
             removed = connection.execute(
                 sql.SQL("SELECT * FROM {} WHERE source_instance=%s AND restored_at IS NULL").format(
@@ -254,6 +270,8 @@ class LifecycleStore:
         return self.read(source)
 
     def remove(self, source, expected_revision, confirmed_source, remove_credentials, cleanup):
+        """Hold the shared apply lock while confirming and persisting source removal."""
+
         with self.lock(self.lock_path):
             return self._remove_locked(source, expected_revision, confirmed_source, remove_credentials, cleanup)
 

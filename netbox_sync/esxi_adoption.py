@@ -30,6 +30,8 @@ class AdoptionClassification(str, Enum):
 
 
 class EsxiHostIdentityChanged(ValueError):
+    """The observed ESXi host identity differs from the recorded ownership proof."""
+
     code = "HOST_IDENTITY_CHANGED"
 
     def __init__(self):

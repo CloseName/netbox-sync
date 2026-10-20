@@ -24,6 +24,8 @@ class DirectoryUsers:
     recent: Callable[..., None]
 
     def migrate_directory(self):
+        """Migrate saved directory roles, disabling ambiguous legacy group mappings."""
+
         saved = self.state.get("ldap")
         if not saved or saved.get("user_model") == 2:
             return
@@ -41,6 +43,8 @@ class DirectoryUsers:
         self.event("ldap.individual_roles.migrated", enabled=config["enabled"])
 
     def directory_user(self, value):
+        """Validate a directory user and retain any previously assigned individual role."""
+
         if (
             not isinstance(value, dict)
             or not isinstance(value.get("identity"), str)
@@ -65,6 +69,8 @@ class DirectoryUsers:
         }
 
     def sync_directory(self, *, due=False):
+        """Replace membership only from a complete bounded snapshot and revoke inactive sessions."""
+
         from .auth_policy import AuthError
 
         saved = self.state.get("ldap", {})
@@ -109,6 +115,8 @@ class DirectoryUsers:
         return {"synced": True, "count": len(result["users"])}
 
     def users_action(self, action, payload, principal):
+        """Authorize directory synchronization, role changes or bounded user listing."""
+
         from .auth_policy import AuthError
 
         self.session(payload.get("session"), "identity.manage")

@@ -13,7 +13,11 @@ from .esxi_discovery import _validated_host_hardware_uuid
 
 
 class HostRegistrationConflict(ValueError):
+    """Host identity admission or reservation needs explicit conflict resolution."""
+
     def __init__(self, code, source_instance=None, *, conflicts=(), conflicts_truncated=False):
+        """Retain the safe refusal code and caller-supplied conflict evidence."""
+
         self.code, self.source_instance = code, source_instance
         self.conflicts = tuple(conflicts)
         self.conflicts_truncated = conflicts_truncated
@@ -21,6 +25,8 @@ class HostRegistrationConflict(ValueError):
 
 
 def esxi_anchor(preview):
+    """Require exactly one ESXi preview host with a valid hardware UUID."""
+
     if not isinstance(preview, dict) or preview.get("provider") != "esxi":
         raise HostRegistrationConflict("HOST_IDENTITY_UNAVAILABLE")
     hosts = preview.get("hosts")
@@ -95,7 +101,11 @@ def identity_placement(settings):
 
 
 class HostReservations:
+    """Reserve durable ESXi hardware identity independently of names and addresses."""
+
     def __init__(self, connector, schema):
+        """Bind the registry connection factory and schema."""
+
         self.connector, self.schema = connector, schema
 
     def _live_rows(self, cursor):
@@ -164,6 +174,8 @@ class HostReservations:
         raise HostRegistrationConflict(code, existing[0])
 
     def check(self, preview, *, resume=None, actor_id=None):
+        """Refuse existing, unresolved or reserved identities except an exact actor-owned resume."""
+
         anchor = esxi_anchor(preview)
         with self.connector() as connection:
             with connection.cursor(row_factory=dict_row) as cursor:
@@ -204,6 +216,8 @@ class HostReservations:
                     raise HostRegistrationConflict("HOST_REGISTRATION_INVALID")
 
     def reserve(self, preview, source_instance, operation_id, actor_id, *, intent=None):
+        """Atomically reserve actor-bound hardware identity and optional registration intent."""
+
         anchor = esxi_anchor(preview)
         from .source_config import SOURCE_INSTANCE_PATTERN
 
@@ -463,6 +477,8 @@ class HostReservations:
     def pending_requests(self, actor):
         # Actor-scoped metadata, no credentials or broker keys. Successful attempts
         # disappear from this list but their immutable journal is retained.
+        """Project up to 100 actor-owned unregistered intents without credential references."""
+
         with self.connector() as connection, connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
                 sql.SQL(

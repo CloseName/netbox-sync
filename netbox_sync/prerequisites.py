@@ -128,6 +128,8 @@ PURPOSES = {
 
 
 def definition(name):
+    """Build the supported managed custom-field definition for a known field name."""
+
     kind, models = FIELDS[name]
     return {
         "name": name,
@@ -146,6 +148,8 @@ def definition(name):
 
 
 def choice(value):
+    """Extract a serialized choice value or retain the scalar form."""
+
     return value.get("value") if isinstance(value, dict) else value
 
 
@@ -195,6 +199,8 @@ def mismatch_details(differences, row, kind, models, count):
 
 
 def reconcile(rows):
+    """Classify managed field definitions as missing, ready, provisioning or conflicting."""
+
     result = []
     for name, (kind, models) in FIELDS.items():
         matches = [r for r in rows if isinstance(r, dict) and r.get("name") == name]
@@ -242,6 +248,8 @@ def reconcile(rows):
 
 
 def digest(revision, url, fields):
+    """Hash reviewed field evidence and missing definitions with the target revision and URL."""
+
     return hashlib.sha256(
         json.dumps(
             {

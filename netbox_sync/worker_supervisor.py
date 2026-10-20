@@ -43,6 +43,8 @@ ROLE_ENV = {
 
 
 def members(bundle):
+    """Return the fixed module commands for the selected worker bundle."""
+
     if bundle == "netbox":
         return [("bootstrap_worker", []), ("retirement_worker", []), ("pfsense_scheduler", [])]
     common = [
@@ -84,11 +86,15 @@ def members(bundle):
 
 
 def child_environment(module, environment):
+    """Pass only common and role-specific environment variables to a worker."""
+
     allowed = BASE_ENV | ROLE_ENV[module]
     return {key: value for key, value in environment.items() if key in allowed}
 
 
 def supervise(commands, *, grace=5):
+    """Stop the entire owned process bundle when a member exits or shutdown is requested."""
+
     children = []
     stopping = False
 
@@ -127,6 +133,8 @@ def supervise(commands, *, grace=5):
 
 def health(bundle):
     # Exact peer-authenticated replies, not merely an existing socket path.
+    """Require exact peer-authorized health replies, allowing only bounded active-apply evidence."""
+
     endpoints = (
         [
             ("/run/netbox-sync-bootstrap/worker.sock", 10001, "action"),
@@ -175,6 +183,8 @@ with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as sock:
 
 
 def main():
+    """Dispatch bundle health checks or supervision with each worker-specific environment."""
+
     parser = argparse.ArgumentParser()
     parser.add_argument("bundle", choices=("sync", "netbox"))
     parser.add_argument("--health", action="store_true")

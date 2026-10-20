@@ -21,11 +21,15 @@ RESOURCES = frozenset({"cluster", "device", "vm", "interface", "vminterface", "d
 
 
 class RetirementBlocked(RuntimeError):
+    """A non-executable retirement review cannot be promoted to deletion."""
+
     pass
 
 
 @dataclass(frozen=True)
 class RegistryEntry:
+    """Trusted source placement and removal/uncertainty evidence for architectural review."""
+
     source_instance: str
     cluster_id: int
     removed: bool = False
@@ -34,6 +38,8 @@ class RegistryEntry:
 
 @dataclass(frozen=True)
 class ObjectEvidence:
+    """Trusted object ownership, dependency and creation evidence for retirement review."""
+
     resource: str
     id: int
     name: str
@@ -44,10 +50,14 @@ class ObjectEvidence:
 
     @property
     def key(self):
+        """Render the resource-qualified object identifier."""
+
         return f"{self.resource}:{self.id}"
 
 
 def fingerprint(value):
+    """Hash the canonical JSON representation of review evidence."""
+
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
@@ -186,6 +196,8 @@ class RetirementReviewJournal:
         self.lock_path = lock_path
 
     def record(self, request_id, actor, review):
+        """Persist one bounded immutable blocked review under the shared apply lock."""
+
         identifier = str(UUID(request_id))
         if not isinstance(actor, str) or not actor or len(actor) > 128:
             raise ValueError("Invalid audit actor")
@@ -242,4 +254,6 @@ class RetirementReviewJournal:
             return payload
 
     def execute(self, *args, **kwargs):
+        """Always refuse execution because this journal has no atomic deletion capability."""
+
         raise RetirementBlocked("ATOMIC_NETBOX_GUARD_UNAVAILABLE")

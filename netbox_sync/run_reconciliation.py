@@ -16,7 +16,11 @@ from .run_gates import blocking_runs
 
 
 class RunReconciliation:
+    """Record explicit acceptance of current inventory while keeping historical writes unproved."""
+
     def __init__(self, store, remote):
+        """Bind lifecycle storage and the remote evidence reader."""
+
         self.store, self.remote = store, remote
 
     def _local(self, connection, source):
@@ -137,10 +141,14 @@ class RunReconciliation:
             os.close(fd)
 
     def review(self, source, operation):
+        """Read current baseline evidence while holding the reconciliation intent and apply locks."""
+
         with self._waiting_lock():
             return self._review(source, operation)
 
     def confirm(self, source, operation, actor, digest, acknowledgements):
+        """Persist digest-bound baseline acceptance and disable scheduling until a fresh plan."""
+
         operation = UUID(str(operation))
         if (
             not isinstance(actor, str)
