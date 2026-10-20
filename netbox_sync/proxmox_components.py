@@ -15,47 +15,14 @@ def qemu_interfaces(
     _warn_malformed,
     _parse_config_definition,
 ):
+    """Build configured QEMU NICs, supplementing them with guest-agent IPv4 data.
+
+    Keep provider NIC order, model priority and tag parsing. Missing or malformed
+    agent data does not remove configured NICs; LXC uses a separate config path.
+    """
     interfaces = []
 
-    agent_by_mac = {}
-
-    try:
-        agent_result = pve_api.nodes(node_name).qemu(vmid).agent("network-get-interfaces").get()
-
-        if not isinstance(agent_result, dict):
-            raise ValueError("QEMU guest agent response must be an object")
-        for agent_interface in agent_result.get("result", []):
-            if not isinstance(agent_interface, dict):
-                continue
-            mac = str(agent_interface.get("hardware-address", "")).lower()
-
-            if not mac:
-                continue
-
-            ips = []
-
-            for ip in agent_interface.get("ip-addresses", []):
-                address = ip.get("ip-address")
-                prefix = ip.get("prefix")
-
-                if not address:
-                    continue
-
-                if ":" in address:
-                    continue
-
-                if address.startswith("127."):
-                    continue
-
-                if prefix is not None:
-                    ips.append(f"{address}/{prefix}")
-                else:
-                    ips.append(address)
-
-            agent_by_mac[mac] = ips
-
-    except (ResourceException, AttributeError, TypeError, ValueError):
-        pass
+    agent_by_mac = _qemu_agent_addresses(pve_api, node_name, vmid, ResourceException)
 
     for key, raw_value in config.items():
         key = str(key)
@@ -96,6 +63,11 @@ def qemu_interfaces(
 
 
 def qemu_disks(config, *, DiscoveredVirtualDisk, _parse_config_definition, _parse_size_bytes):
+    """Read QEMU disk definitions in order, excluding scsihw, CD-ROM and none.
+
+    Preserve the provider key as the disk name and infer storage from the volume
+    prefix only when absent from the parsed definition; delegate size conversion.
+    """
     disks = []
 
     for key, raw_value in config.items():
@@ -137,6 +109,11 @@ def qemu_disks(config, *, DiscoveredVirtualDisk, _parse_config_definition, _pars
 
 
 def lxc_interfaces(config, source_config, *, DiscoveredInterface, _warn_malformed, _parse_config_definition):
+    """Read LXC NIC config directly, retaining static addresses including IPv6.
+
+    Skip DHCP/manual addresses and malformed NIC values. Use the configured name
+    with the provider key as fallback; unlike QEMU, do not query a guest agent.
+    """
     interfaces = []
 
     for key, raw_value in config.items():
@@ -180,6 +157,11 @@ def lxc_interfaces(config, source_config, *, DiscoveredInterface, _warn_malforme
 
 
 def lxc_disks(config, *, DiscoveredVirtualDisk, _parse_config_definition, _parse_size_bytes):
+    """Read rootfs and mp-prefixed LXC storage entries in configuration order.
+
+    Preserve mount entries without storage IDs and delegate size parsing; QEMU
+    device-prefix and CD-ROM filtering rules do not apply to this path.
+    """
     disks = []
 
     for key, raw_value in config.items():
@@ -207,3 +189,53 @@ def lxc_disks(config, *, DiscoveredVirtualDisk, _parse_config_definition, _parse
         )
 
     return disks
+
+
+def _qemu_agent_addresses(pve_api, node_name, vmid, resource_error):
+    """Read agent IPv4 strings by lowercased MAC, retaining completed entries.
+
+    Skip non-dict interfaces, missing MACs, IPv6 and 127.* addresses. Do not add
+    address/prefix validation. A caught error aborts remaining agent entries;
+    previously completed entries survive, including an earlier duplicate MAC.
+    """
+    agent_by_mac = {}
+
+    try:
+        agent_result = pve_api.nodes(node_name).qemu(vmid).agent("network-get-interfaces").get()
+
+        if not isinstance(agent_result, dict):
+            raise ValueError("QEMU guest agent response must be an object")
+        for agent_interface in agent_result.get("result", []):
+            if not isinstance(agent_interface, dict):
+                continue
+            mac = str(agent_interface.get("hardware-address", "")).lower()
+
+            if not mac:
+                continue
+
+            ips = []
+
+            for ip in agent_interface.get("ip-addresses", []):
+                address = ip.get("ip-address")
+                prefix = ip.get("prefix")
+
+                if not address:
+                    continue
+
+                if ":" in address:
+                    continue
+
+                if address.startswith("127."):
+                    continue
+
+                if prefix is not None:
+                    ips.append(f"{address}/{prefix}")
+                else:
+                    ips.append(address)
+
+            agent_by_mac[mac] = ips
+
+    except (resource_error, AttributeError, TypeError, ValueError):
+        pass
+
+    return agent_by_mac

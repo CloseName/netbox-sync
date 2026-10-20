@@ -172,3 +172,22 @@ accepting booleans as revisions would change the protocol.
 
 Full suite: 2103 passed, 485 skipped, one existing Starlette warning. Full Pylint
 passes at 9.04/10 with zero Error/Fatal; Black and whitespace checks pass.
+
+## Stage 10: Proxmox guest-agent network parsing
+
+Separate the guest-agent read/parse boundary from configured QEMU NIC creation.
+Keep the original partial-result behavior: completed interface entries survive a
+caught error, the current partial entry is discarded, and later entries are not
+processed. Preserve duplicate-MAC replacement, address filtering and permissive
+prefix formatting. Do not introduce stricter address validation during refactoring.
+
+Document QEMU/LXC NIC and disk contracts, including static LXC IPv6 and the
+different disk selection rules. Eleven new characterization cases pass before
+and after extraction; all 47 focused component/discovery tests pass. Expanding
+the helper AST reproduces the original four provider functions, excluding docs.
+Branch/local-variable and missing-function-docstring findings are removed; the
+existing dependency-injection signature and its argument-count recommendation
+remain unchanged.
+
+Full suite: 2114 passed, 485 skipped, one existing Starlette warning. Full Pylint
+passes at 9.04/10 with zero Error/Fatal; Black and whitespace checks pass.
