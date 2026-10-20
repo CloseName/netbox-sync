@@ -39,7 +39,9 @@ functions: one function can produce several findings.
   No complexity or missing-doc findings remain in bootstrap_setup_probe.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
-- Remaining documentation and compatibility metrics: pending.
+- Discovery/API documentation: 38 descriptions added; 132 focused tests pass,
+  executable AST and 52 schemas unchanged apart from descriptions. Pylint 9.09/10.
+- Remaining documentation: 98 classes and 384 functions; compatibility metrics pending.
 
 Detailed per-PR verification remains in [the cleanup log](lint-cleanup-20261020.md).
 This file must not be interpreted as a completed audit until all pending entries

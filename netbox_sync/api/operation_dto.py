@@ -8,6 +8,8 @@ from .dto import SyncPlanDTO, DiscoveryResultDTO
 
 
 class OperationDTO(BaseModel):
+    """Latest discovery or plan operation with a validated status and source-bound result."""
+
     model_config = ConfigDict(extra="forbid")
     operation_id: UUID
     source_instance: str
@@ -23,6 +25,8 @@ class OperationDTO(BaseModel):
     @field_validator("safe_error_code")
     @classmethod
     def known_error(cls, value):
+        """Accept only current worker errors and the explicitly retained legacy codes."""
+
         from ..worker_failure import ERRORS
 
         old = {
@@ -44,6 +48,8 @@ class OperationDTO(BaseModel):
 
     @model_validator(mode="after")
     def coherent_result(self):
+        """Derive safe failure diagnostics and reject status/result/source inconsistencies."""
+
         from ..worker_failure import safe_diagnostic
 
         self.diagnostic = (
@@ -73,6 +79,8 @@ class OperationDTO(BaseModel):
 
 
 class RetirementHintDTO(BaseModel):
+    """Bounded retirement progress reference shown alongside a source lifecycle."""
+
     archive_required: bool = False
     model_config = ConfigDict(extra="forbid")
     operation_id: UUID
@@ -81,6 +89,8 @@ class RetirementHintDTO(BaseModel):
 
 
 class LifecycleDTO(BaseModel):
+    """Source removal state, archive mode and credential-cleanup outcome."""
+
     archive_mode: Literal["FULL_DELETE", "LEGACY_RETAIN"] | None = None
     retirement: RetirementHintDTO | None = None
     removal_blocker: (
@@ -95,6 +105,8 @@ class LifecycleDTO(BaseModel):
 
 
 class RemovalDTO(BaseModel):
+    """Revision-bound removal confirmation with an explicit credential cleanup choice."""
+
     model_config = ConfigDict(extra="forbid")
     revision: str = Field(pattern=r"^[a-f0-9]{64}$")
     confirmed_source: str = Field(min_length=1, max_length=200)
@@ -102,6 +114,8 @@ class RemovalDTO(BaseModel):
 
 
 class PlacementUpdateDTO(BaseModel):
+    """Revision-bound placement references and optional network scope policy."""
+
     network_scope_rules: list[dict] | None = Field(default=None, max_length=128)
     ip_conflict_policy: Literal["strict", "observe"] | None = None
     model_config = ConfigDict(extra="forbid")
@@ -112,6 +126,8 @@ class PlacementUpdateDTO(BaseModel):
 
 
 class SourceNameDTO(BaseModel):
+    """Revision-bound source display-name change."""
+
     model_config = ConfigDict(extra="forbid")
     revision: str = Field(pattern=r"^[a-f0-9]{64}$")
     name: str = Field(min_length=1, max_length=200)
