@@ -379,3 +379,13 @@ provider coverage, conflict classification and reviewed-versus-legacy mappings.
 Executable AST unchanged. The same focused suite passes before and after:
 90 passed, 52 skipped, one existing warning. Pylint 9.17/10, zero Error/Fatal;
 Black and whitespace pass. Previous full runtime baseline remains 2336 passed.
+
+## Stage 29: host device conflict checks
+
+Separate management-IP lookup and unowned-device refusal from stable identity
+resolution. Preserve duplicate-identity precedence, IP-before-name refusal and
+site validation. Ten new cases pass before extraction; 42 focused tests pass
+afterward. Full suite: 2346 passed, 491 skipped, one existing warning. Pylint
+9.17/10, zero Error/Fatal; control-flow/doc findings resolved in netbox_apply.
+Its legacy device-change helper signature remains compatible. Black and whitespace
+pass. VM/LXC selection rules and Selectel ownership remain unchanged.
