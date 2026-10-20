@@ -446,3 +446,13 @@ Error/Fatal; no nested-block findings remain anywhere in the package. No control
 findings remain in either changed module. ConflictParticipant retains its public
 serialized fields; reducing their count would change the API evidence contract.
 Black and whitespace pass.
+
+## Stage 36: VM/LXC network write stages
+
+Split interface, MAC, IP and primary-IPv4 writes into small provider-specific
+functions. Preserve output, VRF payloads, mutation order, per-run counters and
+the VM manual-primary rule versus LXC replacement behavior. Ten new reused-record
+failure cases plus 58 existing write/report cases pass before and after extraction.
+Full suite: 2378 passed, 491 skipped, one existing warning. Pylint 9.28/10, zero
+Error/Fatal; no findings remain in either network write module. Black and
+whitespace pass.
