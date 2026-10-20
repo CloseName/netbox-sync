@@ -141,7 +141,8 @@ def _generic_item(discovered, kind, identity, all_records, target_records):
     )
 
 
-def _proxmox_host_item(host, devices, target_devices):
+def _provider_host_item(host, devices, target_devices):
+    """Project a provider hardware match only without existing source ownership."""
     if not any(host_source_identity(host).to_record() in _identities(record) for record in devices):
         from ..selectel_host_match import matches
 
@@ -171,6 +172,13 @@ def _proxmox_host_item(host, devices, target_devices):
                 record.id,
                 getattr(record, "name", None),
             )
+    return None
+
+
+def _proxmox_host_item(host, devices, target_devices):
+    provider_item = _provider_host_item(host, devices, target_devices)
+    if provider_item is not None:
+        return provider_item
     item = _generic_item(host, "host", host_source_identity(host), devices, target_devices)
     if item.classification is not ReviewClassification.WOULD_CREATE or not host.management_ip:
         return item
@@ -214,6 +222,125 @@ def _proxmox_host_item(host, devices, target_devices):
     )
 
 
+def _review_objects(hosts):
+    """Index occurrences without collapsing duplicate provider identities."""
+    from collections import defaultdict, deque
+
+    objects = defaultdict(deque)
+    for host in hosts:
+        objects[("host", host_source_identity(host).external_id, host.original_name)].append(host)
+        for vm in host.virtual_machines:
+            identity = virtual_machine_source_identity(vm)
+            objects[(identity.kind, identity.external_id, vm.original_name)].append(vm)
+        for vm in host.containers:
+            identity = lxc_source_identity(vm)
+            objects[(identity.kind, identity.external_id, vm.original_name)].append(vm)
+    return objects
+
+
+def _inventory_properties(obj, existing):
+    """Project only bounded allowlisted inventory facts, preserving previous properties."""
+    properties = dict(existing)
+    for key in ("vcpus", "memory_bytes"):
+        value = getattr(obj, key, None)
+        if isinstance(value, int) and value > 0:
+            properties[key] = value
+    for key in ("status", "architecture", "os_type", "manufacturer", "model", "hypervisor_version"):
+        value = getattr(obj, key, None)
+        if value:
+            properties[key] = str(value)[:200]
+    cpu = getattr(obj, "cpu", None)
+    if cpu and cpu.model:
+        properties["cpu"] = str(cpu.model)[:200]
+    interfaces = []
+    for nic in obj.interfaces:
+        value = {"name": nic.name, "addresses": list(getattr(nic, "ip_addresses", getattr(nic, "addresses", [])))}
+        for key in ("mac_address", "bridge", "vlan_id"):
+            if getattr(nic, key, None) is not None:
+                value[key] = getattr(nic, key)
+        interfaces.append(value)
+    if interfaces:
+        properties["interfaces"] = interfaces
+    addresses = sorted({address for nic in interfaces for address in nic["addresses"]})
+    if getattr(obj, "management_ip", None):
+        addresses = sorted(set(addresses + [obj.management_ip]))
+    if addresses:
+        properties["addresses"] = addresses
+    disks = [
+        {"name": getattr(disk, "name", getattr(disk, "path", "")), "size_bytes": disk.size_bytes}
+        for disk in obj.disks
+        if disk.size_bytes > 0
+    ]
+    if disks:
+        properties["disks"] = disks
+    return properties
+
+
+def _candidate_evidence(item, classification, netbox_url):
+    """Build bounded candidate links and identity evidence for review classifications."""
+    import json
+    from urllib.parse import urlsplit
+
+    base = netbox_url
+    parsed = urlsplit(base)
+    base = (
+        base
+        if parsed.scheme in ("https", "http") and parsed.hostname and not parsed.username and not parsed.password
+        else ""
+    )
+    evidence = []
+    if classification in (ReviewClassification.CONFLICT, ReviewClassification.REVIEW_REQUIRED):
+        for value in sorted(item.candidates, key=lambda c: str(c.object_id)):
+            identities = json.loads(value.custom_fields_snapshot).get("sync_identities") or []
+            evidence.append(
+                {
+                    "id": value.object_id,
+                    "name": value.object_name,
+                    "url": (
+                        base
+                        + ("/virtualization/virtual-machines/" if item.object_kind == "vm" else "/dcim/devices/")
+                        + str(value.object_id)
+                        + "/"
+                        if base
+                        else ""
+                    ),
+                    "external_ids": sorted(
+                        (str(v.get("external_id", v.get("source_id", ""))) for v in identities if isinstance(v, dict))
+                    ),
+                    "signals": list(value.signals),
+                    "conflicts": list(value.conflicts),
+                }
+            )
+    return evidence
+
+
+def _proxmox_host_review(host, devices, target_devices, vms, target_vms):
+    """Classify one host, its network coverage, VMs and containers in order."""
+    items = []
+    items.append(_proxmox_host_item(host, devices, target_devices))
+    missing = ((getattr(host, "proxmox_host_network", None) or {}).get("coverage") or {}).get("missing_references", [])
+    if missing:
+        names = sorted({r["target"] for r in missing})
+        items.append(
+            ReviewItem(
+                "host_network",
+                host.normalized_name,
+                host.source_id,
+                ReviewClassification.UNSUPPORTED,
+                "PROXMOX_NETWORK_REFERENCES_MISSING",
+                "Network API omitted referenced interfaces: "
+                + ", ".join(names)
+                + ". Check configuration and bridge permissions; insufficient permissions are not confirmed.",
+                "review",
+            )
+        )
+    items.extend(
+        _generic_item(vm, "qemu", virtual_machine_source_identity(vm), vms, target_vms) for vm in host.virtual_machines
+    )
+    items.extend(_generic_item(lxc, "lxc", lxc_source_identity(lxc), vms, target_vms) for lxc in host.containers)
+    return items
+
+
 def build_proxmox_review(nb_api, hosts, config):
     """Classify Proxmox inventory without invoking any apply path."""
     site = nb_api.dcim.sites.get(slug=config.target.site_slug)
@@ -251,30 +378,7 @@ def build_proxmox_review(nb_api, hosts, config):
     target_vms = tuple(record for record in vms if _object_id(_record(record).get("cluster")) == cluster.id)
     items = []
     for host in hosts:
-        items.append(_proxmox_host_item(host, devices, target_devices))
-        missing = ((getattr(host, "proxmox_host_network", None) or {}).get("coverage") or {}).get(
-            "missing_references", []
-        )
-        if missing:
-            names = sorted({r["target"] for r in missing})
-            items.append(
-                ReviewItem(
-                    "host_network",
-                    host.normalized_name,
-                    host.source_id,
-                    ReviewClassification.UNSUPPORTED,
-                    "PROXMOX_NETWORK_REFERENCES_MISSING",
-                    "Network API omitted referenced interfaces: "
-                    + ", ".join(names)
-                    + ". Check configuration and bridge permissions; insufficient permissions are not confirmed.",
-                    "review",
-                )
-            )
-        items.extend(
-            _generic_item(vm, "qemu", virtual_machine_source_identity(vm), vms, target_vms)
-            for vm in host.virtual_machines
-        )
-        items.extend(_generic_item(lxc, "lxc", lxc_source_identity(lxc), vms, target_vms) for lxc in host.containers)
+        items.extend(_proxmox_host_review(host, devices, target_devices, vms, target_vms))
     return DiscoveryReview(
         config.source_instance, config.source_type, config.target.site_slug, config.target.cluster_name, tuple(items)
     )
@@ -315,43 +419,7 @@ def build_esxi_review(plan, config):
             and classification == ReviewClassification.MANAGED
         ):
             code = "SELECTEL_HARDWARE_MATCH"
-        import json
-        from urllib.parse import urlsplit
-
-        base = plan.netbox_url
-        parsed = urlsplit(base)
-        base = (
-            base
-            if parsed.scheme in ("https", "http") and parsed.hostname and not parsed.username and not parsed.password
-            else ""
-        )
-        evidence = []
-        if classification in (ReviewClassification.CONFLICT, ReviewClassification.REVIEW_REQUIRED):
-            for value in sorted(item.candidates, key=lambda c: str(c.object_id)):
-                identities = json.loads(value.custom_fields_snapshot).get("sync_identities") or []
-                evidence.append(
-                    {
-                        "id": value.object_id,
-                        "name": value.object_name,
-                        "url": (
-                            base
-                            + ("/virtualization/virtual-machines/" if item.object_kind == "vm" else "/dcim/devices/")
-                            + str(value.object_id)
-                            + "/"
-                            if base
-                            else ""
-                        ),
-                        "external_ids": sorted(
-                            (
-                                str(v.get("external_id", v.get("source_id", "")))
-                                for v in identities
-                                if isinstance(v, dict)
-                            )
-                        ),
-                        "signals": list(value.signals),
-                        "conflicts": list(value.conflicts),
-                    }
-                )
+        evidence = _candidate_evidence(item, classification, plan.netbox_url)
         items.append(
             ReviewItem(
                 item.object_kind,
@@ -394,17 +462,7 @@ def enrich_review(review, hosts):
     Different VMs sharing a stable ID must not inherit each other's network/hardware.
     No descriptions, credentials or arbitrary provider payloads cross this projection.
     """
-    from collections import defaultdict, deque
-
-    objects = defaultdict(deque)
-    for host in hosts:
-        objects[("host", host_source_identity(host).external_id, host.original_name)].append(host)
-        for vm in host.virtual_machines:
-            identity = virtual_machine_source_identity(vm)
-            objects[(identity.kind, identity.external_id, vm.original_name)].append(vm)
-        for vm in host.containers:
-            identity = lxc_source_identity(vm)
-            objects[(identity.kind, identity.external_id, vm.original_name)].append(vm)
+    objects = _review_objects(hosts)
     items = []
     for item in review.items:
         candidates = objects[(item.object_kind, item.external_id, item.name)]
@@ -412,38 +470,6 @@ def enrich_review(review, hosts):
             items.append(item)
             continue
         obj = candidates.popleft()
-        properties = dict(item.properties)
-        for key in ("vcpus", "memory_bytes"):
-            value = getattr(obj, key, None)
-            if isinstance(value, int) and value > 0:
-                properties[key] = value
-        for key in ("status", "architecture", "os_type", "manufacturer", "model", "hypervisor_version"):
-            value = getattr(obj, key, None)
-            if value:
-                properties[key] = str(value)[:200]
-        cpu = getattr(obj, "cpu", None)
-        if cpu and cpu.model:
-            properties["cpu"] = str(cpu.model)[:200]
-        interfaces = []
-        for nic in obj.interfaces:
-            value = {"name": nic.name, "addresses": list(getattr(nic, "ip_addresses", getattr(nic, "addresses", [])))}
-            for key in ("mac_address", "bridge", "vlan_id"):
-                if getattr(nic, key, None) is not None:
-                    value[key] = getattr(nic, key)
-            interfaces.append(value)
-        if interfaces:
-            properties["interfaces"] = interfaces
-        addresses = sorted({address for nic in interfaces for address in nic["addresses"]})
-        if getattr(obj, "management_ip", None):
-            addresses = sorted(set(addresses + [obj.management_ip]))
-        if addresses:
-            properties["addresses"] = addresses
-        disks = [
-            {"name": getattr(disk, "name", getattr(disk, "path", "")), "size_bytes": disk.size_bytes}
-            for disk in obj.disks
-            if disk.size_bytes > 0
-        ]
-        if disks:
-            properties["disks"] = disks
+        properties = _inventory_properties(obj, item.properties)
         items.append(replace(item, properties=properties))
     return replace(review, items=tuple(items))

@@ -87,6 +87,8 @@ functions: one function can produce several findings.
   All 106 SQL statements and transaction ordering preserved; complexity resolved.
 - Experimental Selectel lifecycle: 2451 tests passed, 491 skipped; Pylint 9.38/10.
   Control-flow findings resolved; durable intent and confirmation semantics preserved.
+- Discovery review projection: 2459 tests passed, 491 skipped; Pylint 9.39/10.
+  Complexity resolved; VM/LXC occurrences and bounded evidence preserved.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,
