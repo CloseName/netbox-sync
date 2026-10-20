@@ -50,7 +50,10 @@ class DirectoryUsers:
             or not isinstance(value.get("identity"), str)
             or not 1 <= len(value["identity"]) <= 128
             or type(value.get("active")) is not bool
-            or not isinstance(value.get("username"), str)
+        ):
+            raise DirectoryError("LDAP_UNAVAILABLE")
+        if (
+            not isinstance(value.get("username"), str)
             or not 1 <= len(value["username"]) <= 128
             or not isinstance(value.get("display_name"), str)
             or len(value["display_name"]) > 256

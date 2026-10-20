@@ -50,7 +50,10 @@ class ScheduleWorkerClient:
                 {"source_instance", "sync_enabled", "sync_interval_seconds", "sync_calendar", "schedule_changed_at"},
             )
             or result.get("source_instance") != source_instance
-            or not isinstance(result.get("sync_enabled"), bool)
+        ):
+            raise ScheduleRequestError("CONTROL_REQUEST_FAILED")
+        if (
+            not isinstance(result.get("sync_enabled"), bool)
             or not isinstance(result.get("sync_interval_seconds"), int)
             or isinstance(result.get("sync_interval_seconds"), bool)
         ):

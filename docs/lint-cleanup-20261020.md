@@ -710,3 +710,19 @@ field authority, Unicode rendering and partial output before metadata failure.
 Full suite: 2568 passed, 491 skipped, one existing warning; Pylint 9.40/10,
 zero Error/Fatal. Local-variable findings resolved in both changed functions.
 Black and whitespace pass; VM/LXC policies and production remain unchanged.
+
+## Stage 63: grouped control workflows and boundary validation
+
+Group related control-layer cleanup: pfSense private state/connection/schedule/
+collection stages, placement-map validation and retention, isolated scheduler
+assessment, and directory/schedule/TLS predicate stages. Preserve lock and write
+ordering, prepared SSH on import failure, absent-host identities, schedule history
+read order, exact type validation and lazy filesystem checks.
+Thirty-nine new cases pass against original implementations (the additional four
+pfSense cases were run against HEAD source loaded in an isolated test process).
+After extraction: 118 focused tests passed, 10 skipped. Full suite: 2607 passed,
+491 skipped, one existing warning. Pylint 9.41/10, zero Error/Fatal; no primary
+complexity findings remain in the six changed modules. Black and whitespace pass.
+The public scheduler signature is unchanged. All network/database interactions in
+new tests are fakes; platform/real-PostgreSQL skips do not establish deployment
+acceptance. Selectel remains experimental; production untouched.
