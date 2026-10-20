@@ -7,6 +7,8 @@ from ipaddress import ip_interface
 
 
 def canonical_hosts(hosts):
+    """Deep-copy and deterministically order inventory memberships without reordering operations."""
+
     def key(value):
         identity = next(
             (

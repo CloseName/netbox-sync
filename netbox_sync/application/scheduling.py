@@ -57,6 +57,8 @@ class ScheduleDecision:
 
     @property
     def eligible(self):
+        """Require successful evaluation and a due or delayed state before scheduling."""
+
         return self.evaluation_status is ScheduleEvaluationStatus.OK and self.state in (
             SchedulerState.DUE,
             SchedulerState.DELAYED,

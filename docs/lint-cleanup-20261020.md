@@ -407,3 +407,12 @@ preservation versus LXC primary-candidate counts. Two new generator/repeated-cal
 cases and all 32 golden output cases pass before and after extraction. Full suite:
 2348 passed, 491 skipped, one existing warning. Pylint 9.19/10, zero Error/Fatal;
 no findings remain in either report module. Black and whitespace pass.
+
+## Stage 32: application and API contract documentation
+
+Add 68 descriptions across 20 API/application modules, covering reviewed catalog
+selections, registration/recovery bindings, planning overlays and scheduling.
+Executable AST unchanged. All 13 affected Pydantic schemas are identical after
+excluding description metadata. Full suite before and after: 2348 passed,
+491 skipped, one existing warning. Pylint 9.23/10, zero Error/Fatal. Black and
+whitespace pass. Selectel descriptions explicitly retain experimental status.

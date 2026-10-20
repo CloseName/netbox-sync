@@ -33,6 +33,8 @@ class PostgresRunReader:
         return self._repository().list_runs(**filters)
 
     def plan_run(self, source, digest, finished_at):
+        """Delegate lookup of a plan run by source, digest and finish time."""
+
         return self._repository().plan_run(source, digest, finished_at)
 
     def get_run(self, run_id):

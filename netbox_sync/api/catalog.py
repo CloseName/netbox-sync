@@ -4,11 +4,17 @@ from ..local_control import request, ControlError
 
 
 class CatalogError(Exception):
+    """A catalog lookup or preparation failed with a machine-readable code."""
+
     def __init__(self, code):
+        """Retain the catalog failure code for the HTTP boundary."""
+
         self.code = code
 
 
 def call(path, payload, *, prepare=False):
+    """Call the local catalog service with a read or preparation deadline."""
+
     if not path:
         raise CatalogError("UNAVAILABLE")
     try:
@@ -25,6 +31,8 @@ def call(path, payload, *, prepare=False):
 
 
 def validate(path, references, host_types, preview, *, pending_cluster=False, require_empty_cluster=False):
+    """Revalidate all reviewed selections and build the exact host placement mapping."""
+
     required = {"site", "platform", "device_role", "cluster_type"} | (set() if pending_cluster else {"cluster"})
     if set(references) != required or not preview:
         raise CatalogError("SELECTION_REQUIRED")
@@ -58,6 +66,8 @@ def validate(path, references, host_types, preview, *, pending_cluster=False, re
 
 
 def create_call(path, payload):
+    """Submit catalog creation, distinguishing known lock refusals from unknown outcomes."""
+
     try:
         result = request(path, payload, timeout=33)["result"]
     except ControlError as exc:

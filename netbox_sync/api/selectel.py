@@ -8,6 +8,8 @@ from ..local_control import request as control
 
 
 class Account(BaseModel):
+    """Experimental Selectel account connection fields with a protected password."""
+
     model_config = ConfigDict(extra="forbid")
     account: str = Field(pattern=r"^[0-9]{1,20}$")
     name: str = Field(min_length=1, max_length=128)
@@ -16,27 +18,37 @@ class Account(BaseModel):
 
 
 class Schedule(BaseModel):
+    """Experimental Selectel schedule envelope validated by the control worker."""
+
     model_config = ConfigDict(extra="forbid")
     schedule: dict
 
 
 class Enabled(BaseModel):
+    """Strict boolean control for an experimental Selectel account."""
+
     model_config = ConfigDict(extra="forbid", strict=True)
     enabled: bool
 
 
 class Lifecycle(BaseModel):
+    """Experimental Selectel lifecycle operation and optional resource key."""
+
     model_config = ConfigDict(extra="forbid", strict=True)
     operation: str = Field(pattern=r"^(delete|detach|activate)$")
     key: str | None = None
 
 
 class LifecycleExecute(Lifecycle):
+    """Digest-bound experimental Selectel lifecycle execution confirmation."""
+
     fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
     confirmed: bool
 
 
 def routes(settings):
+    """Build experimental Selectel account, collection, schedule and lifecycle routes."""
+
     router = APIRouter(prefix="/api/v1/selectel")
 
     def call(request, operation, data):

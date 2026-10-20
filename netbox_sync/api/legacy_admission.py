@@ -11,6 +11,8 @@ from ..host_registration import esxi_anchor
 
 
 class Probe(BaseModel):
+    """Revision-bound credentials for observing a recorded legacy endpoint."""
+
     model_config = ConfigDict(extra="forbid")
     revision: str = Field(pattern="^[a-f0-9]{64}$")
     username: SecretStr = Field(exclude=True, repr=False, min_length=1, max_length=512)
@@ -19,6 +21,8 @@ class Probe(BaseModel):
     @field_validator("username", "secret")
     @classmethod
     def valid_credentials(cls, value):
+        """Reject blank, padded, oversized or NUL-containing credential values."""
+
         raw = value.get_secret_value()
         if not raw.strip() or raw != raw.strip() or len(raw.encode()) > 4096 or "\x00" in raw:
             raise ValueError("Credential field invalid")
@@ -26,6 +30,8 @@ class Probe(BaseModel):
 
 
 class Decision(BaseModel):
+    """Explicit actor decision to isolate or observe a legacy source."""
+
     model_config = ConfigDict(extra="forbid")
     operation: UUID
     revision: str = Field(pattern="^[a-f0-9]{64}$")
@@ -37,12 +43,16 @@ class Decision(BaseModel):
     @field_validator("confirmed", mode="before")
     @classmethod
     def explicit(cls, value):
+        """Require the literal boolean True before accepting confirmation."""
+
         if value is not True:
             raise ValueError("Explicit confirmation required")
         return value
 
 
 def routes(settings, auth, lifecycle):
+    """Build revision-bound legacy review, endpoint probe and confirmation routes."""
+
     router = APIRouter(prefix="/api/v1/sources")
     evidence = EphemeralOnboardingStore()
 

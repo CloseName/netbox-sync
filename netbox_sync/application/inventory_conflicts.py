@@ -8,6 +8,8 @@ from ..network_scopes import scope_key
 
 @dataclass(frozen=True)
 class ConflictParticipant:
+    """Inventory object and optional interface or address involved in a conflict."""
+
     name: str
     external_id: str
     provider_object_id: str | None
@@ -21,6 +23,8 @@ class ConflictParticipant:
 
 @dataclass(frozen=True)
 class InventoryConflict:
+    """A conflicting value and the inventory participants sharing it."""
+
     kind: str
     value: str
     participants: tuple[ConflictParticipant, ...]

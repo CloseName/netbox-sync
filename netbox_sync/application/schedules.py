@@ -47,6 +47,8 @@ class ScheduleService:
         return source, latest, running
 
     def get(self, instance):
+        """Evaluate current scheduling state from the source and recent run context."""
+
         source, latest, running = self._context(instance)
         decision = evaluate_schedule(source, latest, running, self._clock(), self._stale_seconds)
         return ScheduleView(
@@ -60,6 +62,8 @@ class ScheduleService:
         )
 
     def update(self, instance, values):
+        """Commit schedule settings and evaluate the returned state against the existing run context."""
+
         source, latest, running = self._context(instance)
         committed = self._control.update(instance, values)
         updated = replace(

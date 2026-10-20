@@ -82,6 +82,8 @@ class SourceDiagnostic:
 
     @property
     def warning_count(self):
+        """Return the number of collected source warnings."""
+
         return len(self.warnings)
 
 

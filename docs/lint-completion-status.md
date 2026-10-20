@@ -69,7 +69,9 @@ functions: one function can produce several findings.
   90 focused tests passed, 52 skipped; Pylint 9.17/10.
 - Runtime contract documentation: 73 descriptions in 28 modules, executable AST
   unchanged; full suite 2346 passed, 491 skipped; Pylint 9.19/10.
-- Remaining documentation: 52 classes and 256 functions; compatibility metrics pending.
+- Application/API contracts: 68 descriptions, executable AST and 13 model schemas
+  unchanged apart from descriptions; full suite 2348 passed; Pylint 9.23/10.
+- Remaining documentation: 34 classes and 207 functions; compatibility metrics pending.
 
 Detailed per-PR verification remains in [the cleanup log](lint-cleanup-20261020.md).
 This file must not be interpreted as a completed audit until all pending entries
