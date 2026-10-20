@@ -7,6 +7,8 @@ unchanged. Stricter provider and network-scope helpers have separate contracts.
 
 
 def object_id(value):
+    """Extract a relationship identifier from an integer, mapping or record."""
+
     if value is None:
         return None
 
@@ -20,6 +22,8 @@ def object_id(value):
 
 
 def choice_value(value):
+    """Extract a choice value while retaining already scalar values."""
+
     if value is None:
         return None
 

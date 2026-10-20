@@ -18,8 +18,12 @@ ROLES = {"viewer": READ, "operator": OPERATE, "admin": ADMIN}
 
 
 def permissions(role):
+    """Return the immutable permission set, defaulting unknown roles to no permissions."""
+
     return ROLES.get(role, frozenset())
 
 
 def matrix():
+    """Project all role permissions as sorted lists."""
+
     return {role: sorted(values) for role, values in ROLES.items()}

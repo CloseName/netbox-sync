@@ -28,6 +28,8 @@ def matches_sync_identity(
     custom_fields,
     host,
 ):
+    """Test whether custom fields satisfy the ranked host identity rules."""
+
     return bool(sync_identity_match_rank(custom_fields, host))
 
 
@@ -64,6 +66,8 @@ def build_device_custom_fields(
     host,
     existing_custom_fields=None,
 ):
+    """Merge host identity and discovered hardware while retaining unrelated custom fields."""
+
     existing = dict(existing_custom_fields or {})
 
     desired_identity = host_source_identity(host)

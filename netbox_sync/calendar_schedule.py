@@ -9,6 +9,8 @@ MSK = ZoneInfo("Europe/Moscow")
 
 
 def validate_calendar(value):
+    """Validate an exact daily, weekly or monthly Moscow calendar envelope."""
+
     if value is None:
         return None
     if not isinstance(value, dict) or value.get("mode") not in ("daily", "weekly", "monthly"):

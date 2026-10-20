@@ -24,6 +24,8 @@ MANAGED_VM_INTERFACE_CUSTOM_FIELDS = (
 
 
 def nic_identity_source_id(vm, nic):
+    """Build the legacy guest-and-interface identifier from the guest identity and NIC name."""
+
     return f"{vm_identity_source_id(vm)}:" f"{nic.name}"
 
 
@@ -32,6 +34,8 @@ def matches_nic_sync_identity(
     vm,
     nic,
 ):
+    """Test whether custom fields satisfy the ranked guest interface identity rules."""
+
     return bool(nic_sync_identity_match_rank(custom_fields, vm, nic))
 
 
@@ -91,6 +95,8 @@ def build_nic_custom_fields(
     nic,
     existing_custom_fields=None,
 ):
+    """Merge guest NIC identity, bridge and VLAN data, preserving other-source observations."""
+
     existing = dict(existing_custom_fields or {})
 
     builder = lxc_nic_source_identity if hasattr(vm, "architecture") else virtual_machine_nic_source_identity

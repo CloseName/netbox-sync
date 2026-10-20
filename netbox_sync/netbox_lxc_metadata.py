@@ -19,6 +19,8 @@ from .source_identity import (
 
 
 def lxc_identity_source_id(container):
+    """Strip only the matching provider prefix from a container source identifier."""
+
     source_id = str(container.source_id)
 
     prefix = f"{container.source}:"
@@ -33,6 +35,8 @@ def matches_lxc_sync_identity(
     custom_fields,
     container,
 ):
+    """Test whether custom fields satisfy the ranked container identity rules."""
+
     return bool(lxc_sync_identity_match_rank(custom_fields, container))
 
 
@@ -63,6 +67,8 @@ def build_lxc_custom_fields(
     container,
     existing_custom_fields=None,
 ):
+    """Merge container identity and resources while preserving unrelated custom fields."""
+
     existing = dict(existing_custom_fields or {})
 
     desired_identity = lxc_source_identity(container)

@@ -17,6 +17,8 @@ from .netbox_vm_metadata import find_vm_sync_identity_matches
 
 
 def _canonical_mac(value):
+    """Normalize a present MAC string to uppercase without adding format validation."""
+
     if not value:
         return None
 
@@ -24,10 +26,14 @@ def _canonical_mac(value):
 
 
 def _canonical_address(value):
+    """Normalize an interface address while preserving its prefix length."""
+
     return str(ipaddress.ip_interface(str(value)))
 
 
 def _usable_address(value):
+    """Normalize candidate addresses, excluding loopback, link-local, multicast and unspecified IPs."""
+
     try:
         interface = ipaddress.ip_interface(str(value))
     except ValueError:
@@ -42,10 +48,14 @@ def _usable_address(value):
 
 
 def _network_of(address):
+    """Derive the canonical network prefix from an interface address."""
+
     return str(ipaddress.ip_interface(address).network)
 
 
 def _assigned_object(record):
+    """Read an IP or MAC record assignment type and identifier."""
+
     data = record.serialize()
 
     return (
@@ -55,6 +65,8 @@ def _assigned_object(record):
 
 
 def _scope_rank(data, site_id):
+    """Prefer the selected site over unscoped records and exclude other scopes."""
+
     scope_type = data.get("scope_type")
 
     scope_id = data.get("scope_id")
@@ -72,6 +84,8 @@ def _select_scoped(
     records,
     site_id,
 ):
+    """Choose one best-ranked scoped record or report absence or ambiguity."""
+
     eligible = []
 
     for record in records:
@@ -107,6 +121,8 @@ def _vm_identity_match(
     target_vms,
     discovered_vm,
 ):
+    """Find VM records by the existing ranked source-identity rules."""
+
     return find_vm_sync_identity_matches(target_vms, discovered_vm)
 
 
@@ -114,6 +130,8 @@ def _existing_primary_ipv4(
     vm,
     ips_by_id,
 ):
+    """Resolve and canonicalize the current primary IPv4 when present in loaded inventory."""
+
     data = vm.serialize()
 
     primary_id = _object_id(data.get("primary_ip4"))
@@ -140,6 +158,8 @@ def plan_vm_networks(
     cluster,
     site,
 ):
+    """Plan interfaces, VLANs, MACs, IPs and primary IPv4 for uniquely matched VMs."""
+
     print()
     print("  QEMU VM NETWORK")
 

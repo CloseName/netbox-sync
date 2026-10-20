@@ -9,10 +9,14 @@ from urllib.parse import urlsplit
 
 
 class TLSConfigurationError(ValueError):
+    """A public authority or protected trust file failed validation."""
+
     pass
 
 
 def public_authority(url):
+    """Require a lowercase HTTPS FQDN without a port, path or literal IP address."""
+
     try:
         parsed = urlsplit(url)
         host = parsed.hostname or ""
@@ -35,6 +39,8 @@ def public_authority(url):
 
 
 def protected_file(path, mode, gid=0, maximum=1024 * 1024):
+    """Read a bounded regular file with one link and the required POSIX ownership and mode."""
+
     try:
         fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
         try:
@@ -57,6 +63,8 @@ def protected_file(path, mode, gid=0, maximum=1024 * 1024):
 
 
 def validate_ca(data):
+    """Require ASCII CA material accepted by TLS and reject private-key content."""
+
     try:
         text = data.decode("ascii")
         if not text.strip() or "PRIVATE KEY" in text:

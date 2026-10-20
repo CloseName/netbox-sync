@@ -9,7 +9,11 @@ from .netbox_catalog import ENDPOINTS, project
 
 
 def ensure_factory(session, url, read_token, apply_token, issues):
+    """Build a bounded catalog resolver that records ambiguous or unconfirmed creations."""
+
     def ensure(kind, values):
+        """Reuse one exact catalog object or attempt creation with a deterministic slug."""
+
         if kind not in {"manufacturer", "device_type", "platform", "cluster_type", "device_role"}:
             raise ProbeError("SELECTION_REQUIRED")
         values = dict(values)
@@ -28,6 +32,8 @@ def ensure_factory(session, url, read_token, apply_token, issues):
             lookup["manufacturer_id"] = manufacturer["id"]
 
         def existing():
+            """Project one complete exact-match page, recording ambiguity instead of selecting a row."""
+
             page = fetch(session, endpoint + "?" + urlencode(lookup), read_token)
             rows = page.get("results")
             if not isinstance(rows, list) or page.get("count") != len(rows) or page.get("next"):

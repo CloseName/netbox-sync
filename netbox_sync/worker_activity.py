@@ -14,6 +14,8 @@ MAX_BUSY_SECONDS = 330  # Existing 300s child limit + bounded DB/cleanup overhea
 
 def process_start(pid):
     # Field 22 after the command, which may contain spaces/parentheses.
+    """Read a live Linux process start marker, rejecting zombie and exited states."""
+
     fields = Path("/proc/" + str(pid) + "/stat").read_text().rsplit(")", 1)[1].split()
     if fields[0] in ("Z", "X"):
         raise ValueError("Worker exited")
@@ -22,6 +24,8 @@ def process_start(pid):
 
 @contextmanager
 def activity(path=PATH):
+    """Publish best-effort bounded-busy evidence and remove it when the operation leaves."""
+
     temporary = None
     try:
         record = {"pid": os.getpid(), "start": process_start(os.getpid()), "since": time.monotonic()}
@@ -48,6 +52,8 @@ def activity(path=PATH):
 
 
 def bounded_busy(path=PATH):
+    """Accept only fresh protected activity evidence matching the current live process."""
+
     try:
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         try:

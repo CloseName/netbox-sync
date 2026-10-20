@@ -2,6 +2,8 @@
 
 
 def owned_fields(custom_fields):
+    """Return only recognized native fields explicitly owned by Selectel inventory."""
+
     if not isinstance(custom_fields, dict) or not custom_fields.get("selectel_refs"):
         return set()
     snapshot = custom_fields.get("selectel_inventory")

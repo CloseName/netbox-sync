@@ -29,6 +29,8 @@ from .source_identity import (
 
 
 def _local_source_id(obj):
+    """Strip only the matching provider prefix from a source identifier."""
+
     value = str(obj.source_id)
 
     prefix = f"{obj.source}:"
@@ -40,6 +42,8 @@ def _local_source_id(obj):
 
 
 def _identities(custom_fields):
+    """Extract valid legacy source and object identifier pairs from custom fields."""
+
     custom_fields = dict(custom_fields or {})
 
     values = custom_fields.get("sync_identities")
@@ -78,6 +82,8 @@ def _identities(custom_fields):
 
 
 def _v2_identities(custom_fields):
+    """Parse recognized v2 identities from the custom-field list."""
+
     values = dict(custom_fields or {}).get("sync_identities")
     if not isinstance(values, list):
         return []
@@ -91,6 +97,8 @@ def _v2_identities(custom_fields):
 
 
 def _identity_label(identity):
+    """Render either a typed v2 identity or a legacy identity pair."""
+
     if isinstance(identity, SourceIdentity):
         return f"{identity.type}/{identity.instance}/" f"{identity.kind}/{identity.external_id}"
     return f"{identity[0]}:{identity[1]}"
@@ -101,6 +109,8 @@ def report_missing_managed_objects(
     hosts,
     config,
 ):
+    """Compare scoped managed inventory with discovery and print a read-only disappearance report."""
+
     _site, cluster = resolve_disappearance_target(
         nb_api,
         config,

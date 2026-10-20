@@ -12,6 +12,8 @@ from .netbox_vm_metadata import (
 
 
 def _netbox_vm_status(source_status):
+    """Translate supported VM states and reject unknown source states."""
+
     mapping = {
         "running": "active",
         "stopped": "offline",
@@ -25,14 +27,20 @@ def _netbox_vm_status(source_status):
 
 
 def _vm_memory_mib(vm):
+    """Truncate VM memory bytes to MiB."""
+
     return vm.memory_bytes // 1024**2
 
 
 def _vm_disk_mib(vm):
+    """Sum VM disk bytes and truncate the total to MiB."""
+
     return sum(disk.size_bytes for disk in vm.disks) // 1024**2
 
 
 def _vm_start_on_boot(vm):
+    """Render the legacy on/off value for VM autostart."""
+
     return "on" if vm.autostart else "off"
 
 
@@ -104,6 +112,8 @@ def _print_desired_vm(
     cluster,
     existing=None,
 ):
+    """Print desired VM resources and managed-field differences without writing."""
+
     desired_status = _netbox_vm_status(vm.status)
 
     desired_vcpus = vm.vcpus
@@ -182,6 +192,8 @@ def plan_virtual_machines(
     host,
     cluster,
 ):
+    """Report VM identity matches, adoption candidates and conflicts within one cluster."""
+
     print()
     print("  QEMU VIRTUAL MACHINES")
 

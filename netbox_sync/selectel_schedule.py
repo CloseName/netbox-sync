@@ -7,6 +7,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 def validate(value):
+    """Validate an exact Selectel schedule envelope and normalize explicit dates."""
+
     if not isinstance(value, dict):
         raise ValueError("SCHEDULE_INVALID")
     kind = value.get("kind")

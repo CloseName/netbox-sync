@@ -48,6 +48,8 @@ def _run_stage(
     confirmed,
     phase,
 ):
+    """Print the phase banner and invoke one synchronization stage."""
+
     print()
     print("========================================")
     print(f"FULL SYNC {phase}: {name}")
@@ -69,6 +71,8 @@ def apply_full_sync(
     confirmed=False,
     before_write=None,
 ):
+    """Simulate every stage before confirmation-gated writes and report disappearance separately."""
+
     from .application.inventory_order import canonical_hosts
 
     hosts = canonical_hosts(hosts)

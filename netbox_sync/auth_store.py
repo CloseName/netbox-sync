@@ -9,12 +9,18 @@ from .auth_secrets import AuthSecrets
 
 
 class AuthStore:
+    """Serialize policy updates and audit events in the PostgreSQL auth state."""
+
     def __init__(self, dsn, schema, baseline=None):
+        """Validate the schema and bind connection and baseline policy settings."""
+
         if not re.fullmatch(r"[a-z][a-z0-9_]{2,62}", schema):
             raise ValueError("Invalid auth schema")
         self.dsn, self.schema, self.baseline = dsn, schema, baseline
 
     def call(self, payload, *, root=False):
+        """Apply one policy action transactionally, persisting state even on a policy refusal."""
+
         error = None
         try:
             with connect(self.dsn, connect_timeout=5) as connection:

@@ -10,6 +10,8 @@ CA_FILE = Path("/run/netbox-sync-ca/netbox-ca.pem")
 
 
 def configure_session(session, ca_file=None):
+    """Disable ambient proxy settings and combine a protected private CA with system trust."""
+
     session.trust_env = False
     session.verify = True
     path = Path(ca_file) if ca_file is not None else CA_FILE
