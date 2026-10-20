@@ -573,3 +573,14 @@ implementation match complete results/digests and errors. Full suite: 2439 passe
 491 skipped, one existing warning; Pylint 9.38/10, zero Error/Fatal. Control-flow
 findings resolved. The existing nine-argument public evidence API remains compatible;
 exact integer checks intentionally reject booleans. Black and whitespace pass.
+
+## Stage 50: database grant stages
+
+Separate the ordered privilege matrix into revocation, registry, authentication,
+operation, recovery, archive and removal stages inside the same owner transaction.
+Six new tests freeze all 106 SQL statements and transaction outcomes, including
+failures at four points and invalid-schema rejection before connecting. They pass
+on the original implementation and after extraction. Related checks: 52 passed,
+18 environment skips. Full suite: 2445 passed, 491 skipped, one existing warning;
+Pylint 9.38/10, zero Error/Fatal; no complexity findings remain in deployment.
+Black and whitespace pass. Tests use fake connections; no database was modified.

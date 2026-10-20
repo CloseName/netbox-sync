@@ -83,6 +83,8 @@ functions: one function can produce several findings.
   Error contracts, early denials and setup status exemptions preserved.
 - Recovery evidence: 2439 tests passed, 491 skipped; Pylint 9.38/10.
   Control-flow findings resolved; public call signature and digest preserved.
+- Database grants: 2445 tests passed, 491 skipped; Pylint 9.38/10.
+  All 106 SQL statements and transaction ordering preserved; complexity resolved.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,
