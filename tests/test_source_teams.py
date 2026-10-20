@@ -46,3 +46,64 @@ def test_invalid_team_identifier_is_a_safe_validation_error(team):
     with pytest.raises(AuthError,match='TEAM_INVALID'):
         call(service,token,'teams.assign',revision=0,team_id=team,source_instance='source-a')
     assert service.state==before
+
+
+@pytest.mark.parametrize('revision', [True, False, '0', 0.0, None, -1])
+def test_revision_refusal_precedes_invalid_team_and_name(revision):
+    service, token, _ = enrolled()
+    before = deepcopy(service.state)
+    audit = deepcopy(service.audit)
+    with pytest.raises(AuthError, match='^TEAM_CONFLICT$'):
+        call(service, token, 'teams.create', revision=revision, team_id=[], name='')
+    assert service.state == before
+    assert service.audit == audit
+
+
+def test_names_are_trimmed_unique_casefolded_and_response_is_detached():
+    service, token, _ = enrolled()
+    data = call(service, token, 'teams.create', revision=0, name='  Straße  ')
+    team = next(iter(data['teams']))
+    assert data['teams'][team]['name'] == 'Straße'
+    data['teams'][team]['name'] = 'external mutation'
+    assert service.state['source_teams']['teams'][team]['name'] == 'Straße'
+    before = deepcopy(service.state['source_teams'])
+    audit = deepcopy(service.audit)
+    with pytest.raises(AuthError, match='^TEAM_INVALID$'):
+        call(service, token, 'teams.create', revision=1, name='STRASSE')
+    assert service.state['source_teams'] == before
+    assert service.audit == audit
+    data = call(service, token, 'teams.rename', revision=1, team_id=team, name='STRASSE')
+    assert data['revision'] == 2 and data['teams'][team]['name'] == 'STRASSE'
+
+
+def test_team_limit_blocks_creation_but_not_rename():
+    service, token, _ = enrolled()
+    service.state['source_teams'] = {'version': 1, 'revision': 0, 'assignments': {},
+        'teams': {str(i): {'id': str(i), 'name': f'team-{i}'} for i in range(100)}}
+    before = deepcopy(service.state['source_teams'])
+    audit = deepcopy(service.audit)
+    with pytest.raises(AuthError, match='^TEAM_INVALID$'):
+        call(service, token, 'teams.create', revision=0, name='overflow')
+    assert service.state['source_teams'] == before
+    assert service.audit == audit
+    data = call(service, token, 'teams.rename', revision=0, team_id='0', name='renamed')
+    assert len(data['teams']) == 100 and data['revision'] == 1
+
+
+def test_response_size_limit_precedes_commit_and_audit():
+    service, token, _ = enrolled()
+    service.state['source_teams'] = {'version': 1, 'revision': 0, 'teams': {},
+        'assignments': {f'source-{i}': 'x' * 80 for i in range(300)}}
+    before = deepcopy(service.state['source_teams'])
+    audit = deepcopy(service.audit)
+    with pytest.raises(AuthError, match='^TEAM_INVALID$'):
+        call(service, token, 'teams.create', revision=0, name='valid')
+    assert service.state['source_teams'] == before
+    assert service.audit == audit
+
+
+def test_unassign_missing_source_still_increments_revision_and_audits():
+    service, token, _ = enrolled()
+    data = call(service, token, 'teams.assign', revision=0, team_id=None, source_instance='source-a')
+    assert data == {'version': 1, 'revision': 1, 'teams': {}, 'assignments': {}}
+    assert service.audit[-1]['action'] == 'teams.assign'

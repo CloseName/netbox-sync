@@ -155,3 +155,20 @@ missing-function-docstring findings; compatibility arguments and lazy imports re
 
 Full suite: 2093 passed, 485 skipped, one existing Starlette warning. Full Pylint
 passes at 9.03/10 with zero Error/Fatal; Black and whitespace checks pass.
+
+## Stage 9: source team metadata validation
+
+Extract name/create/rename validation and source assignment into helpers operating
+only on the pending copy. Keep authorization, metadata version, exact integer
+revision checks, encoded-size limit, commit and audit in their original order.
+Document detached responses, casefold uniqueness, creation-only team limits and
+revision advancement on an unassignment that changes no assignment.
+
+Ten new characterization cases and all nine existing team cases pass before and
+after extraction. Expanding the helper AST back into the entry point exactly
+matches the original function after removing its docstring. The module has no
+complexity or missing-function-docstring findings. Keep the exact-type check:
+accepting booleans as revisions would change the protocol.
+
+Full suite: 2103 passed, 485 skipped, one existing Starlette warning. Full Pylint
+passes at 9.04/10 with zero Error/Fatal; Black and whitespace checks pass.
