@@ -30,6 +30,62 @@ class InventoryConflict:
     participants: tuple[ConflictParticipant, ...]
 
 
+def _collect_interface(nic, base, addresses, macs):
+    """Collect per-NIC address facts and existing scope conflicts in original order."""
+    if nic.mac_address:
+        mac = str(nic.mac_address).strip().upper()
+        macs[mac].append(ConflictParticipant(**base, interface=nic.name, interface_id=nic.external_id, address=mac))
+        for previous in nic.mac_scope_conflicts:
+            macs[mac].append(
+                ConflictParticipant(
+                    **base,
+                    interface=nic.name,
+                    interface_id=nic.external_id,
+                    address=mac,
+                    netbox_id=previous["netbox_id"],
+                )
+            )
+    seen = set()
+    for raw in nic.ip_addresses:
+        try:
+            address = ip_interface(raw)
+        except ValueError:
+            continue  # Same unusable-address policy as the executor.
+        if any(
+            (
+                address.ip.is_loopback,
+                address.ip.is_link_local,
+                address.ip.is_multicast,
+                address.ip.is_unspecified,
+            )
+        ):
+            continue
+        if str(address) in seen:
+            continue  # Identical fact within this specific NIC only.
+        seen.add(str(address))
+        addresses[scope_key(str(address.ip), nic.ip_vrf_id)].append(
+            ConflictParticipant(
+                **base,
+                interface=nic.name,
+                interface_id=nic.external_id,
+                address=str(address),
+                vrf_id=nic.ip_vrf_id,
+            )
+        )
+    for previous in nic.ip_scope_conflicts:
+        value = scope_key(str(ip_interface(previous["address"]).ip), nic.ip_vrf_id)
+        addresses[value].append(
+            ConflictParticipant(
+                **base,
+                interface=nic.name,
+                interface_id=nic.external_id,
+                address=previous["address"],
+                vrf_id=previous["vrf_id"],
+                netbox_id=previous["netbox_id"],
+            )
+        )
+
+
 def inventory_conflicts(hosts):
     """Preserve ambiguities; bridge/VLAN labels do not establish separate IP realms."""
     identities = defaultdict(list)
@@ -47,60 +103,7 @@ def inventory_conflicts(hosts):
                 }
                 identities[(kind, external_id)].append(ConflictParticipant(**base))
                 for nic in vm.interfaces:
-                    if nic.mac_address:
-                        mac = str(nic.mac_address).strip().upper()
-                        macs[mac].append(
-                            ConflictParticipant(**base, interface=nic.name, interface_id=nic.external_id, address=mac)
-                        )
-                        for previous in nic.mac_scope_conflicts:
-                            macs[mac].append(
-                                ConflictParticipant(
-                                    **base,
-                                    interface=nic.name,
-                                    interface_id=nic.external_id,
-                                    address=mac,
-                                    netbox_id=previous["netbox_id"],
-                                )
-                            )
-                    seen = set()
-                    for raw in nic.ip_addresses:
-                        try:
-                            address = ip_interface(raw)
-                        except ValueError:
-                            continue  # Same unusable-address policy as the executor.
-                        if any(
-                            (
-                                address.ip.is_loopback,
-                                address.ip.is_link_local,
-                                address.ip.is_multicast,
-                                address.ip.is_unspecified,
-                            )
-                        ):
-                            continue
-                        if str(address) in seen:
-                            continue  # Identical fact within this specific NIC only.
-                        seen.add(str(address))
-                        addresses[scope_key(str(address.ip), nic.ip_vrf_id)].append(
-                            ConflictParticipant(
-                                **base,
-                                interface=nic.name,
-                                interface_id=nic.external_id,
-                                address=str(address),
-                                vrf_id=nic.ip_vrf_id,
-                            )
-                        )
-                    for previous in nic.ip_scope_conflicts:
-                        value = scope_key(str(ip_interface(previous["address"]).ip), nic.ip_vrf_id)
-                        addresses[value].append(
-                            ConflictParticipant(
-                                **base,
-                                interface=nic.name,
-                                interface_id=nic.external_id,
-                                address=previous["address"],
-                                vrf_id=previous["vrf_id"],
-                                netbox_id=previous["netbox_id"],
-                            )
-                        )
+                    _collect_interface(nic, base, addresses, macs)
     result = []
     for (_, value), members in sorted(identities.items()):
         if len(members) > 1:

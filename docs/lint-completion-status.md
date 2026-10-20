@@ -59,6 +59,8 @@ functions: one function can produce several findings.
   No findings remain in either report module; distinct primary-IP output retained.
 - Host network planning: 2352 tests passed, 491 skipped; Pylint 9.23/10.
   Control-flow/doc findings resolved in netbox_planner.
+- Bounded evidence collection: 2368 tests passed, 491 skipped; Pylint 9.27/10.
+  Nested-block findings eliminated; public conflict evidence fields retained.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,

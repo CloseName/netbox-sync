@@ -434,3 +434,15 @@ registration/placement evidence, discovery snapshots, guarded creation and
 read-only reports. Executable AST unchanged for each file. Full suite before
 and after: 2352 passed, 491 skipped, one existing warning. Pylint 9.27/10, zero
 Error/Fatal. Black checks all 227 Python files; whitespace passes.
+
+## Stage 35: bounded diagnostic and conflict collection
+
+Extract one child progress-record projection and one interface conflict collector.
+Preserve exact-integer bounds, newest-64 retention, discarded partial lines,
+per-interface deduplication, scope evidence and distinct VM/LXC identity namespaces.
+Sixteen new cases and 11 existing inventory cases pass before and after extraction.
+Full suite: 2368 passed, 491 skipped, one existing warning. Pylint 9.27/10, zero
+Error/Fatal; no nested-block findings remain anywhere in the package. No control-flow
+findings remain in either changed module. ConflictParticipant retains its public
+serialized fields; reducing their count would change the API evidence contract.
+Black and whitespace pass.
