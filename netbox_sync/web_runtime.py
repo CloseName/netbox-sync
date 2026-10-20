@@ -10,6 +10,8 @@ SOCKET = "/run/netbox-sync-http/api.sock"
 
 
 class UnixHTTPConnection(http.client.HTTPConnection):
+    """HTTP connection confined to the fixed local API Unix socket."""
+
     def connect(self):
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.sock.settimeout(self.timeout)
@@ -17,6 +19,8 @@ class UnixHTTPConnection(http.client.HTTPConnection):
 
 
 def main():
+    """Initialize, inspect or serve the Unix-only HTTP runtime according to the requested action."""
+
     action = sys.argv[1]
     if action == "init":
         root = Path(SOCKET).parent

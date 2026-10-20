@@ -88,6 +88,8 @@ _HOST_UUID_SENTINELS = frozenset({"00000000-0000-0000-0000-000000000001", "fffff
 
 
 class HostHardwareIdentityConflict(ValueError):
+    """ESXi summary and hardware views disagree on a valid host UUID."""
+
     code = "HOST_IDENTITY_INCONSISTENT"
 
     def __init__(self):
@@ -426,6 +428,8 @@ def _convert_hosts(hosts, source_config):
 
 
 def discover_hosts(service_instance, source_config):
+    """Collect complete ESXi inventory in measured stages and append optional topology and events."""
+
     from .esxi_inventory import InventoryReads, stage
 
     with InventoryReads(service_instance) as reads:

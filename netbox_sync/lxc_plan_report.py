@@ -13,6 +13,8 @@ def print_desired_lxc(
     MANAGED_LXC_CUSTOM_FIELDS,
     json,
 ):
+    """Print desired container resources and managed metadata without applying changes."""
+
     print(f"      identity=" f"{container.source}:" f"{lxc_identity_source_id(container)}")
 
     print(f"      cluster={cluster.name}")

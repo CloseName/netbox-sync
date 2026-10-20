@@ -23,6 +23,8 @@ HISTORY_UNAVAILABLE = "RUN_HISTORY_UNAVAILABLE"
 
 
 class SourceReconciliationRequired(RuntimeError):
+    """The source requires explicit reconciliation before another synchronization run."""
+
     code = "SOURCE_RECONCILIATION_REQUIRED"
 
 

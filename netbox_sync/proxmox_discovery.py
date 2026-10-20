@@ -112,6 +112,8 @@ def _discover_host_interfaces(pve_api, node_name, rows=None):
 
 
 def discover_hosts(pve_api, source_config) -> list[DiscoveredHost]:
+    """Collect Proxmox nodes, resources and separate VM/LXC inventories with host topology."""
+
     cluster_status = pve_api.cluster.status.get()
 
     node_ips = {}

@@ -456,3 +456,10 @@ failure cases plus 58 existing write/report cases pass before and after extracti
 Full suite: 2378 passed, 491 skipped, one existing warning. Pylint 9.28/10, zero
 Error/Fatal; no findings remain in either network write module. Black and
 whitespace pass.
+## Stage 37: lifecycle and operation journal documentation
+
+Add 66 descriptions across 17 modules covering lifecycle transitions, durable
+journals, registration, worker supervision and inventory prerequisites. Executable
+AST unchanged in every file. Full suite: 2378 passed, 491 skipped, one existing
+warning. Pylint 9.31/10, zero Error/Fatal. Black checks all 227 Python files;
+whitespace passes. Remaining documentation: 12 classes and 90 functions.

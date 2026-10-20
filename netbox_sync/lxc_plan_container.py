@@ -16,6 +16,8 @@ def plan_lxc_container(
     MANAGED_LXC_CUSTOM_FIELDS,
     json,
 ):
+    """Report one container identity or adoption decision and update plan counters."""
+
     identity_matches = find_lxc_sync_identity_matches(
         existing_vms,
         container,

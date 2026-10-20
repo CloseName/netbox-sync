@@ -79,7 +79,9 @@ functions: one function can produce several findings.
   unchanged apart from descriptions; full suite 2348 passed; Pylint 9.23/10.
 - Worker/inventory contracts: 87 descriptions in 33 modules, executable AST unchanged;
   full suite 2352 passed, 491 skipped; Pylint 9.27/10.
-- Remaining documentation: 26 classes and 135 functions; compatibility metrics pending.
+- Lifecycle/journal contracts: 66 descriptions in 17 modules, executable AST unchanged;
+  full suite 2378 passed, 491 skipped; Pylint 9.31/10.
+- Remaining documentation: 12 classes and 90 functions; compatibility metrics pending.
 
 Detailed per-PR verification remains in [the cleanup log](lint-cleanup-20261020.md).
 This file must not be interpreted as a completed audit until all pending entries
