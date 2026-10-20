@@ -254,3 +254,13 @@ missing-doc findings remain in directory_auth. Full Pylint: 9.07/10, zero Error/
 Full-suite retry: 2228 passed, 485 skipped, one existing Starlette warning. The first
 run hit a Windows temporary-directory rename PermissionError in a backup test;
 that case and then the entire suite passed unchanged on retry. Black passes.
+
+## Stage 16: isolated setup operations
+
+Extract setup-token identification, fixed custom-field POST and exact-token revoke.
+Keep post_sent in the outer session boundary, including session-exit failures.
+Sixteen new cases cover token mismatches, lookup failures, POST response classes
+and pre-send/post-send errors; 42 focused tests pass on main and after extraction
+(14 platform skips). Full suite: 2244 passed, 485 skipped, one existing warning.
+Pylint: 9.07/10, zero Error/Fatal. No complexity or missing-doc findings remain in
+bootstrap_setup_probe. Black and whitespace checks pass.
