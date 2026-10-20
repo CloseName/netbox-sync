@@ -133,6 +133,132 @@ def supported_version(version):
     return match is not None and int(match[1]) >= 6
 
 
+def _validate_setup_probe(state, probe, interfaces):
+    """Require supported capabilities, VM MACs and unchanged SSH identity before provisioning."""
+    if probe.get("error") in {"UNSUPPORTED_VERSION", "UNSUPPORTED_CAPABILITIES", "GUI_COMMAND_FAILED"}:
+        raise SetupError(probe["error"])
+    if not supported_version(probe.get("version")):
+        raise SetupError("UNSUPPORTED_VERSION")
+    if not probe.get("ssh_enabled"):
+        raise SetupError("SSH_DISABLED")
+    expected = {r["mac"].lower() for r in interfaces if r["mac"]}
+    actual = set(re.findall(r"ether ([0-9a-f:]{17})", probe["ifconfig"].lower()))
+    if not expected or len(expected) != len(interfaces) or not expected.issubset(actual):
+        raise SetupError("VM_IDENTITY_MISMATCH")
+    if state.get("host_key") and state["host_key"] != probe["host_key"]:
+        raise SetupError("SSH_HOST_KEY_CHANGED")
+    if not 1 <= probe["ssh_port"] <= 65535 or not probe["host_key"].startswith("ssh-ed25519 "):
+        raise SetupError("SSH_CONFIGURATION_INVALID")
+
+
+def _provision_code(state, compat):
+    """Build the bundled collector installation command without GUI credentials."""
+    files = {
+        name: base64.b64encode((ASSETS / name).read_bytes()).decode()
+        for name in ("network-v1.php", "inventory-v1.php", "pf-runtime-v1.php")
+    }
+    payload = {
+        "username": state["username"],
+        "owner": state["owner"],
+        "public_key": state["public_key"],
+        "files": files,
+    }
+    code = (
+        compat
+        + '$ns_input=json_decode(base64_decode("'
+        + base64.b64encode(json.dumps(payload).encode()).decode()
+        + '"), true);\n'
+    )
+    code += (ASSETS / "provision-web.php").read_text(encoding="utf-8")
+    return code
+
+
+def _netbox_preflight(session, value):
+    """Read complete VM interfaces and require guard readiness before appliance work."""
+    vm = fetch(
+        session,
+        value["url"] + "/api/virtualization/virtual-machines/" + str(value["vm_id"]) + "/",
+        value["read_token"],
+    )
+    if "pfsense" not in vm["name"].casefold():
+        raise SetupError("VM_NOT_PFSENSE")
+    page = fetch(
+        session,
+        value["url"] + "/api/virtualization/interfaces/?virtual_machine_id=" + str(value["vm_id"]) + "&limit=512",
+        value["read_token"],
+    )
+    if page.get("next") or page["count"] != len(page["results"]):
+        raise SetupError("VM_INTERFACES_INVALID")
+    interfaces = [
+        {
+            "id": r["id"],
+            "vm_id": value["vm_id"],
+            "name": r["name"],
+            "mac": (r.get("primary_mac_address") or {}).get("mac_address"),
+        }
+        for r in page["results"]
+    ]
+    response = session.post(
+        value["url"] + "/api/plugins/netbox-sync-guard/pfsense/preflight/",
+        json={"vm_id": value["vm_id"]},
+        headers={
+            "Authorization": authorization(value["apply_token"]),
+            "X-Netbox-Sync-Guard-Instance": value["guard_instance"],
+        },
+        timeout=(5, 15),
+        allow_redirects=False,
+    )
+    if response.status_code == 404:
+        raise SetupError("GUARD_UPGRADE_REQUIRED")
+    if response.status_code != 200:
+        try:
+            code = response.json().get("code")
+        except (ValueError, AttributeError):
+            code = None
+        allowed = {
+            "PERMISSION_DENIED",
+            "TOKEN_WRITE_REQUIRED",
+            "GUARD_INSTANCE_CHANGED",
+            "PFSENSE_FIELDS_REQUIRED",
+            "PFSENSE_FIELDS_INCOMPATIBLE",
+        }
+        raise SetupError(code if code in allowed else "NETBOX_PREFLIGHT_FAILED")
+    if response.json().get("status") != "READY":
+        raise SetupError("NETBOX_PREFLIGHT_FAILED")
+    return interfaces
+
+
+def _import_snapshot(session, value, snapshot):
+    """Submit the verified snapshot and retain the original guarded import failures."""
+    response = session.post(
+        value["url"] + "/api/plugins/netbox-sync-guard/pfsense/import/",
+        json={"vm_id": value["vm_id"], "snapshot": snapshot},
+        headers={
+            "Authorization": authorization(value["apply_token"]),
+            "X-Netbox-Sync-Guard-Instance": value["guard_instance"],
+        },
+        timeout=(5, 15),
+        allow_redirects=False,
+    )
+    if response.status_code != 200:
+        try:
+            code = response.json().get("code")
+        except (ValueError, AttributeError):
+            code = None
+        allowed = {
+            "PERMISSION_DENIED",
+            "TOKEN_WRITE_REQUIRED",
+            "GUARD_INSTANCE_CHANGED",
+            "PFSENSE_FIELDS_REQUIRED",
+            "PFSENSE_FIELDS_INCOMPATIBLE",
+            "PFSENSE_SNAPSHOT_INVALID",
+        }
+        raise SetupError(code if code in allowed else "NETBOX_IMPORT_FAILED")
+    result = response.json()
+    if result.get("status") not in ("SAVED", "UNCHANGED"):
+        raise SetupError("NETBOX_IMPORT_FAILED")
+
+
 def setup(value, interfaces):
     """Verify VM MAC identity and pinned SSH identity before installing the restricted collector."""
 
@@ -161,37 +287,8 @@ def setup(value, interfaces):
         )
         compat = (ASSETS / "compat-web.php").read_text(encoding="utf-8") + "\n"
         probe = php(session, base, compat + PROBE)
-        if probe.get("error") in {"UNSUPPORTED_VERSION", "UNSUPPORTED_CAPABILITIES", "GUI_COMMAND_FAILED"}:
-            raise SetupError(probe["error"])
-        if not supported_version(probe.get("version")):
-            raise SetupError("UNSUPPORTED_VERSION")
-        if not probe.get("ssh_enabled"):
-            raise SetupError("SSH_DISABLED")
-        expected = {r["mac"].lower() for r in interfaces if r["mac"]}
-        actual = set(re.findall(r"ether ([0-9a-f:]{17})", probe["ifconfig"].lower()))
-        if not expected or len(expected) != len(interfaces) or not expected.issubset(actual):
-            raise SetupError("VM_IDENTITY_MISMATCH")
-        if state.get("host_key") and state["host_key"] != probe["host_key"]:
-            raise SetupError("SSH_HOST_KEY_CHANGED")
-        if not 1 <= probe["ssh_port"] <= 65535 or not probe["host_key"].startswith("ssh-ed25519 "):
-            raise SetupError("SSH_CONFIGURATION_INVALID")
-        files = {
-            name: base64.b64encode((ASSETS / name).read_bytes()).decode()
-            for name in ("network-v1.php", "inventory-v1.php", "pf-runtime-v1.php")
-        }
-        payload = {
-            "username": state["username"],
-            "owner": state["owner"],
-            "public_key": state["public_key"],
-            "files": files,
-        }
-        code = (
-            compat
-            + '$ns_input=json_decode(base64_decode("'
-            + base64.b64encode(json.dumps(payload).encode()).decode()
-            + '"), true);\n'
-        )
-        code += (ASSETS / "provision-web.php").read_text(encoding="utf-8")
+        _validate_setup_probe(state, probe, interfaces)
+        code = _provision_code(state, compat)
         result = php(session, base, code)
         if result.get("error") in {
             "USER_CONFLICT",
@@ -270,56 +367,7 @@ def run(value, progress=None):
     host, address = EgressPolicy(allowed_hosts=(parsed.hostname,)).resolve(parsed.hostname, parsed.port or 443)
     with pinned_dns(host, address, parsed.port or 443), requests.Session() as session:
         configure_session(session)
-        vm = fetch(
-            session,
-            value["url"] + "/api/virtualization/virtual-machines/" + str(value["vm_id"]) + "/",
-            value["read_token"],
-        )
-        if "pfsense" not in vm["name"].casefold():
-            raise SetupError("VM_NOT_PFSENSE")
-        page = fetch(
-            session,
-            value["url"] + "/api/virtualization/interfaces/?virtual_machine_id=" + str(value["vm_id"]) + "&limit=512",
-            value["read_token"],
-        )
-        if page.get("next") or page["count"] != len(page["results"]):
-            raise SetupError("VM_INTERFACES_INVALID")
-        interfaces = [
-            {
-                "id": r["id"],
-                "vm_id": value["vm_id"],
-                "name": r["name"],
-                "mac": (r.get("primary_mac_address") or {}).get("mac_address"),
-            }
-            for r in page["results"]
-        ]
-        response = session.post(
-            value["url"] + "/api/plugins/netbox-sync-guard/pfsense/preflight/",
-            json={"vm_id": value["vm_id"]},
-            headers={
-                "Authorization": authorization(value["apply_token"]),
-                "X-Netbox-Sync-Guard-Instance": value["guard_instance"],
-            },
-            timeout=(5, 15),
-            allow_redirects=False,
-        )
-        if response.status_code == 404:
-            raise SetupError("GUARD_UPGRADE_REQUIRED")
-        if response.status_code != 200:
-            try:
-                code = response.json().get("code")
-            except (ValueError, AttributeError):
-                code = None
-            allowed = {
-                "PERMISSION_DENIED",
-                "TOKEN_WRITE_REQUIRED",
-                "GUARD_INSTANCE_CHANGED",
-                "PFSENSE_FIELDS_REQUIRED",
-                "PFSENSE_FIELDS_INCOMPATIBLE",
-            }
-            raise SetupError(code if code in allowed else "NETBOX_PREFLIGHT_FAILED")
-        if response.json().get("status") != "READY":
-            raise SetupError("NETBOX_PREFLIGHT_FAILED")
+        interfaces = _netbox_preflight(session, value)
     state = dict(value["state"])
     if value["operation"] == "connect":
         state.update({k: v for k, v in setup(value, interfaces).items() if k in ("ssh_port", "host_key")})
@@ -338,33 +386,7 @@ def run(value, progress=None):
         raise SetupError("VM_IDENTITY_MISMATCH")
     with pinned_dns(host, address, parsed.port or 443), requests.Session() as session:
         configure_session(session)
-        response = session.post(
-            value["url"] + "/api/plugins/netbox-sync-guard/pfsense/import/",
-            json={"vm_id": value["vm_id"], "snapshot": snapshot},
-            headers={
-                "Authorization": authorization(value["apply_token"]),
-                "X-Netbox-Sync-Guard-Instance": value["guard_instance"],
-            },
-            timeout=(5, 15),
-            allow_redirects=False,
-        )
-        if response.status_code != 200:
-            try:
-                code = response.json().get("code")
-            except (ValueError, AttributeError):
-                code = None
-            allowed = {
-                "PERMISSION_DENIED",
-                "TOKEN_WRITE_REQUIRED",
-                "GUARD_INSTANCE_CHANGED",
-                "PFSENSE_FIELDS_REQUIRED",
-                "PFSENSE_FIELDS_INCOMPATIBLE",
-                "PFSENSE_SNAPSHOT_INVALID",
-            }
-            raise SetupError(code if code in allowed else "NETBOX_IMPORT_FAILED")
-        result = response.json()
-        if result.get("status") not in ("SAVED", "UNCHANGED"):
-            raise SetupError("NETBOX_IMPORT_FAILED")
+        _import_snapshot(session, value, snapshot)
     return {"collected_at": snapshot["collected_at"], "ssh_port": state["ssh_port"], "host_key": state["host_key"]}
 
 

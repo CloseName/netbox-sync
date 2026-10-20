@@ -637,3 +637,13 @@ deterministic old/new projections match. Full suite: 2483 passed, 491 skipped, o
 existing warning; Pylint 9.39/10, zero Error/Fatal. Control-flow findings resolved.
 Existing constructor arguments and public diagnostic fields remain unchanged for
 API compatibility. Black and whitespace pass.
+
+## Stage 56: pfSense connection workflow
+
+Separate setup probe validation, bundled provisioning command construction, NetBox
+preflight and guarded import response handling. Preserve session lifetimes, request
+bodies, setup-before-collection order, SSH progress and interval precedence. Four new
+cases and existing contracts pass before/after (21 total). Full suite: 2487 passed,
+491 skipped, one existing warning; Pylint 9.40/10, zero Error/Fatal. No complexity
+findings remain in pfsense_connect. Black and whitespace pass. All network operations
+in these tests are injected fakes; no appliance or production service was contacted.
