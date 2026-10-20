@@ -201,28 +201,8 @@ def build_vm_create_fields(
     }
 
 
-def _vm_changes(
-    existing_vm,
-    discovered_vm,
-    cluster,
-    desired_custom_fields,
-    changed_custom_fields,
-):
-    data = existing_vm.serialize()
-    changes = {}
-    from .selectel_authority import owned_fields
-
-    protected = owned_fields(data.get("custom_fields"))
-    for field, value in _description_fields(discovered_vm).items():
-        if (data.get(field) or "") != value:
-            changes[field] = value
-
-    if data.get("name") != (netbox_vm_name(discovered_vm)):
-        changes["name"] = netbox_vm_name(discovered_vm)
-
-    if _object_id(data.get("cluster")) != cluster.id:
-        changes["cluster"] = cluster.id
-
+def _resource_changes(data, discovered_vm, changes):
+    """Compare native VM resource values in the existing coercion order."""
     desired_status = _desired_status(discovered_vm)
 
     if _choice_value(data.get("status")) != desired_status:
@@ -247,6 +227,31 @@ def _vm_changes(
 
     if _choice_value(data.get("start_on_boot")) != desired_start:
         changes["start_on_boot"] = desired_start
+
+
+def _vm_changes(
+    existing_vm,
+    discovered_vm,
+    cluster,
+    desired_custom_fields,
+    changed_custom_fields,
+):
+    data = existing_vm.serialize()
+    changes = {}
+    from .selectel_authority import owned_fields
+
+    protected = owned_fields(data.get("custom_fields"))
+    for field, value in _description_fields(discovered_vm).items():
+        if (data.get(field) or "") != value:
+            changes[field] = value
+
+    if data.get("name") != (netbox_vm_name(discovered_vm)):
+        changes["name"] = netbox_vm_name(discovered_vm)
+
+    if _object_id(data.get("cluster")) != cluster.id:
+        changes["cluster"] = cluster.id
+
+    _resource_changes(data, discovered_vm, changes)
 
     if changed_custom_fields:
         # Full merged map preserves all

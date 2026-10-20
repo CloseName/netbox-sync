@@ -700,3 +700,13 @@ Full suite: 2564 passed, 491 skipped, one existing warning; Pylint 9.40/10,
 zero Error/Fatal. Explicit None returns were then checked with the same focused
 suite and focused lint (10/10). Black and whitespace pass. No control-flow
 complexity remains in selectel_runner; experimental status unchanged.
+
+## Stage 62: VM native field comparison and reporting
+
+Separate native resource comparison from name/metadata changes and managed-field
+rendering from the resource report. Four new tests pass on original code; 20 focused
+tests pass after extraction. Preserve ordered updates, numeric coercion, provider
+field authority, Unicode rendering and partial output before metadata failure.
+Full suite: 2568 passed, 491 skipped, one existing warning; Pylint 9.40/10,
+zero Error/Fatal. Local-variable findings resolved in both changed functions.
+Black and whitespace pass; VM/LXC policies and production remain unchanged.

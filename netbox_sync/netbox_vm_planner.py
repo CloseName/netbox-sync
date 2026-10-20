@@ -107,6 +107,44 @@ def _find_vm_match(
     )
 
 
+def _print_managed_fields(vm, existing):
+    """Render managed metadata only after the desired resource report succeeds."""
+    existing_custom_fields = (
+        dict(
+            getattr(
+                existing,
+                "custom_fields",
+                None,
+            )
+            or {}
+        )
+        if existing is not None
+        else {}
+    )
+
+    desired_custom_fields = build_vm_custom_fields(
+        vm,
+        existing_custom_fields,
+    )
+
+    print("      managed_custom_fields:")
+
+    for field_name in MANAGED_VM_CUSTOM_FIELDS:
+        current = existing_custom_fields.get(field_name)
+
+        desired = desired_custom_fields.get(field_name)
+
+        action = "KEEP" if current == desired else "SET"
+
+        rendered = json.dumps(
+            desired,
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
+        print(f"        {action} " f"{field_name}=" f"{rendered}")
+
+
 def _print_desired_vm(
     vm,
     cluster,
@@ -151,40 +189,7 @@ def _print_desired_vm(
                 f"{disk.size_bytes // 1024**2}"
             )
 
-    existing_custom_fields = (
-        dict(
-            getattr(
-                existing,
-                "custom_fields",
-                None,
-            )
-            or {}
-        )
-        if existing is not None
-        else {}
-    )
-
-    desired_custom_fields = build_vm_custom_fields(
-        vm,
-        existing_custom_fields,
-    )
-
-    print("      managed_custom_fields:")
-
-    for field_name in MANAGED_VM_CUSTOM_FIELDS:
-        current = existing_custom_fields.get(field_name)
-
-        desired = desired_custom_fields.get(field_name)
-
-        action = "KEEP" if current == desired else "SET"
-
-        rendered = json.dumps(
-            desired,
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-
-        print(f"        {action} " f"{field_name}=" f"{rendered}")
+    _print_managed_fields(vm, existing)
 
 
 def plan_virtual_machines(
