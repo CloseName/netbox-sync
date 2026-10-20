@@ -342,3 +342,13 @@ Full suite: 2289 passed, 491 skipped, one existing warning. Pylint 9.15/10, zero
 Error/Fatal; no complexity or missing-doc findings remain in bootstrap_setup.
 Black and whitespace pass. The six added skips are Linux fixture variants, not
 accepted deployment evidence.
+
+## Stage 25: bootstrap command dispatch
+
+Separate provider, catalog and state/preparation capabilities. Preserve exact
+envelopes, lock scope, catalog read slots and registration intent ownership.
+All 29 new cases pass on main and after extraction. Full suite: 2318 passed,
+491 skipped, one existing warning. Pylint 9.15/10, zero Error/Fatal; no control-flow
+complexity or missing-doc findings remain in bootstrap_worker. Keep its single
+public callable entry point; a second public method would unnecessarily widen its
+interface merely to satisfy a class-size metric. Black and whitespace pass.
