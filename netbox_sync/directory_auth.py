@@ -1,6 +1,7 @@
 """LDAPS settings and sessions inside the serialized auth transaction."""
 
 import copy
+from typing import NamedTuple
 import json
 import secrets
 import uuid
@@ -10,8 +11,20 @@ from .roles import READ, permissions, matrix
 from .directory_users import DirectoryUsers
 
 
+class _DirectoryUpdate(NamedTuple):
+    """Validated settings, prior state and secret proof for one directory update."""
+
+    config: dict
+    previous: dict
+    password: str
+    proof: str
+
+
 class DirectoryAuth(DirectoryUsers):
+    """Directory authentication operations executed under the owning auth transaction lock."""
+
     def settings(self):
+        """Return a detached settings projection without exposing the bind secret."""
         saved = self.state.get("ldap", {})
         return {
             "revision": saved.get("revision", 0),
@@ -23,6 +36,7 @@ class DirectoryAuth(DirectoryUsers):
         }
 
     def ldap_session(self, token, permission):
+        """Revalidate directory identity on writes or cache expiry and enforce current local roles."""
         from .auth_policy import AuthError, digest
 
         key = digest(token) if isinstance(token, str) else ""
@@ -75,6 +89,7 @@ class DirectoryAuth(DirectoryUsers):
         return principal
 
     def ldap_login(self, payload):
+        """Charge failed directory attempts and issue a bounded session for an active identity."""
         from .auth_policy import AuthError, bounded, digest
 
         attempts = [v for v in self.state.get("ldap_attempts", []) if v > self.now - 300]
@@ -136,6 +151,7 @@ class DirectoryAuth(DirectoryUsers):
         return {"session": token, "max_age": 28800}
 
     def recent(self, token):
+        """Require a session confirmed within the fifteen-minute administrative window."""
         from .auth_policy import AuthError, digest
 
         value = self.state["sessions"].get(digest(token)) or self.state.get("ldap_sessions", {}).get(digest(token))
@@ -145,6 +161,7 @@ class DirectoryAuth(DirectoryUsers):
             raise AuthError("AUTH_REAUTH_REQUIRED")
 
     def directory_action(self, action, payload, principal):
+        """Enforce administrator and revision checks before testing or updating directory settings."""
         from .auth_policy import AuthError, digest
 
         token = payload.get("session")
@@ -180,6 +197,22 @@ class DirectoryAuth(DirectoryUsers):
             self.state.pop("ldap_test", None)
             self.event("ldap.config.updated", principal["id"], revision=self.state["ldap"]["revision"], enabled=False)
             return self.settings()
+        password = self._bind_password(payload, config, previous)
+        proof = digest(json.dumps(config, sort_keys=True) + digest(password))
+        if action == "ldap.test":
+            try:
+                self.directory.call(config, password, "test")
+            except DirectoryError as exc:
+                raise AuthError(exc.code) from None
+            self.state["ldap_test"] = {"digest": proof, "actor": principal["id"], "expires": self.now + 300}
+            self.event("ldap.test", principal["id"])
+            return {"ok": True, "expires_in": 300, "direct_groups_only": True}
+        return self._save_directory(action, payload, principal, _DirectoryUpdate(config, previous, password, proof))
+
+    def _bind_password(self, payload, config, previous):
+        """Read a stored bind secret only when endpoint and trust settings are unchanged."""
+        from .auth_policy import AuthError
+
         password = payload.get("bind_password", "")
         if not isinstance(password, str) or len(password) > 4096 or "\x00" in password:
             raise AuthError("LDAP_INVALID")
@@ -193,15 +226,13 @@ class DirectoryAuth(DirectoryUsers):
                 password = self.auth_secrets.read(previous["secret_key"])
             except Exception:
                 raise AuthError("AUTH_UNAVAILABLE") from None
-        proof = digest(json.dumps(config, sort_keys=True) + digest(password))
-        if action == "ldap.test":
-            try:
-                self.directory.call(config, password, "test")
-            except DirectoryError as exc:
-                raise AuthError(exc.code) from None
-            self.state["ldap_test"] = {"digest": proof, "actor": principal["id"], "expires": self.now + 300}
-            self.event("ldap.test", principal["id"])
-            return {"ok": True, "expires_in": 300, "direct_groups_only": True}
+        return password
+
+    def _save_directory(self, action, payload, principal, prepared):
+        """Persist tested settings and revoke sessions, resetting users on identity changes."""
+        from .auth_policy import AuthError
+
+        config, previous, password, proof = prepared
         if action != "ldap.save":
             raise AuthError("AUTH_DENIED")
         checked = self.state.get("ldap_test", {})

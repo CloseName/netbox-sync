@@ -361,3 +361,42 @@ def test_http_network_scope_update_preserves_admin_boundary(monkeypatch, role):
             json=dict(revision='b'*64, discovery_id=operation, references={},host_types={},network_scope_rules=[selected]))
     assert response.status_code==(409 if role=='admin' else 403)
     assert seen==(['read','catalog','write'] if role=='admin' else [])
+
+@pytest.mark.parametrize('revision', [True, 0, 2, None])
+def test_directory_revision_rejected_before_configuration_or_secret(revision):
+    service, local, _ = configured()
+    before = copy.deepcopy(service.state['ldap'])
+    calls = list(service.directory.calls)
+    with pytest.raises(AuthError, match='LDAP_CONFLICT'):
+        service.call(dict(action='ldap.save', session=local,
+                          expected_revision=revision, config=None, bind_password=None))
+    assert service.state['ldap'] == before
+    assert service.directory.calls == calls
+
+
+def test_directory_disable_preserves_settings_and_ignores_bad_bind_password():
+    service, local, _ = configured()
+    previous = copy.deepcopy(service.state['ldap'])
+    config = copy.deepcopy(previous['config'])
+    config.update(enabled=False, host='replacement.example.test')
+    service.state['ldap_test'] = {'digest': 'obsolete'}
+    calls = list(service.directory.calls)
+    result = service.call(dict(action='ldap.save', session=local,
+                               expected_revision=1, config=config, bind_password=None))
+    assert result['config'] == {**previous['config'], 'enabled': False}
+    assert service.state['ldap']['secret_key'] == previous['secret_key']
+    assert service.state['ldap']['directory_id'] == previous['directory_id']
+    assert service.state['ldap_sessions'] == {}
+    assert 'ldap_test' not in service.state
+    assert service.directory.calls == calls
+
+
+def test_directory_revoke_precedes_disabled_local_principal_gate():
+    service, _, token = configured('admin')
+    service.state['principal']['disabled'] = True
+    service.directory.calls.clear()
+    result = service.call(dict(action='ldap.revoke', session=token))
+    assert result == {'revoked': True}
+    assert service.state['ldap_sessions'] == {}
+    assert service.directory.calls == ['refresh']
+    assert service.audit[-1]['action'] == 'ldap.sessions.revoked'
