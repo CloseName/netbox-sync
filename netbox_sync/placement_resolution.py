@@ -1,9 +1,29 @@
-"""Exact, bounded read-only placement resolution; never adopts inventory by name."""
+"""Exact, bounded placement resolution; catalog preparation never adopts inventory by name."""
 
+from typing import NamedTuple
 from .bootstrap_probe import ProbeError
 
 
-def resolve(payload, listing, project, retrieve=None, ensure=None):
+class _PlacementRequest(NamedTuple):
+    """Validated source metadata and optional host-type selections."""
+
+    provider: str
+    hosts: list
+    name: str
+    selections: dict
+
+
+class _Catalog(NamedTuple):
+    """Bounded lookup, projection, refresh and optional catalog preparation capabilities."""
+
+    choices: object
+    project: object
+    retrieve: object
+    ensure: object
+
+
+def _validate_request(payload):
+    """Reject invalid source metadata and foreign host selections before catalog access."""
     provider = payload.get("provider")
     hosts = payload.get("hosts")
     name = payload.get("name", "")
@@ -19,8 +39,13 @@ def resolve(payload, listing, project, retrieve=None, ensure=None):
     host_ids = {h.get("id") for h in hosts if isinstance(h, dict) and isinstance(h.get("id"), str)}
     if not isinstance(selections, dict) or len(selections) > 16 or set(selections) - host_ids:
         raise ProbeError("SELECTION_REQUIRED")
+    return _PlacementRequest(provider, hosts, name, selections)
+
+
+def resolve(payload, listing, project, retrieve=None, ensure=None):
+    """Resolve site, standard references, host types and cluster in their established order."""
+    request = _validate_request(payload)
     refs = {}
-    types = {}
     issues = []
 
     def choices(kind, search):
@@ -49,6 +74,20 @@ def resolve(payload, listing, project, retrieve=None, ensure=None):
         else:
             issues.append({"kind": kind, "code": "MISSING" if not matches else "AMBIGUOUS"})
 
+    sites = _select_site(payload, refs, issues, choices)
+    platform = "VMware ESXi" if request.provider == "esxi" else "Proxmox VE"
+    exact("platform", platform)
+    exact("cluster_type", platform)
+    exact("device_role", "Hypervisor")
+    types = _resolve_host_types(
+        request.hosts, request.selections, refs, issues, _Catalog(choices, project, retrieve, ensure)
+    )
+    create = _resolve_cluster(request.name, refs, issues, choices)
+    return {"references": refs, "host_types": types, "sites": sites, "create_cluster": create, "issues": issues}
+
+
+def _select_site(payload, refs, issues, choices):
+    """Select an explicit, configured-default or unique site without creating one."""
     sites = choices("site", "")
     site_id = payload.get("site_id")
     default = payload.get("default_site_slug", "")
@@ -61,10 +100,12 @@ def resolve(payload, listing, project, retrieve=None, ensure=None):
         refs["site"] = selected[0]
     else:
         issues.append({"kind": "site", "code": "SELECTION_REQUIRED"})
-    platform = "VMware ESXi" if provider == "esxi" else "Proxmox VE"
-    exact("platform", platform)
-    exact("cluster_type", platform)
-    exact("device_role", "Hypervisor")
+    return sites
+
+
+def _resolve_host_types(hosts, selections, refs, issues, catalog):
+    """Refresh explicit host choices or match hardware, preparing catalog entries only with a site."""
+    types = {}
     for host in hosts:
         if not isinstance(host, dict) or not isinstance(host.get("id"), str):
             raise ProbeError("RESPONSE_INVALID")
@@ -75,10 +116,10 @@ def resolve(payload, listing, project, retrieve=None, ensure=None):
                 or type(selected.get("id")) is not int
                 or selected["id"] <= 0
                 or not isinstance(selected.get("fingerprint"), str)
-                or retrieve is None
+                or catalog.retrieve is None
             ):
                 raise ProbeError("SELECTION_REQUIRED")
-            fresh = project("device_type", retrieve("device_type", selected["id"]))
+            fresh = catalog.project("device_type", catalog.retrieve("device_type", selected["id"]))
             if fresh["fingerprint"] != selected["fingerprint"]:
                 raise ProbeError("CATALOG_CHANGED")
             types[host["id"]] = fresh
@@ -89,12 +130,12 @@ def resolve(payload, listing, project, retrieve=None, ensure=None):
         if model and manufacturer:
             matches = [
                 row
-                for row in choices("device_type", model)
+                for row in catalog.choices("device_type", model)
                 if row["name"].casefold() == model.casefold()
                 and (row.get("manufacturer") or {}).get("name", "").casefold() == manufacturer.casefold()
             ]
-        if not matches and ensure and "site" in refs and not any(i["kind"] == "device_type" for i in issues):
-            created = ensure(
+        if not matches and catalog.ensure and "site" in refs and not any(i["kind"] == "device_type" for i in issues):
+            created = catalog.ensure(
                 "device_type",
                 {"model": model or "Оборудование не определено", "manufacturer_name": manufacturer or "Unknown"},
             )
@@ -106,6 +147,11 @@ def resolve(payload, listing, project, retrieve=None, ensure=None):
             issues.append(
                 {"kind": "device_type", "host_id": host["id"], "code": "MISSING" if not matches else "AMBIGUOUS"}
             )
+    return types
+
+
+def _resolve_cluster(name, refs, issues, choices):
+    """Match exact cluster name, site and type, or report whether creation is possible."""
     create = False
     if name.strip() and "site" in refs and "cluster_type" in refs:
         clusters = [row for row in choices("cluster", name) if row["name"] == name]
@@ -124,4 +170,4 @@ def resolve(payload, listing, project, retrieve=None, ensure=None):
             create = True
     elif not name.strip():
         issues.append({"kind": "cluster", "code": "NAME_REQUIRED"})
-    return {"references": refs, "host_types": types, "sites": sites, "create_cluster": create, "issues": issues}
+    return create
