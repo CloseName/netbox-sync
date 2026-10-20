@@ -26,8 +26,9 @@ def public_authority(url):
             or len(host) > 253
             or "." not in host
             or not host.isascii()
-            or not all(re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in host.split("."))
         ):
+            raise ValueError()
+        if not all(re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in host.split(".")):
             raise ValueError()
         try:
             ipaddress.ip_address(host)
@@ -45,15 +46,9 @@ def protected_file(path, mode, gid=0, maximum=1024 * 1024):
         fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
         try:
             info = os.fstat(fd)
-            if (
-                not stat.S_ISREG(info.st_mode)
-                or info.st_nlink != 1
-                or info.st_size > maximum
-                or (
-                    os.name == "posix"
-                    and (info.st_uid != 0 or info.st_gid != gid or stat.S_IMODE(info.st_mode) != mode)
-                )
-            ):
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > maximum:
+                raise ValueError()
+            if os.name == "posix" and (info.st_uid != 0 or info.st_gid != gid or stat.S_IMODE(info.st_mode) != mode):
                 raise ValueError()
             return os.read(fd, maximum + 1)
         finally:

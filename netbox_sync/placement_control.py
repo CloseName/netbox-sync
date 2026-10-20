@@ -99,6 +99,53 @@ def read(store, source):
         }
 
 
+def _retained_mapping(current, mapping, hosts):
+    """Validate reviewed placement and retain identities of absent hosts."""
+    if (
+        not isinstance(mapping, dict)
+        or set(mapping) - {"ip_conflict_policy", "network_scope_rules"}
+        != {"version", "references", "host_types", "hosts"}
+        or mapping["version"] != 1
+        or mapping["hosts"] != hosts
+    ):
+        raise LifecycleError("REQUEST_INVALID")
+    if set(mapping["references"]) != KINDS or set(mapping["host_types"]) != {h["id"] for h in hosts}:
+        raise LifecycleError("REQUEST_INVALID")
+    refs = {kind: choice(kind, value) for kind, value in mapping["references"].items()}
+    types = {key: choice("device_type", value) for key, value in mapping["host_types"].items()}
+    cluster = refs["cluster"]
+    if (
+        cluster["scope_type"] != "dcim.site"
+        or cluster["scope_id"] != refs["site"]["id"]
+        or (cluster["type"] or {}).get("id") != refs["cluster_type"]["id"]
+    ):
+        raise LifecycleError("REQUEST_INVALID")
+    previous = (current["settings"] or {}).get("onboarding_mapping", {})
+    policy = mapping.get("ip_conflict_policy", previous.get("ip_conflict_policy", "strict"))
+    if policy not in ("strict", "observe"):
+        raise LifecycleError("REQUEST_INVALID")
+    # Retain mappings of absent hosts. Disappearance never removes identities.
+    old_hosts = [h for h in previous.get("hosts", []) if h["id"] not in types]
+    from .network_scopes import rules, NetworkScopeError
+
+    try:
+        scopes = rules(mapping.get("network_scope_rules", previous.get("network_scope_rules", [])))
+    except NetworkScopeError:
+        raise LifecycleError("REQUEST_INVALID") from None
+    if any(r["host_id"] not in {h["id"] for h in old_hosts + hosts} for r in scopes):
+        raise LifecycleError("REQUEST_INVALID")
+    retained = {
+        "version": 1,
+        "ip_conflict_policy": policy,
+        "references": refs,
+        "host_types": {**previous.get("host_types", {}), **types},
+        "hosts": old_hosts + hosts,
+    }
+    if scopes or "network_scope_rules" in previous or "network_scope_rules" in mapping:
+        retained["network_scope_rules"] = scopes
+    return refs, cluster, types, retained
+
+
 def save(store, source, revision, discovery_id, mapping):
     """Fence placement changes against active work and invalidate ready plans after the update."""
 
@@ -127,48 +174,7 @@ def save(store, source, revision, discovery_id, mapping):
             identifier, hosts = evidence(store, connection, source)
             if identifier != discovery_id:
                 raise LifecycleError("SOURCE_LIFECYCLE_CONFLICT")
-            if (
-                not isinstance(mapping, dict)
-                or set(mapping) - {"ip_conflict_policy", "network_scope_rules"}
-                != {"version", "references", "host_types", "hosts"}
-                or mapping["version"] != 1
-                or mapping["hosts"] != hosts
-                or set(mapping["references"]) != KINDS
-                or set(mapping["host_types"]) != {h["id"] for h in hosts}
-            ):
-                raise LifecycleError("REQUEST_INVALID")
-            refs = {kind: choice(kind, value) for kind, value in mapping["references"].items()}
-            types = {key: choice("device_type", value) for key, value in mapping["host_types"].items()}
-            cluster = refs["cluster"]
-            if (
-                cluster["scope_type"] != "dcim.site"
-                or cluster["scope_id"] != refs["site"]["id"]
-                or (cluster["type"] or {}).get("id") != refs["cluster_type"]["id"]
-            ):
-                raise LifecycleError("REQUEST_INVALID")
-            previous = (current["settings"] or {}).get("onboarding_mapping", {})
-            policy = mapping.get("ip_conflict_policy", previous.get("ip_conflict_policy", "strict"))
-            if policy not in ("strict", "observe"):
-                raise LifecycleError("REQUEST_INVALID")
-            # Retain mappings of absent hosts. Disappearance never removes identities.
-            old_hosts = [h for h in previous.get("hosts", []) if h["id"] not in types]
-            from .network_scopes import rules, NetworkScopeError
-
-            try:
-                scopes = rules(mapping.get("network_scope_rules", previous.get("network_scope_rules", [])))
-            except NetworkScopeError:
-                raise LifecycleError("REQUEST_INVALID") from None
-            if any(r["host_id"] not in {h["id"] for h in old_hosts + hosts} for r in scopes):
-                raise LifecycleError("REQUEST_INVALID")
-            retained = {
-                "version": 1,
-                "ip_conflict_policy": policy,
-                "references": refs,
-                "host_types": {**previous.get("host_types", {}), **types},
-                "hosts": old_hosts + hosts,
-            }
-            if scopes or "network_scope_rules" in previous or "network_scope_rules" in mapping:
-                retained["network_scope_rules"] = scopes
+            refs, cluster, types, retained = _retained_mapping(current, mapping, hosts)
             connection.execute(
                 sql.SQL(
                     (

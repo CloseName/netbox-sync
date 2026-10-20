@@ -121,7 +121,16 @@ functions: one function can produce several findings.
   full suite 2380 passed, 491 skipped; Pylint 9.34/10.
 - Provider contracts: 49 descriptions, executable AST unchanged; full suite 2385 passed,
   491 skipped; Pylint 9.36/10. No missing class/function documentation remains.
-- Complexity and compatibility metrics remain pending (see Stage 41 counts).
+- Later stages cover diagnostics, registration, provider control, disappearance
+  reports, native VM field comparison and control workflows (Stages 42-63).
+- Latest complexity audit: 14 branch, 14 statement, 45 local-variable and 10
+  return-count findings remain; nested-block findings and missing class/function
+  documentation are zero. This is 83 of the original 205 primary control-flow
+  findings, not a percentage of total project completion.
+- Boolean predicates and signature/schema compatibility metrics also remain under
+  review. No blanket suppressions or threshold reductions have been introduced.
+- Related changes are now grouped into larger, reviewable PRs, each with behavior
+  tests and a complete local test/lint gate before merge.
 
 Detailed per-PR verification remains in [the cleanup log](lint-cleanup-20261020.md).
 This file must not be interpreted as a completed audit until all pending entries

@@ -49,6 +49,27 @@ def scheduler_summary_lines(tick):
     )
 
 
+def _evaluate_sources(configs, latest, running, now, stale_seconds):
+    """Evaluate sorted sources independently and collect eligible entries in order."""
+    decisions = []
+    eligible = []
+    for source in configs:
+        try:
+            decision = evaluate_schedule(
+                source,
+                latest.get(source.source_instance),
+                running.get(source.source_instance),
+                now,
+                stale_seconds,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            decision = ScheduleDecision.failed(source.source_instance)
+        decisions.append(decision)
+        if decision.eligible:
+            eligible.append(source)
+    return decisions, eligible
+
+
 def run_scheduler_tick(sources, execute_source, run_repository, stale_seconds=7200, clock=None, execute_due=True):
     """Evaluate every source once and execute eligible sources sequentially once."""
     now = (clock or (lambda: datetime.now(timezone.utc)))()
@@ -72,21 +93,8 @@ def run_scheduler_tick(sources, execute_source, run_repository, stale_seconds=72
         for entry in entries
         if isinstance(entry, SchedulerSourceInput) and entry.config is None
     ]
-    eligible = []
-    for source in configs:
-        try:
-            decision = evaluate_schedule(
-                source,
-                latest.get(source.source_instance),
-                running.get(source.source_instance),
-                now,
-                stale_seconds,
-            )
-        except Exception:  # pylint: disable=broad-exception-caught
-            decision = ScheduleDecision.failed(source.source_instance)
-        decisions.append(decision)
-        if decision.eligible:
-            eligible.append(source)
+    evaluated, eligible = _evaluate_sources(configs, latest, running, now, stale_seconds)
+    decisions.extend(evaluated)
     execution = run_sources(
         eligible if execute_due else (),
         execute_source,
