@@ -304,3 +304,13 @@ cases pass before extraction; all 50 focused tests pass after. Full suite: 2255
 passed, 485 skipped, one existing warning. Pylint: 9.12/10, zero Error/Fatal;
 no complexity or missing-doc findings remain in placement_resolution. Black and
 whitespace pass. Exact integer checks still reject boolean IDs/counts.
+
+## Stage 21: bounded diagnostic projections and classification
+
+Separate phase, HTTP and frame filtering, preserving exact integer checks and
+truncation before filtering. Extract connection classification while keeping
+explicit codes, HTTP statuses and named provider errors in their original order.
+Twenty-two new cases pass on main; focused suite: 55 passed. Full final suite:
+2277 passed, 485 skipped, one existing warning. Pylint 9.12/10, zero Error/Fatal;
+no complexity or missing-doc findings remain in worker_failure. Black and whitespace
+pass. Unknown stage values are not consulted before a known provider fault matches.

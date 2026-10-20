@@ -41,6 +41,8 @@ functions: one function can produce several findings.
   full Pylint 9.09/10, changed module 10/10.
 - Placement resolution stages: 2255 tests passed, 485 skipped; Pylint 9.12/10.
   No complexity or missing-doc findings remain in placement_resolution.
+- Worker diagnostics: 2277 tests passed, 485 skipped; Pylint 9.12/10.
+  No complexity or missing-doc findings remain in worker_failure.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,

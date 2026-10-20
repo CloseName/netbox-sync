@@ -73,3 +73,52 @@ def test_failed_stage_is_not_reported_as_successful_completion(monkeypatch):
         with failure_stage('provider'):raise ValueError('private')
     assert values[0][0]==('provider',)
     assert values[-1][1]=={'failed':True}
+
+@pytest.mark.parametrize('duration,accepted', [(None, True), (0, True), (86400000, True),
+    (True, False), (-1, False), (86400001, False), ('10', False)])
+def test_phase_duration_bounds_and_exact_integer_contract(duration, accepted):
+    row = {'phase': 'esxi_properties', 'state': 'finished', 'duration_ms': duration,
+           'requests': True, 'objects': 10000000, 'private': 'hidden'}
+    result = safe_diagnostic({'phases': [row]}, 'PLANNER_FAILED')
+    assert result['phases'] == ([{'phase': 'esxi_properties', 'state': 'finished',
+        'duration_ms': duration, 'objects': 10000000}] if accepted else [])
+
+
+def test_diagnostic_limits_apply_before_filtering():
+    frame = {'module': 'safe', 'function': 'safe', 'line': 1}
+    phase = {'phase': 'esxi_properties', 'state': 'finished'}
+    result = safe_diagnostic({'frames': [None] * 8 + [frame],
+                             'phases': [phase] + [None] * 64}, 'PLANNER_FAILED')
+    assert result['frames'] == [] and result['phases'] == []
+
+
+@pytest.mark.parametrize('status', [True, 99, 600, '200', None])
+def test_http_metadata_requires_bounded_exact_integer_status(status):
+    result = safe_diagnostic({'http': {'status': status, 'method': 'GET'}}, 'PLANNER_FAILED')
+    assert 'http' not in result
+
+
+def test_http_metadata_drops_unknown_fields_without_dropping_valid_status():
+    result = safe_diagnostic({'http': {'status': 200, 'method': 'PRIVATE',
+        'endpoint': '/private', 'headers': 'secret'}}, 'PLANNER_FAILED')
+    assert result['http'] == {'status': 200}
+
+
+@pytest.mark.parametrize('stage,code', [('planning', 'PLANNER_FAILED'),
+    ('provider', 'PROVIDER_UNAVAILABLE'), ('netbox', 'NETBOX_UNAVAILABLE'),
+    ('unknown', 'DISCOVERY_FAILED')])
+def test_unknown_exception_uses_stage_fallback_without_message(stage, code):
+    assert classify(ValueError('private'), stage) == code
+
+
+@pytest.mark.parametrize('name,code', [('InvalidLogin', 'SOURCE_AUTH_FAILED'),
+    ('vim.fault.InvalidLogin', 'SOURCE_AUTH_FAILED'), ('NoPermission', 'SOURCE_PERMISSION_DENIED'),
+    ('vim.fault.NoPermission', 'SOURCE_PERMISSION_DENIED')])
+def test_provider_named_faults_preserve_http_precedence(name, code):
+    error = type(name, (Exception,), {})('private')
+    assert classify(error, 'netbox') == code
+    assert classify(error, []) == code
+    error.status_code = 401
+    assert classify(error, 'netbox') == 'NETBOX_AUTH_FAILED'
+    error.code = 'PLANNER_FAILED'
+    assert classify(error, 'netbox') == 'PLANNER_FAILED'
