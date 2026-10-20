@@ -22,6 +22,8 @@ KINDS = frozenset({"manufacturer", "device_type", "platform", "device_role", "cl
 
 
 def read_journal(path):
+    """Read a bounded root-owned private regular journal without following a final symlink."""
+
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     try:
         info = os.fstat(descriptor)
@@ -201,6 +203,8 @@ def query(value, session_factory=requests.Session):
 
 
 def run_child(value):
+    """Run an isolated catalog request and retain uncertainty on any invalid child result."""
+
     from .discovery_worker import _drop_privileges, _safe_environment
 
     try:
@@ -239,11 +243,15 @@ class CatalogCreation:
     """
 
     def __init__(self, store, child=run_child):
+        """Bind bootstrap storage and the isolated catalog transport."""
+
         self.store, self.child = store, child
 
     def _reconcile_guard(self, recorded, journal, url, *, continue_missing=False):
         # The durable protected intent, not a caller-supplied source or token,
         # selects the original receipt. Missing receipts are not proof of failure.
+        """Resolve the original protected intent through its pinned guard receipt."""
+
         guard = recorded["guard"]
         if str(os.environ.get("NETBOX_SYNC_GUARD_INSTANCE", "")) != guard["instance"]:
             raise ProbeError("CATALOG_CHANGED")
@@ -263,6 +271,8 @@ class CatalogCreation:
         return self.public(recorded)
 
     def execute(self, request, *, registration=False, source_instance=None):
+        """Persist explicit catalog intent before writes and reconcile replay without inferring ownership."""
+
         action = request.get("action")
         allowed = (
             {"action", "operation_id"}
@@ -393,10 +403,14 @@ class CatalogCreation:
 
     @staticmethod
     def public(value):
+        """Project only operation identity, status, item and safe error from the journal."""
+
         return {key: value.get(key) for key in ("operation_id", "status", "item", "error")}
 
 
 def main():
+    """Read a bounded catalog child request and report uncertainty on an unclassified failure."""
+
     try:
         raw = sys.stdin.buffer.read(16385)
         if len(raw) > 16384:

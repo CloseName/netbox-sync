@@ -11,12 +11,18 @@ from .retirement_codes import DEFINITE_REFUSALS
 
 
 class RetirementCoordinator:
+    """Coordinate durable reviewed retirement and guarded local finalization."""
+
     def __init__(self, store, remote, cleanup):
+        """Bind lifecycle storage, remote guard transport and credential cleanup."""
+
         self.store, self.remote, self.cleanup = store, remote, cleanup
         self.journal = RetirementJournal(store)
 
     @staticmethod
     def public(record):
+        """Project journal state and distinguish legacy retention from full deletion."""
+
         remote = record["plan"]["remote"]
         return {
             "operation_id": str(record["operation_id"]),
@@ -32,6 +38,8 @@ class RetirementCoordinator:
         }
 
     def retained_context(self, source):
+        """Expose removed-source review context without granting execution permission."""
+
         current = self.store.read(source)
         if not current.get("removed_at"):
             raise LifecycleError("SOURCE_RECOVERY_NOT_REMOVED")
@@ -98,6 +106,8 @@ class RetirementCoordinator:
     def _completed(self, source, operation):
         # No local tombstone is retained after purge. Exact external generation
         # proof, never a missing row alone, resolves a lost final response.
+        """Require an exact external closure receipt to recognize an already-purged source."""
+
         with self.store.connect() as connection:
             if connection.execute(
                 sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s").format(self.store.table("sources")), (source,)
@@ -128,6 +138,8 @@ class RetirementCoordinator:
         }
 
     def status(self, source, operation, actor):
+        """Read an actor-bound journal or verify external completion after local purge."""
+
         with self.store.connect() as connection:
             exists = connection.execute(
                 sql.SQL("SELECT 1 FROM {} WHERE operation_id=%s").format(self.store.table("source_retirements")),
@@ -138,6 +150,8 @@ class RetirementCoordinator:
         return self._completed(source, operation)
 
     def review(self, source, operation, actor, revision, *, archive=False, queued=False):
+        """Check competing operations and persist fresh remote retirement review evidence."""
+
         operation = UUID(str(operation))
         with self.store.lock(self.store.lock_path):
             with (
@@ -187,6 +201,8 @@ class RetirementCoordinator:
             return self.public(record)
 
     def execute(self, source, operation, actor, digest, confirmed_source, remove_credentials, *, resume=False):
+        """Resume recorded consent, reconcile uncertainty and finalize only verified retirement."""
+
         if type(resume) is not bool:
             raise LifecycleError("REQUEST_INVALID")
         operation = UUID(str(operation))
