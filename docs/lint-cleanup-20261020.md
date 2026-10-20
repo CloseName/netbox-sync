@@ -331,3 +331,14 @@ closed exceptions and token reads at the same points. Six new cases pass before
 extraction; focused suite: 66 passed, 31 skipped. Full suite: 2283 passed, 485 skipped,
 one existing warning. Pylint 9.14/10, zero Error/Fatal; no complexity or missing-doc
 findings remain in bootstrap_probe. Black and whitespace pass.
+
+## Stage 24: prerequisite journal execution stages
+
+Separate ephemeral token validation, revision/plan fencing and the journaled
+execution loop. Retain marker-before-POST ordering, stop statuses, reconciliation,
+revocation and final cleanup. Six new scenarios pass before extraction, each also
+registered for the protected Linux fixture. Focused suite: 72 passed, 37 skipped.
+Full suite: 2289 passed, 491 skipped, one existing warning. Pylint 9.15/10, zero
+Error/Fatal; no complexity or missing-doc findings remain in bootstrap_setup.
+Black and whitespace pass. The six added skips are Linux fixture variants, not
+accepted deployment evidence.
