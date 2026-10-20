@@ -19,6 +19,39 @@ class ObservationPrerequisiteError(ValueError):
     pass
 
 
+def _project_interface_observations(nic, excluded, excluded_macs):
+    """Separate disputed assignments from retained facts without losing scope evidence."""
+    kept = []
+    observed = []
+    for raw in nic.ip_addresses:
+        try:
+            disputed = scope_key(str(ip_interface(raw).ip), nic.ip_vrf_id) in excluded
+        except ValueError:
+            disputed = False  # Existing validation remains authoritative.
+        if disputed:
+            observed.append(str(ip_interface(raw)))
+        else:
+            kept.append(raw)
+    nic.ip_addresses = kept
+    mac = str(nic.mac_address or "").strip().upper()
+    observed_macs = [mac] if mac in excluded_macs else []
+    if observed_macs:
+        nic.mac_address = None  # Preserve evidence, never choose a clone/foreign owner.
+    nic.network_observations = {
+        "version": 1,
+        "status": "REVIEW_REQUIRED" if observed or observed_macs else "NO_DISPUTED_ADDRESSES",
+        "addresses": observed,
+        "bridge": nic.bridge,
+        "vlan_id": nic.vlan_id,
+        "ipam_complete": not bool(observed),
+        "mac_addresses": observed_macs,
+        "mac_assignment_complete": not bool(observed_macs),
+        **({"mac_conflicts": nic.mac_scope_conflicts} if nic.mac_scope_conflicts else {}),
+        **({"vrf_id": nic.ip_vrf_id} if nic.ip_vrf_id is not None else {}),
+        **({"scope_conflicts": nic.ip_scope_conflicts} if nic.ip_scope_conflicts else {}),
+    }
+
+
 def assignment_inventory(hosts, policy="strict"):
     """Return a copy for assignment and all excluded facts, keeping strict default.
 
@@ -40,35 +73,7 @@ def assignment_inventory(hosts, policy="strict"):
     for host in result:
         for vm in [*host.virtual_machines, *host.containers]:
             for nic in vm.interfaces:
-                kept = []
-                observed = []
-                for raw in nic.ip_addresses:
-                    try:
-                        disputed = scope_key(str(ip_interface(raw).ip), nic.ip_vrf_id) in excluded
-                    except ValueError:
-                        disputed = False  # Existing validation remains authoritative.
-                    if disputed:
-                        observed.append(str(ip_interface(raw)))
-                    else:
-                        kept.append(raw)
-                nic.ip_addresses = kept
-                mac = str(nic.mac_address or "").strip().upper()
-                observed_macs = [mac] if mac in excluded_macs else []
-                if observed_macs:
-                    nic.mac_address = None  # Preserve evidence, never choose a clone/foreign owner.
-                nic.network_observations = {
-                    "version": 1,
-                    "status": "REVIEW_REQUIRED" if observed or observed_macs else "NO_DISPUTED_ADDRESSES",
-                    "addresses": observed,
-                    "bridge": nic.bridge,
-                    "vlan_id": nic.vlan_id,
-                    "ipam_complete": not bool(observed),
-                    "mac_addresses": observed_macs,
-                    "mac_assignment_complete": not bool(observed_macs),
-                    **({"mac_conflicts": nic.mac_scope_conflicts} if nic.mac_scope_conflicts else {}),
-                    **({"vrf_id": nic.ip_vrf_id} if nic.ip_vrf_id is not None else {}),
-                    **({"scope_conflicts": nic.ip_scope_conflicts} if nic.ip_scope_conflicts else {}),
-                }
+                _project_interface_observations(nic, excluded, excluded_macs)
     return result, (), observations
 
 

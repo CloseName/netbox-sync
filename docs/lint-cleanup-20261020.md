@@ -541,3 +541,13 @@ ordering/boundary cases plus existing workload/host checks pass before/after
 9.37/10, zero Error/Fatal; control-flow/doc findings resolved in all three modules.
 VM preparation retains its existing dependency-injected call signature. Black and
 whitespace pass.
+
+## Stage 47: network inventory indexing
+
+Separate interface, MAC, IP, VLAN and prefix indexes from remote loading and
+observation projection. Share identical MAC indexing only; preserve write-path
+VRF keys and two IP serializations versus planner address keys and one serialization.
+Four new ordering/evidence cases and existing contracts pass before/after (56 total).
+Full suite: 2415 passed, 491 skipped, one existing warning. Pylint 9.38/10,
+zero Error/Fatal. Black and whitespace pass. Environment skips are not deployment
+acceptance; Selectel remains experimental.

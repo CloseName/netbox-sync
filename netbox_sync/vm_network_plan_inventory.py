@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from .netbox_record_values import object_id as _object_id
+from .network_inventory_index import index_mac_records
 
 
 @dataclass(frozen=True)
@@ -17,20 +18,8 @@ class VMNetworkPlanInventory:
     prefixes_by_prefix: dict
 
 
-def prepare_vm_network_plan_inventory(nb_api, cluster, *, _canonical_mac, _canonical_address):
-    """Preserve read order and legacy address-only IP keys, including VLAN/prefix data."""
-    target_vms = list(nb_api.virtualization.virtual_machines.filter(cluster_id=cluster.id))
-
-    all_interfaces = list(nb_api.virtualization.interfaces.all())
-
-    all_macs = list(nb_api.dcim.mac_addresses.all())
-
-    all_ips = list(nb_api.ipam.ip_addresses.all())
-
-    all_vlans = list(nb_api.ipam.vlans.all())
-
-    all_prefixes = list(nb_api.ipam.prefixes.all())
-
+def _index_interfaces(all_interfaces):
+    """Group legacy planner interfaces by parent VM, ignoring unbound records."""
     interfaces_by_vm = {}
 
     for interface in all_interfaces:
@@ -46,19 +35,11 @@ def prepare_vm_network_plan_inventory(nb_api, cluster, *, _canonical_mac, _canon
             [],
         ).append(interface)
 
-    macs_by_address = {}
+    return interfaces_by_vm
 
-    for mac in all_macs:
-        data = mac.serialize()
 
-        value = _canonical_mac(data.get("mac_address"))
-
-        if value:
-            macs_by_address.setdefault(
-                value,
-                [],
-            ).append(mac)
-
+def _index_ips(all_ips, _canonical_address):
+    """Index legacy planner IPs by ID and address only, preserving its VRF-independent policy."""
     ips_by_address = {}
     ips_by_id = {}
 
@@ -82,6 +63,11 @@ def prepare_vm_network_plan_inventory(nb_api, cluster, *, _canonical_mac, _canon
             [],
         ).append(ip)
 
+    return ips_by_address, ips_by_id
+
+
+def _index_vlans(all_vlans):
+    """Group VLAN records by integer VID and propagate invalid conversions."""
     vlans_by_vid = {}
 
     for vlan in all_vlans:
@@ -97,6 +83,11 @@ def prepare_vm_network_plan_inventory(nb_api, cluster, *, _canonical_mac, _canon
             [],
         ).append(vlan)
 
+    return vlans_by_vid
+
+
+def _index_prefixes(all_prefixes):
+    """Group original prefixes by nonempty string values without network normalization."""
     prefixes_by_prefix = {}
 
     for prefix in all_prefixes:
@@ -111,6 +102,29 @@ def prepare_vm_network_plan_inventory(nb_api, cluster, *, _canonical_mac, _canon
             str(value),
             [],
         ).append(prefix)
+
+    return prefixes_by_prefix
+
+
+def prepare_vm_network_plan_inventory(nb_api, cluster, *, _canonical_mac, _canonical_address):
+    """Preserve read order and legacy address-only IP keys, including VLAN/prefix data."""
+    target_vms = list(nb_api.virtualization.virtual_machines.filter(cluster_id=cluster.id))
+
+    all_interfaces = list(nb_api.virtualization.interfaces.all())
+
+    all_macs = list(nb_api.dcim.mac_addresses.all())
+
+    all_ips = list(nb_api.ipam.ip_addresses.all())
+
+    all_vlans = list(nb_api.ipam.vlans.all())
+
+    all_prefixes = list(nb_api.ipam.prefixes.all())
+
+    interfaces_by_vm = _index_interfaces(all_interfaces)
+    macs_by_address = index_mac_records(all_macs, _canonical_mac)
+    ips_by_address, ips_by_id = _index_ips(all_ips, _canonical_address)
+    vlans_by_vid = _index_vlans(all_vlans)
+    prefixes_by_prefix = _index_prefixes(all_prefixes)
 
     return VMNetworkPlanInventory(
         target_vms=target_vms,
