@@ -63,6 +63,8 @@ functions: one function can produce several findings.
   Nested-block findings eliminated; public conflict evidence fields retained.
 - VM/LXC network write stages: 2378 tests passed, 491 skipped; Pylint 9.28/10.
   No findings remain in either write module; provider-specific primary policies retained.
+- Host write stages: 2380 tests passed, 491 skipped; Pylint 9.31/10.
+  Control-flow/doc findings resolved; existing public signature retained.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,
