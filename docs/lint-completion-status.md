@@ -90,13 +90,15 @@ functions: one function can produce several findings.
 - Discovery review projection: 2459 tests passed, 491 skipped; Pylint 9.39/10.
   Complexity resolved; VM/LXC occurrences and bounded evidence preserved.
 - Broker dispatch: 2471 tests passed, 491 skipped; Pylint 9.39/10.
-  Server control flow resolved; ownership boolean checks still pending.
+  Server control flow resolved; ownership checks completed in Stage 57.
 - Retirement review: 2477 tests passed, 491 skipped; Pylint 9.39/10.
   Complexity resolved; blocked-only reports, fingerprints and replay preserved.
 - Diagnostics: 2483 tests passed, 491 skipped; Pylint 9.39/10.
   Control flow resolved; public constructor and diagnostic fields preserved.
 - pfSense connection: 2487 tests passed, 491 skipped; Pylint 9.40/10.
   Complexity resolved; session boundaries, progress and import checks preserved.
+- Broker ownership: 2538 tests passed, 491 skipped; Pylint 9.40/10.
+  Remaining boolean complexity resolved with 51 new descriptor contracts.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,
