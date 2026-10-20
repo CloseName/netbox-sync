@@ -15,7 +15,12 @@ class VMApplyInventory:
 
 
 def prepare_vm_apply_inventory(nb_api, config, *, _required, _resolve_cluster):
-    """Read prerequisites and VM selections in the established order."""
+    """Resolve site/type/cluster, then load global and cluster-filtered VM lists.
+
+    Injected resolvers enforce prerequisites, including the optional onboarding
+    cluster reference. Keep the two VM reads independent; unlike LXC preparation,
+    target membership comes from the endpoint's cluster filter.
+    """
     site = _required(
         nb_api.dcim.sites,
         "site",

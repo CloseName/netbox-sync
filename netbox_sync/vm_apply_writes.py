@@ -2,6 +2,13 @@
 
 
 def write_virtual_machines(nb_api, cluster, contexts, *, build_vm_create_fields):
+    """Write validated VM contexts in order and print per-item and total results.
+
+    The caller must enforce confirmation and reject blocked contexts first.
+    Create via the injected field builder; update only nonempty changes and
+    report unchanged VMs as skips. Propagate write errors immediately, without
+    rollback or a success summary; earlier successful writes remain. Return None.
+    """
     print()
     print("=== VM APPLY ===")
 

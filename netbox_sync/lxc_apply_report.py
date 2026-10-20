@@ -2,6 +2,12 @@
 
 
 def report_lxc_precheck(site, cluster, contexts):
+    """Print LXC create/update/skip counts for already validated contexts.
+
+    Preserve context order and sort changed field names for display. This stage
+    neither writes nor decides whether a context is blocked: LXC preparation
+    raises before reporting. Return None.
+    """
     create_count = 0
     update_count = 0
     skip_count = 0

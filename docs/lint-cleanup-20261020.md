@@ -81,3 +81,24 @@ construction remain unchanged.
 
 Full suite: 2051 passed, 485 skipped, one existing Starlette warning. Black check
 passes; full Pylint is 9.02/10 with zero Error/Fatal findings.
+
+## Stage 5: VM/LXC application contracts
+
+Document the entry points, prerequisite errors, inventory readers, preflight,
+reports and writes in ten modules. Describe actual VM/LXC differences: endpoint
+filtering versus attribute-based cluster membership, sorted VM processing versus
+LXC discovery order, native VM disk protection, delayed blocked VM reports versus
+immediate LXC preflight failures, and differing skip output.
+
+The write helpers require confirmation/preflight from their callers and do not
+roll back a successfully applied prefix after a later transport failure. These
+contracts are explicit rather than implied by helper names.
+
+AST comparison allowing only docstrings and removal of two redundant exception
+class `pass` statements verifies that runtime logic is unchanged. All 17 existing
+workload output, payload, replay and failure-prefix
+tests pass; Black passes. The full suite result in stage 4 is the unchanged-code
+baseline, not a second full run for this documentation-only change.
+
+Full Pylint passes at 9.02/10 with zero Error/Fatal findings; no global suppressions
+or threshold changes are introduced.

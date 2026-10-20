@@ -4,6 +4,13 @@
 def prepare_vm_contexts(
     nb_api, hosts, all_vms, target_vms, cluster, *, _identity, netbox_vm_name, VMApplyError, _preflight_vm, _object_id
 ):
+    """Return discovered VMs and ordered write contexts without NetBox writes.
+
+    Reject duplicate discovered identities and case-insensitive target names
+    before matching; build contexts in node/source VM ID order. Per-VM blocked
+    contexts are reported by the caller. Remove aggregate disk updates for VMs
+    with native NetBox disk records, preserving their independently managed size.
+    """
     discovered = []
 
     for host in hosts:

@@ -4,6 +4,13 @@
 def prepare_lxc_contexts(
     hosts, all_vms, target_vms, cluster, *, _find_identity_matches, _desired_fields, _changes, LXCApplyError
 ):
+    """Return LXC write contexts in discovery order, without NetBox writes.
+
+    Fail immediately on duplicate source IDs, ambiguous NetBox identities,
+    identities outside the target cluster or names requiring explicit adoption.
+    Unlike VM preparation, do not sort guests or query native virtual disks:
+    LXC desired fields retain their aggregate disk value.
+    """
     contexts = []
 
     discovered_ids = set()
