@@ -249,6 +249,12 @@ class PlanningNamespace:
 class PlanningNetBox:
     """Facade whose only side effect is appending in-memory mutation records."""
 
+    # Names are installed conditionally from the real API in __init__.
+    dcim: PlanningNamespace
+    ipam: PlanningNamespace
+    virtualization: PlanningNamespace
+    extras: PlanningNamespace
+
     def __init__(self, api):
         self.base_url = getattr(api, "base_url", "")
         self.replacement_review = getattr(api, "replacement_review", None)

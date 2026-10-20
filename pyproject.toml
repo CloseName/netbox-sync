@@ -56,3 +56,25 @@ netbox_sync = ["public_errors.json"]
 [tool.black]
 line-length = 120
 target-version = ["py310"]
+
+[tool.pylint.main]
+# These imports exist only inside the Linux worker or deployed NetBox runtime.
+# Keep application import errors enabled; do not ignore netbox_sync or netbox_guard wholesale.
+ignored-modules = [
+    "fcntl", "resource",
+    "django.contrib.contenttypes.models", "django.db", "django.db.models",
+    "virtualization.models", "dcim.models", "ipam.models",
+    "netbox_guard.pfsense_preview",
+]
+
+[tool.pylint.typecheck]
+# Exact POSIX members used by the Linux deployment, absent from Windows stdlib stubs.
+generated-members = [
+    'os[.](geteuid|O_NOFOLLOW|O_DIRECTORY|O_NONBLOCK|chown|fork|killpg|setgroups|setgid|setuid)\b',
+    'socket[.](AF_UNIX|SO_PEERCRED)\b',
+    'signal[.](SIGCHLD|SIGKILL)\b',
+]
+
+[tool.pylint.reports]
+# An error cannot be compensated for by a high aggregate style score.
+fail-on = ["E", "F"]

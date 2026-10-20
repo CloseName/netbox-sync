@@ -2,12 +2,27 @@
 
 import copy
 import uuid
+from typing import Any, Callable
 from .ldap_directory import DirectoryError
 
 SYNC_SECONDS = 300
 
 
 class DirectoryUsers:
+    """Directory operations mixed into the transaction-owned AuthPolicy.
+
+    AuthPolicy supplies these attributes; declarations do not create defaults or
+    change initialization and keep the dependency visible to static analysis.
+    """
+
+    state: dict
+    now: float
+    directory: Any
+    auth_secrets: Any
+    event: Callable[..., None]
+    session: Callable[..., dict]
+    recent: Callable[..., None]
+
     def migrate_directory(self):
         saved = self.state.get("ldap")
         if not saved or saved.get("user_model") == 2:

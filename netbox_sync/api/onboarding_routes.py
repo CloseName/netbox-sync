@@ -92,6 +92,8 @@ def install_onboarding_routes(
                     if jobs
                     else None
                 )
+                # RegistrationJobs.get returns a database mapping; guarded by saved above.
+                # pylint: disable-next=unsubscriptable-object
                 if saved and saved["state"] == "STAGING":
                     checked = jobs.resume_staging(
                         request.registration_resume.source_instance,

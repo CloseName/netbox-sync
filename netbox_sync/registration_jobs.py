@@ -278,6 +278,8 @@ class RegistrationContinuation:
             from .local_control import ControlError
 
             code = "REGISTRATION_UNCERTAIN"
+            # The isinstance guard narrows this exception to the declared application error.
+            # pylint: disable-next=no-member
             if isinstance(exc, CatalogError) and exc.code in {
                 "PERMISSION_DENIED",
                 "AUTH_FAILED",
@@ -289,7 +291,11 @@ class RegistrationContinuation:
                 "BUSY",
                 "UNAVAILABLE",
             }:
+                # The isinstance guard narrows this exception to the declared application error.
+                # pylint: disable-next=no-member
                 code = "CATALOG_" + exc.code
+            # The isinstance guard narrows this exception to the declared application error.
+            # pylint: disable-next=no-member
             elif isinstance(exc, HostRegistrationConflict) and exc.code in {
                 "HOST_REGISTRATION_INTENT_CHANGED",
                 "HOST_ALREADY_REGISTERED",
@@ -297,6 +303,8 @@ class RegistrationContinuation:
                 "HOST_SOURCE_CLOSED",
                 "HOST_REGISTRY_REVIEW_REQUIRED",
             }:
+                # The isinstance guard narrows this exception to the declared application error.
+                # pylint: disable-next=no-member
                 code = exc.code
             elif isinstance(exc, ControlError):
                 code = "REGISTRATION_UNAVAILABLE"

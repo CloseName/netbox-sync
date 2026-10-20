@@ -175,6 +175,8 @@ def query(value, session_factory=requests.Session):
     except Exception as error:
         from .retirement_transport import GuardTransportError
 
+        # The isinstance guard narrows this exception to the declared application error.
+        # pylint: disable-next=no-member
         if isinstance(error, GuardTransportError) and not error.uncertain:
             code = {
                 "AUTHENTICATION_REQUIRED": "AUTH_FAILED",
@@ -184,6 +186,8 @@ def query(value, session_factory=requests.Session):
                 "GUARD_OBJECT_VIEW_DENIED": "PERMISSION_DENIED",
                 "PERMISSION_DENIED": "PERMISSION_DENIED",
                 "REQUEST_CONFLICT": "CONFLICT",
+                # The isinstance guard narrows this exception to the declared application error.
+                # pylint: disable-next=no-member
             }.get(error.code, "SELECTION_REQUIRED")
             return {"status": "REFUSED", "error": code, "item": None}
         if write_started:
