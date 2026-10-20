@@ -1,0 +1,115 @@
+{
+  "vms": [
+    {
+      "source": "proxmox",
+      "source_instance": "pve-infra-test",
+      "legacy_identity_owner": true,
+      "source_id": "proxmox:node-a:100",
+      "node_source_id": "node-a",
+      "vmid": 100,
+      "original_name": "qemu-100",
+      "normalized_name": "qemu-100",
+      "status": "running",
+      "vcpus": 4,
+      "memory_bytes": 4294967296,
+      "autostart": true,
+      "disks": [
+        {
+          "name": "scsi0",
+          "storage": "local-lvm",
+          "size_bytes": 34359738368,
+          "external_id": null
+        },
+        {
+          "name": "scsi1",
+          "storage": "other",
+          "size_bytes": 1610612736,
+          "external_id": null
+        },
+        {
+          "name": "virtio2",
+          "storage": null,
+          "size_bytes": 0,
+          "external_id": null
+        }
+      ],
+      "interfaces": [
+        {
+          "name": "net0",
+          "mac_address": "AA:BB:CC:DD:EE:01",
+          "bridge": "vmbr0",
+          "vlan_id": 120,
+          "ip_addresses": [
+            "10.20.30.40/24"
+          ],
+          "external_id": "net0",
+          "network_observations": null,
+          "ip_vrf_id": null,
+          "ip_scope_conflicts": [],
+          "mac_scope_conflicts": []
+        }
+      ],
+      "external_id": null,
+      "description": null,
+      "provider_object_id": null,
+      "esxi_instance_uuid": null,
+      "esxi_bios_uuid": null
+    }
+  ],
+  "lxc": [
+    {
+      "source": "proxmox",
+      "source_instance": "pve-infra-test",
+      "legacy_identity_owner": true,
+      "source_id": "proxmox:node-a:lxc:100",
+      "node_source_id": "node-a",
+      "vmid": 100,
+      "original_name": "lxc-100",
+      "normalized_name": "lxc-100",
+      "status": "stopped",
+      "architecture": "amd64",
+      "os_type": "debian",
+      "vcpus": 2,
+      "memory_bytes": 2147483648,
+      "swap_bytes": 536870912,
+      "autostart": false,
+      "unprivileged": true,
+      "disks": [
+        {
+          "name": "rootfs",
+          "storage": "local-lvm",
+          "size_bytes": 8589934592,
+          "external_id": null
+        },
+        {
+          "name": "mp1",
+          "storage": "other",
+          "size_bytes": 1610612736,
+          "external_id": null
+        },
+        {
+          "name": "mp2",
+          "storage": null,
+          "size_bytes": 0,
+          "external_id": null
+        }
+      ],
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac_address": "AA:BB:CC:DD:EE:02",
+          "bridge": "vmbr0",
+          "vlan_id": 120,
+          "ip_addresses": [
+            "10.20.30.50/24"
+          ],
+          "external_id": "net0",
+          "network_observations": null,
+          "ip_vrf_id": null,
+          "ip_scope_conflicts": [],
+          "mac_scope_conflicts": []
+        }
+      ]
+    }
+  ]
+}

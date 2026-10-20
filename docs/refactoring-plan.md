@@ -846,3 +846,17 @@ Known pre-existing finding: when host planning cannot find a cluster, it prints 
 create-cluster plan but subsequently guest planning raises AttributeError on the
 missing cluster. The baseline test records that behavior. Fix separately; this
 structural pass does not silently alter planning or error handling.
+
+## Provider discovery components
+
+Proxmox discovery now delegates QEMU/LXC interface and disk conversion to
+`proxmox_components.py`; API enumeration, resource validation, malformed-workload
+isolation and model assembly remain in `proxmox_discovery.py`. QEMU guest-agent
+failure handling and IPv4 filtering remain distinct from LXC static addresses,
+and ISO exclusion remains QEMU-specific. Five new normalized-output fixtures
+passed before extraction; 79 focused Proxmox/ESXi/disappearance tests pass after
+extraction, with exact original ASTs restored by inlining the four helpers.
+
+ESXi discovery already separates staged SDK reads (`esxi_inventory.py`) from
+conversion, host networking and neighbor collection. Retain those boundaries and
+its property-collector behavior; no speculative provider unification is needed.
