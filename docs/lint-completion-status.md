@@ -29,7 +29,9 @@ functions: one function can produce several findings.
 - Lifecycle RPC dispatch: exact envelopes and refusal precedence characterized
   before splitting independent operation groups. 2199 tests passed, 485 skipped;
   full Pylint 9.05/10, zero Error/Fatal. No complexity findings remain in this module.
-- Remaining workers, authorization, catalog, provider reconciliation, reporting
+- Catalog query dispatch: 2208 tests passed, 485 skipped; Pylint 9.05/10.
+  No complexity or missing-doc findings remain in netbox_catalog.
+- Remaining workers, authorization, provider reconciliation, reporting
   and application services: pending.
 - Remaining documentation and compatibility metrics: pending.
 
