@@ -23,6 +23,8 @@ PLACEHOLDERS = {
 
 
 def canonical(kind, value):
+    """Normalize a typed system identifier, rejecting placeholders and invalid UUIDs."""
+
     if kind not in KINDS or not isinstance(value, str):
         return None
     value = value.strip()
@@ -40,6 +42,8 @@ def canonical(kind, value):
 
 
 def observation(source, values, *, status=None, observed_at=None):
+    """Build a deduplicated, timestamped observation and flag conflicting identifiers."""
+
     identifiers = []
     for kind, value, path in values:
         normalized = canonical(kind, value)
@@ -58,6 +62,8 @@ def observation(source, values, *, status=None, observed_at=None):
 
 
 def tokens(document, *, now=None):
+    """Return unambiguous collected identifiers only within the accepted observation age."""
+
     if not isinstance(document, dict) or document.get("version") != 1 or document.get("status") != "collected":
         return set()
     try:
@@ -76,7 +82,11 @@ def tokens(document, *, now=None):
 
 
 def collect_esxi(host):
+    """Read ESXi system identifiers and convert SDK faults into closed observation states."""
+
     def get(obj, path):
+        """Follow an SDK attribute path, stopping at the first missing value."""
+
         for part in path.split("."):
             obj = getattr(obj, part, None)
             if obj is None:
@@ -110,12 +120,16 @@ def collect_esxi(host):
 
 
 def collect_proxmox():
+    """Report system identity as unsupported by the stock Proxmox node hardware API."""
+
     # Stock node hardware API exposes PCI/USB, not system DMI. No speculative
     # endpoint, guest SMBIOS, disk serial or subscription serverid fallback.
     return observation("proxmox", [], status="unsupported_api")
 
 
 def selectel_observation(sections, observed_at):
+    """Collect system identifiers from fresh sections while retaining coverage metadata."""
+
     values = []
     coverage = {}
     for name in ("resource", "details", "hardware"):
@@ -140,6 +154,8 @@ def selectel_observation(sections, observed_at):
 
 
 def compare(left, right):
+    """Classify shared typed identifiers as matching, conflicting or unrelated."""
+
     if not left & right:
         return "none"
     common = {k for k, v in left} & {k for k, v in right}

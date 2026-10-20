@@ -16,11 +16,15 @@ class PlacementMissing(MappingError):
 
 
 def endpoint(api, kind):
+    """Resolve a catalog kind to its pynetbox endpoint."""
+
     group, name = ENDPOINTS[kind].split("/")
     return getattr(getattr(api, group), name.replace("-", "_"))
 
 
 def check_record(record, choice, kind):
+    """Require the reviewed object identity and metadata to remain visible and unchanged."""
+
     if record is None:
         raise PlacementMissing("Selected NetBox object is not visible")
     if record.id != choice["id"]:
@@ -35,6 +39,8 @@ def check_record(record, choice, kind):
 
 
 def validate(api, config, hosts):
+    """Recheck selected references, cluster scope and each discovered host mapping."""
+
     mapping = getattr(config, "onboarding_mapping", {})
     if not mapping:
         return
@@ -61,6 +67,8 @@ def validate(api, config, hosts):
 
 
 def selected(config, kind, slug):
+    """Select by reviewed object ID when configured, otherwise by the legacy slug."""
+
     return (
         {"id": config.onboarding_mapping["references"][kind]["id"]}
         if getattr(config, "onboarding_mapping", {})
@@ -69,6 +77,8 @@ def selected(config, kind, slug):
 
 
 def device_types(api, config, hosts, required):
+    """Resolve each reviewed host type or reuse the required legacy default type."""
+
     if getattr(config, "onboarding_mapping", {}):
         return {
             h.source_id: check_record(
@@ -83,6 +93,8 @@ def device_types(api, config, hosts, required):
 
 
 def cluster_filter(config):
+    """Select the reviewed cluster ID or fall back to the configured cluster name."""
+
     target = getattr(config, "target", config)
     mapping = getattr(target, "onboarding_mapping", {})
     return {"id": mapping["references"]["cluster"]["id"]} if mapping else {"name": target.cluster_name}
