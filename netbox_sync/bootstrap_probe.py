@@ -25,17 +25,24 @@ ENDPOINTS = (
 
 
 class ProbeError(Exception):
+    """Closed NetBox probe failure without response text or credentials."""
+
     def __init__(self, code):
+        """Retain the public probe error code."""
         self.code = code
         super().__init__(code)
 
 
 class ObjectNotVisible(ProbeError):
+    """A requested object is not visible through the current NetBox credential."""
+
     def __init__(self):
+        """Expose an invisible object as an invalid probe response."""
         super().__init__("RESPONSE_INVALID")
 
 
 def fetch(session, url, token, method="GET"):
+    """Read a nonredirecting response capped at two MiB and require a JSON object."""
     with session.request(
         method, url, headers={"Authorization": authorization(token)}, timeout=(3, 5), allow_redirects=False, stream=True
     ) as response:
@@ -59,6 +66,7 @@ def fetch(session, url, token, method="GET"):
 
 
 def probe(value, session_factory=requests.Session, policy=None):
+    """Collect bounded connectivity, permission and prerequisite evidence without writing NetBox."""
     checks = []
     access = {
         name: "not_run"
@@ -80,58 +88,13 @@ def probe(value, session_factory=requests.Session, policy=None):
             for endpoint in ENDPOINTS:
                 url = value["url"] + "/api/" + endpoint + "/"
                 for kind in ("read", "apply"):
-                    result = fetch(session, url + "?limit=1", value[kind + "_token"])
-                    access["tls"] = "passed"
-                    access[kind + "_auth"] = "passed"
-                    if not isinstance(result.get("results"), list) or type(result.get("count")) is not int:
-                        raise ProbeError("RESPONSE_INVALID")
-                    metadata = fetch(session, url, value[kind + "_token"], "OPTIONS")
-                    actions = metadata.get("actions", {})
-                    if not isinstance(actions, dict):
-                        raise ProbeError("RESPONSE_INVALID")
-                    if (kind == "read" and "POST" in actions) or (kind == "apply" and "POST" not in actions):
-                        raise ProbeError("PERMISSION_DENIED")
+                    _check_endpoint(session, url, value, kind, access)
             access["permissions"] = "preliminary"
             if value.get("guard_instance"):
-                from .retirement_transport import GuardClient, GuardTransportError
-
-                try:
-                    guard = GuardClient(
-                        session, value["url"], authorization(value["apply_token"]), value["guard_instance"]
-                    )
-                    capabilities = guard.capabilities()
-                    if capabilities.get("source_audit") is not True:
-                        raise GuardTransportError("GUARD_CAPABILITY_MISMATCH")
-                    if capabilities.get("audit_permission") is not True:
-                        raise GuardTransportError("GUARD_AUDIT_PERMISSION_REQUIRED")
-                    if capabilities.get("token_write_enabled") is not True:
-                        raise GuardTransportError("TOKEN_WRITE_REQUIRED")
-                    access["guard"] = "preliminary"  # source/object restrictions require an actual scoped audit
-                except GuardTransportError as exc:
-                    access["guard"] = "failed"
-                    raise ProbeError(
-                        {
-                            "AUTHENTICATION_REQUIRED": "AUTH_FAILED",
-                            "TOKEN_WRITE_REQUIRED": "RETIREMENT_TOKEN_WRITE_REQUIRED",
-                            "GUARD_AUDIT_PERMISSION_REQUIRED": "RETIREMENT_AUDIT_PERMISSION_REQUIRED",
-                            "PERMISSION_DENIED": "PERMISSION_DENIED",
-                            "GUARD_TLS_FAILED": "TLS_FAILED",
-                            "GUARD_CONNECTION_FAILED": "NETWORK_UNREACHABLE",
-                            "GUARD_TIMEOUT": "NETWORK_UNREACHABLE",
-                        }.get(exc.code, "RETIREMENT_GUARD_CHANGED")
-                    ) from None
+                _check_guard(session, value, access)
 
             kind = "read"
-            result = fetch(session, value["url"] + "/api/extras/custom-fields/?limit=1000", value["read_token"])
-            rows = result.get("results")
-            if not isinstance(rows, list) or result.get("next") is not None:
-                raise ProbeError("RESPONSE_INVALID")
-            fields = reconcile(rows)
-            checks = [
-                {"name": f["name"], "type": f["type"], "models": f["models"], "ok": f["status"] == "ready"}
-                for f in fields
-            ]
-            access["prerequisites"] = "passed" if all(c["ok"] for c in checks) else "pending"
+            checks = _check_prerequisites(session, value, access)
             return {
                 "safe_code": None if all(check["ok"] for check in checks) else "PREREQUISITES_MISSING",
                 "checks": checks,
@@ -158,9 +121,67 @@ def probe(value, session_factory=requests.Session, policy=None):
     return {"safe_code": code, "checks": [], "access_checks": evidence()}
 
 
+def _check_endpoint(session, url, value, kind, access):
+    """Verify one read/apply token and endpoint, recording completed evidence in order."""
+    result = fetch(session, url + "?limit=1", value[kind + "_token"])
+    access["tls"] = "passed"
+    access[kind + "_auth"] = "passed"
+    if not isinstance(result.get("results"), list) or type(result.get("count")) is not int:
+        raise ProbeError("RESPONSE_INVALID")
+    metadata = fetch(session, url, value[kind + "_token"], "OPTIONS")
+    actions = metadata.get("actions", {})
+    if not isinstance(actions, dict):
+        raise ProbeError("RESPONSE_INVALID")
+    if (kind == "read" and "POST" in actions) or (kind == "apply" and "POST" not in actions):
+        raise ProbeError("PERMISSION_DENIED")
+
+
+def _check_guard(session, value, access):
+    """Require source-audit capabilities and translate closed guard errors to probe codes."""
+    from .retirement_transport import GuardClient, GuardTransportError
+
+    try:
+        guard = GuardClient(session, value["url"], authorization(value["apply_token"]), value["guard_instance"])
+        capabilities = guard.capabilities()
+        if capabilities.get("source_audit") is not True:
+            raise GuardTransportError("GUARD_CAPABILITY_MISMATCH")
+        if capabilities.get("audit_permission") is not True:
+            raise GuardTransportError("GUARD_AUDIT_PERMISSION_REQUIRED")
+        if capabilities.get("token_write_enabled") is not True:
+            raise GuardTransportError("TOKEN_WRITE_REQUIRED")
+        access["guard"] = "preliminary"  # source/object restrictions require an actual scoped audit
+    except GuardTransportError as exc:
+        access["guard"] = "failed"
+        raise ProbeError(
+            {
+                "AUTHENTICATION_REQUIRED": "AUTH_FAILED",
+                "TOKEN_WRITE_REQUIRED": "RETIREMENT_TOKEN_WRITE_REQUIRED",
+                "GUARD_AUDIT_PERMISSION_REQUIRED": "RETIREMENT_AUDIT_PERMISSION_REQUIRED",
+                "PERMISSION_DENIED": "PERMISSION_DENIED",
+                "GUARD_TLS_FAILED": "TLS_FAILED",
+                "GUARD_CONNECTION_FAILED": "NETWORK_UNREACHABLE",
+                "GUARD_TIMEOUT": "NETWORK_UNREACHABLE",
+            }.get(exc.code, "RETIREMENT_GUARD_CHANGED")
+        ) from None
+
+
+def _check_prerequisites(session, value, access):
+    """Read the complete bounded field inventory and record prerequisite readiness."""
+    result = fetch(session, value["url"] + "/api/extras/custom-fields/?limit=1000", value["read_token"])
+    rows = result.get("results")
+    if not isinstance(rows, list) or result.get("next") is not None:
+        raise ProbeError("RESPONSE_INVALID")
+    fields = reconcile(rows)
+    checks = [
+        {"name": f["name"], "type": f["type"], "models": f["models"], "ok": f["status"] == "ready"} for f in fields
+    ]
+    access["prerequisites"] = "passed" if all(c["ok"] for c in checks) else "pending"
+    return checks
+
+
 if __name__ == "__main__":
     try:
-        value = json.loads(sys.stdin.buffer.read(32769))
-        print(json.dumps(probe(value)))
+        request_value = json.loads(sys.stdin.buffer.read(32769))
+        print(json.dumps(probe(request_value)))
     except Exception:
         print(json.dumps({"safe_code": "RESPONSE_INVALID", "checks": []}))

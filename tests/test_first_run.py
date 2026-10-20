@@ -280,3 +280,39 @@ def test_actor_bound_registration_status_does_not_require_bootstrap_write_admiss
     client=TestClient(create_app(ApiSettings(bootstrap_socket='/test',allowed_write_hosts=('testserver',)),onboarding_service=onboarding))
     response=client.post('/api/v1/sources/registration-status',json=dict(source_instance='esxi-fixture',registration_id=str(uuid4())),headers={'Origin':'http://testserver','X-NetBox-Sync-CSRF':'same-origin'})
     assert response.status_code==200 and response.json()['status']=='REGISTERED'
+
+@pytest.mark.parametrize('kind', ['read', 'apply'])
+@pytest.mark.parametrize('failure', ['auth', 'metadata', 'response'])
+def test_probe_preserves_token_stage_and_completed_access_checks(monkeypatch, kind, failure):
+    from types import SimpleNamespace
+    from contextlib import nullcontext
+    from netbox_sync import bootstrap_probe as module
+    calls = []
+    def fetch(session, url, token, method='GET'):
+        calls.append((token, method))
+        active = token == PAYLOAD[kind + '_token']
+        if active and failure == 'auth':
+            raise module.ProbeError('AUTH_FAILED')
+        if active and failure == 'response' and method == 'GET':
+            return {'results': [], 'count': True}
+        if method == 'OPTIONS':
+            if active and failure == 'metadata':
+                return {'actions': []}
+            return {'actions': {} if token == PAYLOAD['read_token'] else {'POST': {}}}
+        return {'results': [], 'count': 0}
+    monkeypatch.setattr(module, 'fetch', fetch)
+    monkeypatch.setattr(module, 'pinned_dns', lambda *args: nullcontext())
+    monkeypatch.setattr(module, 'configure_session', lambda session: session)
+    policy = SimpleNamespace(resolve=lambda *args: ('netbox.example.test', '192.0.2.1'))
+    result = module.probe(PAYLOAD, lambda: nullcontext(object()), policy)
+    access = {row['name']: row['status'] for row in result['access_checks']}
+    assert result['safe_code'] == ('AUTH_FAILED' if failure == 'auth' else 'RESPONSE_INVALID')
+    assert result['checks'] == []
+    assert access[kind + '_auth'] == ('failed' if failure == 'auth' else 'passed')
+    assert access['permissions'] == 'not_run'
+    assert access['prerequisites'] == 'not_run'
+    if kind == 'read':
+        assert access['apply_auth'] == 'not_run'
+    else:
+        assert access['read_auth'] == 'passed'
+    assert calls[-1] == (PAYLOAD[kind + '_token'], 'OPTIONS' if failure == 'metadata' else 'GET')

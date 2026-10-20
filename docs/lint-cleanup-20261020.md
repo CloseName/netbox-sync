@@ -322,3 +322,12 @@ receipt formats, bounded diagnostic fields and scheduled context lifetime.
 Executable AST unchanged. Focused tests: 90 passed before and after. Full Pylint:
 9.13/10, zero Error/Fatal. Missing docs remaining: 63 classes and 337 functions.
 Black and whitespace pass. Last full executable-code suite: 2277 passed, 485 skipped.
+
+## Stage 23: NetBox bootstrap probe stages
+
+Extract per-endpoint token/permission checks, guard capability checks and prerequisite
+inventory checks. Keep active read/apply attribution, access evidence ordering,
+closed exceptions and token reads at the same points. Six new cases pass before
+extraction; focused suite: 66 passed, 31 skipped. Full suite: 2283 passed, 485 skipped,
+one existing warning. Pylint 9.14/10, zero Error/Fatal; no complexity or missing-doc
+findings remain in bootstrap_probe. Black and whitespace pass.
