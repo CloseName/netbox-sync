@@ -226,23 +226,114 @@ def _find_prefix_for_address(
     )
 
 
-def _plan_host_network(
-    nb_api,
-    host,
-    device,
-    site,
-) -> None:
+def _print_interface_vlan(nb_api, interface, site):
+    """Report VLAN reference evidence without creating missing VLANs."""
+    if interface.vlan_id is not None:
+        state, vlans = _find_site_vlan(
+            nb_api,
+            site,
+            interface.vlan_id,
+        )
+
+        if state in {"match", "match-global"}:
+            vlan = vlans[0]
+
+            print(
+                f"      MATCH VLAN " f"id={vlan.id} " f"vid={interface.vlan_id} " f"name={vlan.name} " f"scope={state}"
+            )
+
+        elif state == "conflict":
+            print(f"      CONFLICT VLAN " f"vid={interface.vlan_id} " f"matches={len(vlans)}")
+
+        else:
+            print(f"      WARN VLAN " f"vid={interface.vlan_id} " f"not-found " f"action=not-created")
+
+
+def _print_interface_address(nb_api, address, host, site):
+    """Report prefix and IP evidence followed by the management-primary intent."""
+    (
+        prefix_state,
+        prefixes,
+        network,
+    ) = _find_prefix_for_address(
+        nb_api,
+        site,
+        address,
+    )
+
+    if prefix_state in {
+        "match",
+        "match-global",
+    }:
+        prefix = prefixes[0]
+
+        print(f"      MATCH PREFIX " f"id={prefix.id} " f"prefix={network} " f"scope={prefix_state}")
+
+    elif prefix_state == "conflict":
+        print(f"      CONFLICT PREFIX " f"prefix={network} " f"matches={len(prefixes)}")
+
+    else:
+        print(f"      WARN PREFIX " f"prefix={network} " f"not-found " f"action=not-created")
+
+    matches = _find_ip_matches(
+        nb_api,
+        address,
+    )
+
+    if not matches:
+        print(f"      CREATE IP " f"address={address}")
+
+    elif len(matches) == 1:
+        ip = matches[0]
+        data = ip.serialize()
+
+        print(f"      MATCH IP " f"id={ip.id} " f"address={address}")
+
+        assigned_type = data.get("assigned_object_type")
+        assigned_id = data.get("assigned_object_id")
+
+        if assigned_type is not None or assigned_id is not None:
+            print(f"        currently_assigned=" f"{assigned_type}:{assigned_id}")
+
+    else:
+        print(f"      CONFLICT IP " f"address={address} " f"matches={len(matches)}")
+
+    if _address_ip(address) == host.management_ip:
+        print(f"      SET PRIMARY IPv4 " f"address={address}")
+
+
+def _print_host_interface(nb_api, interface, existing, host, site):
+    """Report one host interface and its reference-only network plan."""
+    desired_type = "virtual" if interface.interface_type in {"bridge", "vlan"} else "other"
+
+    if existing is None:
+        print(f"    CREATE INTERFACE " f"name={interface.name} " f"type={desired_type}")
+    else:
+        print(f"    MATCH INTERFACE " f"id={existing.id} " f"name={interface.name}")
+
+    print(f"      source_type=" f'{interface.interface_type or "-"}')
+
+    print(f"      active={interface.active} " f"autostart={interface.autostart}")
+
+    if interface.comments:
+        print(f"      description=" f"{interface.comments}")
+
+    if interface.bridge_ports:
+        print("      bridge_ports=" + ",".join(interface.bridge_ports))
+
+    if interface.vlan_aware:
+        print("      vlan_aware=True")
+
+    _print_interface_vlan(nb_api, interface, site)
+
+    for address in interface.addresses:
+        _print_interface_address(nb_api, address, host, site)
 
     print()
-    print("  NETWORK")
-    print("    ipam_policy=" "reference-only " "(missing VLANs/prefixes are not auto-created)")
 
-    existing_interfaces = {}
 
-    if device is not None:
-        for interface in nb_api.dcim.interfaces.filter(device_id=device.id):
-            existing_interfaces[interface.name] = interface
-
+def _management_interface(host):
+    """Find the first named interface containing the management address."""
     management_interface = None
 
     for interface in host.interfaces:
@@ -254,6 +345,29 @@ def _plan_host_network(
         if management_interface:
             break
 
+    return management_interface
+
+
+def _plan_host_network(
+    nb_api,
+    host,
+    device,
+    site,
+) -> None:
+    """Report host network intent and reference-only prerequisites without writes."""
+
+    print()
+    print("  NETWORK")
+    print("    ipam_policy=" "reference-only " "(missing VLANs/prefixes are not auto-created)")
+
+    existing_interfaces = {}
+
+    if device is not None:
+        for interface in nb_api.dcim.interfaces.filter(device_id=device.id):
+            existing_interfaces[interface.name] = interface
+
+    management_interface = _management_interface(host)
+
     if management_interface:
         print(f"    management_interface=" f"{management_interface}")
     else:
@@ -264,102 +378,7 @@ def _plan_host_network(
     for interface in sorted(host.interfaces, key=lambda item: item.name):
         existing = existing_interfaces.get(interface.name)
 
-        desired_type = "virtual" if interface.interface_type in {"bridge", "vlan"} else "other"
-
-        if existing is None:
-            print(f"    CREATE INTERFACE " f"name={interface.name} " f"type={desired_type}")
-        else:
-            print(f"    MATCH INTERFACE " f"id={existing.id} " f"name={interface.name}")
-
-        print(f"      source_type=" f'{interface.interface_type or "-"}')
-
-        print(f"      active={interface.active} " f"autostart={interface.autostart}")
-
-        if interface.comments:
-            print(f"      description=" f"{interface.comments}")
-
-        if interface.bridge_ports:
-            print("      bridge_ports=" + ",".join(interface.bridge_ports))
-
-        if interface.vlan_aware:
-            print("      vlan_aware=True")
-
-        if interface.vlan_id is not None:
-            state, vlans = _find_site_vlan(
-                nb_api,
-                site,
-                interface.vlan_id,
-            )
-
-            if state in {"match", "match-global"}:
-                vlan = vlans[0]
-
-                print(
-                    f"      MATCH VLAN "
-                    f"id={vlan.id} "
-                    f"vid={interface.vlan_id} "
-                    f"name={vlan.name} "
-                    f"scope={state}"
-                )
-
-            elif state == "conflict":
-                print(f"      CONFLICT VLAN " f"vid={interface.vlan_id} " f"matches={len(vlans)}")
-
-            else:
-                print(f"      WARN VLAN " f"vid={interface.vlan_id} " f"not-found " f"action=not-created")
-
-        for address in interface.addresses:
-            (
-                prefix_state,
-                prefixes,
-                network,
-            ) = _find_prefix_for_address(
-                nb_api,
-                site,
-                address,
-            )
-
-            if prefix_state in {
-                "match",
-                "match-global",
-            }:
-                prefix = prefixes[0]
-
-                print(f"      MATCH PREFIX " f"id={prefix.id} " f"prefix={network} " f"scope={prefix_state}")
-
-            elif prefix_state == "conflict":
-                print(f"      CONFLICT PREFIX " f"prefix={network} " f"matches={len(prefixes)}")
-
-            else:
-                print(f"      WARN PREFIX " f"prefix={network} " f"not-found " f"action=not-created")
-
-            matches = _find_ip_matches(
-                nb_api,
-                address,
-            )
-
-            if not matches:
-                print(f"      CREATE IP " f"address={address}")
-
-            elif len(matches) == 1:
-                ip = matches[0]
-                data = ip.serialize()
-
-                print(f"      MATCH IP " f"id={ip.id} " f"address={address}")
-
-                assigned_type = data.get("assigned_object_type")
-                assigned_id = data.get("assigned_object_id")
-
-                if assigned_type is not None or assigned_id is not None:
-                    print(f"        currently_assigned=" f"{assigned_type}:{assigned_id}")
-
-            else:
-                print(f"      CONFLICT IP " f"address={address} " f"matches={len(matches)}")
-
-            if _address_ip(address) == host.management_ip:
-                print(f"      SET PRIMARY IPv4 " f"address={address}")
-
-        print()
+        _print_host_interface(nb_api, interface, existing, host, site)
 
 
 def plan_hosts(
@@ -368,6 +387,7 @@ def plan_hosts(
     hosts: list,
     config: NetBoxTargetConfig,
 ) -> None:
+    """Resolve host targets and report host and guest changes without writes."""
 
     site, role, platform, host_types, cluster_type, cluster = prepare_host_plan_targets(
         nb_api,

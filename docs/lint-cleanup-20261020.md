@@ -416,3 +416,13 @@ Executable AST unchanged. All 13 affected Pydantic schemas are identical after
 excluding description metadata. Full suite before and after: 2348 passed,
 491 skipped, one existing warning. Pylint 9.23/10, zero Error/Fatal. Black and
 whitespace pass. Selectel descriptions explicitly retain experimental status.
+
+## Stage 33: host network planning report stages
+
+Separate management-interface lookup and interface/VLAN/address reporting while
+keeping the original lookup order, reference-only policy and exact output. Four
+new scoped/ambiguous/missing network cases pass before extraction together with
+13 golden report cases. Focused post-change suite: 29 passed. Full suite: 2352
+passed, 491 skipped, one existing warning. Pylint 9.23/10, zero Error/Fatal; no
+complexity or missing-doc findings remain in netbox_planner. Black and whitespace
+pass. Planning keeps its existing differences from the write path.
