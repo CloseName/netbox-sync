@@ -658,3 +658,13 @@ passed, 491 skipped, one existing warning; Pylint 9.40/10, zero Error/Fatal. No
 complexity findings remain in secret_broker. Tests verify no premature secret reads,
 all-file validation before unlink, inode/capability checks and descriptor closure.
 Black and whitespace pass; real secret files and production remain untouched.
+
+## Stage 58: registration write stages
+
+Separate credential consumption, secret creation and registry persistence while
+preserving public registration contracts and rollback boundaries. Five new tests
+pass on the original implementation; 89 focused tests pass after extraction.
+Tests cover receipt ordering, complete reverse rollback despite failures and
+uncertain deterministic registration without deleting persistent secrets.
+Full suite: 2543 passed, 491 skipped, one existing warning; Pylint 9.40/10,
+zero Error/Fatal. Black and whitespace checks pass. Production remains untouched.
