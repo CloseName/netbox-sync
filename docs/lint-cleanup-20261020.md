@@ -594,3 +594,14 @@ cases plus existing tests pass before/after (11 total). Full suite: 2451 passed,
 491 skipped, one existing warning; Pylint 9.38/10, zero Error/Fatal. No complexity
 findings remain in selectel_lifecycle_control. Black and whitespace pass. This is
 structural cleanup only: Selectel is still experimental and production is untouched.
+
+## Stage 52: discovery review projection stages
+
+Separate occurrence indexing, allowlisted inventory projection, candidate evidence,
+provider hardware matches and per-host Proxmox classification. Preserve VM/LXC keys,
+input occurrences, existing properties, bounded text, link sanitization and candidate
+ordering. Eight new cases pass on their original target paths before extraction;
+22 focused tests pass after. Full suite: 2459 passed, 491 skipped, one existing
+warning; Pylint 9.39/10, zero Error/Fatal. No complexity findings remain in
+discovery_review. Black and whitespace pass. Public DTOs and provider behavior stay
+unchanged; Selectel remains experimental.
