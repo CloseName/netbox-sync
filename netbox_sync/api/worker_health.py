@@ -17,7 +17,7 @@ class WorkerHealthClient:
         if not self._socket_path:
             return False
         try:
-            family = getattr(socket, 'AF_UNIX', 1)
+            family = getattr(socket, "AF_UNIX", 1)
             with self._connector(family, socket.SOCK_STREAM) as connection:
                 connection.settimeout(self._timeout)
                 connection.connect(self._socket_path)
@@ -29,4 +29,4 @@ class WorkerHealthClient:
             value = json.loads(response)
         except (OSError, ValueError, json.JSONDecodeError):
             return False
-        return value == {'ok': True, 'result': {'status': 'ok'}}
+        return value == {"ok": True, "result": {"status": "ok"}}

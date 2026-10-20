@@ -11,54 +11,104 @@ from ..netbox_full_apply import apply_full_sync
 def build_runtime_plan(nb_api, hosts, config):
     """Run guarded executors on a write-recording facade and return one canonical plan."""
     from .inventory_order import canonical_hosts
+
     hosts = canonical_hosts(hosts)
-    from .sync_plan import (SyncPlan, SyncPlanItem, SyncAction, safe_source_fingerprint,
-                            target_fingerprint, stable_fingerprint)
+    from .sync_plan import (
+        SyncPlan,
+        SyncPlanItem,
+        SyncAction,
+        safe_source_fingerprint,
+        target_fingerprint,
+        stable_fingerprint,
+    )
     from .ip_observations import assignment_inventory, source_policy
-    from ..network_scopes import scoped_inventory,NetworkScopeError
+    from ..network_scopes import scoped_inventory, NetworkScopeError
     from ..vm_replacement import configure, stage
+
     configure(nb_api)
-    nb_api=PlanningNetBox(nb_api)
+    nb_api = PlanningNetBox(nb_api)
     from ..esxi_vm_identity import resolve_vm_identities
+
     hosts, identity_conflicts = resolve_vm_identities(nb_api, hosts, config)
-    try:hosts=scoped_inventory(nb_api,hosts,config)
+    try:
+        hosts = scoped_inventory(nb_api, hosts, config)
     except NetworkScopeError:
-        return SyncPlan(source_instance=config.source_instance,source_id=config.id,source_type=config.source_type,
-            source_fingerprint=safe_source_fingerprint(config),target_fingerprint=target_fingerprint(config),
-            provider_fingerprint=stable_fingerprint(None),netbox_fingerprint=stable_fingerprint(None),
-            items=(SyncPlanItem(object_kind='source',external_id=config.source_instance,name=config.name,
-                action=SyncAction.BLOCKED,reason_code='NETWORK_SCOPE_REVIEW_REQUIRED',
-                reason='Selected network scope changed or no longer exists. Review the source VRF mapping.'),))
+        return SyncPlan(
+            source_instance=config.source_instance,
+            source_id=config.id,
+            source_type=config.source_type,
+            source_fingerprint=safe_source_fingerprint(config),
+            target_fingerprint=target_fingerprint(config),
+            provider_fingerprint=stable_fingerprint(None),
+            netbox_fingerprint=stable_fingerprint(None),
+            items=(
+                SyncPlanItem(
+                    object_kind="source",
+                    external_id=config.source_instance,
+                    name=config.name,
+                    action=SyncAction.BLOCKED,
+                    reason_code="NETWORK_SCOPE_REVIEW_REQUIRED",
+                    reason="Selected network scope changed or no longer exists. Review the source VRF mapping.",
+                ),
+            ),
+        )
     _, conflicts, observations = assignment_inventory(hosts, source_policy(config))
     conflicts = tuple(dict.fromkeys((*identity_conflicts, *conflicts)))
     if conflicts:
         from dataclasses import asdict
+
         return SyncPlan(
-            source_instance=config.source_instance, source_id=config.id,
-            source_type=config.source_type, source_fingerprint=safe_source_fingerprint(config),
+            source_instance=config.source_instance,
+            source_id=config.id,
+            source_type=config.source_type,
+            source_fingerprint=safe_source_fingerprint(config),
             target_fingerprint=target_fingerprint(config),
             provider_fingerprint=stable_fingerprint([asdict(c) for c in conflicts]),
-            netbox_fingerprint=stable_fingerprint(None), conflicts=conflicts,
-            items=tuple(SyncPlanItem(object_kind='source', external_id=c.value,
-                name=config.name, action=SyncAction.BLOCKED, reason_code=c.kind,
-                reason='Inventory conflict. Resolve the ambiguity and build a new plan.')
-                for c in conflicts))
+            netbox_fingerprint=stable_fingerprint(None),
+            conflicts=conflicts,
+            items=tuple(
+                SyncPlanItem(
+                    object_kind="source",
+                    external_id=c.value,
+                    name=config.name,
+                    action=SyncAction.BLOCKED,
+                    reason_code=c.kind,
+                    reason="Inventory conflict. Resolve the ambiguity and build a new plan.",
+                )
+                for c in conflicts
+            ),
+        )
     from ..netbox_metadata import find_sync_identity_matches
     from ..selectel_host_match import SelectelMatchError
+
     try:
         devices = list(nb_api.dcim.devices.all())
         for host in hosts:
             find_sync_identity_matches(devices, host)
     except SelectelMatchError as error:
-        return SyncPlan(source_instance=config.source_instance,source_id=config.id,source_type=config.source_type,
-            source_fingerprint=safe_source_fingerprint(config),target_fingerprint=target_fingerprint(config),
-            provider_fingerprint=stable_fingerprint(error.code),netbox_fingerprint=stable_fingerprint(None),
-            items=(SyncPlanItem(object_kind='host',external_id=host.source_id,name=host.original_name,
-                action=SyncAction.BLOCKED,reason_code=error.code,
-                reason='Selectel hardware matching requires review. Refresh provider inventory and check duplicate hardware identifiers and existing source bindings.'),))
+        return SyncPlan(
+            source_instance=config.source_instance,
+            source_id=config.id,
+            source_type=config.source_type,
+            source_fingerprint=safe_source_fingerprint(config),
+            target_fingerprint=target_fingerprint(config),
+            provider_fingerprint=stable_fingerprint(error.code),
+            netbox_fingerprint=stable_fingerprint(None),
+            items=(
+                SyncPlanItem(
+                    object_kind="host",
+                    external_id=host.source_id,
+                    name=host.original_name,
+                    action=SyncAction.BLOCKED,
+                    reason_code=error.code,
+                    reason="Selectel hardware matching requires review. Refresh provider inventory and check duplicate hardware identifiers and existing source bindings.",
+                ),
+            ),
+        )
     # The native VM writer requires unique display names in the target cluster.
     # Surface the conflict in the review instead of a generic simulation failure.
     from ..netbox_vm_name import netbox_vm_name
+
     by_name = {}
     for host in hosts:
         for vm in host.virtual_machines:
@@ -66,26 +116,39 @@ def build_runtime_plan(nb_api, hosts, config):
     duplicate_names = {name: vms for name, vms in by_name.items() if len(vms) > 1}
     if duplicate_names:
         return SyncPlan(
-            source_instance=config.source_instance, source_id=config.id,
-            source_type=config.source_type, source_fingerprint=safe_source_fingerprint(config),
+            source_instance=config.source_instance,
+            source_id=config.id,
+            source_type=config.source_type,
+            source_fingerprint=safe_source_fingerprint(config),
             target_fingerprint=target_fingerprint(config),
             provider_fingerprint=stable_fingerprint(sorted(duplicate_names)),
             netbox_fingerprint=stable_fingerprint(None),
-            items=tuple(SyncPlanItem(object_kind='virtual_machine', external_id=name,
-                name=netbox_vm_name(vms[0]), action=SyncAction.BLOCKED,
-                reason_code='DUPLICATE_VM_NAME',
-                reason='Multiple source VMs have the same NetBox name (case-insensitive, first 64 characters). Rename them in the source and build a new plan.')
-                for name, vms in sorted(duplicate_names.items())))
+            items=tuple(
+                SyncPlanItem(
+                    object_kind="virtual_machine",
+                    external_id=name,
+                    name=netbox_vm_name(vms[0]),
+                    action=SyncAction.BLOCKED,
+                    reason_code="DUPLICATE_VM_NAME",
+                    reason="Multiple source VMs have the same NetBox name (case-insensitive, first 64 characters). Rename them in the source and build a new plan.",
+                )
+                for name, vms in sorted(duplicate_names.items())
+            ),
+        )
     # Reuse exact remote reads within one plan; prepare/apply reads afresh.
     from ..host_mapping import validate
     from ..child_process import measured_phase
-    with measured_phase('netbox_mapping'):
-        validate(nb_api,config.target,hosts)
-    with measured_phase('netbox_review'):
-        if config.source_type == 'esxi':
+
+    with measured_phase("netbox_mapping"):
+        validate(nb_api, config.target, hosts)
+    with measured_phase("netbox_review"):
+        if config.source_type == "esxi":
             stage(nb_api, hosts, config)
-        review = (build_proxmox_review(nb_api, hosts, config) if config.source_type == 'proxmox'
-                  else build_esxi_review(build_esxi_adoption_plan(nb_api, hosts, config), config))
+        review = (
+            build_proxmox_review(nb_api, hosts, config)
+            if config.source_type == "proxmox"
+            else build_esxi_review(build_esxi_adoption_plan(nb_api, hosts, config), config)
+        )
     review_plan = plan_from_review(review, config)
     if not review_plan.apply_allowed:
         return review_plan
@@ -93,40 +156,88 @@ def build_runtime_plan(nb_api, hosts, config):
     from .ip_observations import ObservationPrerequisiteError
     from ..esxi_host_network import HostNetworkPrerequisiteError
     from ..netbox_vm_network_apply import ManagedMACConflict
+
     try:
-        with measured_phase('netbox_simulation'):
-            if config.source_type == 'proxmox':
+        with measured_phase("netbox_simulation"):
+            if config.source_type == "proxmox":
                 apply_full_sync(planning_api, hosts, config.target, confirmed=True)
             else:
                 execute_esxi_runtime(planning_api, hosts, config, confirmed=True)
     except ManagedMACConflict as conflict:
         from dataclasses import replace
-        return replace(review_plan, items=(*review_plan.items, SyncPlanItem(
-            object_kind='vminterface', external_id=conflict.mac,
-            name=f'{conflict.vm_name} / {conflict.nic_name}', action=SyncAction.BLOCKED,
-            reason_code='MAC_IDENTITY_AMBIGUOUS' if conflict.duplicate else 'MAC_ASSIGNED_ELSEWHERE',
-            reason=('Several NetBox MAC records match the desired address.' if conflict.duplicate
-                    else 'The desired MAC belongs to another interface. Its assignment was preserved.'),
-            after=(('mac_address',conflict.mac),))))
+
+        return replace(
+            review_plan,
+            items=(
+                *review_plan.items,
+                SyncPlanItem(
+                    object_kind="vminterface",
+                    external_id=conflict.mac,
+                    name=f"{conflict.vm_name} / {conflict.nic_name}",
+                    action=SyncAction.BLOCKED,
+                    reason_code="MAC_IDENTITY_AMBIGUOUS" if conflict.duplicate else "MAC_ASSIGNED_ELSEWHERE",
+                    reason=(
+                        "Several NetBox MAC records match the desired address."
+                        if conflict.duplicate
+                        else "The desired MAC belongs to another interface. Its assignment was preserved."
+                    ),
+                    after=(("mac_address", conflict.mac),),
+                ),
+            ),
+        )
     except HostNetworkPrerequisiteError as error:
         from dataclasses import replace
-        return replace(review_plan, items=(*review_plan.items, SyncPlanItem(
-            object_kind='source', external_id=config.source_instance, name=config.name,
-            action=SyncAction.BLOCKED, reason_code='HOST_NETWORK_FIELD_REQUIRED',
-            reason=str(error))))
+
+        return replace(
+            review_plan,
+            items=(
+                *review_plan.items,
+                SyncPlanItem(
+                    object_kind="source",
+                    external_id=config.source_instance,
+                    name=config.name,
+                    action=SyncAction.BLOCKED,
+                    reason_code="HOST_NETWORK_FIELD_REQUIRED",
+                    reason=str(error),
+                ),
+            ),
+        )
     except ObservationPrerequisiteError:
         from dataclasses import replace
-        return replace(review_plan, items=(*review_plan.items, SyncPlanItem(
-            object_kind='source', external_id=config.source_instance, name=config.name,
-            action=SyncAction.BLOCKED, reason_code='OBSERVATION_FIELD_REQUIRED',
-            reason='Prepare the network observations field in NetBox settings before synchronization.')))
+
+        return replace(
+            review_plan,
+            items=(
+                *review_plan.items,
+                SyncPlanItem(
+                    object_kind="source",
+                    external_id=config.source_instance,
+                    name=config.name,
+                    action=SyncAction.BLOCKED,
+                    reason_code="OBSERVATION_FIELD_REQUIRED",
+                    reason="Prepare the network observations field in NetBox settings before synchronization.",
+                ),
+            ),
+        )
     plan = plan_from_mutations(review, config, planning_api.mutations)
     if observations:
         from dataclasses import replace, asdict
-        rows = tuple(SyncPlanItem(object_kind='mac_observation' if c.kind=='MAC_ASSIGNMENT' else 'ip_observation',
-            external_id=c.value, name=c.value, action=SyncAction.UNSUPPORTED,
-            reason_code='MAC_OBSERVATION_ONLY' if c.kind=='MAC_ASSIGNMENT' else 'IP_OBSERVATION_ONLY',
-            reason=('Stored on NetBox interfaces for review; disputed MAC assignments are not synchronized.' if c.kind=='MAC_ASSIGNMENT' else 'Stored on NetBox interfaces for review; disputed IPAM assignments are not synchronized.'),
-            after=(('participants', [asdict(p) for p in c.participants]),)) for c in observations)
+
+        rows = tuple(
+            SyncPlanItem(
+                object_kind="mac_observation" if c.kind == "MAC_ASSIGNMENT" else "ip_observation",
+                external_id=c.value,
+                name=c.value,
+                action=SyncAction.UNSUPPORTED,
+                reason_code="MAC_OBSERVATION_ONLY" if c.kind == "MAC_ASSIGNMENT" else "IP_OBSERVATION_ONLY",
+                reason=(
+                    "Stored on NetBox interfaces for review; disputed MAC assignments are not synchronized."
+                    if c.kind == "MAC_ASSIGNMENT"
+                    else "Stored on NetBox interfaces for review; disputed IPAM assignments are not synchronized."
+                ),
+                after=(("participants", [asdict(p) for p in c.participants]),),
+            )
+            for c in observations
+        )
         plan = replace(plan, items=(*plan.items, *rows))
     return plan

@@ -13,9 +13,12 @@ class ApplyRequestError(RuntimeError):
         self.code = code
         from ..plan_diagnostics import safe_reason, safe_categories
         from uuid import UUID
+
         self.reason, self.categories = safe_reason(reason), safe_categories(categories)
-        try: self.event_id = str(UUID(event_id)) if event_id else None
-        except (ValueError, TypeError, AttributeError): self.event_id = None
+        try:
+            self.event_id = str(UUID(event_id)) if event_id else None
+        except (ValueError, TypeError, AttributeError):
+            self.event_id = None
         super().__init__(code)
 
 
@@ -27,9 +30,9 @@ class ApplyWorkerClient:
         self._connector = connector
 
     def _request(self, payload):
-        instance = payload.get('source_instance', '')
+        instance = payload.get("source_instance", "")
         if not SOURCE_INSTANCE_PATTERN.fullmatch(instance) or not self._socket_path:
-            raise ApplyRequestError('APPLY_UNAVAILABLE')
+            raise ApplyRequestError("APPLY_UNAVAILABLE")
         try:
             with self._connector(socket.AF_UNIX, socket.SOCK_STREAM) as connection:  # pylint: disable=no-member
                 connection.settimeout(310)
@@ -44,27 +47,43 @@ class ApplyWorkerClient:
                         break
                     size += len(chunk)
                     if size > 65536:
-                        raise ValueError('response too large')
+                        raise ValueError("response too large")
                     chunks.append(chunk)
-                response = json.loads(b''.join(chunks))
+                response = json.loads(b"".join(chunks))
         except (OSError, ValueError, json.JSONDecodeError):
-            raise ApplyRequestError('APPLY_UNAVAILABLE') from None
-        if not isinstance(response, dict) or response.get('ok') is not True:
-            code = response.get('error') if isinstance(response, dict) else None
-            raise ApplyRequestError(code if isinstance(code, str) else 'APPLY_UNAVAILABLE',
-                                    response.get('reason') if isinstance(response, dict) else None,
-                                    response.get('categories') if isinstance(response, dict) else None,
-                                    response.get('event_id') if isinstance(response, dict) else None)
-        if not isinstance(response.get('result'), dict):
-            raise ApplyRequestError('APPLY_RESPONSE_INVALID')
-        return response['result']
+            raise ApplyRequestError("APPLY_UNAVAILABLE") from None
+        if not isinstance(response, dict) or response.get("ok") is not True:
+            code = response.get("error") if isinstance(response, dict) else None
+            raise ApplyRequestError(
+                code if isinstance(code, str) else "APPLY_UNAVAILABLE",
+                response.get("reason") if isinstance(response, dict) else None,
+                response.get("categories") if isinstance(response, dict) else None,
+                response.get("event_id") if isinstance(response, dict) else None,
+            )
+        if not isinstance(response.get("result"), dict):
+            raise ApplyRequestError("APPLY_RESPONSE_INVALID")
+        return response["result"]
 
     def prepare(self, source_instance, plan_digest, operation_id=None, actor_id=None):
         """Request a capability for a server-recomputed exact digest."""
-        return self._request({'operation': 'prepare', 'source_instance': source_instance,
-                              'plan_digest': plan_digest, **({'actor_id': actor_id} if actor_id else {}), **({'operation_id': str(operation_id)} if operation_id else {})})
+        return self._request(
+            {
+                "operation": "prepare",
+                "source_instance": source_instance,
+                "plan_digest": plan_digest,
+                **({"actor_id": actor_id} if actor_id else {}),
+                **({"operation_id": str(operation_id)} if operation_id else {}),
+            }
+        )
 
     def apply(self, source_instance, confirmation_token, actor_id=None, run_id=None):
         """Consume one opaque capability; never accept operations from the browser."""
-        return self._request({'operation': 'apply', 'source_instance': source_instance,
-                              'confirmation_token': confirmation_token, **({'run_id':str(run_id)} if run_id else {}), **({'actor_id': actor_id} if actor_id else {})})
+        return self._request(
+            {
+                "operation": "apply",
+                "source_instance": source_instance,
+                "confirmation_token": confirmation_token,
+                **({"run_id": str(run_id)} if run_id else {}),
+                **({"actor_id": actor_id} if actor_id else {}),
+            }
+        )

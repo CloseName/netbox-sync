@@ -1,4 +1,5 @@
 """Dedicated Unix-socket supervisor for confirmed one-source manual sync."""
+
 # pylint: disable=import-outside-toplevel,too-many-arguments,too-many-positional-arguments
 # pylint: disable=too-many-instance-attributes,subprocess-popen-preexec-fn,no-member
 # pylint: disable=line-too-long,missing-class-docstring,missing-function-docstring
@@ -27,18 +28,24 @@ from contextlib import nullcontext
 from .source_operations import OperationStore, OperationError
 
 from .application.confirmation import ConfirmationClaims, ConfirmationError, ConfirmationStore
-from .discovery_worker import (_bounded_secret, _child_config, _config_payload, _drop_privileges,
-                               _safe_environment)
-from .run_history import (ActionCounts, RunStatus, RunTrigger, postgres_run_repository,
-                          safe_error_code, safe_error_message, terminal_status)
+from .discovery_worker import _bounded_secret, _child_config, _config_payload, _drop_privileges, _safe_environment
+from .run_history import (
+    ActionCounts,
+    RunStatus,
+    RunTrigger,
+    postgres_run_repository,
+    safe_error_code,
+    safe_error_message,
+    terminal_status,
+)
 from .source_config import SOURCE_INSTANCE_PATTERN
 from .source_registry import SourceRegistry
 
 MAX_REQUEST = 4096
 MAX_RESPONSE = 8 * 1024 * 1024
 CHILD_TIMEOUT = 300
-DIGEST_PATTERN = re.compile(r'^[a-f0-9]{64}$')
-TOKEN_PATTERN = re.compile(r'^[a-f0-9]{64}$')
+DIGEST_PATTERN = re.compile(r"^[a-f0-9]{64}$")
+TOKEN_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 
 
 class ApplyWorkerError(RuntimeError):
@@ -60,29 +67,38 @@ def _discover(payload):
     from .esxi_discovery import discover_hosts as discover_esxi
     from .proxmox_discovery import discover_hosts as discover_proxmox
     from .host_primary_ip import select_endpoint
-    source = dict(payload['source'])
-    credentials = payload['credentials']
-    source['username'] = credentials['username']
+
+    source = dict(payload["source"])
+    credentials = payload["credentials"]
+    source["username"] = credentials["username"]
     config = _child_config(source)
-    if config.source_type == 'proxmox':
+    if config.source_type == "proxmox":
         provider = ProxmoxAPI(
-            config.address, user=credentials['username'],
-            token_name=credentials['token_id'].split('!', 1)[-1],
-            token_value=credentials['token_secret'], verify_ssl=config.verify_ssl, port=config.api_port)
+            config.address,
+            user=credentials["username"],
+            token_name=credentials["token_id"].split("!", 1)[-1],
+            token_value=credentials["token_secret"],
+            verify_ssl=config.verify_ssl,
+            port=config.api_port,
+        )
         from .source_tls import configure_proxmox
+
         configure_proxmox(provider, config.verify_ssl)
         return config, select_endpoint(discover_proxmox(provider, config), config)
-    if config.source_type == 'esxi':
+    if config.source_type == "esxi":
+
         class Resolved:
             def resolve(self, _reference):
-                return credentials['token_secret']
+                return credentials["token_secret"]
+
         with EsxiClient(resolver=Resolved()).session(config) as service:
             return config, select_endpoint(discover_esxi(service, config), config)
-    raise ApplyWorkerError('SOURCE_UNSUPPORTED')
+    raise ApplyWorkerError("SOURCE_UNSUPPORTED")
 
 
 def _plan(nb_api, hosts, config):
     from .application.runtime_plan import build_runtime_plan
+
     return build_runtime_plan(nb_api, hosts, config)
 
 
@@ -92,55 +108,70 @@ def execute_child(payload):
     from .esxi_runtime import execute_esxi_runtime
     from .netbox_full_apply import apply_full_sync
     from .worker_failure import failure_stage
-    with failure_stage('provider'):
+
+    with failure_stage("provider"):
         config, hosts = _discover(payload)
-    nb_api = pynetbox.api(payload['netbox_url'], token=payload['netbox_token'])
+    nb_api = pynetbox.api(payload["netbox_url"], token=payload["netbox_token"])
     from .netbox_tls import configure_session
+
     configure_session(nb_api.http_session)
-    with failure_stage('planning'):
+    with failure_stage("planning"):
         plan = _plan(nb_api, hosts, config)
-    if payload['operation'] == 'plan':
-        return {**plan.canonical_dict(), 'digest': plan.digest}
+    if payload["operation"] == "plan":
+        return {**plan.canonical_dict(), "digest": plan.digest}
     if not plan.apply_allowed:
-        raise ApplyWorkerError('PLAN_STALE', 'PLAN_FORBIDDEN')
-    if plan.digest != payload.get('expected_digest'):
-        raise ApplyWorkerError('PLAN_STALE', 'PLAN_DIGEST', differences(payload.get('expected_summary'), plan.canonical_dict()))
-    if not any(item.action.value in ('CREATE', 'UPDATE') for item in plan.items):
-        raise ApplyWorkerError('PLAN_BLOCKED', 'PLAN_FORBIDDEN')
+        raise ApplyWorkerError("PLAN_STALE", "PLAN_FORBIDDEN")
+    if plan.digest != payload.get("expected_digest"):
+        raise ApplyWorkerError(
+            "PLAN_STALE", "PLAN_DIGEST", differences(payload.get("expected_summary"), plan.canonical_dict())
+        )
+    if not any(item.action.value in ("CREATE", "UPDATE") for item in plan.items):
+        raise ApplyWorkerError("PLAN_BLOCKED", "PLAN_FORBIDDEN")
     from .guarded_creation import for_run
-    nb_api = for_run(nb_api, config, instance=payload.get('guard_instance'),
-                     run_id=payload.get('run_id'), url=payload['netbox_url'], token=payload['netbox_token'])
+
+    nb_api = for_run(
+        nb_api,
+        config,
+        instance=payload.get("guard_instance"),
+        run_id=payload.get("run_id"),
+        url=payload["netbox_url"],
+        token=payload["netbox_token"],
+    )
     # Executors run their complete preflight once, then signal the write boundary.
     write_started = False
 
     def before_write():
         nonlocal write_started
         from .child_process import phase_progress
+
         write_started = True
-        phase_progress('write_boundary')
+        phase_progress("write_boundary")
 
     try:
-        if config.source_type == 'proxmox':
-            apply_full_sync(nb_api, hosts, config.target, confirmed=True,
-                            before_write=before_write)
+        if config.source_type == "proxmox":
+            apply_full_sync(nb_api, hosts, config.target, confirmed=True, before_write=before_write)
         else:
-            execute_esxi_runtime(nb_api, hosts, config, confirmed=True,
-                                 before_write=before_write)
+            execute_esxi_runtime(nb_api, hosts, config, confirmed=True, before_write=before_write)
     except Exception as exc:
-        code = 'OUTCOME_UNCERTAIN' if write_started else 'FAILED_BEFORE_WRITE'
-        raise ApplyWorkerError(code, diagnostic=_failure(
-            exc, 'apply' if write_started else 'preflight')) from exc
-    return {'status': 'SUCCEEDED', 'plan_digest': plan.digest,
-            'network_complete': not any(item.reason_code in ('IP_OBSERVATION_ONLY','MAC_OBSERVATION_ONLY') for item in plan.items),
-            'ipam_complete': not any(item.reason_code == 'IP_OBSERVATION_ONLY' for item in plan.items),
-            'planner_version': plan.planner_version,
-            'action_counts': ActionCounts.from_items(plan.items).__dict__}
+        code = "OUTCOME_UNCERTAIN" if write_started else "FAILED_BEFORE_WRITE"
+        raise ApplyWorkerError(code, diagnostic=_failure(exc, "apply" if write_started else "preflight")) from exc
+    return {
+        "status": "SUCCEEDED",
+        "plan_digest": plan.digest,
+        "network_complete": not any(
+            item.reason_code in ("IP_OBSERVATION_ONLY", "MAC_OBSERVATION_ONLY") for item in plan.items
+        ),
+        "ipam_complete": not any(item.reason_code == "IP_OBSERVATION_ONLY" for item in plan.items),
+        "planner_version": plan.planner_version,
+        "action_counts": ActionCounts.from_items(plan.items).__dict__,
+    }
 
 
 def _failure(exc, phase):
     from .worker_failure import diagnostic
-    value = getattr(exc, 'diagnostic', None) or diagnostic(exc, 'planning')
-    return {**value, 'phase': value.get('phase', phase)}
+
+    value = getattr(exc, "diagnostic", None) or diagnostic(exc, "planning")
+    return {**value, "phase": value.get("phase", phase)}
 
 
 def child_main():
@@ -149,20 +180,32 @@ def child_main():
         payload = json.loads(sys.stdin.buffer.read(MAX_RESPONSE + 1))
         with redirect_stdout(sys.stderr):
             value = execute_child(payload)
-        result = {'result': value}
+        result = {"result": value}
     except ApplyWorkerError as exc:
-        result = {'error': exc.code, 'reason': exc.reason, 'categories': exc.categories, 'diagnostic': exc.diagnostic}
+        result = {"error": exc.code, "reason": exc.reason, "categories": exc.categories, "diagnostic": exc.diagnostic}
     except Exception as exc:  # No exception text or stderr is forwarded.
-        result = {'error': 'FAILED_BEFORE_WRITE', 'diagnostic': _failure(exc, 'planning')}
+        result = {"error": "FAILED_BEFORE_WRITE", "diagnostic": _failure(exc, "planning")}
     sys.stdout.write(json.dumps(result))
 
 
 class ApplySupervisor:
     """Own credentials, confirmation state, child lifecycle, and the shared apply lock."""
 
-    def __init__(self, dsn, schema, secret_root, source_secret_root, netbox_url,
-                 netbox_token_file, lock_path, child_uid=10001, child_gid=10001,
-                 popen=subprocess.Popen, confirmations=None, run_repository=None):
+    def __init__(
+        self,
+        dsn,
+        schema,
+        secret_root,
+        source_secret_root,
+        netbox_url,
+        netbox_token_file,
+        lock_path,
+        child_uid=10001,
+        child_gid=10001,
+        popen=subprocess.Popen,
+        confirmations=None,
+        run_repository=None,
+    ):
         self._dsn, self._schema = dsn, schema
         self._secret_root, self._source_secret_root = secret_root, source_secret_root
         self._netbox_url, self._netbox_token_file = netbox_url, netbox_token_file
@@ -174,100 +217,160 @@ class ApplySupervisor:
 
     def _source(self, instance):
         try:
-            registry = SourceRegistry(lambda: psycopg.connect(
-                self._dsn, connect_timeout=3,
-                options='-c statement_timeout=3000 -c default_transaction_read_only=on'), self._schema)
+            registry = SourceRegistry(
+                lambda: psycopg.connect(
+                    self._dsn,
+                    connect_timeout=3,
+                    options="-c statement_timeout=3000 -c default_transaction_read_only=on",
+                ),
+                self._schema,
+            )
             if registry.schema_version() != 1:
-                raise ApplyWorkerError('REGISTRY_UNAVAILABLE')
+                raise ApplyWorkerError("REGISTRY_UNAVAILABLE")
             record = registry.get_by_source_instance(instance)
         except ApplyWorkerError:
             raise
         except Exception:
-            raise ApplyWorkerError('REGISTRY_UNAVAILABLE') from None
+            raise ApplyWorkerError("REGISTRY_UNAVAILABLE") from None
         if record is None:
-            raise ApplyWorkerError('SOURCE_NOT_FOUND')
+            raise ApplyWorkerError("SOURCE_NOT_FOUND")
         if not record.config.enabled:
-            raise ApplyWorkerError('SOURCE_DISABLED')
+            raise ApplyWorkerError("SOURCE_DISABLED")
         from .host_registration import HostRegistrationConflict
+
         try:
             registry.assert_exclusive_host(record.config)
         except HostRegistrationConflict:
-            raise ApplyWorkerError('PLAN_BLOCKED') from None
+            raise ApplyWorkerError("PLAN_BLOCKED") from None
         except Exception:
-            raise ApplyWorkerError('REGISTRY_UNAVAILABLE') from None
+            raise ApplyWorkerError("REGISTRY_UNAVAILABLE") from None
         return record.config
 
     def _payload(self, config, operation, expected_digest=None):
         from .secret_resolver import FileSecretResolver, SecretResolutionError
+
         try:
             credentials = FileSecretResolver(
-                secret_root=self._secret_root, source_secret_root=self._source_secret_root,
-                max_secret_bytes=4096).resolve_credentials(config.credentials)
+                secret_root=self._secret_root, source_secret_root=self._source_secret_root, max_secret_bytes=4096
+            ).resolve_credentials(config.credentials)
             netbox_url = self._netbox_url
-            if os.environ.get('NETBOX_SYNC_NETBOX_CONFIG_FILE'):
+            if os.environ.get("NETBOX_SYNC_NETBOX_CONFIG_FILE"):
                 from .bootstrap_state import runtime_netbox
-                netbox_url, token = runtime_netbox(os.environ['NETBOX_SYNC_NETBOX_CONFIG_FILE'], 'apply')
+
+                netbox_url, token = runtime_netbox(os.environ["NETBOX_SYNC_NETBOX_CONFIG_FILE"], "apply")
             else:
                 token = _bounded_secret(self._netbox_token_file)
         except (SecretResolutionError, OSError):
-            raise ApplyWorkerError('CREDENTIAL_UNAVAILABLE') from None
-        return {'source': _config_payload(config), 'credentials': asdict(credentials),
-                'netbox_url': netbox_url, 'netbox_token': token,
-                'operation': operation, 'expected_digest': expected_digest,
-                'guard_instance': os.environ.get('NETBOX_SYNC_GUARD_INSTANCE', '')}
+            raise ApplyWorkerError("CREDENTIAL_UNAVAILABLE") from None
+        return {
+            "source": _config_payload(config),
+            "credentials": asdict(credentials),
+            "netbox_url": netbox_url,
+            "netbox_token": token,
+            "operation": operation,
+            "expected_digest": expected_digest,
+            "guard_instance": os.environ.get("NETBOX_SYNC_GUARD_INSTANCE", ""),
+        }
 
     def _child(self, payload):
         started = time.monotonic()
-        operation = payload['operation']
+        operation = payload["operation"]
         raw = json.dumps(payload).encode()
         try:
-            with child_process(self._popen, [sys.executable, '-B', '-m', 'netbox_sync.apply_worker', '--child'],
-                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                             env=_safe_environment(), preexec_fn=_drop_privileges(
-                                 self._child_uid, self._child_gid) if os.name == 'posix' else None) as process:
+            with child_process(
+                self._popen,
+                [sys.executable, "-B", "-m", "netbox_sync.apply_worker", "--child"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                env=_safe_environment(),
+                preexec_fn=_drop_privileges(self._child_uid, self._child_gid) if os.name == "posix" else None,
+            ) as process:
                 try:
                     output, _ = process.communicate(raw, timeout=CHILD_TIMEOUT)
                 except subprocess.TimeoutExpired:
-                    cleanup = stop_child(process, getattr(self, '_active_lock_fd', None))
-                    code = ('FAILED_BEFORE_WRITE' if operation == 'plan'
-                            else 'OUTCOME_UNCERTAIN')
-                    raise ApplyWorkerError(code, diagnostic=dict(cleanup, phase='child_wait', duration_ms=int((time.monotonic()-started)*1000))) from None
+                    cleanup = stop_child(process, getattr(self, "_active_lock_fd", None))
+                    code = "FAILED_BEFORE_WRITE" if operation == "plan" else "OUTCOME_UNCERTAIN"
+                    raise ApplyWorkerError(
+                        code,
+                        diagnostic=dict(
+                            cleanup, phase="child_wait", duration_ms=int((time.monotonic() - started) * 1000)
+                        ),
+                    ) from None
         finally:
-            raw = b''
+            raw = b""
             payload = None
-        logging.getLogger(__name__).info(json.dumps({'event':'CHILD_PHASES','phases':getattr(process,'_phases',[])}))
+        logging.getLogger(__name__).info(
+            json.dumps({"event": "CHILD_PHASES", "phases": getattr(process, "_phases", [])})
+        )
         if process.returncode or len(output) > MAX_RESPONSE:
-            raise ApplyWorkerError('FAILED_BEFORE_WRITE' if operation == 'plan'
-                                   else 'OUTCOME_UNCERTAIN', diagnostic=dict(phase='child_response',
-                termination='exit' if process.returncode else 'response_too_large', returncode=process.returncode,
-                duration_ms=int((time.monotonic()-started)*1000)))
+            raise ApplyWorkerError(
+                "FAILED_BEFORE_WRITE" if operation == "plan" else "OUTCOME_UNCERTAIN",
+                diagnostic=dict(
+                    phase="child_response",
+                    termination="exit" if process.returncode else "response_too_large",
+                    returncode=process.returncode,
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                ),
+            )
         try:
             response = json.loads(output)
         except (UnicodeDecodeError, json.JSONDecodeError):
-            raise ApplyWorkerError('FAILED_BEFORE_WRITE' if operation == 'plan'
-                                   else 'OUTCOME_UNCERTAIN', diagnostic=dict(phase='child_response',
-                termination='invalid_response', returncode=process.returncode, duration_ms=int((time.monotonic()-started)*1000))) from None
-        if not isinstance(response, dict) or set(response) - {'result', 'error', 'reason', 'categories', 'diagnostic'}:
-            raise ApplyWorkerError('FAILED_BEFORE_WRITE' if operation == 'plan'
-                                   else 'OUTCOME_UNCERTAIN', diagnostic=dict(phase='child_response', termination='invalid_response', returncode=process.returncode, duration_ms=int((time.monotonic()-started)*1000)))
-        if response.get('error'):
-            allowed = {'PLAN_STALE', 'PLAN_BLOCKED', 'FAILED_BEFORE_WRITE',
-                       'OUTCOME_UNCERTAIN', 'APPLY_FAILED', 'SOURCE_UNSUPPORTED'}
-            code = response['error'] if response['error'] in allowed else 'APPLY_FAILED'
+            raise ApplyWorkerError(
+                "FAILED_BEFORE_WRITE" if operation == "plan" else "OUTCOME_UNCERTAIN",
+                diagnostic=dict(
+                    phase="child_response",
+                    termination="invalid_response",
+                    returncode=process.returncode,
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                ),
+            ) from None
+        if not isinstance(response, dict) or set(response) - {"result", "error", "reason", "categories", "diagnostic"}:
+            raise ApplyWorkerError(
+                "FAILED_BEFORE_WRITE" if operation == "plan" else "OUTCOME_UNCERTAIN",
+                diagnostic=dict(
+                    phase="child_response",
+                    termination="invalid_response",
+                    returncode=process.returncode,
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                ),
+            )
+        if response.get("error"):
+            allowed = {
+                "PLAN_STALE",
+                "PLAN_BLOCKED",
+                "FAILED_BEFORE_WRITE",
+                "OUTCOME_UNCERTAIN",
+                "APPLY_FAILED",
+                "SOURCE_UNSUPPORTED",
+            }
+            code = response["error"] if response["error"] in allowed else "APPLY_FAILED"
             from .worker_failure import safe_diagnostic
-            detail = safe_diagnostic(response.get('diagnostic'), code)
-            detail.update(duration_ms=int((time.monotonic()-started)*1000), returncode=process.returncode)
-            raise ApplyWorkerError(code, response.get('reason'), response.get('categories'), detail)
-        if not isinstance(response.get('result'), dict):
-            raise ApplyWorkerError('FAILED_BEFORE_WRITE' if operation == 'plan' else 'OUTCOME_UNCERTAIN', diagnostic=dict(phase='child_response', termination='invalid_response', returncode=process.returncode, duration_ms=int((time.monotonic()-started)*1000)))
-        return response['result']
+
+            detail = safe_diagnostic(response.get("diagnostic"), code)
+            detail.update(duration_ms=int((time.monotonic() - started) * 1000), returncode=process.returncode)
+            raise ApplyWorkerError(code, response.get("reason"), response.get("categories"), detail)
+        if not isinstance(response.get("result"), dict):
+            raise ApplyWorkerError(
+                "FAILED_BEFORE_WRITE" if operation == "plan" else "OUTCOME_UNCERTAIN",
+                diagnostic=dict(
+                    phase="child_response",
+                    termination="invalid_response",
+                    returncode=process.returncode,
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                ),
+            )
+        return response["result"]
 
     def _unused(self, instance, digest, operation_id):
         if self._runs and self._runs.reconciliation_required(instance):
             raise ApplyWorkerError("PLAN_BLOCKED", "PLAN_FORBIDDEN")
-        if self.operations and self._runs and self._runs.plan_used(
-                instance, digest, self.operations.plan_time(instance, operation_id)):
-            raise ApplyWorkerError('PLAN_STALE', 'OPERATION_STATUS')
+        if (
+            self.operations
+            and self._runs
+            and self._runs.plan_used(instance, digest, self.operations.plan_time(instance, operation_id))
+        ):
+            raise ApplyWorkerError("PLAN_STALE", "OPERATION_STATUS")
 
     def prepare(self, instance, digest, operation_id=None, actor_id=None):
         """Recompute the exact current generation and bind its single-use token."""
@@ -276,106 +379,145 @@ class ApplySupervisor:
             with guard as reviewed:
                 self._unused(instance, digest, operation_id)
                 config = self._source(instance)
-                plan = self._child(self._payload(config, 'plan'))
-                if not plan['apply_allowed']:
-                    raise ApplyWorkerError('PLAN_BLOCKED', 'PLAN_FORBIDDEN')
-                if isinstance(reviewed, dict) and reviewed.get('planner_version') != plan.get('planner_version'):
-                    raise ApplyWorkerError('PLAN_STALE', 'PLANNER_VERSION')
-                if plan['digest'] != digest:
-                    raise ApplyWorkerError('PLAN_STALE', 'PLAN_DIGEST', differences(summary(reviewed) if isinstance(reviewed, dict) else None, plan))
-                if not any(isinstance(item, dict) and item.get('action') in ('CREATE', 'UPDATE')
-                           for item in plan.get('items', [])):
-                    raise ApplyWorkerError('PLAN_BLOCKED', 'PLAN_FORBIDDEN')
-                claims = ConfirmationClaims(instance, config.id, digest, plan['planner_version'],
-                    plan['source_fingerprint'], plan['target_fingerprint'], operation_id, actor_id)
-                return {'confirmation_token': self._confirmations.issue(claims), 'expires_in_seconds': 300}
+                plan = self._child(self._payload(config, "plan"))
+                if not plan["apply_allowed"]:
+                    raise ApplyWorkerError("PLAN_BLOCKED", "PLAN_FORBIDDEN")
+                if isinstance(reviewed, dict) and reviewed.get("planner_version") != plan.get("planner_version"):
+                    raise ApplyWorkerError("PLAN_STALE", "PLANNER_VERSION")
+                if plan["digest"] != digest:
+                    raise ApplyWorkerError(
+                        "PLAN_STALE",
+                        "PLAN_DIGEST",
+                        differences(summary(reviewed) if isinstance(reviewed, dict) else None, plan),
+                    )
+                if not any(
+                    isinstance(item, dict) and item.get("action") in ("CREATE", "UPDATE")
+                    for item in plan.get("items", [])
+                ):
+                    raise ApplyWorkerError("PLAN_BLOCKED", "PLAN_FORBIDDEN")
+                claims = ConfirmationClaims(
+                    instance,
+                    config.id,
+                    digest,
+                    plan["planner_version"],
+                    plan["source_fingerprint"],
+                    plan["target_fingerprint"],
+                    operation_id,
+                    actor_id,
+                )
+                return {"confirmation_token": self._confirmations.issue(claims), "expires_in_seconds": 300}
         except OperationError as exc:
-            raise ApplyWorkerError(exc.code, getattr(exc, 'reason', None)) from None
+            raise ApplyWorkerError(exc.code, getattr(exc, "reason", None)) from None
 
     def apply(self, instance, token, actor_id=None, run_id=None):
         """Consume, lock, reload and recompute before any write."""
         config = self._source(instance)
-        run = self._runs.start_run(
-            instance, config.source_type, RunTrigger.MANUAL, actor_id or 'web/manual',
-            **({'run_id':run_id} if run_id else {}),
-        ) if self._runs else None
+        run = (
+            self._runs.start_run(
+                instance,
+                config.source_type,
+                RunTrigger.MANUAL,
+                actor_id or "web/manual",
+                **({"run_id": run_id} if run_id else {}),
+            )
+            if self._runs
+            else None
+        )
         claims = None
         apply_started = False
         try:
             try:
                 claims = self._confirmations.consume(token, instance)
                 if claims.actor_id != actor_id:
-                    raise ConfirmationError('CONFIRMATION_INVALID')
+                    raise ConfirmationError("CONFIRMATION_INVALID")
             except ConfirmationError as exc:
                 raise ApplyWorkerError(exc.code) from exc
             import fcntl  # pylint: disable=import-outside-toplevel
+
             try:
                 lock_fd = os.open(
-                    self._lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600,
+                    self._lock_path,
+                    os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW,
+                    0o600,
                 )
             except OSError:
-                raise ApplyWorkerError('FAILED_BEFORE_WRITE') from None
+                raise ApplyWorkerError("FAILED_BEFORE_WRITE") from None
             try:
                 try:
                     fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except OSError:
-                    raise ApplyWorkerError('APPLY_LOCKED') from None
-                guard = self.operations.review_guard(instance, claims.plan_digest, claims.operation_id) if self.operations else nullcontext()
+                    raise ApplyWorkerError("APPLY_LOCKED") from None
+                guard = (
+                    self.operations.review_guard(instance, claims.plan_digest, claims.operation_id)
+                    if self.operations
+                    else nullcontext()
+                )
                 try:
                     with guard as reviewed:
                         self._unused(instance, claims.plan_digest, claims.operation_id)
                         config = self._source(instance)
                         if config.id != claims.source_id:
-                            raise ApplyWorkerError('PLAN_STALE', 'SOURCE_IDENTITY')
+                            raise ApplyWorkerError("PLAN_STALE", "SOURCE_IDENTITY")
                         if run:
                             self._runs.bind_plan(run.run_id, claims.plan_digest, claims.planner_version)
                         apply_started = True
-                        payload = self._payload(config, 'apply', claims.plan_digest)
-                        payload['run_id'] = str(run.run_id) if run else None
-                        if isinstance(reviewed, dict): payload['expected_summary'] = summary(reviewed)
+                        payload = self._payload(config, "apply", claims.plan_digest)
+                        payload["run_id"] = str(run.run_id) if run else None
+                        if isinstance(reviewed, dict):
+                            payload["expected_summary"] = summary(reviewed)
                         self._active_lock_fd = lock_fd
                         try:
                             result = self._child(payload)
                         finally:
                             self._active_lock_fd = None
-                        if result.get('plan_digest') != claims.plan_digest:
+                        if result.get("plan_digest") != claims.plan_digest:
                             # The child may already have crossed the NetBox write boundary.
                             # A response-contract mismatch is therefore not a pre-write stale plan.
-                            raise ApplyWorkerError('OUTCOME_UNCERTAIN', diagnostic=dict(phase='result_validation', termination='invalid_response'))
+                            raise ApplyWorkerError(
+                                "OUTCOME_UNCERTAIN",
+                                diagnostic=dict(phase="result_validation", termination="invalid_response"),
+                            )
                 except OperationError as exc:
-                    raise ApplyWorkerError(exc.code, getattr(exc, 'reason', None)) from None
+                    raise ApplyWorkerError(exc.code, getattr(exc, "reason", None)) from None
             finally:
                 os.close(lock_fd)
-            counts = ActionCounts(**result.pop('action_counts', {}))
+            counts = ActionCounts(**result.pop("action_counts", {}))
             if run:
                 self._runs.finish_run(
-                    run.run_id, RunStatus.SUCCEEDED, counts, result['plan_digest'],
-                    result.get('planner_version'),
+                    run.run_id,
+                    RunStatus.SUCCEEDED,
+                    counts,
+                    result["plan_digest"],
+                    result.get("planner_version"),
                 )
-                result['run_id'] = str(run.run_id)
-            result.pop('planner_version', None)
+                result["run_id"] = str(run.run_id)
+            result.pop("planner_version", None)
             return result
         except ApplyWorkerError as exc:
             exc.run_id = str(run.run_id) if run else None
             if run:
                 code = safe_error_code(exc.code)
                 self._runs.finish_run(
-                    run.run_id, terminal_status(code),
+                    run.run_id,
+                    terminal_status(code),
                     plan_digest=claims.plan_digest if claims else None,
                     planner_version=claims.planner_version if claims else None,
-                    error_code=code, error_message_safe=safe_error_message(code),
+                    error_code=code,
+                    error_message_safe=safe_error_message(code),
                 )
             raise
         except Exception as exc:
-            code = 'OUTCOME_UNCERTAIN' if apply_started else 'APPLY_FAILED'
+            code = "OUTCOME_UNCERTAIN" if apply_started else "APPLY_FAILED"
             if run:
                 self._runs.finish_run(
-                    run.run_id, terminal_status(code),
+                    run.run_id,
+                    terminal_status(code),
                     plan_digest=claims.plan_digest if claims else None,
                     planner_version=claims.planner_version if claims else None,
-                    error_code=code, error_message_safe=safe_error_message(code),
+                    error_code=code,
+                    error_message_safe=safe_error_message(code),
                 )
-            error = ApplyWorkerError(code, diagnostic=_failure(exc, 'apply' if apply_started else 'preflight'))
+            error = ApplyWorkerError(code, diagnostic=_failure(exc, "apply" if apply_started else "preflight"))
             error.run_id = str(run.run_id) if run else None
             raise error from exc
 
@@ -390,69 +532,85 @@ def _receive(connection):
             break
         size += len(chunk)
         if size > MAX_REQUEST:
-            raise ApplyWorkerError('REQUEST_INVALID')
+            raise ApplyWorkerError("REQUEST_INVALID")
         chunks.append(chunk)
-    raw = b''.join(chunks)
+    raw = b"".join(chunks)
     try:
         request = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError):
-        raise ApplyWorkerError('REQUEST_INVALID') from None
-    if request == {'operation': 'health'}:
+        raise ApplyWorkerError("REQUEST_INVALID") from None
+    if request == {"operation": "health"}:
         return request
-    operation = request.get('operation') if isinstance(request, dict) else None
-    allowed = ({'operation', 'source_instance', 'plan_digest'} if operation == 'prepare'
-               else {'operation', 'source_instance', 'confirmation_token'})
-    if operation == 'prepare' and isinstance(request, dict) and 'operation_id' in request:
-        allowed = allowed | {'operation_id'}
+    operation = request.get("operation") if isinstance(request, dict) else None
+    allowed = (
+        {"operation", "source_instance", "plan_digest"}
+        if operation == "prepare"
+        else {"operation", "source_instance", "confirmation_token"}
+    )
+    if operation == "prepare" and isinstance(request, dict) and "operation_id" in request:
+        allowed = allowed | {"operation_id"}
         from uuid import UUID
+
         try:
-            UUID(request['operation_id'])
+            UUID(request["operation_id"])
         except (ValueError, TypeError, AttributeError):
-            raise ApplyWorkerError('REQUEST_INVALID') from None
-    if operation == 'apply' and isinstance(request, dict) and 'run_id' in request:
+            raise ApplyWorkerError("REQUEST_INVALID") from None
+    if operation == "apply" and isinstance(request, dict) and "run_id" in request:
         from uuid import UUID
-        try: UUID(request['run_id'])
-        except (ValueError, TypeError, AttributeError): raise ApplyWorkerError('REQUEST_INVALID') from None
-        allowed = allowed | {'run_id'}
-    if isinstance(request, dict) and 'actor_id' in request:
-        allowed = allowed | {'actor_id'}
-        from uuid import UUID
+
         try:
-            if str(UUID(request['actor_id'])) != request['actor_id']:
+            UUID(request["run_id"])
+        except (ValueError, TypeError, AttributeError):
+            raise ApplyWorkerError("REQUEST_INVALID") from None
+        allowed = allowed | {"run_id"}
+    if isinstance(request, dict) and "actor_id" in request:
+        allowed = allowed | {"actor_id"}
+        from uuid import UUID
+
+        try:
+            if str(UUID(request["actor_id"])) != request["actor_id"]:
                 raise ValueError()
         except (ValueError, TypeError, AttributeError):
-            raise ApplyWorkerError('REQUEST_INVALID') from None
-    if (not isinstance(request, dict) or set(request) != allowed
-            or operation not in ('prepare', 'apply')
-            or not SOURCE_INSTANCE_PATTERN.fullmatch(request.get('source_instance', ''))
-            or (operation == 'prepare' and not DIGEST_PATTERN.fullmatch(
-                request.get('plan_digest', '')))
-            or (operation == 'apply' and not TOKEN_PATTERN.fullmatch(
-                request.get('confirmation_token', '')))):
-        raise ApplyWorkerError('REQUEST_INVALID')
+            raise ApplyWorkerError("REQUEST_INVALID") from None
+    if (
+        not isinstance(request, dict)
+        or set(request) != allowed
+        or operation not in ("prepare", "apply")
+        or not SOURCE_INSTANCE_PATTERN.fullmatch(request.get("source_instance", ""))
+        or (operation == "prepare" and not DIGEST_PATTERN.fullmatch(request.get("plan_digest", "")))
+        or (operation == "apply" and not TOKEN_PATTERN.fullmatch(request.get("confirmation_token", "")))
+    ):
+        raise ApplyWorkerError("REQUEST_INVALID")
     return request
 
 
 def _authorize(connection, uid):
-    if not hasattr(socket, 'SO_PEERCRED'):
-        raise ApplyWorkerError('PEER_FORBIDDEN')
-    _pid, peer_uid, _gid = struct.unpack('3i', connection.getsockopt(
-        socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize('3i')))
+    if not hasattr(socket, "SO_PEERCRED"):
+        raise ApplyWorkerError("PEER_FORBIDDEN")
+    _pid, peer_uid, _gid = struct.unpack(
+        "3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
+    )
     if peer_uid != uid:
-        raise ApplyWorkerError('PEER_FORBIDDEN')
+        raise ApplyWorkerError("PEER_FORBIDDEN")
 
 
 def _handle_request(supervisor, request):
     """Answer health before any confirmation, lock, credential, or apply boundary."""
-    if request['operation'] == 'health':
-        return {'status': 'ok'}
-    actor = {'actor_id': request['actor_id']} if 'actor_id' in request else {}
-    if request['operation'] == 'prepare':
-        if 'operation_id' in request:
-            return supervisor.prepare(request['source_instance'], request['plan_digest'], request['operation_id'], **actor)
-        return supervisor.prepare(request['source_instance'], request['plan_digest'], **actor)
-    return supervisor.apply(request['source_instance'], request['confirmation_token'], **actor,
-        **({'run_id':request['run_id']} if 'run_id' in request else {}))
+    if request["operation"] == "health":
+        return {"status": "ok"}
+    actor = {"actor_id": request["actor_id"]} if "actor_id" in request else {}
+    if request["operation"] == "prepare":
+        if "operation_id" in request:
+            return supervisor.prepare(
+                request["source_instance"], request["plan_digest"], request["operation_id"], **actor
+            )
+        return supervisor.prepare(request["source_instance"], request["plan_digest"], **actor)
+    return supervisor.apply(
+        request["source_instance"],
+        request["confirmation_token"],
+        **actor,
+        **({"run_id": request["run_id"]} if "run_id" in request else {}),
+    )
 
 
 def serve(socket_path, supervisor, allowed_uid):
@@ -477,58 +635,101 @@ def serve(socket_path, supervisor, allowed_uid):
                     _authorize(connection, allowed_uid)
                     request = _receive(connection)
                     from .worker_activity import activity
+
                     # Health itself must not create busy evidence.
-                    with activity() if request.get('operation') != 'health' else nullcontext():
+                    with activity() if request.get("operation") != "health" else nullcontext():
                         result = _handle_request(supervisor, request)
-                    response = {'ok': True, 'result': result}
+                    response = {"ok": True, "result": result}
                 except ApplyWorkerError as exc:
-                    response = {'ok': False, 'error': exc.code, 'reason': exc.reason, 'categories': exc.categories, 'event_id': str(uuid4()), 'run_id': exc.run_id}
+                    response = {
+                        "ok": False,
+                        "error": exc.code,
+                        "reason": exc.reason,
+                        "categories": exc.categories,
+                        "event_id": str(uuid4()),
+                        "run_id": exc.run_id,
+                    }
                     from .worker_failure import safe_diagnostic
+
                     detail = safe_diagnostic(exc.diagnostic, exc.code)
-                    logging.getLogger(__name__).error(json.dumps(dict(detail, code=exc.code, event_id=response['event_id'], run_id=exc.run_id, source_instance=request.get('source_instance'), duration_ms=int((time.monotonic()-started)*1000)), sort_keys=True))
+                    logging.getLogger(__name__).error(
+                        json.dumps(
+                            dict(
+                                detail,
+                                code=exc.code,
+                                event_id=response["event_id"],
+                                run_id=exc.run_id,
+                                source_instance=request.get("source_instance"),
+                                duration_ms=int((time.monotonic() - started) * 1000),
+                            ),
+                            sort_keys=True,
+                        )
+                    )
                     logging.getLogger(__name__).warning(json.dumps(response, sort_keys=True))
                 except Exception as exc:  # pylint: disable=broad-exception-caught
-                    response = {'ok': False, 'error': 'WORKER_INTERNAL_ERROR', 'event_id': str(uuid4())}
+                    response = {"ok": False, "error": "WORKER_INTERNAL_ERROR", "event_id": str(uuid4())}
                     from .worker_failure import safe_diagnostic
-                    detail = safe_diagnostic(_failure(exc, 'operation'), 'OPERATION_FAILED')
-                    logging.getLogger(__name__).error(json.dumps(dict(detail, code='WORKER_INTERNAL_ERROR',
-                        event_id=response['event_id'], source_instance=request.get('source_instance'),
-                        duration_ms=int((time.monotonic()-started)*1000)), sort_keys=True))
+
+                    detail = safe_diagnostic(_failure(exc, "operation"), "OPERATION_FAILED")
+                    logging.getLogger(__name__).error(
+                        json.dumps(
+                            dict(
+                                detail,
+                                code="WORKER_INTERNAL_ERROR",
+                                event_id=response["event_id"],
+                                source_instance=request.get("source_instance"),
+                                duration_ms=int((time.monotonic() - started) * 1000),
+                            ),
+                            sort_keys=True,
+                        )
+                    )
                 try:
                     connection.sendall(json.dumps(response).encode())
                 except OSError:
                     # The operation/result belongs to the supervisor, not its recipient.
-                    logging.getLogger(__name__).warning(json.dumps({'event':'RESPONSE_DELIVERY_LOST',
-                        'run_id': response.get('run_id') or response.get('result',{}).get('run_id')}))
+                    logging.getLogger(__name__).warning(
+                        json.dumps(
+                            {
+                                "event": "RESPONSE_DELIVERY_LOST",
+                                "run_id": response.get("run_id") or response.get("result", {}).get("run_id"),
+                            }
+                        )
+                    )
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--child', action='store_true')
-    parser.add_argument('--socket')
-    parser.add_argument('--secret-root')
-    parser.add_argument('--source-secret-root')
-    parser.add_argument('--netbox-token-file')
-    parser.add_argument('--lock-path', default='/run/netbox-sync/apply.lock')
-    parser.add_argument('--api-uid', type=int, default=10001)
-    parser.add_argument('--child-uid', type=int, default=10001)
-    parser.add_argument('--child-gid', type=int, default=10001)
+    parser.add_argument("--child", action="store_true")
+    parser.add_argument("--socket")
+    parser.add_argument("--secret-root")
+    parser.add_argument("--source-secret-root")
+    parser.add_argument("--netbox-token-file")
+    parser.add_argument("--lock-path", default="/run/netbox-sync/apply.lock")
+    parser.add_argument("--api-uid", type=int, default=10001)
+    parser.add_argument("--child-uid", type=int, default=10001)
+    parser.add_argument("--child-gid", type=int, default=10001)
     args = parser.parse_args()
     if args.child:
         child_main()
         return
     supervisor = ApplySupervisor(
-        os.environ.get('NETBOX_SYNC_APPLY_REGISTRY_DSN', ''),
-        os.environ.get('NETBOX_SYNC_REGISTRY_SCHEMA', ''), args.secret_root,
-        args.source_secret_root, os.environ.get('NETBOX_SYNC_APPLY_NB_API_URL', ''),
-        args.netbox_token_file, args.lock_path, args.child_uid, args.child_gid,
+        os.environ.get("NETBOX_SYNC_APPLY_REGISTRY_DSN", ""),
+        os.environ.get("NETBOX_SYNC_REGISTRY_SCHEMA", ""),
+        args.secret_root,
+        args.source_secret_root,
+        os.environ.get("NETBOX_SYNC_APPLY_NB_API_URL", ""),
+        args.netbox_token_file,
+        args.lock_path,
+        args.child_uid,
+        args.child_gid,
         run_repository=postgres_run_repository(
-            os.environ.get('NETBOX_SYNC_RUN_WRITER_DSN', ''),
-            os.environ.get('NETBOX_SYNC_REGISTRY_SCHEMA', ''),
-        ))
+            os.environ.get("NETBOX_SYNC_RUN_WRITER_DSN", ""),
+            os.environ.get("NETBOX_SYNC_REGISTRY_SCHEMA", ""),
+        ),
+    )
     supervisor.operations = OperationStore(supervisor._dsn, supervisor._schema)
     serve(args.socket, supervisor, args.api_uid)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

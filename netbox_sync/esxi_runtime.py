@@ -27,14 +27,11 @@ def _managed_vm_ids(plan):
     )
     external_ids = [item.external_id for item in selected]
     if len(external_ids) != len(set(external_ids)):
-        raise EsxiRuntimeError(
-            'ESXi runtime plan contains duplicate managed VM identities'
-        )
-    if any(len(item.candidates) != 1 for item in selected
-           if item.classification == ObjectMigrationClassification.MANAGED):
-        raise EsxiRuntimeError(
-            'Managed ESXi VM must have exactly one NetBox identity match'
-        )
+        raise EsxiRuntimeError("ESXi runtime plan contains duplicate managed VM identities")
+    if any(
+        len(item.candidates) != 1 for item in selected if item.classification == ObjectMigrationClassification.MANAGED
+    ):
+        raise EsxiRuntimeError("Managed ESXi VM must have exactly one NetBox identity match")
     return frozenset(external_ids)
 
 
@@ -42,78 +39,70 @@ def _filtered_hosts(hosts, config, managed_ids):
     filtered = []
     discovered_ids = set()
     for host in hosts:
-        if host.source != 'esxi' or host.source_instance != config.source_instance:
-            raise EsxiRuntimeError('Discovered host is outside ESXi source scope')
+        if host.source != "esxi" or host.source_instance != config.source_instance:
+            raise EsxiRuntimeError("Discovered host is outside ESXi source scope")
         selected = []
         for vm in host.virtual_machines:
             identity = virtual_machine_source_identity(vm)
             if identity.external_id in discovered_ids:
-                raise EsxiRuntimeError('Duplicate discovered ESXi VM identity')
+                raise EsxiRuntimeError("Duplicate discovered ESXi VM identity")
             discovered_ids.add(identity.external_id)
             if identity.external_id in managed_ids:
                 selected.append(vm)
         filtered.append(replace(host, virtual_machines=selected))
     if not managed_ids.issubset(discovered_ids):
-        raise EsxiRuntimeError('Managed ESXi VM is missing from discovery')
+        raise EsxiRuntimeError("Managed ESXi VM is missing from discovery")
     return tuple(filtered)
 
 
 def _print_plan(plan):
     vm_counts = Counter(item.classification.value for item in plan.virtual_machines)
     host_counts = Counter(item.classification.value for item in plan.hosts)
-    print('=== ESXI RUNTIME PREFLIGHT ===')
-    print(f'source_instance={plan.source_instance}')
-    print(
-        'hosts='
-        + ' '.join(
-            f'{name.lower()}={count}' for name, count in sorted(host_counts.items())
-        )
-    )
-    print(
-        'virtual_machines='
-        + ' '.join(
-            f'{name.lower()}={count}' for name, count in sorted(vm_counts.items())
-        )
-    )
+    print("=== ESXI RUNTIME PREFLIGHT ===")
+    print(f"source_instance={plan.source_instance}")
+    print("hosts=" + " ".join(f"{name.lower()}={count}" for name, count in sorted(host_counts.items())))
+    print("virtual_machines=" + " ".join(f"{name.lower()}={count}" for name, count in sorted(vm_counts.items())))
     for item in plan.hosts:
-        print(
-            f'HOST {item.classification.value} '
-            f'name={item.discovered_name!r} external_id={item.external_id!r}'
-        )
+        print(f"HOST {item.classification.value} " f"name={item.discovered_name!r} external_id={item.external_id!r}")
     for item in plan.virtual_machines:
         if item.classification not in (ObjectMigrationClassification.MANAGED, ObjectMigrationClassification.NEW):
             print(
-                f'VM {item.classification.value} '
-                f'name={item.discovered_name!r} external_id={item.external_id!r} '
-                'action=REPORT_ONLY'
+                f"VM {item.classification.value} "
+                f"name={item.discovered_name!r} external_id={item.external_id!r} "
+                "action=REPORT_ONLY"
             )
-    print('host_networking=UNSUPPORTED_REPORT_ONLY; confirmed endpoint management IP is synchronized')
-    print('disappearance=RETAIN_ONLY')
+    print("host_networking=UNSUPPORTED_REPORT_ONLY; confirmed endpoint management IP is synchronized")
+    print("disappearance=RETAIN_ONLY")
 
 
 def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write=None):
     """Reconcile managed and genuinely new objects; legacy candidates stay separate."""
     from .child_process import measured_phase
     from .vm_replacement import configure, stage
+
     configure(nb_api)
     read_api = PlanningNetBox(nb_api)
-    with measured_phase('simulation_preflight'):
+    with measured_phase("simulation_preflight"):
         from .application.inventory_order import canonical_hosts
+
         hosts = canonical_hosts(hosts)
         from .esxi_vm_identity import resolve_vm_identities
+
         hosts, identity_conflicts = resolve_vm_identities(read_api, hosts, config)
         if identity_conflicts:
             raise EsxiRuntimeError("ESXi VM identity requires review; no writes allowed")
         from .application.ip_observations import executable_inventory
+
         hosts, _ = executable_inventory(read_api, hosts, config)
 
-        if config.source_type != 'esxi':
-            raise EsxiRuntimeError('ESXi runtime requires source_type=esxi')
+        if config.source_type != "esxi":
+            raise EsxiRuntimeError("ESXi runtime requires source_type=esxi")
         if not isinstance(confirmed, bool):
-            raise TypeError('confirmed must be a boolean')
+            raise TypeError("confirmed must be a boolean")
 
         from .host_mapping import validate
-        validate(read_api,config.target,hosts)
+
+        validate(read_api, config.target, hosts)
         try:
             replacements = stage(read_api, hosts, config)
             plan = build_esxi_migration_plan(read_api, hosts, config)
@@ -124,27 +113,39 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write
         except EsxiRuntimeError:
             raise
         except Exception as exc:
-            raise EsxiRuntimeError(f'ESXi runtime preflight failed: {exc}') from exc
+            raise EsxiRuntimeError(f"ESXi runtime preflight failed: {exc}") from exc
 
         _print_plan(plan)
 
         # Host networking remains report-only: VMkernel/vSwitch topology is not
         # interchangeable with the Proxmox host networking executor.
-        host_ids = {item.external_id for item in plan.hosts
-                    if item.classification == ObjectMigrationClassification.NEW
-                    or ((config.target.onboarding_mapping or any(
-                        'selectel_hardware_identity' in candidate.signals for candidate in item.candidates))
-                        and item.classification == ObjectMigrationClassification.MANAGED)}
-        network_host_ids = {item.external_id for item in plan.hosts
-                            if item.classification in (ObjectMigrationClassification.NEW,
-                                                       ObjectMigrationClassification.MANAGED)}
-        network_hosts = tuple(host for host in hosts if host.source_id in network_host_ids
-                              and host.esxi_host_network is not None)
+        host_ids = {
+            item.external_id
+            for item in plan.hosts
+            if item.classification == ObjectMigrationClassification.NEW
+            or (
+                (
+                    config.target.onboarding_mapping
+                    or any("selectel_hardware_identity" in candidate.signals for candidate in item.candidates)
+                )
+                and item.classification == ObjectMigrationClassification.MANAGED
+            )
+        }
+        network_host_ids = {
+            item.external_id
+            for item in plan.hosts
+            if item.classification in (ObjectMigrationClassification.NEW, ObjectMigrationClassification.MANAGED)
+        }
+        network_hosts = tuple(
+            host for host in hosts if host.source_id in network_host_ids and host.esxi_host_network is not None
+        )
         from .esxi_host_network import require_host_network_field, apply_host_network_snapshots
+
         if network_hosts:
             require_host_network_field(read_api)
-        metadata_hosts = tuple(replace(host, interfaces=[], management_ip=None)
-                               for host in hosts if host.source_id in host_ids)
+        metadata_hosts = tuple(
+            replace(host, interfaces=[], management_ip=None) for host in hosts if host.source_id in host_ids
+        )
 
     def stages(api):
         for identifier, body in replacements:
@@ -159,31 +160,30 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write
         from .virtual_disks import apply_virtual_disks
 
         def phase(name):
-            return measured_phase(name if isinstance(api, PlanningNetBox)
-                                  else name.replace('simulation_', 'apply_', 1))
+            return measured_phase(name if isinstance(api, PlanningNetBox) else name.replace("simulation_", "apply_", 1))
 
-        with phase('simulation_host_metadata'):
+        with phase("simulation_host_metadata"):
             if metadata_hosts:
                 apply_hosts(api, metadata_hosts, config.target, confirmed=True, host_networking=False)
-        with phase('simulation_host_network'):
+        with phase("simulation_host_network"):
             apply_host_network_snapshots(api, network_hosts)
-        with phase('simulation_events'):
+        with phase("simulation_events"):
             apply_event_snapshots(api, hosts)
-        with phase('simulation_primary_ip'):
+        with phase("simulation_primary_ip"):
             apply_esxi_primary(api, network_hosts)
-        with phase('simulation_vms'):
+        with phase("simulation_vms"):
             apply_virtual_machines(api, filtered_hosts, config.target, confirmed=True)
-        with phase('simulation_vm_networks'):
+        with phase("simulation_vm_networks"):
             apply_vm_networks(api, filtered_hosts, config, confirmed=True)
-        with phase('simulation_placement'):
+        with phase("simulation_placement"):
             apply_guest_placement(api, filtered_hosts, config, confirmed=True)
-        with phase('simulation_disks'):
+        with phase("simulation_disks"):
             apply_virtual_disks(api, filtered_hosts, config, confirmed=True)
 
     # Simulate dependent creates and every network ownership check before writes.
     stages(PlanningNetBox(read_api))
     if not confirmed:
-        print('ESXi runtime preflight completed. No changes were written to NetBox.')
+        print("ESXi runtime preflight completed. No changes were written to NetBox.")
         return plan
     if before_write is not None:
         before_write()

@@ -12,27 +12,27 @@ from .netbox_disappearance import (
 
 STAGES = (
     (
-        'HOST',
+        "HOST",
         apply_hosts,
     ),
     (
-        'QEMU VM',
+        "QEMU VM",
         apply_virtual_machines,
     ),
     (
-        'QEMU NETWORK',
+        "QEMU NETWORK",
         apply_vm_networks,
     ),
     (
-        'LXC',
+        "LXC",
         apply_lxc_containers,
     ),
     (
-        'LXC NETWORK',
+        "LXC NETWORK",
         apply_lxc_networks,
     ),
-    ('GUEST PLACEMENT', apply_guest_placement),
-    ('VM DISKS', apply_virtual_disks),
+    ("GUEST PLACEMENT", apply_guest_placement),
+    ("VM DISKS", apply_virtual_disks),
 )
 
 
@@ -47,15 +47,9 @@ def _run_stage(
     phase,
 ):
     print()
-    print(
-        '========================================'
-    )
-    print(
-        f'FULL SYNC {phase}: {name}'
-    )
-    print(
-        '========================================'
-    )
+    print("========================================")
+    print(f"FULL SYNC {phase}: {name}")
+    print("========================================")
 
     function(
         nb_api,
@@ -74,30 +68,23 @@ def apply_full_sync(
     before_write=None,
 ):
     from .application.inventory_order import canonical_hosts
+
     hosts = canonical_hosts(hosts)
     from .application.ip_observations import executable_inventory
+
     hosts, _ = executable_inventory(nb_api, hosts, config)
     from .host_mapping import validate
-    validate(nb_api,config,hosts)
-    print(
-        '=== FULL PROXMOX SYNC ==='
-    )
 
-    print(
-        'write_enabled='
-        + (
-            'yes'
-            if confirmed
-            else 'no'
-        )
-    )
+    validate(nb_api, config, hosts)
+    print("=== FULL PROXMOX SYNC ===")
+
+    print("write_enabled=" + ("yes" if confirmed else "no"))
 
     print()
-    print(
-        '=== GLOBAL PRECHECK PHASE ==='
-    )
+    print("=== GLOBAL PRECHECK PHASE ===")
 
     from .application.planning_netbox import PlanningNetBox
+
     preflight_api = PlanningNetBox(nb_api)
 
     # Critical safety property:
@@ -111,20 +98,13 @@ def apply_full_sync(
             hosts,
             config,
             confirmed=True,
-            phase='PRECHECK (SIMULATED)',
+            phase="PRECHECK (SIMULATED)",
         )
 
     print()
-    print(
-        '========================================'
-    )
-    print(
-        'FULL SYNC PRECHECK: '
-        'DISAPPEARANCE'
-    )
-    print(
-        '========================================'
-    )
+    print("========================================")
+    print("FULL SYNC PRECHECK: " "DISAPPEARANCE")
+    print("========================================")
 
     report_missing_managed_objects(
         nb_api,
@@ -133,34 +113,20 @@ def apply_full_sync(
     )
 
     print()
-    print(
-        '========================================'
-    )
-    print(
-        'GLOBAL PRECHECK PASSED'
-    )
-    print(
-        '========================================'
-    )
+    print("========================================")
+    print("GLOBAL PRECHECK PASSED")
+    print("========================================")
 
     if not confirmed:
-        print(
-            'APPLY_CONFIRM=FULL_WRITE '
-            'is not set.'
-        )
-        print(
-            'No changes were written '
-            'to NetBox.'
-        )
+        print("APPLY_CONFIRM=FULL_WRITE " "is not set.")
+        print("No changes were written " "to NetBox.")
         return
 
     if before_write is not None:
         before_write()
 
     print()
-    print(
-        '=== WRITE PHASE ==='
-    )
+    print("=== WRITE PHASE ===")
 
     for name, function in STAGES:
         _run_stage(
@@ -170,16 +136,10 @@ def apply_full_sync(
             hosts,
             config,
             confirmed=True,
-            phase='WRITE',
+            phase="WRITE",
         )
 
     print()
-    print(
-        '========================================'
-    )
-    print(
-        'FULL PROXMOX SYNC COMPLETED'
-    )
-    print(
-        '========================================'
-    )
+    print("========================================")
+    print("FULL PROXMOX SYNC COMPLETED")
+    print("========================================")

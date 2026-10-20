@@ -82,16 +82,17 @@ class EphemeralOnboardingStore:
 
     def recovery_review(self, token, source, value=None):
         with self._lock:
-            item=self._items.get(token)
-            if item is None or item[0]<=self._clock() or (item[2] or {}).get('recovery_source')!=source:
+            item = self._items.get(token)
+            if item is None or item[0] <= self._clock() or (item[2] or {}).get("recovery_source") != source:
                 raise OnboardingError(ErrorCode.ONBOARDING_TOKEN_INVALID)
-            if value is not None:item[2]['recovery_review']=value
-            return item[2].get('recovery_review')
+            if value is not None:
+                item[2]["recovery_review"] = value
+            return item[2].get("recovery_review")
 
     def preview(self, token):
         with self._lock:
-            item=self._items.get(token)
-            if item is None or item[0]<=self._clock():
+            item = self._items.get(token)
+            if item is None or item[0] <= self._clock():
                 raise OnboardingError(ErrorCode.ONBOARDING_TOKEN_INVALID)
             return item[2]
 
@@ -102,9 +103,12 @@ class EphemeralOnboardingStore:
             if item is None or item[0] <= self._clock():
                 raise OnboardingError(ErrorCode.ONBOARDING_TOKEN_INVALID)
             credentials = item[1]
-            if (credentials.source_type != request.source_type or credentials.address != request.address
-                    or credentials.verify_ssl != request.verify_ssl
-                    or credentials.api_port != source_port(request.source_type, request.port)):
+            if (
+                credentials.source_type != request.source_type
+                or credentials.address != request.address
+                or credentials.verify_ssl != request.verify_ssl
+                or credentials.api_port != source_port(request.source_type, request.port)
+            ):
                 raise OnboardingError(ErrorCode.ONBOARDING_TOKEN_INVALID)
 
     def consume(self, token):
@@ -176,40 +180,55 @@ class SourceOnboardingService:
 
     def accept_checked_credentials(self, credentials, preview=None):
         """Retain credentials only after the trusted probe transport succeeded."""
-        check = getattr(self._registry, 'check_provider_identity', None)
+        check = getattr(self._registry, "check_provider_identity", None)
         if check is not None:
-            if credentials.source_type == 'esxi' and (not preview or preview.get('provider') != 'esxi'):
+            if credentials.source_type == "esxi" and (not preview or preview.get("provider") != "esxi"):
                 from ..host_registration import HostRegistrationConflict
-                raise HostRegistrationConflict('HOST_IDENTITY_UNAVAILABLE')
+
+                raise HostRegistrationConflict("HOST_IDENTITY_UNAVAILABLE")
             check(preview)
         return self._pending.issue(credentials, preview)
 
     def accept_registration_resume(self, credentials, preview, source, operation, actor):
-        from ..host_registration import esxi_anchor,HostRegistrationConflict
-        if credentials.source_type!='esxi':raise HostRegistrationConflict('HOST_REGISTRATION_INVALID')
+        from ..host_registration import esxi_anchor, HostRegistrationConflict
+
+        if credentials.source_type != "esxi":
+            raise HostRegistrationConflict("HOST_REGISTRATION_INVALID")
         esxi_anchor(preview)
-        self._registry.check_registration_resume(preview,source,operation,actor)
-        return self._pending.issue(credentials,{**preview,'registration_resume':{
-            'source_instance':source,'registration_id':str(operation),'actor_id':actor}})
+        self._registry.check_registration_resume(preview, source, operation, actor)
+        return self._pending.issue(
+            credentials,
+            {
+                **preview,
+                "registration_resume": {
+                    "source_instance": source,
+                    "registration_id": str(operation),
+                    "actor_id": actor,
+                },
+            },
+        )
 
     def accept_recovery_credentials(self, credentials, preview, source, expected_anchor):
-        from ..host_registration import esxi_anchor,HostRegistrationConflict
-        if credentials.source_type!='esxi' or esxi_anchor(preview)!=expected_anchor:
-            raise HostRegistrationConflict('HOST_IDENTITY_UNAVAILABLE')
-        return self._pending.issue(credentials,{**preview,'recovery_source':source})
+        from ..host_registration import esxi_anchor, HostRegistrationConflict
+
+        if credentials.source_type != "esxi" or esxi_anchor(preview) != expected_anchor:
+            raise HostRegistrationConflict("HOST_IDENTITY_UNAVAILABLE")
+        return self._pending.issue(credentials, {**preview, "recovery_source": source})
 
     def recovery_review(self, token, source, value=None):
-        return self._pending.recovery_review(token,source,value)
+        return self._pending.recovery_review(token, source, value)
 
     def take_recovery_credentials(self, token, source):
-        self._pending.recovery_review(token,source)
+        self._pending.recovery_review(token, source)
         return self._pending.consume(token)
 
     def create_recovery_secret(self, credentials, plan):
-        receipt=self._secrets.create(plan['credential_key'],credentials.secret,
-                                    operation_id=plan['broker_operation'])
-        forget=getattr(self._secrets,'forget',None)
-        if forget:forget([receipt])
+        receipt = self._secrets.create(
+            plan["credential_key"], credentials.secret, operation_id=plan["broker_operation"]
+        )
+        forget = getattr(self._secrets, "forget", None)
+        if forget:
+            forget([receipt])
 
     def preview(self, token):
         return self._pending.preview(token)
@@ -230,48 +249,79 @@ class SourceOnboardingService:
 
     def reserve_provider_identity(self, request, operation_id, actor, *, intent=None):
         self.check_registration(request)
-        self.check_placement(request.site_slug,request.cluster_name)
-        reserve = getattr(self._registry, 'reserve_provider_identity', None)
+        self.check_placement(request.site_slug, request.cluster_name)
+        reserve = getattr(self._registry, "reserve_provider_identity", None)
         if reserve is not None:
             preview = self.preview(request.onboarding_token)
-            resume=(preview or {}).get('registration_resume')
-            if resume and resume!={'source_instance':request.source_instance,'registration_id':str(operation_id),'actor_id':actor}:
+            resume = (preview or {}).get("registration_resume")
+            if resume and resume != {
+                "source_instance": request.source_instance,
+                "registration_id": str(operation_id),
+                "actor_id": actor,
+            }:
                 raise OnboardingError(ErrorCode.ONBOARDING_TOKEN_INVALID)
-            if request.source_type == 'esxi' and (not preview or preview.get('provider') != 'esxi'):
+            if request.source_type == "esxi" and (not preview or preview.get("provider") != "esxi"):
                 from ..host_registration import HostRegistrationConflict
-                raise HostRegistrationConflict('HOST_IDENTITY_UNAVAILABLE')
-            reserve(preview, request.source_instance, operation_id, actor, **({"intent":intent} if intent is not None else {}))
+
+                raise HostRegistrationConflict("HOST_IDENTITY_UNAVAILABLE")
+            reserve(
+                preview,
+                request.source_instance,
+                operation_id,
+                actor,
+                **({"intent": intent} if intent is not None else {}),
+            )
 
     def check_placement(self, site_slug, cluster_name):
         from types import SimpleNamespace
-        check=getattr(self._registry,'check_legacy_placement',None)
-        if check:check(SimpleNamespace(site_slug=site_slug,cluster_name=cluster_name))
+
+        check = getattr(self._registry, "check_legacy_placement", None)
+        if check:
+            check(SimpleNamespace(site_slug=site_slug, cluster_name=cluster_name))
 
     def registration_admission(self):
         from contextlib import nullcontext
-        guard=getattr(self._registry,'registration_admission',None)
+
+        guard = getattr(self._registry, "registration_admission", None)
         return guard() if guard else nullcontext()
 
     @contextmanager
     def registration_guard(self, request, operation_id, actor):
         from contextlib import nullcontext
-        guard=getattr(self._registry,'registration_guard',None)
-        with guard(self.preview(request.onboarding_token),request.source_instance,operation_id,actor) if guard else nullcontext():
-            check=getattr(self._registry,'check_legacy_placement',None)
-            if check:check(request)
+
+        guard = getattr(self._registry, "registration_guard", None)
+        with (
+            guard(self.preview(request.onboarding_token), request.source_instance, operation_id, actor)
+            if guard
+            else nullcontext()
+        ):
+            check = getattr(self._registry, "check_legacy_placement", None)
+            if check:
+                check(request)
             yield
 
     def registration_intent(self, request, operation, actor, fingerprint, durable_request=None):
-        bind=getattr(self._registry,'registration_intent',None)
-        return bind(self.preview(request.onboarding_token),request.source_instance,operation,actor,fingerprint,durable_request) if bind else None
+        bind = getattr(self._registry, "registration_intent", None)
+        return (
+            bind(
+                self.preview(request.onboarding_token),
+                request.source_instance,
+                operation,
+                actor,
+                fingerprint,
+                durable_request,
+            )
+            if bind
+            else None
+        )
 
     def pending_registrations(self, actor):
-        lookup=getattr(self._registry,'pending_registrations',None)
+        lookup = getattr(self._registry, "pending_registrations", None)
         return lookup(actor) if lookup else []
 
     def registration_outcome(self, source, operation_id, actor):
-        lookup = getattr(self._registry, 'registration_outcome', None)
-        return lookup(source, operation_id, actor) if lookup else {'identity_status': 'NO_BOUND_ATTEMPT'}
+        lookup = getattr(self._registry, "registration_outcome", None)
+        return lookup(source, operation_id, actor) if lookup else {"identity_status": "NO_BOUND_ATTEMPT"}
 
     def register(self, request, *, registration=None):
         """Create secrets then exactly one registry row; reconcile uncertain commits."""
@@ -279,32 +329,37 @@ class SourceOnboardingService:
         try:
             return self._register(request, receipts, registration)
         finally:
-            forget = getattr(self._secrets, 'forget', None)
+            forget = getattr(self._secrets, "forget", None)
             if forget is not None:
                 forget(receipts)
 
     def _register(self, request, receipts, registration=None):
-        if registration and request.source_type!='esxi':
+        if registration and request.source_type != "esxi":
             raise OnboardingError(ErrorCode.REGISTRATION_FAILED)
         if request.confirm_sync_disabled is not True:
             raise OnboardingError(ErrorCode.REGISTRATION_FAILED)
-        source_view({**request.__dict__, 'enabled': True, 'sync_enabled': False, 'legacy_identity_owner': False})
+        source_view({**request.__dict__, "enabled": True, "sync_enabled": False, "legacy_identity_owner": False})
         credentials = self._pending.consume(request.onboarding_token)
-        if (credentials.source_type != request.source_type or credentials.address != request.address
-                or credentials.verify_ssl != request.verify_ssl
-                or credentials.api_port != source_port(request.source_type, request.port)):
+        if (
+            credentials.source_type != request.source_type
+            or credentials.address != request.address
+            or credentials.verify_ssl != request.verify_ssl
+            or credentials.api_port != source_port(request.source_type, request.port)
+        ):
             raise OnboardingError(ErrorCode.ONBOARDING_TOKEN_INVALID)
         if self._registry.find(request.source_instance) is not None:
             raise OnboardingError(ErrorCode.SOURCE_ALREADY_EXISTS)
         try:
-            if request.source_type == 'proxmox':
+            if request.source_type == "proxmox":
                 token_receipt = self._secrets.create(
-                    self._key(request.source_instance, 'token-id'), credentials.token_id,
+                    self._key(request.source_instance, "token-id"),
+                    credentials.token_id,
                 )
                 receipts.append(token_receipt)
             secret_receipt = self._secrets.create(
-                registration['credential_key'] if registration else self._key(request.source_instance, 'secret'), credentials.secret,
-                **({'operation_id':registration['broker_operation']} if registration else {}),
+                registration["credential_key"] if registration else self._key(request.source_instance, "secret"),
+                credentials.secret,
+                **({"operation_id": registration["broker_operation"]} if registration else {}),
             )
             receipts.append(secret_receipt)
         except Exception as exc:
@@ -315,21 +370,30 @@ class SourceOnboardingService:
             if isinstance(exc, OnboardingError):
                 raise
             raise OnboardingError(ErrorCode.SECRET_STORE_FAILED) from None
-        config = self.staged_config(request, credentials.username,
-            token_receipt.key if request.source_type == 'proxmox' else secret_receipt.key, secret_receipt.key)
+        config = self.staged_config(
+            request,
+            credentials.username,
+            token_receipt.key if request.source_type == "proxmox" else secret_receipt.key,
+            secret_receipt.key,
+        )
         try:
             return self._registry.create(config)
         except Exception as exc:
             if registration:
                 # The deterministic key may already be referenced by a committed
                 # retry. No rollback may delete it, even after an INSERT refusal.
-                state=self._registry.reconcile(request.source_instance)
-                if state==config:return config
+                state = self._registry.reconcile(request.source_instance)
+                if state == config:
+                    return config
                 raise OnboardingError(ErrorCode.REGISTRATION_UNCERTAIN) from None
-            if getattr(exc, 'definitely_failed', False):
+            if getattr(exc, "definitely_failed", False):
                 if not self._rollback(receipts):
                     raise OnboardingError(ErrorCode.REGISTRATION_UNCERTAIN) from None
-                code = ErrorCode.SOURCE_ALREADY_EXISTS if getattr(exc, 'duplicate', False) else ErrorCode.REGISTRATION_FAILED
+                code = (
+                    ErrorCode.SOURCE_ALREADY_EXISTS
+                    if getattr(exc, "duplicate", False)
+                    else ErrorCode.REGISTRATION_FAILED
+                )
                 raise OnboardingError(code) from None
             state = self._registry.reconcile(request.source_instance)
             if state == config:
@@ -340,24 +404,37 @@ class SourceOnboardingService:
     def staged_config(request, username, token_key, secret_key):
         """Construct the same runtime record from opaque, broker-attested references."""
         token_reference = SecretReference(
-            provider='file', key=token_key,
+            provider="file",
+            key=token_key,
         )
         config = SourceConfig(
-            id=request.source_instance, source_instance=request.source_instance,
-            name=request.name, source_type=request.source_type, address=request.address,
-            enabled=True, sync_enabled=False, sync_interval_seconds=request.sync_interval_seconds,
+            id=request.source_instance,
+            source_instance=request.source_instance,
+            name=request.name,
+            source_type=request.source_type,
+            address=request.address,
+            enabled=True,
+            sync_enabled=False,
+            sync_interval_seconds=request.sync_interval_seconds,
             verify_ssl=request.verify_ssl,
             target=NetBoxTargetConfig(
-                site_slug=request.site_slug, cluster_name=request.cluster_name,
-                platform_slug=request.platform_slug, device_role_slug=request.device_role_slug,
-                device_type_slug=request.device_type_slug, cluster_type_slug=request.cluster_type_slug,
+                site_slug=request.site_slug,
+                cluster_name=request.cluster_name,
+                platform_slug=request.platform_slug,
+                device_role_slug=request.device_role_slug,
+                device_type_slug=request.device_type_slug,
+                cluster_type_slug=request.cluster_type_slug,
             ),
             credentials=SourceCredentials(
-                username=username, token_id=token_reference,
-                token_secret=SecretReference(provider='file', key=secret_key),
+                username=username,
+                token_id=token_reference,
+                token_secret=SecretReference(provider="file", key=secret_key),
             ),
-            legacy_identity_owner=False, settings={**({"onboarding_mapping":request.mapping} if request.mapping else {}),
-                      **({"api_port":request.port} if request.port is not None else {})},
+            legacy_identity_owner=False,
+            settings={
+                **({"onboarding_mapping": request.mapping} if request.mapping else {}),
+                **({"api_port": request.port} if request.port is not None else {}),
+            },
         )
         return config
 

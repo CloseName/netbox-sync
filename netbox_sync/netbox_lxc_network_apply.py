@@ -5,7 +5,7 @@ from .netbox_record_values import object_id as _object_id
 from .interface_display import interface_display_name, validate_interface_names
 from .host_mapping import cluster_filter
 import ipaddress
-from .network_scopes import scope_key,object_id as scope_object_id
+from .network_scopes import scope_key, object_id as scope_object_id
 
 from .netbox_lxc_metadata import (
     find_lxc_sync_identity_matches,
@@ -40,62 +40,37 @@ def apply_lxc_networks(
     *,
     confirmed=False,
 ):
-    site = nb_api.dcim.sites.get(
-        slug=config.site_slug
-    )
+    site = nb_api.dcim.sites.get(slug=config.site_slug)
 
     if site is None:
-        raise LXCNetworkApplyError(
-            'Target site not found'
-        )
+        raise LXCNetworkApplyError("Target site not found")
 
-    cluster_matches = list(
-        nb_api.virtualization
-        .clusters
-        .filter(
-            **cluster_filter(config)
-        )
-    )
+    cluster_matches = list(nb_api.virtualization.clusters.filter(**cluster_filter(config)))
 
     cluster_matches = [
         cluster
         for cluster in cluster_matches
-        if (
-            cluster.serialize().get(
-                'scope_type'
-            ) == 'dcim.site'
-            and cluster.serialize().get(
-                'scope_id'
-            ) == site.id
-        )
+        if (cluster.serialize().get("scope_type") == "dcim.site" and cluster.serialize().get("scope_id") == site.id)
     ]
 
     if len(cluster_matches) != 1:
-        raise LXCNetworkApplyError(
-            'Expected exactly one '
-            'target cluster'
-        )
+        raise LXCNetworkApplyError("Expected exactly one " "target cluster")
 
     cluster = cluster_matches[0]
 
     inventory = prepare_lxc_network_inventory(
-        nb_api, _canonical_mac=_canonical_mac, _canonical_ip=_canonical_ip,
+        nb_api,
+        _canonical_mac=_canonical_mac,
+        _canonical_ip=_canonical_ip,
     )
     contexts = prepare_lxc_network_contexts(hosts, inventory, cluster)
 
     print_lxc_network_precheck(contexts, site, cluster)
 
     if not confirmed:
-        print(
-            'APPLY_CONFIRM='
-            'LXC_NETWORK_WRITE '
-            'is not set.'
-        )
+        print("APPLY_CONFIRM=" "LXC_NETWORK_WRITE " "is not set.")
 
-        print(
-            'No changes were written '
-            'to NetBox.'
-        )
+        print("No changes were written " "to NetBox.")
 
         return
 

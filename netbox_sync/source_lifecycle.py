@@ -1,4 +1,5 @@
 """Source tombstones and an explicit, narrow removal capability."""
+
 from contextlib import contextmanager
 import hashlib
 import json
@@ -23,12 +24,13 @@ class LifecycleError(RuntimeError):
 def apply_lock(path):
     """Contend on the existing manual/scheduled lock, never a second lock system."""
     import fcntl
+
     descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
-            raise LifecycleError('SOURCE_APPLY_ACTIVE') from None
+            raise LifecycleError("SOURCE_APPLY_ACTIVE") from None
         yield
     finally:
         os.close(descriptor)
@@ -36,183 +38,358 @@ def apply_lock(path):
 
 def initialize_tombstones(connection, schema):
     """Test/bootstrap initializer; production uses forward Alembic migration."""
-    connection.execute(sql.SQL('''CREATE TABLE IF NOT EXISTS {} (
+    connection.execute(
+        sql.SQL(
+            """CREATE TABLE IF NOT EXISTS {} (
         source_instance TEXT PRIMARY KEY, display_name TEXT NOT NULL,
         removed_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
         restored_at TIMESTAMPTZ,
         credential_state TEXT NOT NULL CHECK (credential_state IN
         ('RETAINED_BY_REQUEST','REMOVED','RETAINED_SHARED_OR_LEGACY','CLEANUP_FAILED'))
-    )''').format(sql.Identifier(schema, 'source_tombstones')))
+    )"""
+        ).format(sql.Identifier(schema, "source_tombstones"))
+    )
 
 
 class LifecycleStore:
     def __init__(self, dsn, schema, lock_path, connector=psycopg.connect, lock=apply_lock):
-        if not dsn or not SCHEMA_NAME_PATTERN.fullmatch(schema or ''):
-            raise LifecycleError('LIFECYCLE_UNAVAILABLE')
+        if not dsn or not SCHEMA_NAME_PATTERN.fullmatch(schema or ""):
+            raise LifecycleError("LIFECYCLE_UNAVAILABLE")
         self.dsn, self.schema, self.lock_path = dsn, schema, lock_path
         self.connector, self.lock = connector, lock
 
     def connect(self):
-        return self.connector(self.dsn, connect_timeout=3, row_factory=dict_row,
-                              options='-c statement_timeout=5000 -c lock_timeout=3000')
+        return self.connector(
+            self.dsn, connect_timeout=3, row_factory=dict_row, options="-c statement_timeout=5000 -c lock_timeout=3000"
+        )
 
     def table(self, name):
         return sql.Identifier(self.schema, name)
 
     @staticmethod
     def revision(row):
-        return hashlib.sha256(json.dumps(dict(row), sort_keys=True, default=str,
-                                        separators=(',', ':')).encode()).hexdigest()
+        return hashlib.sha256(
+            json.dumps(dict(row), sort_keys=True, default=str, separators=(",", ":")).encode()
+        ).hexdigest()
 
     def _retirement_hint(self, connection, source, removed=None):
-        present=connection.execute('SELECT to_regclass(%s)',(self.schema+'.source_retirements',)).fetchone()
-        if not present or not present['to_regclass']:return None
-        condition=("(state IN ('SENDING','UNCERTAIN','SUCCEEDED','BLOCKED') OR (state='FINALIZED' AND finished_at>=%s))" if removed else
-                   "(state IN ('SENDING','UNCERTAIN','SUCCEEDED') OR (state='BLOCKED' AND safe_code='SOURCE_OPERATION_ACTIVE'))")
-        parameters=(source,removed['removed_at']) if removed else (source,)
-        result=connection.execute(sql.SQL('SELECT operation_id,state,receipt FROM {} WHERE source_instance=%s AND '+condition+" ORDER BY CASE WHEN state IN ('SENDING','UNCERTAIN','SUCCEEDED') THEN 0 ELSE 1 END, CASE WHEN state IN ('SENDING','UNCERTAIN','SUCCEEDED') THEN created_at END ASC, created_at DESC LIMIT 1").format(
-            self.table('source_retirements')),parameters).fetchone()
+        present = connection.execute("SELECT to_regclass(%s)", (self.schema + ".source_retirements",)).fetchone()
+        if not present or not present["to_regclass"]:
+            return None
+        condition = (
+            "(state IN ('SENDING','UNCERTAIN','SUCCEEDED','BLOCKED') OR (state='FINALIZED' AND finished_at>=%s))"
+            if removed
+            else "(state IN ('SENDING','UNCERTAIN','SUCCEEDED') OR (state='BLOCKED' AND safe_code='SOURCE_OPERATION_ACTIVE'))"
+        )
+        parameters = (source, removed["removed_at"]) if removed else (source,)
+        result = connection.execute(
+            sql.SQL(
+                "SELECT operation_id,state,receipt FROM {} WHERE source_instance=%s AND "
+                + condition
+                + " ORDER BY CASE WHEN state IN ('SENDING','UNCERTAIN','SUCCEEDED') THEN 0 ELSE 1 END, CASE WHEN state IN ('SENDING','UNCERTAIN','SUCCEEDED') THEN created_at END ASC, created_at DESC LIMIT 1"
+            ).format(self.table("source_retirements")),
+            parameters,
+        ).fetchone()
         if result:
-            return {'operation_id':str(result['operation_id']),'state':result['state'],'archive_required':result['state']=='SUCCEEDED' and bool(result['receipt']) and result['receipt'].get('generation_closed') is not True}
-        exists=connection.execute('SELECT to_regclass(%s)',(self.schema+'.source_removal_requests',)).fetchone()
-        if exists and exists['to_regclass']:
-            queued=connection.execute(sql.SQL('SELECT operation_id,state FROM {} WHERE source_instance=%s').format(self.table('source_removal_requests')),(source,)).fetchone()
-            if queued:return {'operation_id':str(queued['operation_id']),'state':queued['state'],'queued':True}
+            return {
+                "operation_id": str(result["operation_id"]),
+                "state": result["state"],
+                "archive_required": result["state"] == "SUCCEEDED"
+                and bool(result["receipt"])
+                and result["receipt"].get("generation_closed") is not True,
+            }
+        exists = connection.execute("SELECT to_regclass(%s)", (self.schema + ".source_removal_requests",)).fetchone()
+        if exists and exists["to_regclass"]:
+            queued = connection.execute(
+                sql.SQL("SELECT operation_id,state FROM {} WHERE source_instance=%s").format(
+                    self.table("source_removal_requests")
+                ),
+                (source,),
+            ).fetchone()
+            if queued:
+                return {"operation_id": str(queued["operation_id"]), "state": queued["state"], "queued": True}
         return None
 
     def read(self, source):
         with self.connect() as connection:
-            removed = connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s AND restored_at IS NULL')
-                .format(self.table('source_tombstones')), (source,)).fetchone()
+            removed = connection.execute(
+                sql.SQL("SELECT * FROM {} WHERE source_instance=%s AND restored_at IS NULL").format(
+                    self.table("source_tombstones")
+                ),
+                (source,),
+            ).fetchone()
             if removed:
                 from .source_archive import archived
-                closed=archived(connection,self.schema,source)
-                archive=connection.execute(sql.SQL('SELECT mode FROM {} WHERE source_instance=%s').format(self.table('source_archives')),(source,)).fetchone() if closed else None
-                return {**{k:v for k,v in removed.items() if k!='restored_at'}, 'removed_at': removed['removed_at'].isoformat(), 'revision': None, 'archive_mode':archive['mode'] if archive else None,
-                        'retirement':self._retirement_hint(connection,source,removed)}
-            row = connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s')
-                .format(self.table('sources')), (source,)).fetchone()
+
+                closed = archived(connection, self.schema, source)
+                archive = (
+                    connection.execute(
+                        sql.SQL("SELECT mode FROM {} WHERE source_instance=%s").format(self.table("source_archives")),
+                        (source,),
+                    ).fetchone()
+                    if closed
+                    else None
+                )
+                return {
+                    **{k: v for k, v in removed.items() if k != "restored_at"},
+                    "removed_at": removed["removed_at"].isoformat(),
+                    "revision": None,
+                    "archive_mode": archive["mode"] if archive else None,
+                    "retirement": self._retirement_hint(connection, source, removed),
+                }
+            row = connection.execute(
+                sql.SQL("SELECT * FROM {} WHERE source_instance=%s").format(self.table("sources")), (source,)
+            ).fetchone()
             if not row:
-                raise LifecycleError('SOURCE_NOT_FOUND')
-            blocked = connection.execute(sql.SQL("SELECT status FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED') ORDER BY CASE WHEN status='RUNNING' THEN 1 ELSE 0 END LIMIT 1").format(blocking_runs(connection,self.schema)), (source,)).fetchone()
-            active = connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status='RUNNING' LIMIT 1").format(self.table('source_operations')), (source,)).fetchone()
-            retirement=self._retirement_hint(connection,source)
-            return {'source_instance': source, 'display_name': row['name'], 'retirement':retirement,
-                    'removal_blocker': 'SOURCE_RETIREMENT_PENDING' if retirement else 'SOURCE_APPLY_UNCONFIRMED' if blocked and blocked['status']!='RUNNING' else 'SOURCE_OPERATION_ACTIVE' if active or blocked else None,
-                    'removed_at': None, 'credential_state': None, 'revision': self.revision(row)}
+                raise LifecycleError("SOURCE_NOT_FOUND")
+            blocked = connection.execute(
+                sql.SQL(
+                    "SELECT status FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED') ORDER BY CASE WHEN status='RUNNING' THEN 1 ELSE 0 END LIMIT 1"
+                ).format(blocking_runs(connection, self.schema)),
+                (source,),
+            ).fetchone()
+            active = connection.execute(
+                sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status='RUNNING' LIMIT 1").format(
+                    self.table("source_operations")
+                ),
+                (source,),
+            ).fetchone()
+            retirement = self._retirement_hint(connection, source)
+            return {
+                "source_instance": source,
+                "display_name": row["name"],
+                "retirement": retirement,
+                "removal_blocker": (
+                    "SOURCE_RETIREMENT_PENDING"
+                    if retirement
+                    else (
+                        "SOURCE_APPLY_UNCONFIRMED"
+                        if blocked and blocked["status"] != "RUNNING"
+                        else "SOURCE_OPERATION_ACTIVE" if active or blocked else None
+                    )
+                ),
+                "removed_at": None,
+                "credential_state": None,
+                "revision": self.revision(row),
+            }
 
     def evidence(self, after):
         """Bounded read-only metadata; no result inventories, secrets or new DB grants."""
         with self.connect() as connection:
-            rows = connection.execute(sql.SQL("""SELECT s.source_instance,
+            rows = connection.execute(
+                sql.SQL(
+                    """SELECT s.source_instance,
                 p.status AS plan_status, p.finished_at AS plan_checked_at,
                 (p.status='READY' AND p.result->>'apply_allowed'='false') AS plan_blocked,
                 EXISTS(SELECT 1 FROM {} r WHERE r.source_instance=s.source_instance
                     AND r.status IN ('OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')) AS outcome_unconfirmed
                 FROM {} s LEFT JOIN {} p ON p.source_instance=s.source_instance AND p.operation_kind='PLAN'
-                WHERE s.source_instance>%s ORDER BY s.source_instance LIMIT 50""").format(
-                    blocking_runs(connection,self.schema), self.table('sources'), self.table('source_operations')), (after,)).fetchall()
-        return {'sources': [{**row,'plan_blocked':bool(row['plan_blocked']),
-            'plan_checked_at':row['plan_checked_at'].isoformat() if row['plan_checked_at'] else None} for row in rows],
-            'next': rows[-1]['source_instance'] if len(rows)==50 else None}
+                WHERE s.source_instance>%s ORDER BY s.source_instance LIMIT 50"""
+                ).format(
+                    blocking_runs(connection, self.schema), self.table("sources"), self.table("source_operations")
+                ),
+                (after,),
+            ).fetchall()
+        return {
+            "sources": [
+                {
+                    **row,
+                    "plan_blocked": bool(row["plan_blocked"]),
+                    "plan_checked_at": row["plan_checked_at"].isoformat() if row["plan_checked_at"] else None,
+                }
+                for row in rows
+            ],
+            "next": rows[-1]["source_instance"] if len(rows) == 50 else None,
+        }
 
     def rename(self, source, expected_revision, name):
         """Change only the display label under the shared apply and source locks."""
-        if (not isinstance(name, str) or not name.strip() or len(name) > 200
-                or any(ord(char) < 32 or ord(char) == 127 for char in name)):
-            raise LifecycleError('REQUEST_INVALID')
+        if (
+            not isinstance(name, str)
+            or not name.strip()
+            or len(name) > 200
+            or any(ord(char) < 32 or ord(char) == 127 for char in name)
+        ):
+            raise LifecycleError("REQUEST_INVALID")
         with self.lock(self.lock_path):
             with self.connect() as connection, source_gate(connection, self.schema, source):
-                row = connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s')
-                    .format(self.table('sources')), (source,)).fetchone()
-                if not row or connection.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s AND restored_at IS NULL')
-                    .format(self.table('source_tombstones')), (source,)).fetchone():
-                    raise LifecycleError('SOURCE_NOT_FOUND')
+                row = connection.execute(
+                    sql.SQL("SELECT * FROM {} WHERE source_instance=%s").format(self.table("sources")), (source,)
+                ).fetchone()
+                if (
+                    not row
+                    or connection.execute(
+                        sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND restored_at IS NULL").format(
+                            self.table("source_tombstones")
+                        ),
+                        (source,),
+                    ).fetchone()
+                ):
+                    raise LifecycleError("SOURCE_NOT_FOUND")
                 if self.revision(row) != expected_revision:
-                    raise LifecycleError('SOURCE_LIFECYCLE_CONFLICT')
-                if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status='RUNNING'")
-                    .format(self.table('source_operations')), (source,)).fetchone():
-                    raise LifecycleError('SOURCE_OPERATION_ACTIVE')
-                connection.execute(sql.SQL('UPDATE {} SET name=%s WHERE source_instance=%s')
-                    .format(self.table('sources')), (name, source))
+                    raise LifecycleError("SOURCE_LIFECYCLE_CONFLICT")
+                if connection.execute(
+                    sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status='RUNNING'").format(
+                        self.table("source_operations")
+                    ),
+                    (source,),
+                ).fetchone():
+                    raise LifecycleError("SOURCE_OPERATION_ACTIVE")
+                connection.execute(
+                    sql.SQL("UPDATE {} SET name=%s WHERE source_instance=%s").format(self.table("sources")),
+                    (name, source),
+                )
         return self.read(source)
 
     def remove(self, source, expected_revision, confirmed_source, remove_credentials, cleanup):
         with self.lock(self.lock_path):
-            return self._remove_locked(source,expected_revision,confirmed_source,remove_credentials,cleanup)
+            return self._remove_locked(source, expected_revision, confirmed_source, remove_credentials, cleanup)
 
-    def _remove_locked(self, source, expected_revision, confirmed_source, remove_credentials, cleanup, retirement_operation=None):
+    def _remove_locked(
+        self, source, expected_revision, confirmed_source, remove_credentials, cleanup, retirement_operation=None
+    ):
         """Caller holds shared apply lock; private finalized-retirement entrypoint."""
-        with self.connect() as connection, source_gate(connection, self.schema, source, allow_retirement=retirement_operation is not None):
+        with (
+            self.connect() as connection,
+            source_gate(connection, self.schema, source, allow_retirement=retirement_operation is not None),
+        ):
             if retirement_operation is not None:
-                if not connection.execute(sql.SQL("SELECT 1 FROM {} WHERE operation_id=%s AND source_instance=%s AND state='SUCCEEDED' AND receipt IS NOT NULL").format(
-                        self.table('source_retirements')),(retirement_operation,source)).fetchone():
-                    raise LifecycleError('RETIREMENT_CONFLICT')
-            connection.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
-                               (f'netbox-sync:{self.schema}:credential-refs',))
-            row = connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s')
-                .format(self.table('sources')), (source,)).fetchone()
+                if not connection.execute(
+                    sql.SQL(
+                        "SELECT 1 FROM {} WHERE operation_id=%s AND source_instance=%s AND state='SUCCEEDED' AND receipt IS NOT NULL"
+                    ).format(self.table("source_retirements")),
+                    (retirement_operation, source),
+                ).fetchone():
+                    raise LifecycleError("RETIREMENT_CONFLICT")
+            connection.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"netbox-sync:{self.schema}:credential-refs",)
+            )
+            row = connection.execute(
+                sql.SQL("SELECT * FROM {} WHERE source_instance=%s").format(self.table("sources")), (source,)
+            ).fetchone()
             if not row:
-                raise LifecycleError('SOURCE_NOT_FOUND')
-            if connection.execute(sql.SQL('SELECT 1 FROM {} WHERE source_instance=%s AND restored_at IS NULL')
-                .format(self.table('source_tombstones')), (source,)).fetchone():
-                raise LifecycleError('SOURCE_ALREADY_REMOVED')
+                raise LifecycleError("SOURCE_NOT_FOUND")
+            if connection.execute(
+                sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND restored_at IS NULL").format(
+                    self.table("source_tombstones")
+                ),
+                (source,),
+            ).fetchone():
+                raise LifecycleError("SOURCE_ALREADY_REMOVED")
             if self.revision(row) != expected_revision:
-                raise LifecycleError('SOURCE_LIFECYCLE_CONFLICT')
-            if confirmed_source != row['name']:
-                raise LifecycleError('SOURCE_CONFIRMATION_INVALID')
-            if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status='RUNNING'")
-                .format(self.table('source_operations')), (source,)).fetchone():
-                raise LifecycleError('SOURCE_OPERATION_ACTIVE')
-            if connection.execute(sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status IN "
-                "('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED') LIMIT 1")
-                .format(blocking_runs(connection,self.schema)), (source,)).fetchone():
-                raise LifecycleError('SOURCE_APPLY_UNCONFIRMED')
-            connection.execute(sql.SQL('UPDATE {} SET enabled=false, sync_enabled=false '
-                                       'WHERE source_instance=%s').format(self.table('sources')), (source,))
-            state = 'CLEANUP_FAILED' if remove_credentials else 'RETAINED_BY_REQUEST'
-            connection.execute(sql.SQL('INSERT INTO {} (source_instance,display_name,credential_state) '
-                                       'VALUES (%s,%s,%s) ON CONFLICT (source_instance) DO UPDATE SET '
-                                       'display_name=EXCLUDED.display_name,credential_state=EXCLUDED.credential_state,'
-                                       'removed_at=clock_timestamp(),restored_at=NULL').format(self.table('source_tombstones')),
-                               (source, row['name'], state))
+                raise LifecycleError("SOURCE_LIFECYCLE_CONFLICT")
+            if confirmed_source != row["name"]:
+                raise LifecycleError("SOURCE_CONFIRMATION_INVALID")
+            if connection.execute(
+                sql.SQL("SELECT 1 FROM {} WHERE source_instance=%s AND status='RUNNING'").format(
+                    self.table("source_operations")
+                ),
+                (source,),
+            ).fetchone():
+                raise LifecycleError("SOURCE_OPERATION_ACTIVE")
+            if connection.execute(
+                sql.SQL(
+                    "SELECT 1 FROM {} WHERE source_instance=%s AND status IN "
+                    "('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED') LIMIT 1"
+                ).format(blocking_runs(connection, self.schema)),
+                (source,),
+            ).fetchone():
+                raise LifecycleError("SOURCE_APPLY_UNCONFIRMED")
+            connection.execute(
+                sql.SQL("UPDATE {} SET enabled=false, sync_enabled=false " "WHERE source_instance=%s").format(
+                    self.table("sources")
+                ),
+                (source,),
+            )
+            state = "CLEANUP_FAILED" if remove_credentials else "RETAINED_BY_REQUEST"
+            connection.execute(
+                sql.SQL(
+                    "INSERT INTO {} (source_instance,display_name,credential_state) "
+                    "VALUES (%s,%s,%s) ON CONFLICT (source_instance) DO UPDATE SET "
+                    "display_name=EXCLUDED.display_name,credential_state=EXCLUDED.credential_state,"
+                    "removed_at=clock_timestamp(),restored_at=NULL"
+                ).format(self.table("source_tombstones")),
+                (source, row["name"], state),
+            )
         # The lifecycle transition is durable before touching any credential file.
-        if remove_credentials:self.cleanup_credentials(source,cleanup)
+        if remove_credentials:
+            self.cleanup_credentials(source, cleanup)
         return self.read(source)
 
-    def cleanup_credentials(self,source,cleanup):
+    def cleanup_credentials(self, source, cleanup):
         """Retry only generation-owned filesystem cleanup; never revoke providers."""
         with self.connect() as connection:
-            row=connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s').format(self.table('sources')),(source,)).fetchone()
-            removed=connection.execute(sql.SQL('SELECT * FROM {} WHERE source_instance=%s AND restored_at IS NULL').format(self.table('source_tombstones')),(source,)).fetchone()
-            if not row or not removed:raise LifecycleError('SOURCE_NOT_FOUND')
-            if removed['credential_state'] in ('REMOVED','RETAINED_SHARED_OR_LEGACY'):return removed['credential_state']
-            connection.execute(sql.SQL("UPDATE {} SET credential_state='CLEANUP_FAILED' WHERE source_instance=%s").format(self.table('source_tombstones')),(source,))
+            row = connection.execute(
+                sql.SQL("SELECT * FROM {} WHERE source_instance=%s").format(self.table("sources")), (source,)
+            ).fetchone()
+            removed = connection.execute(
+                sql.SQL("SELECT * FROM {} WHERE source_instance=%s AND restored_at IS NULL").format(
+                    self.table("source_tombstones")
+                ),
+                (source,),
+            ).fetchone()
+            if not row or not removed:
+                raise LifecycleError("SOURCE_NOT_FOUND")
+            if removed["credential_state"] in ("REMOVED", "RETAINED_SHARED_OR_LEGACY"):
+                return removed["credential_state"]
+            connection.execute(
+                sql.SQL("UPDATE {} SET credential_state='CLEANUP_FAILED' WHERE source_instance=%s").format(
+                    self.table("source_tombstones")
+                ),
+                (source,),
+            )
         try:
             with self.connect() as connection:
-                connection.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
-                                   (f'netbox-sync:{self.schema}:credential-refs',))
-                refs = {(row['token_id_provider'], row['token_id_key']),
-                        (row['token_secret_provider'], row['token_secret_key'])}
-                others = connection.execute(sql.SQL('SELECT token_id_provider,token_id_key,'
-                    'token_secret_provider,token_secret_key FROM {} WHERE source_instance<>%s')
-                    .format(self.table('sources')), (source,)).fetchall()
-                shared = {(item[provider], item[key]) for item in others
-                          for provider,key in [('token_id_provider','token_id_key'),
-                                               ('token_secret_provider','token_secret_key')]}
+                connection.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                    (f"netbox-sync:{self.schema}:credential-refs",),
+                )
+                refs = {
+                    (row["token_id_provider"], row["token_id_key"]),
+                    (row["token_secret_provider"], row["token_secret_key"]),
+                }
+                others = connection.execute(
+                    sql.SQL(
+                        "SELECT token_id_provider,token_id_key,"
+                        "token_secret_provider,token_secret_key FROM {} WHERE source_instance<>%s"
+                    ).format(self.table("sources")),
+                    (source,),
+                ).fetchall()
+                shared = {
+                    (item[provider], item[key])
+                    for item in others
+                    for provider, key in [
+                        ("token_id_provider", "token_id_key"),
+                        ("token_secret_provider", "token_secret_key"),
+                    ]
+                }
                 # Retain the entire credential pair if any ref is ambiguous/shared.
                 import re
-                exclusive = all(provider == 'file' and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{15,127}', key)
-                                and (provider,key) not in shared for provider,key in refs)
+
+                exclusive = all(
+                    provider == "file"
+                    and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{15,127}", key)
+                    and (provider, key) not in shared
+                    for provider, key in refs
+                )
                 if exclusive:
-                    cleaned = cleanup([key for _,key in sorted(refs)])
-                    state = 'RETAINED_SHARED_OR_LEGACY' if cleaned is False else 'REMOVED'
+                    cleaned = cleanup([key for _, key in sorted(refs)])
+                    state = "RETAINED_SHARED_OR_LEGACY" if cleaned is False else "REMOVED"
                 else:
-                    state = 'RETAINED_SHARED_OR_LEGACY'
-                connection.execute(sql.SQL('UPDATE {} SET credential_state=%s WHERE source_instance=%s')
-                    .format(self.table('source_tombstones')), (state,source))
+                    state = "RETAINED_SHARED_OR_LEGACY"
+                connection.execute(
+                    sql.SQL("UPDATE {} SET credential_state=%s WHERE source_instance=%s").format(
+                        self.table("source_tombstones")
+                    ),
+                    (state, source),
+                )
         except Exception:
             # Persisted CLEANUP_FAILED is deliberately retained on ambiguity/failure.
             pass
         with self.connect() as connection:
-            return connection.execute(sql.SQL('SELECT credential_state FROM {} WHERE source_instance=%s').format(self.table('source_tombstones')),(source,)).fetchone()['credential_state']
+            return connection.execute(
+                sql.SQL("SELECT credential_state FROM {} WHERE source_instance=%s").format(
+                    self.table("source_tombstones")
+                ),
+                (source,),
+            ).fetchone()["credential_state"]

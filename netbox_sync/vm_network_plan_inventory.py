@@ -1,4 +1,5 @@
 """Read-only inventory for the legacy VM planner, preserving its index policy."""
+
 from dataclasses import dataclass
 from .netbox_record_values import object_id as _object_id
 
@@ -6,6 +7,7 @@ from .netbox_record_values import object_id as _object_id
 @dataclass(frozen=True)
 class VMNetworkPlanInventory:
     """Original records and duplicate-preserving planner indexes."""
+
     target_vms: list
     interfaces_by_vm: dict
     macs_by_address: dict
@@ -17,54 +19,24 @@ class VMNetworkPlanInventory:
 
 def prepare_vm_network_plan_inventory(nb_api, cluster, *, _canonical_mac, _canonical_address):
     """Preserve read order and legacy address-only IP keys, including VLAN/prefix data."""
-    target_vms = list(
-        nb_api.virtualization
-        .virtual_machines
-        .filter(
-            cluster_id=cluster.id
-        )
-    )
+    target_vms = list(nb_api.virtualization.virtual_machines.filter(cluster_id=cluster.id))
 
-    all_interfaces = list(
-        nb_api.virtualization
-        .interfaces
-        .all()
-    )
+    all_interfaces = list(nb_api.virtualization.interfaces.all())
 
-    all_macs = list(
-        nb_api.dcim
-        .mac_addresses
-        .all()
-    )
+    all_macs = list(nb_api.dcim.mac_addresses.all())
 
-    all_ips = list(
-        nb_api.ipam
-        .ip_addresses
-        .all()
-    )
+    all_ips = list(nb_api.ipam.ip_addresses.all())
 
-    all_vlans = list(
-        nb_api.ipam
-        .vlans
-        .all()
-    )
+    all_vlans = list(nb_api.ipam.vlans.all())
 
-    all_prefixes = list(
-        nb_api.ipam
-        .prefixes
-        .all()
-    )
+    all_prefixes = list(nb_api.ipam.prefixes.all())
 
     interfaces_by_vm = {}
 
     for interface in all_interfaces:
         data = interface.serialize()
 
-        vm_id = _object_id(
-            data.get(
-                'virtual_machine'
-            )
-        )
+        vm_id = _object_id(data.get("virtual_machine"))
 
         if vm_id is None:
             continue
@@ -79,11 +51,7 @@ def prepare_vm_network_plan_inventory(nb_api, cluster, *, _canonical_mac, _canon
     for mac in all_macs:
         data = mac.serialize()
 
-        value = _canonical_mac(
-            data.get(
-                'mac_address'
-            )
-        )
+        value = _canonical_mac(data.get("mac_address"))
 
         if value:
             macs_by_address.setdefault(
@@ -99,19 +67,13 @@ def prepare_vm_network_plan_inventory(nb_api, cluster, *, _canonical_mac, _canon
 
         ips_by_id[ip.id] = ip
 
-        address = data.get(
-            'address'
-        )
+        address = data.get("address")
 
         if not address:
             continue
 
         try:
-            canonical = (
-                _canonical_address(
-                    address
-                )
-            )
+            canonical = _canonical_address(address)
         except ValueError:
             continue
 
@@ -125,7 +87,7 @@ def prepare_vm_network_plan_inventory(nb_api, cluster, *, _canonical_mac, _canon
     for vlan in all_vlans:
         data = vlan.serialize()
 
-        vid = data.get('vid')
+        vid = data.get("vid")
 
         if vid is None:
             continue
@@ -140,9 +102,7 @@ def prepare_vm_network_plan_inventory(nb_api, cluster, *, _canonical_mac, _canon
     for prefix in all_prefixes:
         data = prefix.serialize()
 
-        value = data.get(
-            'prefix'
-        )
+        value = data.get("prefix")
 
         if not value:
             continue

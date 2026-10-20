@@ -12,10 +12,12 @@ from ..application.observability import ErrorCode
 from ..source_registry import SourceRegistry
 from .connection_probe import run_connection_test
 
-INSERT_COLUMNS = ('id, source_instance, name, source_type, address, enabled, sync_enabled, '
-                  'sync_interval_seconds, verify_ssl, site_slug, device_role_slug, platform_slug, '
-                  'device_type_slug, cluster_type_slug, cluster_name, username, token_id_provider, '
-                  'token_id_key, token_secret_provider, token_secret_key, legacy_identity_owner, settings')
+INSERT_COLUMNS = (
+    "id, source_instance, name, source_type, address, enabled, sync_enabled, "
+    "sync_interval_seconds, verify_ssl, site_slug, device_role_slug, platform_slug, "
+    "device_type_slug, cluster_type_slug, cluster_name, username, token_id_provider, "
+    "token_id_key, token_secret_provider, token_secret_key, legacy_identity_owner, settings"
+)
 
 
 class RegistrationRegistry:
@@ -29,7 +31,7 @@ class RegistrationRegistry:
         if not self._dsn:
             raise OnboardingError(ErrorCode.REGISTRATION_UNAVAILABLE)
         registry = SourceRegistry(
-            lambda: psycopg.connect(self._dsn, connect_timeout=3, options='-c statement_timeout=3000'),
+            lambda: psycopg.connect(self._dsn, connect_timeout=3, options="-c statement_timeout=3000"),
             self._schema,
         )
         if registry.schema_version() != 1:
@@ -38,55 +40,73 @@ class RegistrationRegistry:
 
     def host_reservations(self):
         from ..host_registration import HostReservations
+
         return HostReservations(self._registry()._connect, self._schema)
 
     def check_provider_identity(self, preview):
-        if isinstance(preview, dict) and preview.get('provider') == 'esxi':
+        if isinstance(preview, dict) and preview.get("provider") == "esxi":
             self.host_reservations().check(preview)
 
     def reserve_provider_identity(self, preview, source, operation_id, actor, *, intent=None):
-        if isinstance(preview, dict) and preview.get('provider') == 'esxi':
+        if isinstance(preview, dict) and preview.get("provider") == "esxi":
             self.host_reservations().reserve(preview, source, operation_id, actor, intent=intent)
 
-    def check_legacy_placement(self,request):
-        from ..host_registration import legacy_anchor,HostRegistrationConflict
+    def check_legacy_placement(self, request):
+        from ..host_registration import legacy_anchor, HostRegistrationConflict
         from psycopg import sql
         from psycopg.rows import dict_row
+
         with self._registry()._connect() as connection:
             with connection.cursor(row_factory=dict_row) as cursor:
-                cursor.execute(sql.SQL("SELECT source_instance,site_slug,cluster_name,settings FROM {} WHERE source_type='esxi' AND NOT EXISTS (SELECT 1 FROM {} a WHERE a.source_instance=sources.source_instance)").format(sql.Identifier(self._schema,'sources'),sql.Identifier(self._schema,'source_archives')))
+                cursor.execute(
+                    sql.SQL(
+                        "SELECT source_instance,site_slug,cluster_name,settings FROM {} WHERE source_type='esxi' AND NOT EXISTS (SELECT 1 FROM {} a WHERE a.source_instance=sources.source_instance)"
+                    ).format(sql.Identifier(self._schema, "sources"), sql.Identifier(self._schema, "source_archives"))
+                )
                 for row in cursor.fetchall():
-                    if (legacy_anchor(row['settings']) is None and row['site_slug']==request.site_slug
-                            and row['cluster_name']==request.cluster_name):
-                        raise HostRegistrationConflict('HOST_LEGACY_PLACEMENT_PROTECTED',row['source_instance'])
+                    if (
+                        legacy_anchor(row["settings"]) is None
+                        and row["site_slug"] == request.site_slug
+                        and row["cluster_name"] == request.cluster_name
+                    ):
+                        raise HostRegistrationConflict("HOST_LEGACY_PLACEMENT_PROTECTED", row["source_instance"])
 
     def registration_admission(self):
         from contextlib import contextmanager
         from ..host_registration import HostRegistrationConflict
+
         @contextmanager
         def guard():
             with self._registry()._connect() as connection:
-                connection.autocommit=True
-                key='netbox-sync:'+self._schema+':legacy-admission'
-                acquired=connection.execute('SELECT pg_try_advisory_lock_shared(hashtextextended(%s,0)) AS acquired',(key,)).fetchone()
-                if not (acquired['acquired'] if isinstance(acquired,dict) else acquired[0]):
-                    raise HostRegistrationConflict('HOST_REGISTRATION_RESERVED')
-                try: yield
-                finally: connection.execute('SELECT pg_advisory_unlock_shared(hashtextextended(%s,0))',(key,))
+                connection.autocommit = True
+                key = "netbox-sync:" + self._schema + ":legacy-admission"
+                acquired = connection.execute(
+                    "SELECT pg_try_advisory_lock_shared(hashtextextended(%s,0)) AS acquired", (key,)
+                ).fetchone()
+                if not (acquired["acquired"] if isinstance(acquired, dict) else acquired[0]):
+                    raise HostRegistrationConflict("HOST_REGISTRATION_RESERVED")
+                try:
+                    yield
+                finally:
+                    connection.execute("SELECT pg_advisory_unlock_shared(hashtextextended(%s,0))", (key,))
+
         return guard()
 
     def registration_guard(self, preview, source, operation_id, actor):
         from contextlib import nullcontext
-        if isinstance(preview, dict) and preview.get('provider') == 'esxi':
+
+        if isinstance(preview, dict) and preview.get("provider") == "esxi":
             return self.host_reservations().registration_guard(preview, source, operation_id, actor)
         return nullcontext()
 
     def check_registration_resume(self, preview, source, operation_id, actor):
-        self.host_reservations().check(preview,resume={'source_instance':source,'registration_id':operation_id},actor_id=actor)
+        self.host_reservations().check(
+            preview, resume={"source_instance": source, "registration_id": operation_id}, actor_id=actor
+        )
 
     def registration_intent(self, preview, source, operation_id, actor, fingerprint, request=None):
-        if isinstance(preview,dict) and preview.get('provider')=='esxi':
-            return self.host_reservations().bind_intent(preview,source,operation_id,actor,fingerprint,request)
+        if isinstance(preview, dict) and preview.get("provider") == "esxi":
+            return self.host_reservations().bind_intent(preview, source, operation_id, actor, fingerprint, request)
         return None
 
     def pending_registrations(self, actor):
@@ -116,17 +136,21 @@ class RegistrationRegistry:
         try:
             with registry._connect() as connection:
                 with connection.cursor() as cursor:
-                    cursor.execute(psycopg.sql.SQL('INSERT INTO {} ({}) VALUES ({}) RETURNING *').format(
-                        psycopg.sql.Identifier(self._schema, 'sources'), psycopg.sql.SQL(INSERT_COLUMNS),
-                        psycopg.sql.SQL(', ').join([psycopg.sql.Placeholder()] * len(parameters)),
-                    ), parameters)
+                    cursor.execute(
+                        psycopg.sql.SQL("INSERT INTO {} ({}) VALUES ({}) RETURNING *").format(
+                            psycopg.sql.Identifier(self._schema, "sources"),
+                            psycopg.sql.SQL(INSERT_COLUMNS),
+                            psycopg.sql.SQL(", ").join([psycopg.sql.Placeholder()] * len(parameters)),
+                        ),
+                        parameters,
+                    )
                     row = cursor.fetchone()
             # Successful context exit is the commit boundary. Nothing decoded here.
         except psycopg.errors.UniqueViolation:
             raise RegistrationWriteError(definitely_failed=True, duplicate=True) from None
         except (psycopg.IntegrityError, psycopg.DataError, psycopg.ProgrammingError) as exc:
             # Authoritative server rejection, inside the transaction boundary only.
-            authoritative = bool(exc.sqlstate and exc.sqlstate[:2] in ('22', '23', '42'))
+            authoritative = bool(exc.sqlstate and exc.sqlstate[:2] in ("22", "23", "42"))
             raise RegistrationWriteError(definitely_failed=authoritative) from None
         except Exception:
             raise RegistrationWriteError() from None
@@ -159,16 +183,16 @@ class BrokerSecretStore:
                     connection.settimeout(5)
                     connection.connect(self._socket)
                     submitted = True
-                    connection.sendall(json.dumps(payload).encode() + b'\n')
-                    response = b''
-                    while not response.endswith(b'\n') and len(response) < 2048:
+                    connection.sendall(json.dumps(payload).encode() + b"\n")
+                    response = b""
+                    while not response.endswith(b"\n") and len(response) < 2048:
                         chunk = connection.recv(2048 - len(response))
                         if not chunk:
                             break
                         response += chunk
                     result = json.loads(response)
-                    if result.get('ok') is not True:
-                        if result.get('error') in ('BROKER_INTERNAL_ERROR', 'SECRET_CREATE_FAILED'):
+                    if result.get("ok") is not True:
+                        if result.get("error") in ("BROKER_INTERNAL_ERROR", "SECRET_CREATE_FAILED"):
                             raise OnboardingError(ErrorCode.REGISTRATION_UNCERTAIN)
                         raise OnboardingError(ErrorCode.SECRET_STORE_FAILED)
                     return result
@@ -181,16 +205,23 @@ class BrokerSecretStore:
     def create(self, key, value, *, operation_id=None):
         """Send bounded secret bytes without exposing the storage path."""
         operation = operation_id or secrets.token_urlsafe(24)
-        result = self._request(dict(action='create', operation_id=operation, key=key,
-                                    value=base64.b64encode(value.encode()).decode()))
-        receipt = SecretReceipt(key, result['rollback_token'])
+        result = self._request(
+            dict(action="create", operation_id=operation, key=key, value=base64.b64encode(value.encode()).decode())
+        )
+        receipt = SecretReceipt(key, result["rollback_token"])
         self._operations[receipt.key] = operation
         return receipt
 
     def rollback(self, receipt):
         """Only use the exact create-operation receipt."""
-        self._request(dict(action='rollback', operation_id=self._operations[receipt.key], key=receipt.key,
-                           rollback_token=receipt.rollback_token))
+        self._request(
+            dict(
+                action="rollback",
+                operation_id=self._operations[receipt.key],
+                key=receipt.key,
+                rollback_token=receipt.rollback_token,
+            )
+        )
         self._operations.pop(receipt.key, None)
 
     def forget(self, receipts):
@@ -204,6 +235,7 @@ def test_proxmox(credentials, policy=None, probe_socket=""):
     if probe_socket:
         from ..probe_worker import remote_test
         from .egress import EgressPolicy
+
         remote_test(probe_socket, credentials, policy or EgressPolicy())
     else:
         run_connection_test(credentials, policy)
@@ -214,6 +246,7 @@ def test_esxi(credentials, policy=None, probe_socket=""):
     if probe_socket:
         from ..probe_worker import remote_test
         from .egress import EgressPolicy
+
         remote_test(probe_socket, credentials, policy or EgressPolicy())
     else:
         run_connection_test(credentials, policy)

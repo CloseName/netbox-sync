@@ -16,12 +16,9 @@ class RunContext:
 
     def __post_init__(self):
         if not isinstance(self.run_id, UUID) or self.run_id.int == 0:
-            raise ValueError('run_id must be a non-nil UUID')
-        if (
-                not isinstance(self.source_instance, str)
-                or not SOURCE_INSTANCE_PATTERN.fullmatch(self.source_instance)
-        ):
-            raise ValueError('source_instance must be a valid source identifier')
+            raise ValueError("run_id must be a non-nil UUID")
+        if not isinstance(self.source_instance, str) or not SOURCE_INSTANCE_PATTERN.fullmatch(self.source_instance):
+            raise ValueError("source_instance must be a valid source identifier")
 
 
 class SecretReader(Protocol):

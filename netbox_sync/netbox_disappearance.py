@@ -27,30 +27,20 @@ from .source_identity import (
 
 
 def _local_source_id(obj):
-    value = str(
-        obj.source_id
-    )
+    value = str(obj.source_id)
 
-    prefix = (
-        f'{obj.source}:'
-    )
+    prefix = f"{obj.source}:"
 
     if value.startswith(prefix):
-        return value[
-            len(prefix):
-        ]
+        return value[len(prefix) :]
 
     return value
 
 
 def _identities(custom_fields):
-    custom_fields = dict(
-        custom_fields or {}
-    )
+    custom_fields = dict(custom_fields or {})
 
-    values = custom_fields.get(
-        'sync_identities'
-    )
+    values = custom_fields.get("sync_identities")
 
     if not isinstance(
         values,
@@ -67,19 +57,14 @@ def _identities(custom_fields):
         ):
             continue
 
-        source = item.get(
-            'source'
-        )
+        source = item.get("source")
 
         source_id = item.get(
-            'source_id',
-            item.get('id'),
+            "source_id",
+            item.get("id"),
         )
 
-        if (
-            source
-            and source_id
-        ):
+        if source and source_id:
             result.append(
                 (
                     str(source),
@@ -91,7 +76,7 @@ def _identities(custom_fields):
 
 
 def _v2_identities(custom_fields):
-    values = dict(custom_fields or {}).get('sync_identities')
+    values = dict(custom_fields or {}).get("sync_identities")
     if not isinstance(values, list):
         return []
 
@@ -105,11 +90,8 @@ def _v2_identities(custom_fields):
 
 def _identity_label(identity):
     if isinstance(identity, SourceIdentity):
-        return (
-            f'{identity.type}/{identity.instance}/'
-            f'{identity.kind}/{identity.external_id}'
-        )
-    return f'{identity[0]}:{identity[1]}'
+        return f"{identity.type}/{identity.instance}/" f"{identity.kind}/{identity.external_id}"
+    return f"{identity[0]}:{identity[1]}"
 
 
 def report_missing_managed_objects(
@@ -118,26 +100,50 @@ def report_missing_managed_objects(
     config,
 ):
     site, cluster = resolve_disappearance_target(
-        nb_api, config, cluster_filter=cluster_filter,
+        nb_api,
+        config,
+        cluster_filter=cluster_filter,
     )
 
     source_scopes, source_instances, discovered_guests, discovered_interfaces = collect_discovered_identities(
-        hosts, _local_source_id=_local_source_id, vm_identity_source_id=vm_identity_source_id, virtual_machine_source_identity=virtual_machine_source_identity, nic_identity_source_id=nic_identity_source_id, virtual_machine_nic_source_identity=virtual_machine_nic_source_identity, lxc_identity_source_id=lxc_identity_source_id, lxc_source_identity=lxc_source_identity, lxc_nic_source_identity=lxc_nic_source_identity,
+        hosts,
+        _local_source_id=_local_source_id,
+        vm_identity_source_id=vm_identity_source_id,
+        virtual_machine_source_identity=virtual_machine_source_identity,
+        nic_identity_source_id=nic_identity_source_id,
+        virtual_machine_nic_source_identity=virtual_machine_nic_source_identity,
+        lxc_identity_source_id=lxc_identity_source_id,
+        lxc_source_identity=lxc_source_identity,
+        lxc_nic_source_identity=lxc_nic_source_identity,
     )
 
     managed_identity = build_managed_identity_resolver(
-        source_scopes, source_instances, _identities=_identities, _v2_identities=_v2_identities,
+        source_scopes,
+        source_instances,
+        _identities=_identities,
+        _v2_identities=_v2_identities,
     )
 
     target_vms, interfaces_by_vm = load_disappearance_inventory(
-        nb_api, cluster, _object_id=_object_id,
+        nb_api,
+        cluster,
+        _object_id=_object_id,
     )
 
     managed_guests, missing_guests, managed_interfaces, missing_interfaces = find_missing_objects(
-        target_vms, interfaces_by_vm, discovered_guests, discovered_interfaces, managed_identity,
+        target_vms,
+        interfaces_by_vm,
+        discovered_guests,
+        discovered_interfaces,
+        managed_identity,
     )
 
     print_disappearance_report(
-        managed_guests, missing_guests, managed_interfaces, missing_interfaces, discovered_guests, discovered_interfaces, _identity_label=_identity_label,
+        managed_guests,
+        missing_guests,
+        managed_interfaces,
+        missing_interfaces,
+        discovered_guests,
+        discovered_interfaces,
+        _identity_label=_identity_label,
     )
-

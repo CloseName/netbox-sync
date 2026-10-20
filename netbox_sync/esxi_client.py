@@ -14,8 +14,8 @@ ESXI_IO_TIMEOUT = 15
 class EsxiConnectionError(RuntimeError):
     """An ESXi authentication, TLS, or API connection failed safely."""
 
-    def __init__(self, message, code='PROVIDER_UNAVAILABLE'):
-        self.code=code
+    def __init__(self, message, code="PROVIDER_UNAVAILABLE"):
+        self.code = code
         super().__init__(message)
 
 
@@ -33,6 +33,7 @@ def _pyvmomi_connect(host, username, password, verify_ssl, *, port=443):
     from pyVim.connect import SmartConnect  # pylint: disable=import-outside-toplevel
 
     from .source_tls import source_context
+
     context = source_context(verify_ssl)
     return SmartConnect(
         host=host,
@@ -55,10 +56,10 @@ class EsxiClient:
     """Resolve credentials at connection time and always close the API session."""
 
     def __init__(
-            self,
-            resolver=None,
-            connector=None,
-            disconnecter=None,
+        self,
+        resolver=None,
+        connector=None,
+        disconnecter=None,
     ):
         self._resolver = resolver or FileSecretResolver()
         self._connector = connector or _pyvmomi_connect
@@ -68,11 +69,9 @@ class EsxiClient:
     def session(self, source_config):
         """Yield a connected service instance and deterministically disconnect."""
 
-        password = self._resolver.resolve(
-            source_config.credentials.password_reference
-        )
+        password = self._resolver.resolve(source_config.credentials.password_reference)
         try:
-            with stage('esxi_connect'):
+            with stage("esxi_connect"):
                 service_instance = self._connector(
                     source_config.address,
                     source_config.credentials.username,
@@ -82,13 +81,14 @@ class EsxiClient:
                 )
         except Exception as exc:  # pylint: disable=broad-exception-caught
             from .worker_failure import classify
-            raise EsxiConnectionError('ESXi connection failed',classify(exc,'provider')) from None
+
+            raise EsxiConnectionError("ESXi connection failed", classify(exc, "provider")) from None
 
         try:
             yield service_instance
         finally:
             try:
-                with stage('esxi_disconnect'):
+                with stage("esxi_disconnect"):
                     self._disconnecter(service_instance)
             except Exception:  # pylint: disable=broad-exception-caught
                 pass
@@ -97,23 +97,23 @@ class EsxiClient:
 def test_source_connection(source_config, client=None):
     """Read basic ESXi API metadata and return only a safe status."""
 
-    if source_config.source_type != 'esxi':
-        raise ValueError('ESXi connection test requires source_type=esxi')
+    if source_config.source_type != "esxi":
+        raise ValueError("ESXi connection test requires source_type=esxi")
     api_client = client or EsxiClient()
     try:
         with api_client.session(source_config) as service_instance:
             content = service_instance.RetrieveContent()
             if content is None:
-                raise EsxiConnectionError('ESXi API returned no content')
+                raise EsxiConnectionError("ESXi API returned no content")
     except Exception as exc:  # pylint: disable=broad-exception-caught
         return SourceConnectionResult(
             source_id=source_config.id,
             success=False,
             error_type=type(exc).__name__,
-            summary='ESXi connection test failed',
+            summary="ESXi connection test failed",
         )
     return SourceConnectionResult(
         source_id=source_config.id,
         success=True,
-        summary='ESXi connection test succeeded',
+        summary="ESXi connection test succeeded",
     )

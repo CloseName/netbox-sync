@@ -19,8 +19,9 @@ def test_scheduled_and_manual_apply_use_same_host_lock_directory():
     assert '/usr/bin/flock -n /run/netbox-sync/apply.lock' in wrapper
     assert '/usr/bin/flock' not in service
     assert '${NETBOX_SYNC_APPLY_LOCK_DIR:-/run/netbox-sync}:/run/netbox-sync-lock' in compose
-    supervisor = (ROOT / 'netbox_sync/worker_supervisor.py').read_text()
-    assert "'--lock-path','/run/netbox-sync-lock/apply.lock'" in supervisor
+    from netbox_sync.worker_supervisor import members
+    apply_arguments = dict(members('sync'))['apply_worker']
+    assert apply_arguments[apply_arguments.index('--lock-path') + 1] == '/run/netbox-sync-lock/apply.lock'
     assert 'netbox_sync.worker_supervisor, sync' in compose
     assert ':/run:/' not in compose
 
