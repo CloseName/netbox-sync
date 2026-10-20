@@ -145,6 +145,74 @@ def _process_pve_virtual_machine_network_interfaces(
     return _nb_objects
 
 
+def _legacy_address(_pve_virtual_machine_ip_addresses):
+    """Choose the first address of the first known legacy guest interface name."""
+    # TODO: Improve Multiple IP address handling
+    _pve_virtual_machine_ip_address = None
+    for raw_interface_name in ["eth0", "ens18", "ens19"]:
+        if raw_interface_name in _pve_virtual_machine_ip_addresses:
+            _pve_virtual_machine_ip_address = _pve_virtual_machine_ip_addresses[raw_interface_name][0]
+            break
+
+    return _pve_virtual_machine_ip_address
+
+
+def _write_legacy_address(_nb_api, _nb_objects, _nb_virtual_machine, interface, address):
+    """Preserve legacy prefix derivation and address assignment before returning its prefix."""
+    _virtual_machine_address = address["ip-address"]
+    _virtual_machine_address_mask = address["prefix"]
+    _virtual_machine_full_address = f"{_virtual_machine_address}/{_virtual_machine_address_mask}"
+
+    # First, determinate if the prefix exists
+    _prefix_network_address = ".".join(_virtual_machine_address.split(".")[:-1]) + ".0"
+    _prefix_network_full_address = f"{_prefix_network_address}/{_virtual_machine_address_mask}"
+
+    nb_prefix = _nb_objects["prefixes"].get(_prefix_network_full_address)
+    if nb_prefix is None:
+        nb_prefix = _nb_api.ipam.prefixes.create(prefix=_prefix_network_full_address)
+        _nb_objects["prefixes"][nb_prefix.prefix] = nb_prefix
+
+    if "dns_name" in nb_prefix.custom_fields and nb_prefix.custom_fields["dns_name"] is not None:
+        ip_address_dns_name = f'{_nb_virtual_machine.name}.{nb_prefix.custom_fields["dns_name"]}'
+    else:
+        ip_address_dns_name = ""
+
+    nb_ip_address = _nb_objects["ip_addresses"].get(_virtual_machine_full_address)
+    if nb_ip_address is None:
+        nb_ip_address = _nb_api.ipam.ip_addresses.create(
+            address=_virtual_machine_full_address,
+            assigned_object_type="virtualization.vminterface",
+            assigned_object_id=interface.id,
+            dns_name=ip_address_dns_name,
+        )
+        _nb_objects["ip_addresses"][nb_ip_address.address] = nb_ip_address
+    else:
+        nb_ip_address.assigned_object_type = "virtualization.vminterface"
+        nb_ip_address.assigned_object_id = interface.id
+        nb_ip_address.dns_name = ip_address_dns_name
+        nb_ip_address.save()
+
+    _nb_virtual_machine.primary_ip4 = nb_ip_address.id
+    _nb_virtual_machine.save()
+
+    return nb_prefix
+
+
+def _write_legacy_vlan(_nb_api, _nb_objects, nb_prefix, vlan_id):
+    """Associate the legacy prefix VLAN only after the address and VM primary are saved."""
+    if vlan_id is not None:
+        nb_vlan = _nb_objects["vlans"].get(str(vlan_id))
+        if nb_vlan is None:
+            nb_vlan = _nb_api.ipam.vlans.create(
+                vid=vlan_id,
+                name=f"VLAN {vlan_id}",
+            )
+            _nb_objects["vlans"][vlan_id] = nb_vlan
+
+        nb_prefix.vlan = nb_vlan.id
+        nb_prefix.save()
+
+
 def _process_pve_virtual_machine_network_interface(
     _nb_api: pynetbox.api,
     _nb_objects: dict,
@@ -186,62 +254,12 @@ def _process_pve_virtual_machine_network_interface(
         nb_virtual_machines_interface.primary_mac_address = nb_mac_address.id
         nb_virtual_machines_interface.save()
 
-    # TODO: Improve Multiple IP address handling
-    _pve_virtual_machine_ip_address = None
-    for raw_interface_name in ["eth0", "ens18", "ens19"]:
-        if raw_interface_name in _pve_virtual_machine_ip_addresses:
-            _pve_virtual_machine_ip_address = _pve_virtual_machine_ip_addresses[raw_interface_name][0]
-            break
-
-    if _pve_virtual_machine_ip_address is not None:
-        _virtual_machine_address = _pve_virtual_machine_ip_address["ip-address"]
-        _virtual_machine_address_mask = _pve_virtual_machine_ip_address["prefix"]
-        _virtual_machine_full_address = f"{_virtual_machine_address}/{_virtual_machine_address_mask}"
-
-        # First, determinate if the prefix exists
-        _prefix_network_address = ".".join(_virtual_machine_address.split(".")[:-1]) + ".0"
-        _prefix_network_full_address = f"{_prefix_network_address}/{_virtual_machine_address_mask}"
-
-        nb_prefix = _nb_objects["prefixes"].get(_prefix_network_full_address)
-        if nb_prefix is None:
-            nb_prefix = _nb_api.ipam.prefixes.create(prefix=_prefix_network_full_address)
-            _nb_objects["prefixes"][nb_prefix.prefix] = nb_prefix
-
-        if "dns_name" in nb_prefix.custom_fields and nb_prefix.custom_fields["dns_name"] is not None:
-            ip_address_dns_name = f'{_nb_virtual_machine.name}.{nb_prefix.custom_fields["dns_name"]}'
-        else:
-            ip_address_dns_name = ""
-
-        nb_ip_address = _nb_objects["ip_addresses"].get(_virtual_machine_full_address)
-        if nb_ip_address is None:
-            nb_ip_address = _nb_api.ipam.ip_addresses.create(
-                address=_virtual_machine_full_address,
-                assigned_object_type="virtualization.vminterface",
-                assigned_object_id=nb_virtual_machines_interface.id,
-                dns_name=ip_address_dns_name,
-            )
-            _nb_objects["ip_addresses"][nb_ip_address.address] = nb_ip_address
-        else:
-            nb_ip_address.assigned_object_type = "virtualization.vminterface"
-            nb_ip_address.assigned_object_id = nb_virtual_machines_interface.id
-            nb_ip_address.dns_name = ip_address_dns_name
-            nb_ip_address.save()
-
-        _nb_virtual_machine.primary_ip4 = nb_ip_address.id
-        _nb_virtual_machine.save()
-
-        # Handle VLAN
-        if _interface_vlan_id is not None:
-            nb_vlan = _nb_objects["vlans"].get(str(_interface_vlan_id))
-            if nb_vlan is None:
-                nb_vlan = _nb_api.ipam.vlans.create(
-                    vid=_interface_vlan_id,
-                    name=f"VLAN {_interface_vlan_id}",
-                )
-                _nb_objects["vlans"][_interface_vlan_id] = nb_vlan
-
-            nb_prefix.vlan = nb_vlan.id
-            nb_prefix.save()
+    address = _legacy_address(_pve_virtual_machine_ip_addresses)
+    if address is not None:
+        prefix = _write_legacy_address(
+            _nb_api, _nb_objects, _nb_virtual_machine, nb_virtual_machines_interface, address
+        )
+        _write_legacy_vlan(_nb_api, _nb_objects, prefix, _interface_vlan_id)
 
     return _nb_objects
 

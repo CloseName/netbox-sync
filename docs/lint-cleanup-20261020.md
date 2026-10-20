@@ -479,3 +479,12 @@ identity verification, recovery, retirement, directory access and catalog creati
 Executable AST unchanged for every file. Full suite: 2380 passed, 491 skipped,
 one existing warning. Pylint 9.34/10, zero Error/Fatal; Black checks all 227 modules.
 Remaining documentation: three classes and 42 functions. Whitespace passes.
+## Stage 40: retained legacy network write stages
+
+Separate legacy guest address selection, address/prefix writes and VLAN attachment.
+Five new cases pin interface-name priority, historical last-octet prefix derivation,
+empty-list failure timing and absent-address behavior. They and seven existing
+mutation-trace cases pass before/after. Full suite: 2385 passed, 491 skipped, one
+existing warning. Pylint 9.34/10, zero Error/Fatal; no complexity or documentation
+findings remain in legacy_netbox_writes. Black and whitespace pass. Legacy behavior
+is intentionally not replaced with modern VM/LXC rules.
