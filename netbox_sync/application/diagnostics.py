@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+from typing import NamedTuple
 
 from .scheduling import evaluate_schedule
 
@@ -129,6 +130,151 @@ def _indexed(values):
     return {value.source_instance: value for value in values}
 
 
+class _HistoryIndex(NamedTuple):
+    """Original per-source history partitions used by diagnostics."""
+
+    latest: dict
+    successes: dict
+    scheduled: dict
+    manual: dict
+    scheduled_running: dict
+    stale_by_source: set
+
+
+class _OperationEvidence(NamedTuple):
+    """Optional plan and uncertain-outcome evidence with explicit availability."""
+
+    plans: dict
+    uncertain: set
+    available: bool
+
+
+def _history_index(snapshot):
+    """Index the original history partitions in read order."""
+    latest, successes = _indexed(snapshot.latest), _indexed(snapshot.successes)
+    scheduled, manual = _indexed(snapshot.scheduled), _indexed(snapshot.manual)
+    scheduled_running = _indexed(snapshot.scheduled_running)
+    stale_by_source = {run.source_instance for run in snapshot.stale}
+    return _HistoryIndex(latest, successes, scheduled, manual, scheduled_running, stale_by_source)
+
+
+def _source_status(source, current, source_warnings, successes):
+    """Infer run health before plan and uncertain-outcome overrides."""
+    if not source.enabled or current is None:
+        status = DiagnosticStatus.UNKNOWN
+    elif current.status.value == "SUCCEEDED":
+        status = (
+            DiagnosticStatus.DEGRADED
+            if source_warnings or getattr(getattr(current, "counts", None), "unsupported", 0)
+            else DiagnosticStatus.HEALTHY
+        )
+    elif current.status.value == "RUNNING":
+        status = DiagnosticStatus.DEGRADED if source_warnings else DiagnosticStatus.UNKNOWN
+    elif source.source_instance in successes:
+        status = DiagnosticStatus.DEGRADED
+    else:
+        status = DiagnosticStatus.UNHEALTHY
+    return status
+
+
+def _source_diagnostic(source, history, evidence, now, stale_seconds):
+    """Project one source with its own schedule and operation evidence."""
+    current = history.latest.get(source.source_instance)
+    source_warnings = []
+    if source.source_instance in history.stale_by_source:
+        source_warnings.append("STALE_RUNNING")
+    scheduled_run = history.scheduled.get(source.source_instance)
+    decision = evaluate_schedule(
+        source, scheduled_run, history.scheduled_running.get(source.source_instance), now, stale_seconds
+    )
+    delayed = decision.state.value == "DELAYED"
+    if delayed:
+        source_warnings.append("SCHEDULED_ACTIVITY_DELAYED")
+    status = _source_status(source, current, source_warnings, history.successes)
+    plan = evidence.plans.get(source.source_instance, {})
+    plan_blocked = plan.get("apply_allowed") is False and plan.get("status") == "READY"
+    outcome_unconfirmed = source.source_instance in evidence.uncertain
+    if plan_blocked or outcome_unconfirmed:
+        status = DiagnosticStatus.DEGRADED
+    return SourceDiagnostic(
+        source.source_instance,
+        source.type,
+        source.enabled,
+        source.sync_enabled,
+        source.sync_interval_seconds,
+        status,
+        _summary(current),
+        (
+            (
+                history.successes.get(source.source_instance).finished_at
+                or history.successes.get(source.source_instance).started_at
+            )
+            if source.source_instance in history.successes
+            else None
+        ),
+        _summary(scheduled_run),
+        _summary(history.manual.get(source.source_instance)),
+        decision.state.value,
+        decision.last_scheduled_run_at,
+        decision.next_expected_at,
+        tuple(source_warnings),
+        plan_blocked,
+        plan.get("finished_at"),
+        outcome_unconfirmed,
+        evidence.available,
+    )
+
+
+def _scheduler_component(history_component, snapshot, source_results, now):
+    """Infer scheduler health without treating missing history as success."""
+    scheduled_runs = tuple(snapshot.scheduled)
+    scheduled_successes = tuple(snapshot.scheduled_successes)
+    if history_component.status is DiagnosticStatus.UNAVAILABLE:
+        scheduler = DiagnosticComponent(
+            DiagnosticStatus.UNKNOWN, now, "RUN_HISTORY_UNAVAILABLE", "Scheduled activity cannot be evaluated."
+        )
+    elif any("SCHEDULED_ACTIVITY_DELAYED" in source.warnings for source in source_results):
+        scheduler = DiagnosticComponent(
+            DiagnosticStatus.DEGRADED,
+            now,
+            "SCHEDULED_ACTIVITY_DELAYED",
+            "Scheduled synchronization activity is later than expected.",
+            max((run.started_at for run in scheduled_runs), default=None),
+            max(((run.finished_at or run.started_at) for run in scheduled_successes), default=None),
+        )
+    elif scheduled_runs:
+        scheduler = DiagnosticComponent(
+            DiagnosticStatus.HEALTHY,
+            now,
+            last_seen_at=max(run.started_at for run in scheduled_runs),
+            last_success_at=max(((run.finished_at or run.started_at) for run in scheduled_successes), default=None),
+        )
+    else:
+        scheduler = DiagnosticComponent(
+            DiagnosticStatus.UNKNOWN, now, safe_message="No scheduled runs have been recorded."
+        )
+    return scheduler
+
+
+def _overall_status(components, source_results, warnings):
+    """Combine component and source health using the original precedence."""
+    source_statuses = {source.status for source in source_results}
+    if components["registry"].status is DiagnosticStatus.UNAVAILABLE or DiagnosticStatus.UNHEALTHY in source_statuses:
+        overall = DiagnosticStatus.UNHEALTHY
+    elif (
+        DiagnosticStatus.DEGRADED in source_statuses
+        or warnings
+        or any(
+            component.status in (DiagnosticStatus.DEGRADED, DiagnosticStatus.UNAVAILABLE)
+            for component in components.values()
+        )
+    ):
+        overall = DiagnosticStatus.DEGRADED
+    else:
+        overall = DiagnosticStatus.HEALTHY
+    return overall
+
+
 class DiagnosticsService:
     """Aggregate failure-isolated checks without discovery, apply, or writes."""
 
@@ -166,35 +312,32 @@ class DiagnosticsService:
             last_seen_at=checked_at if healthy else None,
         )
 
-    def check(self):
-        """Return partial diagnostics even when individual dependencies fail."""
-        now = self._clock()
-        components = {
-            "api": DiagnosticComponent(DiagnosticStatus.HEALTHY, now, last_seen_at=now),
-        }
+    def _source_snapshot(self, now):
+        """Read the complete registry or retain an unavailable component."""
         try:
             source_views = tuple(self._sources.list_sources())
-            components["registry"] = DiagnosticComponent(DiagnosticStatus.HEALTHY, now, last_seen_at=now)
+            component = DiagnosticComponent(DiagnosticStatus.HEALTHY, now, last_seen_at=now)
         except Exception:  # pylint: disable=broad-exception-caught
             source_views = ()
-            components["registry"] = DiagnosticComponent(
+            component = DiagnosticComponent(
                 DiagnosticStatus.UNAVAILABLE, now, "REGISTRY_UNAVAILABLE", "Source registry is unavailable."
             )
+        return source_views, component
+
+    def _history_snapshot(self, now):
+        """Read bounded history independently of registry availability."""
         try:
             snapshot = self._history.diagnostics_snapshot(now - timedelta(seconds=self._stale_seconds), 100)
-            components["run_history"] = DiagnosticComponent(DiagnosticStatus.HEALTHY, now, last_seen_at=now)
+            component = DiagnosticComponent(DiagnosticStatus.HEALTHY, now, last_seen_at=now)
         except Exception:  # pylint: disable=broad-exception-caught
             snapshot = HistorySnapshot((), (), (), (), ())
-            components["run_history"] = DiagnosticComponent(
+            component = DiagnosticComponent(
                 DiagnosticStatus.UNAVAILABLE, now, "RUN_HISTORY_UNAVAILABLE", "Synchronization history is unavailable."
             )
-        components["discovery_worker"] = self._worker(
-            self._discovery, now, "DISCOVERY_WORKER_UNAVAILABLE", "Discovery worker is unavailable."
-        )
-        components["apply_worker"] = self._worker(
-            self._apply, now, "APPLY_WORKER_UNAVAILABLE", "Apply worker is unavailable."
-        )
+        return snapshot, component
 
+    def _operation_evidence(self):
+        """Keep absent operation evidence distinct from a clear plan."""
         plans, uncertain, operation_evidence_available = {}, set(), False
         try:
             plans, uncertain = self._evidence.operation_evidence()
@@ -202,72 +345,30 @@ class DiagnosticsService:
         except Exception:
             # History remains useful, but lack of plan evidence is never "no problems".
             pass
-        latest, successes = _indexed(snapshot.latest), _indexed(snapshot.successes)
-        scheduled, manual = _indexed(snapshot.scheduled), _indexed(snapshot.manual)
-        scheduled_running = _indexed(snapshot.scheduled_running)
-        stale_by_source = {run.source_instance for run in snapshot.stale}
+        return _OperationEvidence(plans, uncertain, operation_evidence_available)
+
+    def check(self):
+        """Return partial diagnostics even when individual dependencies fail."""
+        now = self._clock()
+        components = {
+            "api": DiagnosticComponent(DiagnosticStatus.HEALTHY, now, last_seen_at=now),
+        }
+        source_views, components["registry"] = self._source_snapshot(now)
+        snapshot, components["run_history"] = self._history_snapshot(now)
+        components["discovery_worker"] = self._worker(
+            self._discovery, now, "DISCOVERY_WORKER_UNAVAILABLE", "Discovery worker is unavailable."
+        )
+        components["apply_worker"] = self._worker(
+            self._apply, now, "APPLY_WORKER_UNAVAILABLE", "Apply worker is unavailable."
+        )
+
+        evidence = self._operation_evidence()
+        history = _history_index(snapshot)
         source_results, warnings = [], []
         for source in sorted(source_views, key=lambda value: value.source_instance):
-            current = latest.get(source.source_instance)
-            source_warnings = []
-            if source.source_instance in stale_by_source:
-                source_warnings.append("STALE_RUNNING")
-            scheduled_run = scheduled.get(source.source_instance)
-            decision = evaluate_schedule(
-                source, scheduled_run, scheduled_running.get(source.source_instance), now, self._stale_seconds
-            )
-            delayed = decision.state.value == "DELAYED"
-            if delayed:
-                source_warnings.append("SCHEDULED_ACTIVITY_DELAYED")
-            if not source.enabled or current is None:
-                status = DiagnosticStatus.UNKNOWN
-            elif current.status.value == "SUCCEEDED":
-                status = (
-                    DiagnosticStatus.DEGRADED
-                    if source_warnings or getattr(getattr(current, "counts", None), "unsupported", 0)
-                    else DiagnosticStatus.HEALTHY
-                )
-            elif current.status.value == "RUNNING":
-                status = DiagnosticStatus.DEGRADED if source_warnings else DiagnosticStatus.UNKNOWN
-            elif source.source_instance in successes:
-                status = DiagnosticStatus.DEGRADED
-            else:
-                status = DiagnosticStatus.UNHEALTHY
-            plan = plans.get(source.source_instance, {})
-            plan_blocked = plan.get("apply_allowed") is False and plan.get("status") == "READY"
-            outcome_unconfirmed = source.source_instance in uncertain
-            if plan_blocked or outcome_unconfirmed:
-                status = DiagnosticStatus.DEGRADED
-            source_results.append(
-                SourceDiagnostic(
-                    source.source_instance,
-                    source.type,
-                    source.enabled,
-                    source.sync_enabled,
-                    source.sync_interval_seconds,
-                    status,
-                    _summary(current),
-                    (
-                        (
-                            successes.get(source.source_instance).finished_at
-                            or successes.get(source.source_instance).started_at
-                        )
-                        if source.source_instance in successes
-                        else None
-                    ),
-                    _summary(scheduled_run),
-                    _summary(manual.get(source.source_instance)),
-                    decision.state.value,
-                    decision.last_scheduled_run_at,
-                    decision.next_expected_at,
-                    tuple(source_warnings),
-                    plan_blocked,
-                    plan.get("finished_at"),
-                    outcome_unconfirmed,
-                    operation_evidence_available,
-                )
-            )
-            if delayed:
+            result = _source_diagnostic(source, history, evidence, now, self._stale_seconds)
+            source_results.append(result)
+            if "SCHEDULED_ACTIVITY_DELAYED" in result.warnings:
                 warnings.append(
                     DiagnosticWarning(
                         "SCHEDULED_ACTIVITY_DELAYED",
@@ -293,49 +394,7 @@ class DiagnosticsService:
             for run in snapshot.stale
         )
         warnings = stale_warnings + tuple(warnings)
-        scheduled_runs = tuple(snapshot.scheduled)
-        scheduled_successes = tuple(snapshot.scheduled_successes)
-        if components["run_history"].status is DiagnosticStatus.UNAVAILABLE:
-            scheduler = DiagnosticComponent(
-                DiagnosticStatus.UNKNOWN, now, "RUN_HISTORY_UNAVAILABLE", "Scheduled activity cannot be evaluated."
-            )
-        elif any("SCHEDULED_ACTIVITY_DELAYED" in source.warnings for source in source_results):
-            scheduler = DiagnosticComponent(
-                DiagnosticStatus.DEGRADED,
-                now,
-                "SCHEDULED_ACTIVITY_DELAYED",
-                "Scheduled synchronization activity is later than expected.",
-                max((run.started_at for run in scheduled_runs), default=None),
-                max(((run.finished_at or run.started_at) for run in scheduled_successes), default=None),
-            )
-        elif scheduled_runs:
-            scheduler = DiagnosticComponent(
-                DiagnosticStatus.HEALTHY,
-                now,
-                last_seen_at=max(run.started_at for run in scheduled_runs),
-                last_success_at=max(((run.finished_at or run.started_at) for run in scheduled_successes), default=None),
-            )
-        else:
-            scheduler = DiagnosticComponent(
-                DiagnosticStatus.UNKNOWN, now, safe_message="No scheduled runs have been recorded."
-            )
-        components["scheduler"] = scheduler
+        components["scheduler"] = _scheduler_component(components["run_history"], snapshot, source_results, now)
 
-        source_statuses = {source.status for source in source_results}
-        if (
-            components["registry"].status is DiagnosticStatus.UNAVAILABLE
-            or DiagnosticStatus.UNHEALTHY in source_statuses
-        ):
-            overall = DiagnosticStatus.UNHEALTHY
-        elif (
-            DiagnosticStatus.DEGRADED in source_statuses
-            or warnings
-            or any(
-                component.status in (DiagnosticStatus.DEGRADED, DiagnosticStatus.UNAVAILABLE)
-                for component in components.values()
-            )
-        ):
-            overall = DiagnosticStatus.DEGRADED
-        else:
-            overall = DiagnosticStatus.HEALTHY
+        overall = _overall_status(components, source_results, warnings)
         return Diagnostics(overall, now, components, tuple(source_results), stale_warnings, warnings)
