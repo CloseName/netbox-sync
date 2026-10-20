@@ -75,6 +75,8 @@ functions: one function can produce several findings.
   No complexity/doc findings remain; conflict order and exact IDs retained.
 - Legacy plan comparison: 2405 tests passed, 491 skipped; Pylint 9.37/10.
   No findings remain in legacy_inventory; exact reports/counters retained.
+- Workload preflight preparation: 2411 tests passed, 491 skipped; Pylint 9.37/10.
+  Control-flow/doc findings resolved in host/VM/LXC preparation; VM call contract retained.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,
