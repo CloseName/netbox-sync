@@ -830,3 +830,19 @@ Already separated preflight/write modules may remain long when they implement on
 ordered safety policy. Registration functions containing nested API routes are not
 split merely to meet a line-count target. This pass preserves behavior and excludes
 Selectel feature completion, unrelated bug fixes and production deployment.
+
+## Read-only planning and disappearance stages
+
+The disappearance entrypoint now orchestrates target/inventory reads, discovered
+identity collection, scoped identity resolution, missing-object comparison and
+report output. Host planning separates prerequisite selection from reports;
+LXC planning separates one-container matching from desired-state output.
+Thirteen baseline tests captured full reports before extraction and preserve
+source isolation, retained missing guests/NICs, duplicate/name/tenant decisions,
+and host plans. AST round-trips confirm unchanged original functions, including
+LXC continue-to-return boundaries. No adoption, deletion or write is introduced.
+
+Known pre-existing finding: when host planning cannot find a cluster, it prints a
+create-cluster plan but subsequently guest planning raises AttributeError on the
+missing cluster. The baseline test records that behavior. Fix separately; this
+structural pass does not silently alter planning or error handling.

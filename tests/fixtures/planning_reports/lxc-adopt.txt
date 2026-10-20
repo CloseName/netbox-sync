@@ -1,0 +1,26 @@
+
+  LXC CONTAINERS
+    ADOPT CANDIDATE LXC vmid=100 name='lxc-100' action=not-adopted
+      identity=proxmox:node-a:lxc:100
+      cluster=Test Cluster
+      status=offline
+      vcpus=2
+      memory_mib=2048
+      swap_mib=512
+      disk_mib=8192
+      architecture=amd64
+      os_type=debian
+      start_on_boot=off
+      managed_custom_fields:
+        SET sync_identities=[{"external_id": "100", "instance": "pve-infra-test", "kind": "lxc", "schema": "v2", "type": "proxmox"}]
+        SET sync_original_names={"proxmox/pve-infra-test/lxc": "lxc-100"}
+        SET guest_kind="lxc"
+        SET guest_architecture="amd64"
+        SET guest_os_type="debian"
+        SET swap_mb=512
+
+    LXC PLAN SUMMARY
+      match=0
+      create=0
+      adopt_candidate=1
+      conflict=0
