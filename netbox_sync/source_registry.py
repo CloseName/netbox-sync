@@ -47,10 +47,14 @@ class SourceRecord:
 
     @property
     def id(self):
+        """Expose the underlying source configuration identifier."""
+
         return self.config.id
 
     @property
     def source_instance(self):
+        """Expose the underlying source instance identifier."""
+
         return self.config.source_instance
 
     def to_source_config(self):

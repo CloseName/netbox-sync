@@ -7,6 +7,8 @@ from .child_process import phase_progress
 
 @contextmanager
 def stage(name, counters=None):
+    """Emit phase completion or failure and bounded request-count evidence."""
+
     before = counters.requests if counters else 0
     started = time.monotonic()
     phase_progress(name)
@@ -29,13 +31,19 @@ def stage(name, counters=None):
 
 
 class InventoryReads:
+    """Cache SDK property reads within one inventory pass and count method requests."""
+
     def __init__(self, service):
+        """Bind the service stub and initialize per-pass values and request counts."""
+
         self.stub = getattr(service, "_stub", None)
         self.values = {}
         self.requests = 0
 
     @staticmethod
     def key(obj, name):
+        """Key an SDK property by object type, managed-object ID and property name."""
+
         return (type(obj), obj._moId, name)
 
     def __enter__(self):
@@ -69,6 +77,8 @@ class InventoryReads:
         self.values.clear()
 
     def virtual_machines(self, collector, objects):
+        """Load complete VM properties in bounded batches, refusing missing or repeated pages."""
+
         if self.stub is None:
             return
         from pyVmomi import vim, vmodl

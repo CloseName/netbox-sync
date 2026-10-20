@@ -7,16 +7,24 @@ from .lifecycle_protocol import handle_lifecycle
 
 
 class BrokerCleanup:
+    """Narrow broker adapter for ownership verification and credential removal."""
+
     def __init__(self, path):
+        """Bind the local secret-broker socket path."""
+
         self.path = path
 
     def verify_owned(self, key, operation):
+        """Require a boolean broker reply for operation-bound credential ownership."""
+
         result = request(self.path, {"action": "verify_owned", "key": key, "operation_id": operation})
         if type(result.get("verified")) is not bool:
             raise ControlError()
         return result["verified"]
 
     def remove_owned(self, keys):
+        """Require a boolean broker reply for removal of owned credential keys."""
+
         result = request(self.path, {"action": "remove_owned", "keys": keys})
         if type(result.get("removed")) is not bool:
             raise ControlError()
@@ -24,6 +32,8 @@ class BrokerCleanup:
 
 
 def main():
+    """Serve lifecycle operations with retirement continuation as serial maintenance."""
+
     store = LifecycleStore(
         os.environ.get("NETBOX_SYNC_LIFECYCLE_WRITER_DSN", ""),
         os.environ.get("NETBOX_SYNC_REGISTRY_SCHEMA", ""),

@@ -39,6 +39,8 @@ FIELDS = {
 
 
 def summary(plan):
+    """Project plan contract fields and hash the canonical mutation sequence."""
+
     result = {key: plan.get(key) for key in FIELDS if key != "actions"}
     result["actions"] = hashlib.sha256(
         json.dumps(plan.get("items", []), sort_keys=True, separators=(",", ":")).encode()
@@ -47,6 +49,8 @@ def summary(plan):
 
 
 def differences(expected, actual):
+    """Return sorted diagnostic categories for changed plan contract fields."""
+
     if not isinstance(expected, dict):
         return ["PLAN_CONTRACT"]
     current = summary(actual)
@@ -54,10 +58,14 @@ def differences(expected, actual):
 
 
 def safe_reason(value):
+    """Retain only a recognized reason string."""
+
     return value if isinstance(value, str) and value in REASONS else None
 
 
 def safe_categories(value):
+    """Deduplicate and sort only recognized category strings from a list."""
+
     return (
         sorted({item for item in value if isinstance(item, str) and item in CATEGORIES})
         if isinstance(value, list)

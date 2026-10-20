@@ -426,3 +426,11 @@ new scoped/ambiguous/missing network cases pass before extraction together with
 passed, 491 skipped, one existing warning. Pylint 9.23/10, zero Error/Fatal; no
 complexity or missing-doc findings remain in netbox_planner. Black and whitespace
 pass. Planning keeps its existing differences from the write path.
+
+## Stage 34: worker and inventory contract documentation
+
+Add 87 descriptions across 33 modules covering worker boundaries, scoped
+registration/placement evidence, discovery snapshots, guarded creation and
+read-only reports. Executable AST unchanged for each file. Full suite before
+and after: 2352 passed, 491 skipped, one existing warning. Pylint 9.27/10, zero
+Error/Fatal. Black checks all 227 Python files; whitespace passes.

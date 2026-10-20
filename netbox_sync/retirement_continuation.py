@@ -13,7 +13,11 @@ from .source_lifecycle import LifecycleError
 
 
 class RetirementContinuation:
+    """Resume journaled retirement cleanup fairly without replaying an untracked mutation."""
+
     def __init__(self, coordinator):
+        """Bind the coordinator and initialize queue processing and the operation cursor."""
+
         self.coordinator = coordinator
         self.after = UUID(int=0)
         from .removal_queue import RemovalQueue

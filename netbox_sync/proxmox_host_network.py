@@ -4,6 +4,8 @@ import re
 
 
 def snapshot(rows, guest_bridges=()):
+    """Project configured Proxmox topology and explicitly report unresolved known references."""
+
     def text(value):
         return str(value)[:256] if value is not None else None
 

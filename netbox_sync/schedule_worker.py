@@ -168,6 +168,8 @@ def serve(socket_path, store, allowed_uid):
 
 
 def main():
+    """Serve the schedule store on the configured local socket and API user ID."""
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--socket", required=True)
     parser.add_argument("--api-uid", type=int, default=10001)

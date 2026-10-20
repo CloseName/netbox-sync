@@ -2,6 +2,8 @@
 
 
 def print_host_plan_targets(site, role, platform, host_types, cluster_type, cluster, hosts, config):
+    """Print selected prerequisites and whether the target cluster exists."""
+
     print("=== NETBOX INFRASTRUCTURE PLAN ===")
     print("No changes will be written to NetBox.")
     print()
@@ -48,6 +50,8 @@ def report_host_plans(
     plan_vm_networks,
     plan_lxc_containers,
 ):
+    """Print host changes, metadata and hardware before the separate VM/LXC plans."""
+
     for host in hosts:
         device_type = host_types[host.source_id]
         print(f"HOST source={host.source} " f"source_id={host.source_id}")

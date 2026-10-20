@@ -2,6 +2,8 @@
 
 
 def find_missing_objects(target_vms, interfaces_by_vm, discovered_guests, discovered_interfaces, managed_identity):
+    """Find missing managed guests and NICs without duplicating NIC warnings for missing guests."""
+
     managed_guests = 0
     missing_guests = []
 
@@ -79,6 +81,8 @@ def print_disappearance_report(
     *,
     _identity_label,
 ):
+    """Print retained missing-object warnings and discovery counts without deleting anything."""
+
     print("=== DISAPPEARANCE REPORT ===")
 
     print(f"managed_guests=" f"{managed_guests}")

@@ -15,10 +15,14 @@ PREFIX = "esxi-bios-v1/"
 
 
 def bios_key(instance, bios):
+    """Build the persisted instance-and-BIOS UUID identity key."""
+
     return f"{PREFIX}{instance}/{bios}"
 
 
 def parse_key(value):
+    """Parse a recognized BIOS identity key and require canonical UUID components."""
+
     if not value.startswith(PREFIX):
         return None
     parts = value[len(PREFIX) :].split("/")

@@ -108,6 +108,8 @@ def phase_progress(stage, elapsed=None, *, failed=False, requests=None, objects=
 
 
 def read_progress(process):
+    """Retain at most 64 allowlisted child phase records with bounded numeric metadata."""
+
     fd = getattr(process, "_progress_fd", None)
     rows = getattr(process, "_phases", [])
     if fd is not None:

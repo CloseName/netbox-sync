@@ -22,7 +22,11 @@ RESOURCES = {
 
 
 class CreationEndpoint:
+    """Wrap supported creations with run-scoped receipts while delegating other endpoint methods."""
+
     def __init__(self, endpoint, client, path, source, cluster, run):
+        """Bind the endpoint and run context with a fresh creation sequence."""
+
         self.endpoint, self.client, self.path = endpoint, client, path
         self.source, self.cluster, self.run = source, cluster, run
         self.sequence = 0
@@ -33,6 +37,8 @@ class CreationEndpoint:
     def create(self, **fields):
         # A counter is deliberately independent of payload content: a changed
         # payload at the same run/endpoint position conflicts with its receipt.
+        """Create once with a deterministic position nonce and retain uncertainty evidence on failure."""
+
         self.sequence += 1
         nonce = uuid5(self.run, f"{self.source}:{self.path}:{self.sequence}")
         try:
@@ -44,7 +50,11 @@ class CreationEndpoint:
 
 
 class CreationNamespace:
+    """Lazily wrap supported endpoints while retaining ordinary endpoint behavior elsewhere."""
+
     def __init__(self, namespace, prefix, client, source, cluster, run):
+        """Bind namespace and run context and initialize the endpoint wrapper cache."""
+
         self.namespace, self.prefix, self.client = namespace, prefix, client
         self.source, self.cluster, self.run = source, cluster, run
         self.cache = {}
@@ -62,7 +72,11 @@ class CreationNamespace:
 
 
 class GuardedCreation:
+    """Expose guarded creation namespaces and the explicit VM replacement operation."""
+
     def __init__(self, api, client, source, cluster, run):
+        """Build guarded namespaces for a validated run UUID."""
+
         self.api = api
         self.client, self.run = client, UUID(str(run))
         for name in ("dcim", "virtualization", "ipam"):
@@ -72,6 +86,8 @@ class GuardedCreation:
         return getattr(self.api, name)
 
     def replace_vm(self, identifier, body):
+        """Execute a nonce-bound VM replacement and require the requested object identifier."""
+
         nonce = uuid5(self.run, f"vm-replacement:{identifier}")
         result = self.client._request("POST", f"vm-replacements/{identifier}/execute/", dict(body, nonce=str(nonce)))
         if result.get("id") != identifier:
@@ -80,6 +96,8 @@ class GuardedCreation:
 
 
 def for_run(api, config, *, instance, run_id, url, token):
+    """Enable guarded creation only for a pinned instance, valid run and reviewed cluster."""
+
     if not instance:
         return api
     try:

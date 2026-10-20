@@ -90,6 +90,8 @@ class OperationStore:
         self.dsn, self.schema, self.connector = dsn, schema, connector
 
     def connect(self):
+        """Open a bounded-time database connection with explicit liveness and lock settings."""
+
         return self.connector(
             self.dsn,
             connect_timeout=3,
@@ -104,9 +106,13 @@ class OperationStore:
 
     @property
     def table(self):
+        """Return the safely quoted operation table identifier."""
+
         return sql.Identifier(self.schema, "source_operations")
 
     def lock_key(self, source, kind):
+        """Build the source-and-kind advisory lock key within this registry schema."""
+
         return f"netbox-sync:{self.schema}:operation:{source}:{kind}"
 
     def latest(self, source):
@@ -333,6 +339,8 @@ class OperationStore:
         return row["result"] if include_result else str(row["operation_id"])
 
     def plan_time(self, source, operation_id):
+        """Require a finished plan operation and return its completion time."""
+
         with self.connect() as connection:
             row = connection.execute(
                 sql.SQL(
