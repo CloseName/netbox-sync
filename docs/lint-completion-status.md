@@ -57,6 +57,8 @@ functions: one function can produce several findings.
   Control-flow/doc findings resolved in netbox_apply.
 - VM/LXC network reports: 2348 tests passed, 491 skipped; Pylint 9.19/10.
   No findings remain in either report module; distinct primary-IP output retained.
+- Host network planning: 2352 tests passed, 491 skipped; Pylint 9.23/10.
+  Control-flow/doc findings resolved in netbox_planner.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,
@@ -71,7 +73,7 @@ functions: one function can produce several findings.
   unchanged; full suite 2346 passed, 491 skipped; Pylint 9.19/10.
 - Application/API contracts: 68 descriptions, executable AST and 13 model schemas
   unchanged apart from descriptions; full suite 2348 passed; Pylint 9.23/10.
-- Remaining documentation: 34 classes and 207 functions; compatibility metrics pending.
+- Remaining documentation: 34 classes and 206 functions; compatibility metrics pending.
 
 Detailed per-PR verification remains in [the cleanup log](lint-cleanup-20261020.md).
 This file must not be interpreted as a completed audit until all pending entries
