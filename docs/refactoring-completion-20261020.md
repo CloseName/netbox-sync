@@ -121,3 +121,17 @@ these results do not constitute Linux/PostgreSQL/live-NetBox acceptance.
 
 Further work should be driven by a concrete defect, feature or maintenance need,
 not by continuing the same extraction sequence indefinitely.
+
+## Follow-up: missing-cluster planning fix — 2026-10-20
+
+The missing-cluster finding above is resolved by a separate behavioral fix.
+VM-network and LXC planners now follow the existing VM planner contract: print
+`BLOCKED target cluster does not exist` and return before reading guest inventory.
+Host planning still prints the proposed cluster creation and continues reporting
+all hosts; it does not create the cluster or write any objects. Existing-cluster
+plans retain their exact output fixture.
+
+Four regression cases were run first: the existing VM case passed and the two
+missing guards plus multi-host orchestration failed. After the fix all four pass,
+and the 13 planning/report contracts pass. The previous failure fixture was
+updated to require successful, read-only completion rather than catch an error.

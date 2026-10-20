@@ -43,6 +43,10 @@ def plan_lxc_containers(
         '  LXC CONTAINERS'
     )
 
+    if cluster is None:
+        print('    BLOCKED target cluster does not exist')
+        return
+
     existing_vms = list(
         nb_api.virtualization
         .virtual_machines
