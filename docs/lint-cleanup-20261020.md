@@ -562,3 +562,14 @@ pass before/after (37 total). Full suite: 2431 passed, 491 skipped, one existing
 warning; Pylint 9.38/10, zero Error/Fatal. After making the helper's implicit None
 explicit, the 37 tests and focused complexity/return checks pass again. No complexity
 findings remain in request_boundaries. Black and whitespace pass.
+
+## Stage 49: recovery evidence aggregation
+
+Separate provenance parsing, per-kind row validation, owned-object checks and report
+serialization. Preserve duplicate validation order, exact integer IDs, detached-host
+exceptions and deterministic digests. Eight new cases and existing evidence tests
+pass before/after (36 total); 1000 deterministic comparisons against the original
+implementation match complete results/digests and errors. Full suite: 2439 passed,
+491 skipped, one existing warning; Pylint 9.38/10, zero Error/Fatal. Control-flow
+findings resolved. The existing nine-argument public evidence API remains compatible;
+exact integer checks intentionally reject booleans. Black and whitespace pass.
