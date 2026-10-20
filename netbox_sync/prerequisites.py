@@ -198,6 +198,26 @@ def mismatch_details(differences, row, kind, models, count):
     return [{"property": key, "expected": pairs[key][0], "actual": pairs[key][1]} for key in differences]
 
 
+def _field_differences(row, kind, models):
+    """List schema conflicts in stable review order before considering lifecycle state."""
+    differences = []
+    if choice(row.get("type")) != kind:
+        differences.append("type")
+    if not isinstance(row.get("object_types"), list) or not set(models).issubset(set(row["object_types"])):
+        differences.append("models")
+    for key in ("required", "unique"):
+        if row.get(key) is not None and row.get(key) is not False:
+            differences.append(key)
+    for key in ("validation_minimum", "validation_maximum"):
+        if row.get(key) is not None:
+            differences.append(key)
+    if row.get("validation_regex") not in (None, ""):
+        differences.append("validation_regex")
+    if row.get("validation_schema") not in (None, {}):
+        differences.append("validation_schema")
+    return differences
+
+
 def reconcile(rows):
     """Classify managed field definitions as missing, ready, provisioning or conflicting."""
 
@@ -209,20 +229,7 @@ def reconcile(rows):
         if len(matches) > 1:
             differences.append("duplicate")
         if row is not None:
-            if choice(row.get("type")) != kind:
-                differences.append("type")
-            if not isinstance(row.get("object_types"), list) or not set(models).issubset(set(row["object_types"])):
-                differences.append("models")
-            for key in ("required", "unique"):
-                if row.get(key) is not None and row.get(key) is not False:
-                    differences.append(key)
-            for key in ("validation_minimum", "validation_maximum"):
-                if row.get(key) is not None:
-                    differences.append(key)
-            if row.get("validation_regex") not in (None, ""):
-                differences.append("validation_regex")
-            if row.get("validation_schema") not in (None, {}):
-                differences.append("validation_schema")
+            differences.extend(_field_differences(row, kind, models))
         status = "missing" if not matches else "conflict" if differences else "ready"
         if row is not None and not differences:
             lifecycle = choice(row.get("status", "active"))
