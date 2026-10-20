@@ -53,6 +53,8 @@ class DirectoryAuth(DirectoryUsers):
                 self.event("ldap.session.revoked", principal["id"])
                 raise AuthError(
                     "AUTH_REQUIRED"
+                    # isinstance above selects the application error; Pylint does not narrow it.
+                    # pylint: disable-next=no-member
                     if isinstance(exc, DirectoryError) and exc.code == "LDAP_ACCESS_DENIED"
                     else "AUTH_UNAVAILABLE"
                 ) from None

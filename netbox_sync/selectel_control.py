@@ -217,12 +217,20 @@ def handle(store, lock_path, payload):
             if not state and len(list(base.glob("[0-9]*.json"))) >= 100:
                 return {"error": "ACCOUNT_LIMIT"}
             parsed = Account(**data)
+            # Pydantic validates this descriptor into the declared field type.
+            # pylint: disable-next=no-member
             if not parsed.name.strip() or not parsed.username.strip():
                 raise ControlError("CONTROL_REQUEST_INVALID")
             state.update(
                 account=parsed.account,
+                # Pydantic validates this descriptor into the declared field type.
+                # pylint: disable-next=no-member
                 name=parsed.name.strip(),
+                # Pydantic validates this descriptor into the declared field type.
+                # pylint: disable-next=no-member
                 username=parsed.username.strip(),
+                # Pydantic validates this descriptor into the declared field type.
+                # pylint: disable-next=no-member
                 password=parsed.password.get_secret_value(),
             )
             # Changing credentials cannot resolve an unconfirmed write.

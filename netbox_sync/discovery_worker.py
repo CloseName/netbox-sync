@@ -269,6 +269,7 @@ def execute_child(payload):
     from .proxmox_discovery import discover_hosts as discover_proxmox
     from .host_primary_ip import select_endpoint
 
+    review = None  # Populated by every successful non-plan provider branch.
     source = dict(payload["source"])
     credentials = payload["credentials"]
     source["username"] = credentials["username"]

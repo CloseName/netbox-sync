@@ -148,7 +148,7 @@ with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as sock:
 """
     for path, uid, key in endpoints:
 
-        def identity():
+        def identity(uid=uid):
             os.setgroups([])
             os.setgid(uid)
             os.setuid(uid)

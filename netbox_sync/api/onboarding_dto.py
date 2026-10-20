@@ -163,7 +163,11 @@ class RegistrationRequest(PublicModel):
         value = self.model_dump(mode="json", exclude={"onboarding_token"})
         value["address"] = value["address"].lower().rstrip(".")
         value["port"] = source_port(self.source_type, self.port)
+        # Pydantic validates this descriptor into the declared field type.
+        # pylint: disable-next=no-member
         value["references"] = {k: {"id": v.get("id")} for k, v in self.references.items()}
+        # Pydantic validates this descriptor into the declared field type.
+        # pylint: disable-next=no-member
         value["host_types"] = {k: {"id": v.get("id")} for k, v in self.host_types.items()}
         return value
 
