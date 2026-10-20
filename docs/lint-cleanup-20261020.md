@@ -551,3 +551,14 @@ Four new ordering/evidence cases and existing contracts pass before/after (56 to
 Full suite: 2415 passed, 491 skipped, one existing warning. Pylint 9.38/10,
 zero Error/Fatal. Black and whitespace pass. Environment skips are not deployment
 acceptance; Selectel remains experimental.
+
+## Stage 48: API request policy stages
+
+Separate lifecycle/source error registration, proxy transport, authorization and
+write admission. Preserve early denial headers, lazy origin checks, request logging,
+bootstrap error normalization and actor-bound status exemptions. All exception
+handler AST bodies/decorators are unchanged. Sixteen new cases plus TLS contracts
+pass before/after (37 total). Full suite: 2431 passed, 491 skipped, one existing
+warning; Pylint 9.38/10, zero Error/Fatal. After making the helper's implicit None
+explicit, the 37 tests and focused complexity/return checks pass again. No complexity
+findings remain in request_boundaries. Black and whitespace pass.
