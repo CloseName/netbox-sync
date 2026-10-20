@@ -1,5 +1,7 @@
 """Read-only legacy inventory loading and console reports."""
 
+from typing import NamedTuple
+
 import pynetbox
 from proxmoxer import ProxmoxAPI
 
@@ -147,6 +149,52 @@ def _run_inventory(
         print()
 
 
+class _ExpectedVM(NamedTuple):
+    """Legacy display and resource values compared in their existing report order."""
+
+    name: str
+    vcpus: int
+    memory: int
+    status: str
+
+
+def _planned_vm_changes(nb_vm, expected, nb_device):
+    """Describe legacy field differences with the existing numeric conversion fallbacks."""
+    changes = []
+
+    if str(nb_vm.name) != expected.name:
+        changes.append(f"name:{nb_vm.name}->{expected.name}")
+
+    try:
+        current_vcpus = int(float(nb_vm.vcpus))
+    except (TypeError, ValueError):
+        current_vcpus = None
+
+    if current_vcpus != expected.vcpus:
+        changes.append(f"vcpus:{current_vcpus}->{expected.vcpus}")
+
+    try:
+        current_memory = int(nb_vm.memory)
+    except (TypeError, ValueError):
+        current_memory = None
+
+    if current_memory != expected.memory:
+        changes.append(f"memory:{current_memory}->{expected.memory}")
+
+    current_status = str(getattr(nb_vm.status, "value", nb_vm.status))
+
+    if current_status != expected.status:
+        changes.append(f"status:{current_status}->{expected.status}")
+
+    current_device = getattr(nb_vm, "device", None)
+    current_device_id = getattr(current_device, "id", None)
+
+    if current_device_id != nb_device.id:
+        changes.append(f"device:{current_device_id}->{nb_device.id}")
+
+    return changes
+
+
 def _run_plan(_pve_api: ProxmoxAPI, _nb_objects: dict, *, _get_virtual_machine_vcpus) -> None:
     """
     Build a read-only synchronization plan.
@@ -158,10 +206,7 @@ def _run_plan(_pve_api: ProxmoxAPI, _nb_objects: dict, *, _get_virtual_machine_v
     print("No changes will be written to NetBox.")
     print()
 
-    create_count = 0
-    update_count = 0
-    unchanged_count = 0
-    blocked_count = 0
+    counts = dict.fromkeys(("create", "update", "unchanged", "blocked"), 0)
 
     for pve_node in _pve_api.nodes.get():
         node_name = pve_node["node"]
@@ -173,7 +218,7 @@ def _run_plan(_pve_api: ProxmoxAPI, _nb_objects: dict, *, _get_virtual_machine_v
 
             for pve_vm in pve_vms:
                 print(f'  BLOCKED vmid={pve_vm["vmid"]} ' f'name={pve_vm.get("name", "-")}')
-                blocked_count += 1
+                counts["blocked"] += 1
 
             continue
 
@@ -184,69 +229,41 @@ def _run_plan(_pve_api: ProxmoxAPI, _nb_objects: dict, *, _get_virtual_machine_v
 
             pve_config = _pve_api.nodes(node_name).qemu(pve_vm["vmid"]).config.get()
 
-            expected_name = pve_vm["name"]
-            expected_vcpus = int(_get_virtual_machine_vcpus(pve_config))
-            expected_memory = int(pve_config["memory"])
-            expected_status = "active" if pve_vm["status"] == "running" else "offline"
+            expected = _ExpectedVM(
+                pve_vm["name"],
+                int(_get_virtual_machine_vcpus(pve_config)),
+                int(pve_config["memory"]),
+                "active" if pve_vm["status"] == "running" else "offline",
+            )
 
             nb_vm = _nb_objects["virtual_machines"].get(vmid)
 
             if nb_vm is None:
                 print(
                     f"  CREATE vmid={vmid} "
-                    f"name={expected_name} "
-                    f"vcpus={expected_vcpus} "
-                    f"memory={expected_memory} "
-                    f"status={expected_status}"
+                    f"name={expected.name} "
+                    f"vcpus={expected.vcpus} "
+                    f"memory={expected.memory} "
+                    f"status={expected.status}"
                 )
-                create_count += 1
+                counts["create"] += 1
                 continue
 
-            changes = []
-
-            if str(nb_vm.name) != expected_name:
-                changes.append(f"name:{nb_vm.name}->{expected_name}")
-
-            try:
-                current_vcpus = int(float(nb_vm.vcpus))
-            except (TypeError, ValueError):
-                current_vcpus = None
-
-            if current_vcpus != expected_vcpus:
-                changes.append(f"vcpus:{current_vcpus}->{expected_vcpus}")
-
-            try:
-                current_memory = int(nb_vm.memory)
-            except (TypeError, ValueError):
-                current_memory = None
-
-            if current_memory != expected_memory:
-                changes.append(f"memory:{current_memory}->{expected_memory}")
-
-            current_status = str(getattr(nb_vm.status, "value", nb_vm.status))
-
-            if current_status != expected_status:
-                changes.append(f"status:{current_status}->{expected_status}")
-
-            current_device = getattr(nb_vm, "device", None)
-            current_device_id = getattr(current_device, "id", None)
-
-            if current_device_id != nb_device.id:
-                changes.append(f"device:{current_device_id}->{nb_device.id}")
+            changes = _planned_vm_changes(nb_vm, expected, nb_device)
 
             if changes:
-                print(f"  UPDATE vmid={vmid} " f"name={expected_name} " + " ".join(changes))
-                update_count += 1
+                print(f"  UPDATE vmid={vmid} " f"name={expected.name} " + " ".join(changes))
+                counts["update"] += 1
             else:
-                print(f"  SKIP vmid={vmid} " f"name={expected_name} " f"reason=no-change")
-                unchanged_count += 1
+                print(f"  SKIP vmid={vmid} " f"name={expected.name} " f"reason=no-change")
+                counts["unchanged"] += 1
 
     print()
     print("Plan summary:")
-    print(f"  CREATE:  {create_count}")
-    print(f"  UPDATE:  {update_count}")
-    print(f"  SKIP:    {unchanged_count}")
-    print(f"  BLOCKED: {blocked_count}")
+    print(f"  CREATE:  {counts['create']}")
+    print(f"  UPDATE:  {counts['update']}")
+    print(f"  SKIP:    {counts['unchanged']}")
+    print(f"  BLOCKED: {counts['blocked']}")
 
 
 def _load_nb_objects(_nb_api: pynetbox.api) -> dict:
