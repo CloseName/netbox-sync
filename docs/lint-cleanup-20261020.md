@@ -102,3 +102,21 @@ baseline, not a second full run for this documentation-only change.
 
 Full Pylint passes at 9.02/10 with zero Error/Fatal findings; no global suppressions
 or threshold changes are introduced.
+
+## Stage 6: VM network preflight
+
+Separate NIC metadata, MAC ownership, scoped IP validation, primary IPv4 policy
+and one-VM context preparation. The public batch entry point retains host/VM
+order and rejects duplicate discovered MACs before duplicate discovered IPs,
+after all per-VM checks. Keep stable-interface MAC rotation, structured
+ManagedMACConflict details and preservation of a manual primary owned by the VM.
+Do not substitute LXC's stricter primary-MAC policy.
+
+Eleven new characterization cases pass on the original implementation and after
+extraction, including competing failures and structured MAC error attributes.
+All 73 focused preflight/report/write/bootstrap tests pass. AST comparison
+confirms original private helpers and extracted MAC/IP control flow are unchanged.
+The module has no branch, statement, local-variable or nesting complexity findings.
+
+Full suite: 2062 passed, 485 skipped, one existing Starlette warning. Full Pylint
+passes at 9.03/10 with zero Error/Fatal; Black and whitespace checks pass.
