@@ -515,3 +515,11 @@ one existing warning. Pylint 9.37/10, zero Error/Fatal; control-flow/doc finding
 resolved in orchestrator. SourceRunResult retains its public execution/history
 fields consumed by entrypoint reporting and scheduler results. Black and whitespace
 pass.
+## Stage 44: prerequisite schema comparison
+
+Extract ordered definition differences from field reconciliation. Preserve duplicate
+precedence, lifecycle precedence, bounded details and exact positive integer IDs.
+Six new cases and existing preparation checks pass before/after (53 passed,
+20 environment-dependent skips). Full suite: 2403 passed, 491 skipped, one existing
+warning. Pylint 9.37/10, zero Error/Fatal; no complexity/doc findings remain in
+prerequisites. Black and whitespace pass.
