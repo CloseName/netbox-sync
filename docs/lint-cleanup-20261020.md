@@ -233,3 +233,13 @@ URLs. Nine new malformed-page cases pass before and after extraction; 70 focused
 catalog/recovery/placement tests pass. No complexity or missing-doc findings remain
 in netbox_catalog. Full suite: 2208 passed, 485 skipped, one existing Starlette
 warning. Pylint 9.05/10, zero Error/Fatal; Black and whitespace pass.
+
+## Stage 14: authorization dispatch
+
+Separate enrollment, login, authenticated capabilities, policy updates and receipt
+operations. Preserve session/refusal precedence, throttle accounting, LDAP routing,
+rollback and the intentional ability to cancel an expired receipt. Fourteen new
+characterization cases pass before and after extraction; focused tests: 86 passed,
+one platform skip. Full suite: 2222 passed, 485 skipped, one existing Starlette
+warning. Pylint 9.06/10, zero Error/Fatal. Public positional constructor arguments
+remain compatible; its argument-count recommendations are intentionally retained.

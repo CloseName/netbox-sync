@@ -31,7 +31,9 @@ functions: one function can produce several findings.
   full Pylint 9.05/10, zero Error/Fatal. No complexity findings remain in this module.
 - Catalog query dispatch: 2208 tests passed, 485 skipped; Pylint 9.05/10.
   No complexity or missing-doc findings remain in netbox_catalog.
-- Remaining workers, authorization, provider reconciliation, reporting
+- Authorization dispatch: 2222 tests passed, 485 skipped; Pylint 9.06/10.
+  Constructor argument-count recommendations retained for positional compatibility.
+- Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Remaining documentation and compatibility metrics: pending.
 
