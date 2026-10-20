@@ -2,12 +2,26 @@
 
 from ipaddress import ip_address, ip_interface
 import socket
+from typing import NamedTuple
 from .source_identity import SourceIdentity
 from .netbox_metadata import find_sync_identity_matches
 
 
 class HostPrimaryIPConflict(ValueError):
+    """A management endpoint cannot be assigned without overriding ambiguous or manual state."""
+
     code = "HOST_PRIMARY_IP_CONFLICT"
+
+
+class _PrimaryTarget(NamedTuple):
+    """Validated management-IP target and its existing NetBox objects."""
+
+    device: object
+    nic: object
+    ip: object
+    address: object
+    identity: dict
+    primary: object
 
 
 def select_endpoint(hosts, config, resolver=None):
@@ -63,6 +77,7 @@ def select_endpoint(hosts, config, resolver=None):
 
 
 def object_id(value):
+    """Read an object reference from a mapping, numeric ID or NetBox record."""
     if isinstance(value, dict):
         return value.get("id")
     return value if isinstance(value, int) else getattr(value, "id", None)
@@ -74,60 +89,72 @@ def apply_esxi_primary(api, hosts):
         wanted = host.connection_management
         if not wanted:
             continue
-        devices = find_sync_identity_matches(list(api.dcim.devices.all()), host)
-        if len(devices) != 1:
-            raise HostPrimaryIPConflict("Management IP requires one source-owned host")
-        device = devices[0]
-        identity = SourceIdentity(
-            "v2", "esxi", host.source_instance, "host-nic", host.source_id + ":" + wanted["interface"]
-        ).to_record()
-        interfaces = [
-            nic
-            for nic in api.dcim.interfaces.all()
-            if object_id(nic.serialize().get("device")) == device.id and nic.name == wanted["interface"]
-        ]
-        if len(interfaces) > 1:
-            raise HostPrimaryIPConflict("Ambiguous management interface")
-        nic = interfaces[0] if interfaces else None
-        if nic and (getattr(nic, "custom_fields", {}) or {}).get("sync_identities") != [identity]:
-            raise HostPrimaryIPConflict("Management interface exists without matching source ownership")
-        address = ip_interface(wanted["address"])
-        matches = []
-        for ip in api.ipam.ip_addresses.all():
-            if ip_interface(ip.address).ip == address.ip:
-                matches.append(ip)
-        if len(matches) > 1:
-            raise HostPrimaryIPConflict("Management IP is ambiguous across NetBox scopes")
-        ip = matches[0] if matches else None
-        if ip:
-            data = ip.serialize()
-            if (
-                data.get("vrf") is not None
-                or str(ip_interface(ip.address)) != str(address)
-                or nic is None
-                or data.get("assigned_object_type") != "dcim.interface"
-                or object_id(data.get("assigned_object_id")) != nic.id
-            ):
-                raise HostPrimaryIPConflict("Management IP already exists with a different assignment or prefix")
-        primary = object_id(device.serialize().get("primary_ip4"))
-        if primary is not None and (ip is None or primary != ip.id):
-            raise HostPrimaryIPConflict("Existing primary IPv4 requires operator review; not overwritten")
-        if nic is None:
-            nic = api.dcim.interfaces.create(
-                device=device.id,
-                name=wanted["interface"],
-                type="virtual",
-                enabled=True,
-                mgmt_only=True,
-                custom_fields={"sync_identities": [identity]},
-            )
-        if ip is None:
-            ip = api.ipam.ip_addresses.create(
-                address=str(address),
-                status="active",
-                assigned_object_type="dcim.interface",
-                assigned_object_id=nic.id,
-                dns_name=wanted["dns_name"],
-            )
-        if primary != ip.id:
-            device.update({"primary_ip4": ip.id})
+        target = _management_target(api, host, wanted)
+        _write_management_target(api, target, wanted)
+
+
+def _management_target(api, host, wanted):
+    """Resolve one owned host/NIC and validate IP scope, assignment and existing primary."""
+    devices = find_sync_identity_matches(list(api.dcim.devices.all()), host)
+    if len(devices) != 1:
+        raise HostPrimaryIPConflict("Management IP requires one source-owned host")
+    device = devices[0]
+    identity = SourceIdentity(
+        "v2", "esxi", host.source_instance, "host-nic", host.source_id + ":" + wanted["interface"]
+    ).to_record()
+    interfaces = [
+        nic
+        for nic in api.dcim.interfaces.all()
+        if object_id(nic.serialize().get("device")) == device.id and nic.name == wanted["interface"]
+    ]
+    if len(interfaces) > 1:
+        raise HostPrimaryIPConflict("Ambiguous management interface")
+    nic = interfaces[0] if interfaces else None
+    if nic and (getattr(nic, "custom_fields", {}) or {}).get("sync_identities") != [identity]:
+        raise HostPrimaryIPConflict("Management interface exists without matching source ownership")
+    address = ip_interface(wanted["address"])
+    matches = []
+    for ip in api.ipam.ip_addresses.all():
+        if ip_interface(ip.address).ip == address.ip:
+            matches.append(ip)
+    if len(matches) > 1:
+        raise HostPrimaryIPConflict("Management IP is ambiguous across NetBox scopes")
+    ip = matches[0] if matches else None
+    if ip:
+        data = ip.serialize()
+        if (
+            data.get("vrf") is not None
+            or str(ip_interface(ip.address)) != str(address)
+            or nic is None
+            or data.get("assigned_object_type") != "dcim.interface"
+            or object_id(data.get("assigned_object_id")) != nic.id
+        ):
+            raise HostPrimaryIPConflict("Management IP already exists with a different assignment or prefix")
+    primary = object_id(device.serialize().get("primary_ip4"))
+    if primary is not None and (ip is None or primary != ip.id):
+        raise HostPrimaryIPConflict("Existing primary IPv4 requires operator review; not overwritten")
+    return _PrimaryTarget(device, nic, ip, address, identity, primary)
+
+
+def _write_management_target(api, target, wanted):
+    """Create missing proven management objects, then set primary only when it differs."""
+    device, nic, ip, address, identity, primary = target
+    if nic is None:
+        nic = api.dcim.interfaces.create(
+            device=device.id,
+            name=wanted["interface"],
+            type="virtual",
+            enabled=True,
+            mgmt_only=True,
+            custom_fields={"sync_identities": [identity]},
+        )
+    if ip is None:
+        ip = api.ipam.ip_addresses.create(
+            address=str(address),
+            status="active",
+            assigned_object_type="dcim.interface",
+            assigned_object_id=nic.id,
+            dns_name=wanted["dns_name"],
+        )
+    if primary != ip.id:
+        device.update({"primary_ip4": ip.id})
