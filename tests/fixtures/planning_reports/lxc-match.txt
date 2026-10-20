@@ -1,0 +1,26 @@
+
+  LXC CONTAINERS
+    MATCH LXC id=50 vmid=100 name='lxc-100' reason=sync_identity
+      identity=proxmox:node-a:lxc:100
+      cluster=Test Cluster
+      status=offline
+      vcpus=2
+      memory_mib=2048
+      swap_mib=512
+      disk_mib=8192
+      architecture=amd64
+      os_type=debian
+      start_on_boot=off
+      managed_custom_fields:
+        KEEP sync_identities=[{"external_id": "100", "instance": "pve-infra-test", "kind": "lxc", "schema": "v2", "type": "proxmox"}]
+        KEEP sync_original_names={"proxmox/pve-infra-test/lxc": "lxc-100"}
+        KEEP guest_kind="lxc"
+        KEEP guest_architecture="amd64"
+        KEEP guest_os_type="debian"
+        KEEP swap_mb=512
+
+    LXC PLAN SUMMARY
+      match=1
+      create=0
+      adopt_candidate=0
+      conflict=0

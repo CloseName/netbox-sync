@@ -1,0 +1,9 @@
+=== DISAPPEARANCE REPORT ===
+managed_guests=0
+discovered_guests=4
+missing_guests=0
+managed_interfaces=0
+discovered_interfaces=4
+missing_interfaces=0
+DISAPPEARANCE STATUS CLEAN
+No objects were deleted.

@@ -1,0 +1,9 @@
+
+  LXC CONTAINERS
+    CONFLICT LXC vmid=100 name='lxc-100' reason=duplicate_name
+
+    LXC PLAN SUMMARY
+      match=0
+      create=0
+      adopt_candidate=0
+      conflict=1

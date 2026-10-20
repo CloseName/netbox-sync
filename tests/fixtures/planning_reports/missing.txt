@@ -1,0 +1,10 @@
+=== DISAPPEARANCE REPORT ===
+managed_guests=2
+discovered_guests=4
+missing_guests=1
+managed_interfaces=1
+discovered_interfaces=4
+missing_interfaces=1
+WARNING MISSING GUEST id=50 name='vm-50' identity=proxmox:node-a:999 action=retained
+WARNING MISSING INTERFACE vm_id=51 vm='vm-51' interface_id=151 name='missing-nic' identity=proxmox:node-a:100:net99 action=retained
+No objects were deleted.
