@@ -57,47 +57,8 @@ def _error(request, status, code, message, diagnostic=None):
     )
 
 
-def _install_boundaries(app, settings, auth_client):
-    from ..local_control import ControlError
-
-    @app.exception_handler(AuthError)
-    async def auth_error(request, exc):
-        status = {
-            "AUTH_REQUIRED": 401,
-            "AUTH_REAUTH_REQUIRED": 403,
-            "AUTH_DENIED": 403,
-            "AUTH_INVALID": 401,
-            "AUTH_RATE_LIMITED": 429,
-            "ENROLLMENT_INVALID": 409,
-            "POLICY_CONFLICT": 409,
-            "POLICY_INVALID": 422,
-            "TEAM_CONFLICT": 409,
-            "TEAM_INVALID": 422,
-            "POLICY_HOST_MANAGED": 403,
-            "PROBE_RECEIPT_INVALID": 409,
-            "LDAP_INVALID": 422,
-            "LDAP_CONFLICT": 409,
-            "LDAP_ACCESS_DENIED": 403,
-            "LDAP_BIND_FAILED": 422,
-            "LDAP_TLS_FAILED": 422,
-        }.get(exc.code, 503)
-        return _error(request, status, exc.code, "Authentication or policy request rejected")
-
-    @app.exception_handler(ControlError)
-    async def control_error(request, exc):
-        known = {
-            "BOOTSTRAP_CONFLICT",
-            "BOOTSTRAP_NOT_READY",
-            "BOOTSTRAP_INVALID",
-            "BOOTSTRAP_BUSY",
-            "SOURCE_APPLY_ACTIVE",
-        }
-        return _error(
-            request,
-            409 if exc.code in known else 503,
-            exc.code if exc.code in known else "BOOTSTRAP_UNAVAILABLE",
-            "Reload bootstrap state and review before retrying",
-        )
+def _install_lifecycle_errors(app):
+    """Register lifecycle and host registration response contracts."""
 
     @app.exception_handler(LifecycleRequestError)
     async def lifecycle_error(request, exc):
@@ -345,6 +306,10 @@ def _install_boundaries(app, settings, auth_client):
             },
         )
 
+
+def _install_source_errors(app):
+    """Register source, execution and schedule response contracts."""
+
     @app.exception_handler(OnboardingError)
     async def onboarding_error(request, exc):
         errors = {
@@ -504,6 +469,178 @@ def _install_boundaries(app, settings, auth_client):
     async def schedule_read_error(request, exc):
         return _error(request, 503, exc.code, "Scheduling state is unavailable")
 
+
+def _check_public_transport(request, settings):
+    """Validate the private proxy boundary before authorization."""
+    if settings.public_url:
+        from ..tls_config import public_authority
+
+        authority = public_authority(settings.public_url)
+        local_health = (
+            request.scope.get("client") is None
+            and request.method == "GET"
+            and request.scope["path"] == "/api/v1/health"
+            and request.headers.get("host") == "localhost"
+        )
+        if not local_health:
+            # Uvicorn proxy middleware is disabled. Only the private Unix
+            # listener (client=None) may carry the proxy's canonical scheme.
+            if (
+                request.scope.get("client") is not None
+                or request.headers.get("host") != authority
+                or request.headers.get("x-forwarded-proto") != "https"
+            ):
+                return _error(request, 403, "API_WRITE_FORBIDDEN", "Public HTTPS boundary required")
+            request.scope["scheme"] = "https"
+    return None
+
+
+async def _authorize_request(request, auth_client, auth_error):
+    """Authorize protected paths and retain early denial responses."""
+    if request.url.path.startswith("/api/v1/") and (request.method, request.url.path) not in PUBLIC:
+        from starlette.concurrency import run_in_threadpool
+
+        try:
+            request.state.principal = await run_in_threadpool(
+                auth_client.call,
+                "authorize",
+                session=request.cookies.get(COOKIE),
+                audit=request.method not in ("GET", "HEAD", "OPTIONS"),
+                permission=(
+                    "source.read"
+                    if permission(request.method, request.url.path) == "unmapped.deny"
+                    else permission(request.method, request.url.path)
+                ),
+            )
+            if permission(request.method, request.url.path) == "unmapped.deny":
+                known_path = request.url.path == "/api/v1/health" or any(
+                    permission(method, request.url.path) != "unmapped.deny" for method in ("GET", "POST", "PATCH")
+                )
+                return _error(
+                    request,
+                    405 if known_path else 404,
+                    "API_METHOD_NOT_ALLOWED" if known_path else "API_NOT_FOUND",
+                    "Endpoint not available",
+                )
+        except AuthError as exc:
+            return await auth_error(request, exc)
+
+
+def _same_origin_write(request, settings):
+    """Check origin and write headers in their original short-circuit order."""
+    from ..tls_config import public_authority
+
+    origin = urlsplit(request.headers.get("origin", ""))
+    host = request.headers.get("host", "")
+    if (
+        host not in ((public_authority(settings.public_url),) if settings.public_url else settings.allowed_write_hosts)
+        or origin.netloc != host
+        or origin.scheme != request.url.scheme
+        or origin.path not in ("", "/")
+        or origin.query
+    ):
+        return False
+    if (
+        origin.fragment
+        or origin.username is not None
+        or request.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none")
+        or request.headers.get("x-netbox-sync-csrf") != "same-origin"
+        or request.headers.get("content-type", "").split(";")[0] != "application/json"
+    ):
+        return False
+    return True
+
+
+async def _admit_write(request, settings, call_next):
+    """Apply origin, size and setup checks before dispatching writes."""
+    from ..local_control import ControlError
+
+    if not _same_origin_write(request, settings):
+        response = _error(request, 403, "API_WRITE_FORBIDDEN", "Same-origin write protection failed")
+    elif not request.headers.get("content-length", "").isdigit() or int(request.headers["content-length"]) > 16384:
+        response = _error(request, 413, "API_REQUEST_TOO_LARGE", "Request body is too large")
+    else:
+        ready = True
+        bootstrap_failure = None
+        # These POSTs are actor-bound status reads, not write admission.
+        # They must remain available while an admitted catalog/removal
+        # operation briefly owns BootstrapStore's exclusive lock.
+        source_status = request.url.path == "/api/v1/sources/registration-status" or re.fullmatch(
+            r"/api/v1/sources/[^/]+/(removal-status|retirement-status)", request.url.path
+        )
+        if settings.bootstrap_socket and request.url.path.startswith("/api/v1/sources") and not source_status:
+            from starlette.concurrency import run_in_threadpool
+            from .bootstrap import BootstrapClient
+
+            try:
+                state = await run_in_threadpool(BootstrapClient(settings.bootstrap_socket).call, "status")
+                ready = state.status == "READY"
+            except ControlError as exc:
+                bootstrap_failure = "BOOTSTRAP_BUSY" if exc.code == "BOOTSTRAP_BUSY" else "BOOTSTRAP_UNAVAILABLE"
+            except Exception:
+                bootstrap_failure = "BOOTSTRAP_UNAVAILABLE"
+        if bootstrap_failure:
+            response = _error(
+                request,
+                503,
+                bootstrap_failure,
+                "NetBox setup state is temporarily unavailable; no new operation was admitted",
+            )
+        else:
+            response = (
+                await call_next(request)
+                if ready
+                else _error(request, 409, "BOOTSTRAP_NOT_READY", "Complete NetBox setup first")
+            )
+    return response
+
+
+def _install_boundaries(app, settings, auth_client):
+    from ..local_control import ControlError
+
+    @app.exception_handler(AuthError)
+    async def auth_error(request, exc):
+        status = {
+            "AUTH_REQUIRED": 401,
+            "AUTH_REAUTH_REQUIRED": 403,
+            "AUTH_DENIED": 403,
+            "AUTH_INVALID": 401,
+            "AUTH_RATE_LIMITED": 429,
+            "ENROLLMENT_INVALID": 409,
+            "POLICY_CONFLICT": 409,
+            "POLICY_INVALID": 422,
+            "TEAM_CONFLICT": 409,
+            "TEAM_INVALID": 422,
+            "POLICY_HOST_MANAGED": 403,
+            "PROBE_RECEIPT_INVALID": 409,
+            "LDAP_INVALID": 422,
+            "LDAP_CONFLICT": 409,
+            "LDAP_ACCESS_DENIED": 403,
+            "LDAP_BIND_FAILED": 422,
+            "LDAP_TLS_FAILED": 422,
+        }.get(exc.code, 503)
+        return _error(request, status, exc.code, "Authentication or policy request rejected")
+
+    @app.exception_handler(ControlError)
+    async def control_error(request, exc):
+        known = {
+            "BOOTSTRAP_CONFLICT",
+            "BOOTSTRAP_NOT_READY",
+            "BOOTSTRAP_INVALID",
+            "BOOTSTRAP_BUSY",
+            "SOURCE_APPLY_ACTIVE",
+        }
+        return _error(
+            request,
+            409 if exc.code in known else 503,
+            exc.code if exc.code in known else "BOOTSTRAP_UNAVAILABLE",
+            "Reload bootstrap state and review before retrying",
+        )
+
+    _install_lifecycle_errors(app)
+
+    _install_source_errors(app)
+
     @app.middleware("http")
     async def request_boundary(request: Request, call_next):
         # Never trust/re-emit client correlation headers, URLs, query or body.
@@ -512,119 +649,14 @@ def _install_boundaries(app, settings, auth_client):
         request.state.run_id = None
         request.state.diagnostics_status = None
         try:
-            if settings.public_url:
-                from ..tls_config import public_authority
-
-                authority = public_authority(settings.public_url)
-                local_health = (
-                    request.scope.get("client") is None
-                    and request.method == "GET"
-                    and request.scope["path"] == "/api/v1/health"
-                    and request.headers.get("host") == "localhost"
-                )
-                if not local_health:
-                    # Uvicorn proxy middleware is disabled. Only the private Unix
-                    # listener (client=None) may carry the proxy's canonical scheme.
-                    if (
-                        request.scope.get("client") is not None
-                        or request.headers.get("host") != authority
-                        or request.headers.get("x-forwarded-proto") != "https"
-                    ):
-                        return _error(request, 403, "API_WRITE_FORBIDDEN", "Public HTTPS boundary required")
-                    request.scope["scheme"] = "https"
-            if request.url.path.startswith("/api/v1/") and (request.method, request.url.path) not in PUBLIC:
-                from starlette.concurrency import run_in_threadpool
-
-                try:
-                    request.state.principal = await run_in_threadpool(
-                        auth_client.call,
-                        "authorize",
-                        session=request.cookies.get(COOKIE),
-                        audit=request.method not in ("GET", "HEAD", "OPTIONS"),
-                        permission=(
-                            "source.read"
-                            if permission(request.method, request.url.path) == "unmapped.deny"
-                            else permission(request.method, request.url.path)
-                        ),
-                    )
-                    if permission(request.method, request.url.path) == "unmapped.deny":
-                        known_path = request.url.path == "/api/v1/health" or any(
-                            permission(method, request.url.path) != "unmapped.deny"
-                            for method in ("GET", "POST", "PATCH")
-                        )
-                        return _error(
-                            request,
-                            405 if known_path else 404,
-                            "API_METHOD_NOT_ALLOWED" if known_path else "API_NOT_FOUND",
-                            "Endpoint not available",
-                        )
-                except AuthError as exc:
-                    return await auth_error(request, exc)
+            response = _check_public_transport(request, settings)
+            if response is not None:
+                return response
+            response = await _authorize_request(request, auth_client, auth_error)
+            if response is not None:
+                return response
             if request.method not in ("GET", "HEAD", "OPTIONS") and request.url.path.startswith("/api/v1/"):
-                origin = urlsplit(request.headers.get("origin", ""))
-                host = request.headers.get("host", "")
-                if (
-                    host
-                    not in (
-                        (public_authority(settings.public_url),)
-                        if settings.public_url
-                        else settings.allowed_write_hosts
-                    )
-                    or origin.netloc != host
-                    or origin.scheme != request.url.scheme
-                    or origin.path not in ("", "/")
-                    or origin.query
-                    or origin.fragment
-                    or origin.username is not None
-                    or request.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none")
-                    or request.headers.get("x-netbox-sync-csrf") != "same-origin"
-                    or request.headers.get("content-type", "").split(";")[0] != "application/json"
-                ):
-                    response = _error(request, 403, "API_WRITE_FORBIDDEN", "Same-origin write protection failed")
-                elif (
-                    not request.headers.get("content-length", "").isdigit()
-                    or int(request.headers["content-length"]) > 16384
-                ):
-                    response = _error(request, 413, "API_REQUEST_TOO_LARGE", "Request body is too large")
-                else:
-                    ready = True
-                    bootstrap_failure = None
-                    # These POSTs are actor-bound status reads, not write admission.
-                    # They must remain available while an admitted catalog/removal
-                    # operation briefly owns BootstrapStore's exclusive lock.
-                    source_status = request.url.path == "/api/v1/sources/registration-status" or re.fullmatch(
-                        r"/api/v1/sources/[^/]+/(removal-status|retirement-status)", request.url.path
-                    )
-                    if (
-                        settings.bootstrap_socket
-                        and request.url.path.startswith("/api/v1/sources")
-                        and not source_status
-                    ):
-                        from starlette.concurrency import run_in_threadpool
-                        from .bootstrap import BootstrapClient
-
-                        try:
-                            state = await run_in_threadpool(BootstrapClient(settings.bootstrap_socket).call, "status")
-                            ready = state.status == "READY"
-                        except ControlError as exc:
-                            bootstrap_failure = (
-                                "BOOTSTRAP_BUSY" if exc.code == "BOOTSTRAP_BUSY" else "BOOTSTRAP_UNAVAILABLE"
-                            )
-                        except Exception:
-                            bootstrap_failure = "BOOTSTRAP_UNAVAILABLE"
-                    if bootstrap_failure:
-                        response = _error(
-                            request,
-                            503,
-                            bootstrap_failure,
-                            "NetBox setup state is temporarily unavailable; no new operation was admitted",
-                        )
-                    else:
-                        response = (
-                            await call_next(request)
-                            if ready
-                            else _error(request, 409, "BOOTSTRAP_NOT_READY", "Complete NetBox setup first")
-                        )
+                response = await _admit_write(request, settings, call_next)
             else:
                 response = await call_next(request)
         except Exception:  # pylint: disable=broad-exception-caught

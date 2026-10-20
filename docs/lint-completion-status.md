@@ -79,6 +79,8 @@ functions: one function can produce several findings.
   Control-flow/doc findings resolved in host/VM/LXC preparation; VM call contract retained.
 - Network inventory indexing: 2415 tests passed, 491 skipped; Pylint 9.38/10.
   Loading order, VRF differences and observation evidence retained.
+- API request policies: 2431 tests passed, 491 skipped; Pylint 9.38/10.
+  Error contracts, early denials and setup status exemptions preserved.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,
