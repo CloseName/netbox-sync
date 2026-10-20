@@ -51,6 +51,8 @@ functions: one function can produce several findings.
   Control-flow/doc findings resolved; single callable public interface retained.
 - Bootstrap state checks/documentation: 2325 tests passed, 491 skipped;
   Pylint 9.16/10; no complexity or missing-doc findings remain in bootstrap_state.
+- Local control transport: 2336 tests passed, 491 skipped; Pylint 9.16/10.
+  Control-flow/doc findings resolved; public serve arguments retained.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,
@@ -59,7 +61,7 @@ functions: one function can produce several findings.
   27 skipped, executable AST and 25 schemas unchanged apart from descriptions.
 - Guard/scheduled diagnostic documentation: 28 descriptions added; 90 tests pass,
   executable AST unchanged; Pylint 9.13/10.
-- Remaining documentation: 63 classes and 337 functions; compatibility metrics pending.
+- Remaining documentation: 56 classes and 315 functions; compatibility metrics pending.
 
 Detailed per-PR verification remains in [the cleanup log](lint-cleanup-20261020.md).
 This file must not be interpreted as a completed audit until all pending entries

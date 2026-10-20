@@ -10,12 +10,16 @@ import time
 
 
 class ControlError(RuntimeError):
+    """Carry a machine-readable control failure without exception details."""
+
     def __init__(self, code="CONTROL_UNAVAILABLE"):
+        """Store the supplied code for boundary-specific validation."""
         self.code = code
         super().__init__(code)
 
 
 def request(path, payload, timeout=10, response_limit=32768):
+    """Exchange one bounded JSON message and normalize transport failures."""
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
             deadline = time.monotonic() + timeout
@@ -34,6 +38,7 @@ def request(path, payload, timeout=10, response_limit=32768):
 
 
 def receive(connection, deadline, max_bytes=32768):
+    """Read a newline-terminated message within its byte and time limits."""
     if type(max_bytes) is not int or not 1 <= max_bytes <= 2 * 1024 * 1024:
         raise ControlError("CONTROL_REQUEST_INVALID")
     raw = b""
@@ -49,9 +54,49 @@ def receive(connection, deadline, max_bytes=32768):
     return raw
 
 
+def _start_maintenance(maintenance, maintenance_interval):
+    """Run serial-service maintenance independently of socket response latency."""
+    # Only serial services use this hook. Never fork a multi-threaded
+    # server. Each maintenance operation owns its own DB connections and
+    # the existing cross-process apply lock; HTTP latency must not block
+    # the local status socket.
+    import threading
+
+    def maintain():
+        """Retry maintenance periodically without exposing exception details."""
+        while True:
+            try:
+                maintenance()
+            except Exception:
+                import logging
+
+                logging.getLogger(__name__).error("maintenance=deferred code=CONTROL_UNAVAILABLE")
+            time.sleep(maintenance_interval)
+
+    threading.Thread(target=maintain, name="control-maintenance", daemon=True).start()
+
+
+def _handle_request(connection, uid, allowed_uid, additional_uids, handler):
+    """Authenticate one peer and expose only allowlisted failure codes."""
+    try:
+        if uid not in (allowed_uid, *additional_uids):
+            raise ControlError("PEER_NOT_AUTHORIZED")
+        payload = json.loads(receive(connection, time.monotonic() + 5))
+        if not isinstance(payload, dict):
+            raise ControlError("CONTROL_REQUEST_INVALID")
+        result = handler(payload)
+        response = {"ok": True, "result": result}
+    except Exception as error:
+        # Only our closed error vocabulary can cross this boundary.
+        code = getattr(error, "code", "CONTROL_UNAVAILABLE")
+        response = {"ok": False, "error": code if code in SAFE_CODES else "CONTROL_UNAVAILABLE"}
+    return response
+
+
 def serve(
     path, handler, allowed_uid=10001, concurrent=False, additional_uids=(), maintenance=None, maintenance_interval=5
 ):
+    """Serve peer-authenticated commands while retaining the directory lock."""
     import fcntl
     import signal
 
@@ -77,23 +122,7 @@ def serve(
         os.chmod(path, 0o660)
         server.listen(16)
         if maintenance is not None:
-            # Only serial services use this hook. Never fork a multi-threaded
-            # server. Each maintenance operation owns its own DB connections and
-            # the existing cross-process apply lock; HTTP latency must not block
-            # the local status socket.
-            import threading
-
-            def maintain():
-                while True:
-                    try:
-                        maintenance()
-                    except Exception:
-                        import logging
-
-                        logging.getLogger(__name__).error("maintenance=deferred code=CONTROL_UNAVAILABLE")
-                    time.sleep(maintenance_interval)
-
-            threading.Thread(target=maintain, name="control-maintenance", daemon=True).start()
+            _start_maintenance(maintenance, maintenance_interval)
         while True:
             connection, _ = server.accept()
             with connection:
@@ -104,18 +133,7 @@ def serve(
                         continue
                     server.close()
                     signal.signal(signal.SIGCHLD, signal.SIG_DFL)
-                try:
-                    if uid not in (allowed_uid, *additional_uids):
-                        raise ControlError("PEER_NOT_AUTHORIZED")
-                    payload = json.loads(receive(connection, time.monotonic() + 5))
-                    if not isinstance(payload, dict):
-                        raise ControlError("CONTROL_REQUEST_INVALID")
-                    result = handler(payload)
-                    response = {"ok": True, "result": result}
-                except Exception as error:
-                    # Only our closed error vocabulary can cross this boundary.
-                    code = getattr(error, "code", "CONTROL_UNAVAILABLE")
-                    response = {"ok": False, "error": code if code in SAFE_CODES else "CONTROL_UNAVAILABLE"}
+                response = _handle_request(connection, uid, allowed_uid, additional_uids, handler)
                 try:
                     connection.sendall(json.dumps(response).encode() + b"\n")
                 except OSError:

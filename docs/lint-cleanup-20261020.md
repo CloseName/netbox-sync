@@ -361,3 +361,13 @@ pass before extraction. Add 11 descriptions of state persistence and transitions
 the documentation itself preserves executable AST. Full suite: 2325 passed,
 491 skipped, one existing warning. Pylint 9.16/10, zero Error/Fatal; no complexity
 or missing-doc findings remain in bootstrap_state. Black and whitespace pass.
+
+## Stage 27: local control transport
+
+Separate peer request handling and serial maintenance startup from the socket
+server. Preserve authentication before parsing, closed error codes, fork behavior,
+send-failure handling, directory lock lifetime and maintenance failure logging.
+Eleven fake-socket/process cases pass on main and after extraction. Full suite:
+2336 passed, 491 skipped, one existing warning. Pylint 9.16/10, zero Error/Fatal;
+control-flow and missing-doc findings resolved in local_control. Retain the public
+serve argument list for caller compatibility. Black and whitespace pass.
