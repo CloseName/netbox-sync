@@ -605,3 +605,13 @@ ordering. Eight new cases pass on their original target paths before extraction;
 warning; Pylint 9.39/10, zero Error/Fatal. No complexity findings remain in
 discovery_review. Black and whitespace pass. Public DTOs and provider behavior stay
 unchanged; Selectel remains experimental.
+
+## Stage 53: secret broker request dispatch
+
+Separate per-connection handling and peer-specific action dispatch from socket
+startup. Preserve authorization before reads, reply codes, store calls, response
+sanitization and request cleanup. Twelve new fake-descriptor cases pass before/after;
+37 Linux/root tests remain skipped locally. Full suite: 2471 passed, 491 skipped,
+one existing warning; Pylint 9.39/10, zero Error/Fatal. Server branch/statement/local
+findings resolved; store ownership boolean checks remain a separate pending stage.
+Black and whitespace pass. No real sockets, secret directories or production touched.

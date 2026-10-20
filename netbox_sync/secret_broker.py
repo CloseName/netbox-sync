@@ -316,6 +316,62 @@ def _reply(connection, payload):
         pass
 
 
+def _dispatch_request(store, uid, allowed_uid, request):
+    """Validate peer-specific actions and return only allowlisted response fields."""
+    if isinstance(request, dict) and request.get("action") == "verify_owned":
+        if uid != 0 or set(request) != {"action", "operation_id", "key"}:
+            raise BrokerError("PEER_NOT_AUTHORIZED")
+        return {"ok": True, "verified": store.verify_owned(request["operation_id"], request["key"])}
+    if isinstance(request, dict) and request.get("action") == "remove_owned":
+        if uid != 0 or set(request) != {"action", "keys"}:
+            raise BrokerError("PEER_NOT_AUTHORIZED")
+        keys = request["keys"]
+        if (
+            not isinstance(keys, list)
+            or not 1 <= len(keys) <= 2
+            or any(not isinstance(key, str) or not KEY_PATTERN.fullmatch(key) for key in keys)
+            or len(set(keys)) != len(keys)
+        ):
+            raise BrokerError("REQUEST_INVALID")
+        return {"ok": True, "removed": store.remove_owned(keys)}
+    if uid != allowed_uid:
+        raise BrokerError("PEER_NOT_AUTHORIZED")
+    operation_id = _operation(request.get("operation_id"))
+    if request.get("action") == "create" and set(request) == {"action", "operation_id", "key", "value"}:
+        token = store.create(operation_id, request["key"], request["value"])
+        return {"ok": True, "rollback_token": token}
+    if request.get("action") == "rollback" and set(request) == {
+        "action",
+        "operation_id",
+        "key",
+        "rollback_token",
+    }:
+        store.rollback(operation_id, request["key"], request["rollback_token"])
+        return {"ok": True}
+    raise BrokerError("OPERATION_NOT_ALLOWED")
+
+
+def _serve_connection(connection, store, allowed_uid):
+    """Process one peer with the original response and request-cleanup boundaries."""
+    connection.settimeout(5)
+    _, uid, _ = struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+    if uid not in (allowed_uid, 0):
+        _reply(connection, {"ok": False, "error": "PEER_NOT_AUTHORIZED"})
+        return
+    try:
+        raw = read_request(connection)
+        request = json.loads(raw)
+        _reply(connection, _dispatch_request(store, uid, allowed_uid, request))
+    except (BrokerError, json.JSONDecodeError) as exc:
+        code = exc.code if isinstance(exc, BrokerError) else "REQUEST_INVALID"
+        _reply(connection, {"ok": False, "error": code})
+    except Exception:  # pylint: disable=broad-exception-caught
+        _reply(connection, {"ok": False, "error": "BROKER_INTERNAL_ERROR"})
+    finally:
+        request = None
+        raw = b""
+
+
 def serve(socket_path, secret_root, allowed_uid):
     """Serve one request per local authenticated Unix connection."""
     store = SecretBrokerStore(secret_root)
@@ -343,59 +399,7 @@ def serve(socket_path, secret_root, allowed_uid):
     while True:
         connection, _ = server.accept()
         with connection:
-            connection.settimeout(5)
-            _, uid, _ = struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
-            if uid not in (allowed_uid, 0):
-                _reply(connection, {"ok": False, "error": "PEER_NOT_AUTHORIZED"})
-                continue
-            try:
-                raw = read_request(connection)
-                request = json.loads(raw)
-                if isinstance(request, dict) and request.get("action") == "verify_owned":
-                    if uid != 0 or set(request) != {"action", "operation_id", "key"}:
-                        raise BrokerError("PEER_NOT_AUTHORIZED")
-                    _reply(
-                        connection,
-                        {"ok": True, "verified": store.verify_owned(request["operation_id"], request["key"])},
-                    )
-                    continue
-                if isinstance(request, dict) and request.get("action") == "remove_owned":
-                    if uid != 0 or set(request) != {"action", "keys"}:
-                        raise BrokerError("PEER_NOT_AUTHORIZED")
-                    keys = request["keys"]
-                    if (
-                        not isinstance(keys, list)
-                        or not 1 <= len(keys) <= 2
-                        or any(not isinstance(key, str) or not KEY_PATTERN.fullmatch(key) for key in keys)
-                        or len(set(keys)) != len(keys)
-                    ):
-                        raise BrokerError("REQUEST_INVALID")
-                    _reply(connection, {"ok": True, "removed": store.remove_owned(keys)})
-                    continue
-                if uid != allowed_uid:
-                    raise BrokerError("PEER_NOT_AUTHORIZED")
-                operation_id = _operation(request.get("operation_id"))
-                if request.get("action") == "create" and set(request) == {"action", "operation_id", "key", "value"}:
-                    token = store.create(operation_id, request["key"], request["value"])
-                    _reply(connection, {"ok": True, "rollback_token": token})
-                elif request.get("action") == "rollback" and set(request) == {
-                    "action",
-                    "operation_id",
-                    "key",
-                    "rollback_token",
-                }:
-                    store.rollback(operation_id, request["key"], request["rollback_token"])
-                    _reply(connection, {"ok": True})
-                else:
-                    raise BrokerError("OPERATION_NOT_ALLOWED")
-            except (BrokerError, json.JSONDecodeError) as exc:
-                code = exc.code if isinstance(exc, BrokerError) else "REQUEST_INVALID"
-                _reply(connection, {"ok": False, "error": code})
-            except Exception:  # pylint: disable=broad-exception-caught
-                _reply(connection, {"ok": False, "error": "BROKER_INTERNAL_ERROR"})
-            finally:
-                request = None
-                raw = b""
+            _serve_connection(connection, store, allowed_uid)
 
 
 def read_request(connection, clock=time.monotonic):
