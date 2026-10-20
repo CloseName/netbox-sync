@@ -398,3 +398,12 @@ Descriptions explain existing boundaries and VM/LXC differences. Executable AST
 unchanged for every file. Full suite before and after: 2346 passed, 491 skipped,
 one existing warning. Pylint 9.19/10, zero Error/Fatal. Black checks all 227 Python
 files; whitespace passes. No algorithm, public signature or payload change.
+
+## Stage 31: VM/LXC network precheck report stages
+
+Extract per-interface printing and the VM primary-IP decision from the report
+entry points. Keep separate VM/LXC counters and output, including manual-primary
+preservation versus LXC primary-candidate counts. Two new generator/repeated-call
+cases and all 32 golden output cases pass before and after extraction. Full suite:
+2348 passed, 491 skipped, one existing warning. Pylint 9.19/10, zero Error/Fatal;
+no findings remain in either report module. Black and whitespace pass.
