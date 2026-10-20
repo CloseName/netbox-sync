@@ -222,3 +222,14 @@ remain separate from transitions. No complexity findings remain in this module.
 2199 passed, 485 skipped, one existing Starlette warning. Pylint: 9.05/10 with
 zero Error/Fatal; Black and whitespace checks pass. The complete remaining work
 is tracked in [completion status](lint-completion-status.md), not declared finished.
+
+
+## Stage 13: catalog query dispatch
+
+Separate bounded catalog capabilities within the existing pinned-DNS/TLS session.
+Extract complete evidence pagination and configured identity target resolution.
+Retain count checks, local offsets, closed responses and never follow remote next
+URLs. Nine new malformed-page cases pass before and after extraction; 70 focused
+catalog/recovery/placement tests pass. No complexity or missing-doc findings remain
+in netbox_catalog. Full suite: 2208 passed, 485 skipped, one existing Starlette
+warning. Pylint 9.05/10, zero Error/Fatal; Black and whitespace pass.

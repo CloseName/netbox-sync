@@ -184,3 +184,39 @@ def test_recovery_missing_cluster_exception_is_narrow_and_never_writes(monkeypat
         with pytest.raises((ProbeError,requests.ConnectionError)):
             catalog.query({'url':'https://netbox.test','read_token':'','query':payload},lambda:nullcontext(None))
         assert len(calls)==1
+
+
+@pytest.mark.parametrize('pages', [
+    [{'count': True, 'results': [], 'next': None}],
+    [{'count': 10001, 'results': [], 'next': None}],
+    [{'count': 0, 'results': {}, 'next': None}],
+    [{'count': 101, 'results': [{}] * 101, 'next': None}],
+    [{'count': 0, 'results': [{}], 'next': None}],
+    [{'count': 0, 'results': [], 'next': 'https://foreign.invalid'}],
+    [{'count': 1, 'results': [], 'next': 'https://foreign.invalid'}],
+    [{'count': 2, 'results': [{}], 'next': 'https://foreign.invalid'},
+     {'count': 3, 'results': [{}], 'next': None}],
+    [{'count': 2, 'results': [{}], 'next': None}],
+])
+def test_invalid_evidence_pagination_stops_before_next_endpoint(monkeypatch, pages):
+    monkeypatch.setattr(catalog, 'EgressPolicy',
+                        lambda **kw: SimpleNamespace(resolve=lambda h, p: (h, '192.0.2.1')))
+    monkeypatch.setattr(catalog, 'pinned_dns', lambda *args: nullcontext())
+    monkeypatch.setattr(catalog, 'configure_session', lambda session: None)
+    seen = []
+    pending = iter(pages)
+    def fetch(session, url, token):
+        seen.append(url)
+        assert token == 'fixture-token'
+        if '/clusters/3/' in url:
+            return CLUSTER
+        assert '/dcim/devices/' in url
+        return next(pending)
+    monkeypatch.setattr(catalog, 'fetch', fetch)
+    payload = {'action': 'recovery-evidence', 'source_instance': 'source-a',
+               'host_uuid': UUID, 'site_id': 1, 'cluster_id': 3}
+    with pytest.raises(ProbeError, match='^RESPONSE_INVALID$'):
+        catalog.query({'url': 'https://netbox.test', 'read_token': 'fixture-token', 'query': payload},
+                      lambda: nullcontext(None))
+    assert len(seen) == len(pages) + 1
+    assert all(url.startswith('https://netbox.test/api/') for url in seen)
