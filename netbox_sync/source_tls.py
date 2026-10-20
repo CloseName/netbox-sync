@@ -9,6 +9,8 @@ CA_FILE = Path("/run/netbox-sync-ca/source-ca.pem")
 
 
 def source_context(verify=True):
+    """Build a source TLS context with protected custom trust unless verification is disabled."""
+
     if not verify:
         return ssl._create_unverified_context()
     context = ssl.create_default_context()
@@ -20,6 +22,8 @@ def source_context(verify=True):
 
 
 def configure_proxmox(provider, verify=True):
+    """Apply explicit trust settings to both the Proxmox session and its auth adapter."""
+
     session = provider._store["session"]
     session.trust_env = False
     if verify:

@@ -13,6 +13,8 @@ from .netbox_lxc_metadata import (
 
 
 def _status(value):
+    """Translate supported container states and reject unknown states."""
+
     mapping = {
         "running": "active",
         "stopped": "offline",
@@ -26,6 +28,8 @@ def _status(value):
 
 
 def _disk_mib(container):
+    """Sum container disk bytes and truncate the total to MiB."""
+
     return sum(disk.size_bytes for disk in container.disks) // 1024**2
 
 
@@ -34,6 +38,8 @@ def plan_lxc_containers(
     host,
     cluster,
 ):
+    """Report container matches and conflicts, blocking immediately when the cluster is absent."""
+
     print()
     print("  LXC CONTAINERS")
 

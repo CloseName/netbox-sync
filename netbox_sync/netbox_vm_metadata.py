@@ -39,6 +39,8 @@ def matches_vm_sync_identity(
     custom_fields,
     vm,
 ):
+    """Test whether custom fields satisfy the ranked VM identity rules."""
+
     return bool(vm_sync_identity_match_rank(custom_fields, vm))
 
 
@@ -70,6 +72,8 @@ def build_vm_custom_fields(
     vm,
     existing_custom_fields=None,
 ):
+    """Merge VM identity and original names while preserving unrelated custom fields."""
+
     existing = dict(existing_custom_fields or {})
     normalized = dict(existing)
     if normalized.get("sync_identities") is None:

@@ -57,6 +57,8 @@ def apply_lxc_networks(
     *,
     confirmed=False,
 ):
+    """Validate LXC network context, print its precheck and write only after confirmation."""
+
     site = nb_api.dcim.sites.get(slug=config.site_slug)
 
     if site is None:

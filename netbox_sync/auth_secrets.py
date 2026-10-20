@@ -9,14 +9,22 @@ AUTH_SECRET_SOCKET = "/run/netbox-sync-auth-secrets/worker.sock"
 
 
 class AuthSecrets:
+    """Broker-backed LDAP secret creation with protected local secret reads."""
+
     def __init__(self, root="/var/lib/netbox-sync/auth-secrets", socket_path=AUTH_SECRET_SOCKET):
+        """Bind the protected secret directory and broker socket."""
+
         self.root = Path(root)
         self.socket_path = socket_path
 
     def create(self, value):
+        """Ask the auth secret broker to persist a value and return its reference."""
+
         return request(self.socket_path, {"action": "create", "value": value})["result"]["key"]
 
     def read(self, key):
+        """Read only a valid LDAP bind reference from a protected secret file."""
+
         SecretBrokerStore._key(key)
         if not key.startswith("ldap-bind-"):
             raise ValueError("Invalid auth reference")

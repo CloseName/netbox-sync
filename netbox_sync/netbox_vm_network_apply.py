@@ -69,6 +69,8 @@ def apply_vm_networks(
     *,
     confirmed=False,
 ):
+    """Validate VM network context, print its precheck and write only after confirmation."""
+
     site_slug, _cluster_name = resolve_vm_network_target(config)
     site = nb_api.dcim.sites.get(slug=site_slug)
 

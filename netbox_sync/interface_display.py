@@ -4,6 +4,8 @@ import hashlib
 
 
 def interface_display_name(guest, nic):
+    """Produce a bounded bridge-oriented label with a suffix when names collide."""
+
     base = str(nic.bridge or nic.name)
     peers = [item for item in guest.interfaces if str(item.bridge or item.name).casefold() == base.casefold()]
     if len(peers) > 1 or len(base) > 64:
