@@ -33,6 +33,8 @@ functions: one function can produce several findings.
   No complexity or missing-doc findings remain in netbox_catalog.
 - Authorization dispatch: 2222 tests passed, 485 skipped; Pylint 9.06/10.
   Constructor argument-count recommendations retained for positional compatibility.
+- Directory settings: 2228 tests passed, 485 skipped; Pylint 9.07/10.
+  No complexity or missing-doc findings remain in directory_auth.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Remaining documentation and compatibility metrics: pending.

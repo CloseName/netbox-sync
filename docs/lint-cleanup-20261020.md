@@ -243,3 +243,14 @@ characterization cases pass before and after extraction; focused tests: 86 passe
 one platform skip. Full suite: 2222 passed, 485 skipped, one existing Starlette
 warning. Pylint 9.06/10, zero Error/Fatal. Public positional constructor arguments
 remain compatible; its argument-count recommendations are intentionally retained.
+
+## Stage 15: directory settings preparation and persistence
+
+Extract endpoint-bound secret reuse and tested-settings persistence from directory
+administration. Preserve early disable/revoke paths, exact-int revisions, test proof
+expiry and identity-change invalidation. Six new cases pass on the original code
+and after extraction; focused suite: 92 passed, one platform skip. No complexity or
+missing-doc findings remain in directory_auth. Full Pylint: 9.07/10, zero Error/Fatal.
+Full-suite retry: 2228 passed, 485 skipped, one existing Starlette warning. The first
+run hit a Windows temporary-directory rename PermissionError in a backup test;
+that case and then the entire suite passed unchanged on retry. Black passes.
