@@ -41,7 +41,12 @@ class RunReconciliation:
             raise LifecycleError("SOURCE_OPERATION_ACTIVE")
         runs = connection.execute(
             sql.SQL(
-                "SELECT run_id,status,finished_at,plan_digest,planner_version,error_code FROM {} WHERE source_instance=%s AND status IN ('OUTCOME_UNCERTAIN','PARTIALLY_APPLIED') ORDER BY run_id LIMIT 101"
+                (
+                    "SELECT run_id,status,finished_at,plan_digest,planner_version,erro"
+                    "r_code FROM {} WHERE source_instance=%s AND status IN "
+                    "('OUTCOME_UNCERTAIN','PARTIALLY_APPLIED') ORDER BY run_id LIMIT "
+                    "101"
+                )
             ).format(blocking_runs(connection, self.store.schema)),
             (source,),
         ).fetchall()
@@ -57,19 +62,24 @@ class RunReconciliation:
             revision = self.store.revision(row)
             previous = connection.execute(
                 sql.SQL(
-                    "SELECT operation_id,actor_id,created_at,valid,array_agg(run_id ORDER BY run_id) AS runs FROM {} WHERE source_instance=%s GROUP BY operation_id,actor_id,created_at,valid ORDER BY created_at DESC LIMIT 100"
+                    (
+                        "SELECT operation_id,actor_id,created_at,valid,array_agg(run_id "
+                        "ORDER BY run_id) AS runs FROM {} WHERE source_instance=%s GROUP "
+                        "BY operation_id,actor_id,created_at,valid ORDER BY created_at "
+                        "DESC LIMIT 100"
+                    )
                 ).format(self.store.table("run_reconciliations")),
                 (source,),
             ).fetchall()
             decisions = [
-                dict(
-                    operation_id=str(item["operation_id"]),
-                    actor_id=item["actor_id"],
-                    created_at=item["created_at"].isoformat(),
-                    valid=item["valid"],
-                    runs=[str(run) for run in item["runs"]],
-                    historical_outcome="UNPROVED",
-                )
+                {
+                    "operation_id": str(item["operation_id"]),
+                    "actor_id": item["actor_id"],
+                    "created_at": item["created_at"].isoformat(),
+                    "valid": item["valid"],
+                    "runs": [str(run) for run in item["runs"]],
+                    "historical_outcome": "UNPROVED",
+                }
                 for item in previous
             ]
         observed = (
@@ -81,17 +91,17 @@ class RunReconciliation:
             }
         )
         # This is present inventory/claim evidence, not reconstruction of old POSTs.
-        result = dict(
-            source_instance=source,
-            revision=revision,
-            runs=runs,
-            decisions=decisions,
-            guard_instance=observed["guard_instance"],
-            inventory=observed["result"],
-            decision="ACCEPT_CURRENT_BASELINE",
-            historical_outcome="UNPROVED",
-            schedule_after=False,
-        )
+        result = {
+            "source_instance": source,
+            "revision": revision,
+            "runs": runs,
+            "decisions": decisions,
+            "guard_instance": observed["guard_instance"],
+            "inventory": observed["result"],
+            "decision": "ACCEPT_CURRENT_BASELINE",
+            "historical_outcome": "UNPROVED",
+            "schedule_after": False,
+        }
         result["digest"] = fingerprint(result)
         return result
 
@@ -157,7 +167,7 @@ class RunReconciliation:
                         previous["decision"]["digest"],
                     ) != (actor, source, digest):
                         raise LifecycleError("SOURCE_LIFECYCLE_CONFLICT")
-                    return dict(source_instance=source, status="BASELINE_ACCEPTED", historical_outcome="UNPROVED")
+                    return {"source_instance": source, "status": "BASELINE_ACCEPTED", "historical_outcome": "UNPROVED"}
             reviewed = self._review(source, operation)
             if reviewed["digest"] != digest or not reviewed["runs"]:
                 raise LifecycleError("SOURCE_LIFECYCLE_CONFLICT")
@@ -171,7 +181,10 @@ class RunReconciliation:
                 for run in runs:
                     connection.execute(
                         sql.SQL(
-                            "INSERT INTO {} (run_id,source_instance,actor_id,operation_id,run_status,run_finished_at,decision) VALUES (%s,%s,%s,%s,%s,%s,%s)"
+                            (
+                                "INSERT INTO {} (run_id,source_instance,actor_id,operation_id,run_"
+                                "status,run_finished_at,decision) VALUES (%s,%s,%s,%s,%s,%s,%s)"
+                            )
                         ).format(self.store.table("run_reconciliations")),
                         (
                             UUID(run["run_id"]),
@@ -191,8 +204,12 @@ class RunReconciliation:
                 )
                 connection.execute(
                     sql.SQL(
-                        "UPDATE {} SET status='STALE',result=NULL,safe_error_code='PLAN_STALE',updated_at=clock_timestamp() WHERE source_instance=%s AND operation_kind='PLAN' AND status='READY'"
+                        (
+                            "UPDATE {} SET status='STALE',result=NULL,safe_error_code='PLAN_ST"
+                            "ALE',updated_at=clock_timestamp() WHERE source_instance=%s AND "
+                            "operation_kind='PLAN' AND status='READY'"
+                        )
                     ).format(self.store.table("source_operations")),
                     (source,),
                 )
-            return dict(source_instance=source, status="BASELINE_ACCEPTED", historical_outcome="UNPROVED")
+            return {"source_instance": source, "status": "BASELINE_ACCEPTED", "historical_outcome": "UNPROVED"}

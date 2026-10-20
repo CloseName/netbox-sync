@@ -79,14 +79,22 @@ class LifecycleStore:
         condition = (
             "(state IN ('SENDING','UNCERTAIN','SUCCEEDED','BLOCKED') OR (state='FINALIZED' AND finished_at>=%s))"
             if removed
-            else "(state IN ('SENDING','UNCERTAIN','SUCCEEDED') OR (state='BLOCKED' AND safe_code='SOURCE_OPERATION_ACTIVE'))"
+            else (
+                "(state IN ('SENDING','UNCERTAIN','SUCCEEDED') OR "
+                "(state='BLOCKED' AND safe_code='SOURCE_OPERATION_ACTIVE'))"
+            )
         )
         parameters = (source, removed["removed_at"]) if removed else (source,)
         result = connection.execute(
             sql.SQL(
                 "SELECT operation_id,state,receipt FROM {} WHERE source_instance=%s AND "
                 + condition
-                + " ORDER BY CASE WHEN state IN ('SENDING','UNCERTAIN','SUCCEEDED') THEN 0 ELSE 1 END, CASE WHEN state IN ('SENDING','UNCERTAIN','SUCCEEDED') THEN created_at END ASC, created_at DESC LIMIT 1"
+                + (
+                    " ORDER BY CASE WHEN state IN ('SENDING','UNCERTAIN','SUCCEEDED') "
+                    "THEN 0 ELSE 1 END, CASE WHEN state IN "
+                    "('SENDING','UNCERTAIN','SUCCEEDED') THEN created_at END ASC, "
+                    "created_at DESC LIMIT 1"
+                )
             ).format(self.table("source_retirements")),
             parameters,
         ).fetchone()
@@ -144,7 +152,11 @@ class LifecycleStore:
                 raise LifecycleError("SOURCE_NOT_FOUND")
             blocked = connection.execute(
                 sql.SQL(
-                    "SELECT status FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED') ORDER BY CASE WHEN status='RUNNING' THEN 1 ELSE 0 END LIMIT 1"
+                    (
+                        "SELECT status FROM {} WHERE source_instance=%s AND status IN "
+                        "('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED') ORDER BY "
+                        "CASE WHEN status='RUNNING' THEN 1 ELSE 0 END LIMIT 1"
+                    )
                 ).format(blocking_runs(connection, self.schema)),
                 (source,),
             ).fetchone()
@@ -256,7 +268,10 @@ class LifecycleStore:
             if retirement_operation is not None:
                 if not connection.execute(
                     sql.SQL(
-                        "SELECT 1 FROM {} WHERE operation_id=%s AND source_instance=%s AND state='SUCCEEDED' AND receipt IS NOT NULL"
+                        (
+                            "SELECT 1 FROM {} WHERE operation_id=%s AND source_instance=%s "
+                            "AND state='SUCCEEDED' AND receipt IS NOT NULL"
+                        )
                     ).format(self.table("source_retirements")),
                     (retirement_operation, source),
                 ).fetchone():

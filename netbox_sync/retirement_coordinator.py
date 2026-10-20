@@ -67,7 +67,10 @@ class RetirementCoordinator:
                 return
             others = connection.execute(
                 sql.SQL(
-                    "SELECT token_id_provider,token_id_key,token_secret_provider,token_secret_key FROM {} WHERE source_instance<>%s"
+                    (
+                        "SELECT token_id_provider,token_id_key,token_secret_provider,token"
+                        "_secret_key FROM {} WHERE source_instance<>%s"
+                    )
                 ).format(self.store.table("sources")),
                 (source,),
             ).fetchall()
@@ -110,19 +113,19 @@ class RetirementCoordinator:
             or receipt.get("manifest", {}).get("format") != 2
         ):
             raise LifecycleError("RETIREMENT_CONFLICT")
-        return dict(
-            operation_id=str(operation),
-            source_instance=source,
-            state="FINALIZED",
-            digest=receipt["digest"],
-            revision="",
-            guard_instance=str(result["guard_instance"]),
-            manifest=receipt["manifest"],
-            mode="FULL_DELETE",
-            safe_code=None,
-            remove_credentials=True,
-            purged=True,
-        )
+        return {
+            "operation_id": str(operation),
+            "source_instance": source,
+            "state": "FINALIZED",
+            "digest": receipt["digest"],
+            "revision": "",
+            "guard_instance": str(result["guard_instance"]),
+            "manifest": receipt["manifest"],
+            "mode": "FULL_DELETE",
+            "safe_code": None,
+            "remove_credentials": True,
+            "purged": True,
+        }
 
     def status(self, source, operation, actor):
         with self.store.connect() as connection:
@@ -148,7 +151,11 @@ class RetirementCoordinator:
                         raise LifecycleError("SOURCE_ARCHIVED")
                     if connection.execute(
                         sql.SQL(
-                            "SELECT 1 FROM {} WHERE source_instance=%s AND (state IN ('SENDING','UNCERTAIN') OR (state='SUCCEEDED' AND receipt->>'generation_closed'='true'))"
+                            (
+                                "SELECT 1 FROM {} WHERE source_instance=%s AND (state IN "
+                                "('SENDING','UNCERTAIN') OR (state='SUCCEEDED' AND "
+                                "receipt->>'generation_closed'='true'))"
+                            )
                         ).format(self.store.table("source_retirements")),
                         (source,),
                     ).fetchone():
@@ -157,7 +164,12 @@ class RetirementCoordinator:
                     not archive
                     and connection.execute(
                         sql.SQL(
-                            "SELECT 1 FROM {} WHERE source_instance=%s AND operation_id<>%s AND superseded_by IS NULL AND (state IN ('SENDING','UNCERTAIN','SUCCEEDED') OR (state='BLOCKED' AND safe_code='SOURCE_OPERATION_ACTIVE'))"
+                            (
+                                "SELECT 1 FROM {} WHERE source_instance=%s AND operation_id<>%s "
+                                "AND superseded_by IS NULL AND (state IN "
+                                "('SENDING','UNCERTAIN','SUCCEEDED') OR (state='BLOCKED' AND "
+                                "safe_code='SOURCE_OPERATION_ACTIVE'))"
+                            )
                         ).format(self.store.table("source_retirements")),
                         (source, operation),
                     ).fetchone()

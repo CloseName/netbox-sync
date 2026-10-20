@@ -44,7 +44,7 @@ def validate(path, references, host_types, preview, *, pending_cluster=False, re
         key: {k: v for k, v in row.items() if k != "kind"} for key, row in zip(host_types, checked[len(references) :])
     }
     if pending_cluster:
-        return dict(version=1, references=refs, host_types=types, hosts=preview["hosts"])
+        return {"version": 1, "references": refs, "host_types": types, "hosts": preview["hosts"]}
     cluster = refs["cluster"]
     site = refs["site"]
     ctype = refs["cluster_type"]
@@ -54,7 +54,7 @@ def validate(path, references, host_types, preview, *, pending_cluster=False, re
         or cluster.get("scope_id") != site["id"]
     ):
         raise CatalogError("CLUSTER_SCOPE_MISMATCH")
-    return dict(version=1, references=refs, host_types=types, hosts=preview["hosts"])
+    return {"version": 1, "references": refs, "host_types": types, "hosts": preview["hosts"]}
 
 
 def create_call(path, payload):

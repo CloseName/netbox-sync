@@ -53,18 +53,18 @@ def plan(preview, evidence, vrf_by_interface=None):
             selected = str(target["id"]) in scopes
             vrf = scopes.get(str(target["id"]))
             result.append(
-                dict(
-                    address=address,
-                    device=row["configuration"]["device"],
-                    label=row["configuration"]["name"],
-                    interface_id=target["id"],
-                    interface_name=target["name"],
-                    scope_selected=selected,
-                    vrf_id=vrf,
-                    action=classify(address, target["id"], facts["addresses"], selected, vrf),
-                    existing=facts["addresses"],
-                    covering_prefixes=facts["prefixes"],
-                )
+                {
+                    "address": address,
+                    "device": row["configuration"]["device"],
+                    "label": row["configuration"]["name"],
+                    "interface_id": target["id"],
+                    "interface_name": target["name"],
+                    "scope_selected": selected,
+                    "vrf_id": vrf,
+                    "action": classify(address, target["id"], facts["addresses"], selected, vrf),
+                    "existing": facts["addresses"],
+                    "covering_prefixes": facts["prefixes"],
+                }
             )
     counts = Counter((str(ipaddress.ip_interface(r["address"]).ip), r["scope_selected"], r["vrf_id"]) for r in result)
     for row in result:
@@ -88,12 +88,12 @@ def netbox_ipam_preview(snapshot_path, vm_id, vrf_by_interface=None):
         vm = VirtualMachine.objects.get(pk=vm_id)
         interfaces = list(vm.interfaces.select_related("primary_mac_address").all()[:513])
         inventory = [
-            dict(
-                id=i.pk,
-                vm_id=i.virtual_machine_id,
-                name=i.name,
-                mac=str(i.primary_mac_address.mac_address) if i.primary_mac_address_id else None,
-            )
+            {
+                "id": i.pk,
+                "vm_id": i.virtual_machine_id,
+                "name": i.name,
+                "mac": str(i.primary_mac_address.mac_address) if i.primary_mac_address_id else None,
+            }
             for i in interfaces
         ]
         preview = build_preview(snapshot, inventory, vm.pk)
@@ -122,34 +122,34 @@ def netbox_ipam_preview(snapshot_path, vm_id, vrf_by_interface=None):
             )
             if len(addresses) > 200 or len(prefixes) > 200:
                 raise ValueError("Too many matching records; narrow the scope before continuing")
-            evidence[host] = dict(
-                addresses=[
-                    dict(
-                        id=a.pk,
-                        address=str(a.address),
-                        vrf_id=a.vrf_id,
-                        vrf_name=str(a.vrf.name) if a.vrf_id else "Global",
-                        status=a.status,
-                        role=a.role,
-                        assigned_type=(
-                            (a.assigned_object_type.app_label + "." + a.assigned_object_type.model)
+            evidence[host] = {
+                "addresses": [
+                    {
+                        "id": a.pk,
+                        "address": str(a.address),
+                        "vrf_id": a.vrf_id,
+                        "vrf_name": str(a.vrf.name) if a.vrf_id else "Global",
+                        "status": a.status,
+                        "role": a.role,
+                        "assigned_type": (
+                            a.assigned_object_type.app_label + "." + a.assigned_object_type.model
                             if a.assigned_object_type_id
                             else None
                         ),
-                        assigned_id=a.assigned_object_id,
-                    )
+                        "assigned_id": a.assigned_object_id,
+                    }
                     for a in addresses
                 ],
-                prefixes=[
-                    dict(
-                        id=p.pk,
-                        prefix=str(p.prefix),
-                        vrf_id=p.vrf_id,
-                        vrf_name=str(p.vrf.name) if p.vrf_id else "Global",
-                    )
+                "prefixes": [
+                    {
+                        "id": p.pk,
+                        "prefix": str(p.prefix),
+                        "vrf_id": p.vrf_id,
+                        "vrf_name": str(p.vrf.name) if p.vrf_id else "Global",
+                    }
                     for p in prefixes
                 ],
-            )
+            }
         rows = plan(preview, evidence, vrf_by_interface)
     print("READ-ONLY IPAM PLAN: VM {} ({}) | snapshot {}".format(vm.pk, vm.name, preview["collected_at"]))
     for row in rows:
@@ -160,9 +160,11 @@ def netbox_ipam_preview(snapshot_path, vm_id, vrf_by_interface=None):
         )
         for existing in row["existing"]:
             print(
-                "  IP #{id}: {address} | VRF={vrf_name} [{vrf_id}] | assignment={assigned_type}:{assigned_id} | status={status} role={role}".format(
-                    **existing
-                )
+                (
+                    "  IP #{id}: {address} | VRF={vrf_name} [{vrf_id}] | "
+                    "assignment={assigned_type}:{assigned_id} | status={status} "
+                    "role={role}"
+                ).format(**existing)
             )
         if not row["existing"]:
             print("  No existing IP with this host address in any VRF.")

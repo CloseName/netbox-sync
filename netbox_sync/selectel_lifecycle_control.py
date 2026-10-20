@@ -35,12 +35,12 @@ def handle(store, lock_path, operation, data):
             if not (base / "netbox-token.json").is_file():
                 return {"error": "SETUP_REQUIRED"}
             url, _ = runtime_netbox(store.path, "read")
-            access = dict(
-                url=url,
-                token=read(base / "netbox-token.json")["token"],
-                guard_instance=os.environ.get("NETBOX_SYNC_GUARD_INSTANCE", ""),
-            )
-            payload = dict(account=account, operation=data["operation"], key=data.get("key"))
+            access = {
+                "url": url,
+                "token": read(base / "netbox-token.json")["token"],
+                "guard_instance": os.environ.get("NETBOX_SYNC_GUARD_INSTANCE", ""),
+            }
+            payload = {"account": account, "operation": data["operation"], "key": data.get("key")}
             pending = state.get("lifecycle_pending")
             if operation == "lifecycle-review":
                 if pending:
@@ -68,14 +68,14 @@ def handle(store, lock_path, operation, data):
                 return {"error": "LIFECYCLE_UNCONFIRMED", "pending": payload}
             state.pop("lifecycle_pending", None)
             if data["operation"] == "delete":
-                state = dict(
-                    account=account,
-                    name=state.get("name", account),
-                    deleted=True,
-                    enabled=False,
-                    status="deleted",
-                    next_run=None,
-                )
+                state = {
+                    "account": account,
+                    "name": state.get("name", account),
+                    "deleted": True,
+                    "enabled": False,
+                    "status": "deleted",
+                    "next_run": None,
+                }
             elif data["operation"] == "activate":
                 state.update(deleted=False, status="configured", error=None)
             write(path, state)

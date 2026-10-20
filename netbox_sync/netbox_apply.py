@@ -1,3 +1,5 @@
+"""Orchestrate guarded host application while retaining legacy helper imports."""
+
 from .host_apply_writes import write_hosts
 from .host_precheck_report import print_host_precheck
 from .host_apply_preflight import prepare_host_context

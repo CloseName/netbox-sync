@@ -175,15 +175,15 @@ def install_onboarding_routes(
             auth_client.call("authorize", session=http.cookies.get(COOKIE), permission="catalog.create", audit=True)
         resolved = call(
             settings.bootstrap_socket,
-            dict(
-                action="resolve-placement",
-                provider=preview["provider"],
-                hosts=preview["hosts"],
-                name=payload.name,
-                site_id=payload.site_id,
-                default_site_slug=settings.default_site_slug,
-                host_types=payload.host_types,
-            ),
+            {
+                "action": "resolve-placement",
+                "provider": preview["provider"],
+                "hosts": preview["hosts"],
+                "name": payload.name,
+                "site_id": payload.site_id,
+                "default_site_slug": settings.default_site_slug,
+                "host_types": payload.host_types,
+            },
             prepare=payload.prepare,
         )
         site = resolved.get("references", {}).get("site", {})
@@ -201,7 +201,7 @@ def install_onboarding_routes(
                 try:
                     state = control_request(
                         settings.bootstrap_socket,
-                        dict(action="namespace-check", source_instance=request.source_instance),
+                        {"action": "namespace-check", "source_instance": request.source_instance},
                         timeout=50,
                     )["result"]
                 except ControlError as exc:
@@ -257,15 +257,15 @@ def install_onboarding_routes(
                         raise CatalogError("SELECTION_REQUIRED")
                     resolved = call(
                         settings.bootstrap_socket,
-                        dict(
-                            action="resolve-placement",
-                            provider=request.source_type,
-                            hosts=preview["hosts"],
-                            name=request.name,
-                            host_types=request.host_types,
-                            site_id=(request.references.get("site") or {}).get("id"),
-                            default_site_slug=settings.default_site_slug,
-                        ),
+                        {
+                            "action": "resolve-placement",
+                            "provider": request.source_type,
+                            "hosts": preview["hosts"],
+                            "name": request.name,
+                            "host_types": request.host_types,
+                            "site_id": (request.references.get("site") or {}).get("id"),
+                            "default_site_slug": settings.default_site_slug,
+                        },
                     )
                     selected_site = resolved.get("references", {}).get("site", {})
                     if selected_site.get("slug"):
@@ -291,7 +291,7 @@ def install_onboarding_routes(
                             )
                         )
                         outcome = create_call(
-                            settings.bootstrap_socket, dict(action="catalog-reconcile", operation_id=operation_id)
+                            settings.bootstrap_socket, {"action": "catalog-reconcile", "operation_id": operation_id}
                         )
                         if (
                             outcome.get("status") != "CREATED"
@@ -331,14 +331,14 @@ def install_onboarding_routes(
                     try:
                         outcome = create_call(
                             settings.bootstrap_socket,
-                            dict(
-                                action="registration-cluster",
-                                operation_id=operation_id,
-                                name=request.name,
-                                source_instance=request.source_instance,
-                                site_id=pending["references"]["site"]["id"],
-                                cluster_type_id=pending["references"]["cluster_type"]["id"],
-                            ),
+                            {
+                                "action": "registration-cluster",
+                                "operation_id": operation_id,
+                                "name": request.name,
+                                "source_instance": request.source_instance,
+                                "site_id": pending["references"]["site"]["id"],
+                                "cluster_type_id": pending["references"]["cluster_type"]["id"],
+                            },
                         )
                     except CatalogError as exc:
                         if exc.code == "UNAVAILABLE":
@@ -411,12 +411,12 @@ def install_onboarding_routes(
             return (
                 control_request(
                     settings.lifecycle_socket,
-                    dict(
-                        action="registration_credentials",
-                        source_instance=job["source_instance"],
-                        operation_id=str(job["operation_id"]),
-                        actor_id=job["actor_id"],
-                    ),
+                    {
+                        "action": "registration_credentials",
+                        "source_instance": job["source_instance"],
+                        "operation_id": str(job["operation_id"]),
+                        "actor_id": job["actor_id"],
+                    },
                 )["result"].get("verified")
                 is True
             )
@@ -463,7 +463,6 @@ def install_onboarding_routes(
         )
         if jobs is None:
             return complete_registration(request, onboarding_service, actor, check, consume)
-        from ..registration_jobs import StagedOnboarding
 
         with jobs.guard(request.source_instance):
             job = jobs.get(request.source_instance, request.registration_id, actor)
@@ -493,7 +492,7 @@ def install_onboarding_routes(
                     try:
                         state = control_request(
                             settings.bootstrap_socket,
-                            dict(action="namespace-check", source_instance=request.source_instance),
+                            {"action": "namespace-check", "source_instance": request.source_instance},
                             timeout=50,
                         )["result"]
                     except ControlError as exc:
@@ -576,7 +575,9 @@ def install_onboarding_routes(
             )
         )
         try:
-            result = create_call(settings.bootstrap_socket, dict(action="catalog-reconcile", operation_id=operation_id))
+            result = create_call(
+                settings.bootstrap_socket, {"action": "catalog-reconcile", "operation_id": operation_id}
+            )
         except CatalogError:
             if pending_identity:
                 return {**identity, "status": "UNCERTAIN", "resume_supported": True, "catalog_status": "UNCERTAIN"}

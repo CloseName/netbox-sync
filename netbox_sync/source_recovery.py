@@ -42,7 +42,11 @@ class Recovery:
             anchor = legacy_anchor(selected["settings"])
             rows = connection.execute(
                 sql.SQL(
-                    "SELECT s.*,t.removed_at,t.restored_at FROM {} s LEFT JOIN {} t USING(source_instance) WHERE s.source_type=%s ORDER BY s.source_instance LIMIT 10001"
+                    (
+                        "SELECT s.*,t.removed_at,t.restored_at FROM {} s LEFT JOIN {} t "
+                        "USING(source_instance) WHERE s.source_type=%s ORDER BY "
+                        "s.source_instance LIMIT 10001"
+                    )
                 ).format(self.store.table("sources"), self.store.table("source_tombstones")),
                 (selected["source_type"],),
             ).fetchall()
@@ -60,37 +64,47 @@ class Recovery:
                 identifier = row["source_instance"]
                 runs = connection.execute(
                     sql.SQL(
-                        "SELECT run_id,status,started_at,finished_at FROM {} WHERE source_instance=%s ORDER BY started_at DESC LIMIT 5"
+                        (
+                            "SELECT run_id,status,started_at,finished_at FROM {} WHERE "
+                            "source_instance=%s ORDER BY started_at DESC LIMIT 5"
+                        )
                     ).format(self.store.table("sync_runs")),
                     (identifier,),
                 ).fetchall()
                 operations = connection.execute(
                     sql.SQL(
-                        "SELECT operation_id,operation_kind,status FROM {} WHERE source_instance=%s AND status='RUNNING' ORDER BY operation_id LIMIT 100"
+                        (
+                            "SELECT operation_id,operation_kind,status FROM {} WHERE "
+                            "source_instance=%s AND status='RUNNING' ORDER BY operation_id "
+                            "LIMIT 100"
+                        )
                     ).format(self.store.table("source_operations")),
                     (identifier,),
                 ).fetchall()
                 unresolved = connection.execute(
                     sql.SQL(
-                        "SELECT count(*) AS count FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')"
+                        (
+                            "SELECT count(*) AS count FROM {} WHERE source_instance=%s AND "
+                            "status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')"
+                        )
                     ).format(blocking_runs(connection, self.store.schema)),
                     (identifier,),
                 ).fetchone()["count"]
                 site, cluster = identity_placement(row["settings"])
                 result.append(
-                    dict(
-                        source_instance=identifier,
-                        name=row["name"],
-                        address=row["address"],
-                        host_uuid=legacy_anchor(row["settings"]),
-                        site_id=site,
-                        cluster_id=cluster,
-                        state="REMOVED" if row["removed_at"] and not row["restored_at"] else "REGISTERED",
-                        enabled=row["enabled"],
-                        schedule_enabled=row["sync_enabled"],
-                        unresolved_runs=unresolved,
-                        removed_at=row["removed_at"].isoformat() if row["removed_at"] else None,
-                        runs=[
+                    {
+                        "source_instance": identifier,
+                        "name": row["name"],
+                        "address": row["address"],
+                        "host_uuid": legacy_anchor(row["settings"]),
+                        "site_id": site,
+                        "cluster_id": cluster,
+                        "state": "REMOVED" if row["removed_at"] and (not row["restored_at"]) else "REGISTERED",
+                        "enabled": row["enabled"],
+                        "schedule_enabled": row["sync_enabled"],
+                        "unresolved_runs": unresolved,
+                        "removed_at": row["removed_at"].isoformat() if row["removed_at"] else None,
+                        "runs": [
                             {
                                 **run,
                                 "run_id": str(run["run_id"]),
@@ -99,10 +113,10 @@ class Recovery:
                             }
                             for run in runs
                         ],
-                        operations=[{**op, "operation_id": str(op["operation_id"])} for op in operations],
-                    )
+                        "operations": [{**op, "operation_id": str(op["operation_id"])} for op in operations],
+                    }
                 )
-            return dict(sources=result, comparison="RECORDED_IDENTITY_ONLY", history_retained=True)
+            return {"sources": result, "comparison": "RECORDED_IDENTITY_ONLY", "history_retained": True}
 
     def describe(self, source, actor):
         with self.store.connect() as connection, source_gate(connection, self.store.schema, source):
@@ -120,7 +134,10 @@ class Recovery:
                 raise LifecycleError("SOURCE_RECOVERY_IDENTITY_REVIEW")
             pending = connection.execute(
                 sql.SQL(
-                    "SELECT operation_id FROM {} WHERE source_instance=%s AND actor_id=%s AND state IN ('PREPARED','CREDENTIALS_PENDING')"
+                    (
+                        "SELECT operation_id FROM {} WHERE source_instance=%s AND "
+                        "actor_id=%s AND state IN ('PREPARED','CREDENTIALS_PENDING')"
+                    )
                 ).format(self.store.table("source_recoveries")),
                 (source, actor),
             ).fetchone()
@@ -138,7 +155,15 @@ class Recovery:
     def _retired(self, connection, source):
         return connection.execute(
             sql.SQL(
-                "SELECT r.* FROM {} r JOIN {} t ON t.source_instance=r.source_instance WHERE r.source_instance=%s AND r.state='FINALIZED' AND t.restored_at IS NULL AND r.finished_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM {} c WHERE c.source_instance=r.source_instance AND c.state='RESTORED' AND c.finished_at>=r.finished_at) ORDER BY r.finished_at DESC LIMIT 1"
+                (
+                    "SELECT r.* FROM {} r JOIN {} t ON "
+                    "t.source_instance=r.source_instance WHERE r.source_instance=%s "
+                    "AND r.state='FINALIZED' AND t.restored_at IS NULL AND "
+                    "r.finished_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM {} c "
+                    "WHERE c.source_instance=r.source_instance AND c.state='RESTORED' "
+                    "AND c.finished_at>=r.finished_at) ORDER BY r.finished_at DESC "
+                    "LIMIT 1"
+                )
             ).format(
                 self.store.table("source_retirements"),
                 self.store.table("source_tombstones"),
@@ -175,20 +200,20 @@ class Recovery:
             if str(observed["guard_instance"]) != str(retired["guard_instance"]):
                 raise LifecycleError("SOURCE_RECOVERY_EVIDENCE_CHANGED")
             objects = observed["result"]["objects"]
-            result = dict(
-                source_instance=source,
-                host_uuid=legacy_anchor(row["settings"]),
-                site_id=site,
-                cluster_id=cluster,
-                mode="RETIRED_EMPTY",
-                retirement_id=str(retired["operation_id"]),
-                guard_instance=str(retired["guard_instance"]),
-                owned=[],
-                retained_manual=[],
-                blockers=["RETIRED_OBJECTS_PRESENT"] if any(item["present"] for item in objects) else [],
-                inventory_digest=observed["result"]["digest"],
-                placement_requires_review=True,
-            )
+            result = {
+                "source_instance": source,
+                "host_uuid": legacy_anchor(row["settings"]),
+                "site_id": site,
+                "cluster_id": cluster,
+                "mode": "RETIRED_EMPTY",
+                "retirement_id": str(retired["operation_id"]),
+                "guard_instance": str(retired["guard_instance"]),
+                "owned": [],
+                "retained_manual": [],
+                "blockers": ["RETIRED_OBJECTS_PRESENT"] if any((item["present"] for item in objects)) else [],
+                "inventory_digest": observed["result"]["digest"],
+                "placement_requires_review": True,
+            }
             result["digest"] = fingerprint(result)
             return result
 
@@ -221,7 +246,10 @@ class Recovery:
             raise LifecycleError("SOURCE_OPERATION_ACTIVE")
         if connection.execute(
             sql.SQL(
-                "SELECT 1 FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')"
+                (
+                    "SELECT 1 FROM {} WHERE source_instance=%s AND status IN "
+                    "('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')"
+                )
             ).format(blocking_runs(connection, self.store.schema)),
             (source,),
         ).fetchone():
@@ -252,7 +280,11 @@ class Recovery:
                 raise LifecycleError("SOURCE_RECOVERY_EVIDENCE_CHANGED")
         others = connection.execute(
             sql.SQL(
-                "SELECT settings FROM {} s WHERE source_type='esxi' AND source_instance<>%s AND NOT EXISTS (SELECT 1 FROM {} t WHERE t.source_instance=s.source_instance AND t.restored_at IS NULL)"
+                (
+                    "SELECT settings FROM {} s WHERE source_type='esxi' AND "
+                    "source_instance<>%s AND NOT EXISTS (SELECT 1 FROM {} t WHERE "
+                    "t.source_instance=s.source_instance AND t.restored_at IS NULL)"
+                )
             ).format(self.store.table("sources"), self.store.table("source_tombstones")),
             (source,),
         ).fetchall()
@@ -300,7 +332,10 @@ class Recovery:
                 }
                 record = connection.execute(
                     sql.SQL(
-                        "INSERT INTO {} (operation_id,source_instance,actor_id,revision,plan) VALUES (%s,%s,%s,%s,%s) RETURNING *"
+                        (
+                            "INSERT INTO {} (operation_id,source_instance,actor_id,revision,pl"
+                            "an) VALUES (%s,%s,%s,%s,%s) RETURNING *"
+                        )
                     ).format(self.store.table("source_recoveries")),
                     (operation, source, actor, revision, Jsonb(plan)),
                 ).fetchone()

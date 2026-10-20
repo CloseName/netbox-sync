@@ -72,7 +72,7 @@ def import_test(snapshot_path, apply=False):
         mac_query = MACAddress.objects.filter(pk__in=mac_ids).order_by("pk")
         macs = {m.pk: str(m.mac_address) for m in (mac_query.select_for_update() if apply else mac_query)}
         inventory = [
-            dict(id=i.pk, vm_id=i.virtual_machine_id, name=i.name, mac=macs.get(i.primary_mac_address_id))
+            {"id": i.pk, "vm_id": i.virtual_machine_id, "name": i.name, "mac": macs.get(i.primary_mac_address_id)}
             for i in interfaces
         ]
         preview = build_preview(snapshot, inventory, vm.pk)
@@ -87,17 +87,17 @@ def import_test(snapshot_path, apply=False):
                 .order_by("pk")[:3]
             )
             evidence = [
-                dict(
-                    id=r.pk,
-                    address=str(r.address),
-                    vrf_id=r.vrf_id,
-                    assigned_type=(
-                        (r.assigned_object_type.app_label + "." + r.assigned_object_type.model)
+                {
+                    "id": r.pk,
+                    "address": str(r.address),
+                    "vrf_id": r.vrf_id,
+                    "assigned_type": (
+                        r.assigned_object_type.app_label + "." + r.assigned_object_type.model
                         if r.assigned_object_type_id
                         else None
                     ),
-                    assigned_id=r.assigned_object_id,
-                )
+                    "assigned_id": r.assigned_object_id,
+                }
                 for r in records
             ]
             action = classify(address, target, evidence, True, None)

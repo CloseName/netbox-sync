@@ -21,7 +21,7 @@ def tick(store, lock_path):
             handle(
                 store,
                 lock_path,
-                dict(action="pfsense", operation="collect", vm_id=int(path.stem), session=None, data={}),
+                {"action": "pfsense", "operation": "collect", "vm_id": int(path.stem), "session": None, "data": {}},
                 scheduled_policy=policy,
             )
         except Exception as error:

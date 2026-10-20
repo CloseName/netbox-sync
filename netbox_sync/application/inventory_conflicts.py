@@ -35,12 +35,12 @@ def inventory_conflicts(hosts):
         for kind, members in (("vm", host.virtual_machines), ("lxc", host.containers)):
             for vm in members:
                 external_id = str(getattr(vm, "external_id", None) or vm.vmid)
-                base = dict(
-                    name=vm.original_name,
-                    external_id=external_id,
-                    provider_object_id=getattr(vm, "provider_object_id", None),
-                    host_id=host.source_id,
-                )
+                base = {
+                    "name": vm.original_name,
+                    "external_id": external_id,
+                    "provider_object_id": getattr(vm, "provider_object_id", None),
+                    "host_id": host.source_id,
+                }
                 identities[(kind, external_id)].append(ConflictParticipant(**base))
                 for nic in vm.interfaces:
                     if nic.mac_address:

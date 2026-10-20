@@ -1,6 +1,5 @@
 """Safe pyVmomi connection and session boundary for standalone ESXi."""
 
-import ssl
 from contextlib import contextmanager
 from dataclasses import dataclass
 

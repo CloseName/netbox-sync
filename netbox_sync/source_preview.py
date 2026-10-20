@@ -39,15 +39,15 @@ def esxi(content):
         if isinstance(entity, vim.HostSystem):
             summary = entity.summary
             hosts.append(
-                dict(
-                    id=_host_external_id_summary(entity, summary),
-                    name=text(entity.name),
-                    manufacturer=text(_value(summary, "hardware.vendor")),
-                    model=text(_value(summary, "hardware.model")),
-                    version=text(_value(summary, "config.product.version")),
-                    cpu=text(_value(summary, "hardware.cpuModel")),
-                    memory_bytes=int(_value(summary, "hardware.memorySize", 0) or 0),
-                )
+                {
+                    "id": _host_external_id_summary(entity, summary),
+                    "name": text(entity.name),
+                    "manufacturer": text(_value(summary, "hardware.vendor")),
+                    "model": text(_value(summary, "hardware.model")),
+                    "version": text(_value(summary, "config.product.version")),
+                    "cpu": text(_value(summary, "hardware.cpuModel")),
+                    "memory_bytes": int(_value(summary, "hardware.memorySize", 0) or 0),
+                }
             )
             if len(hosts) > MAX_HOSTS:
                 raise ValueError("Host inventory bound exceeded")
@@ -62,7 +62,7 @@ def esxi(content):
         from .application.observability import ErrorCode
 
         raise OnboardingError(ErrorCode.HOST_INVENTORY_EMPTY)
-    return dict(provider="esxi", name=hosts[0]["name"] if len(hosts) == 1 else None, cluster=None, hosts=hosts)
+    return {"provider": "esxi", "name": hosts[0]["name"] if len(hosts) == 1 else None, "cluster": None, "hosts": hosts}
 
 
 def _host_external_id_summary(host, summary):
@@ -102,19 +102,19 @@ def proxmox(credentials, host, context, getter):
         # PVE status supplies CPU/memory/version, not SMBIOS system manufacturer/model.
         # Disk model and CPU vendor are NOT server manufacturer/model.
         hosts.append(
-            dict(
-                id=name,
-                name=name,
-                manufacturer=None,
-                model=None,
-                version=text(status.get("pveversion")),
-                cpu=text(status.get("cpuinfo", {}).get("model")),
-                memory_bytes=int(status.get("memory", {}).get("total", 0) or 0),
-            )
+            {
+                "id": name,
+                "name": name,
+                "manufacturer": None,
+                "model": None,
+                "version": text(status.get("pveversion")),
+                "cpu": text(status.get("cpuinfo", {}).get("model")),
+                "memory_bytes": int(status.get("memory", {}).get("total", 0) or 0),
+            }
         )
-    return dict(
-        provider="proxmox",
-        cluster=cluster_names[0] if len(cluster_names) == 1 else None,
-        name=cluster_names[0] if len(cluster_names) == 1 else hosts[0]["name"] if len(hosts) == 1 else None,
-        hosts=hosts,
-    )
+    return {
+        "provider": "proxmox",
+        "cluster": cluster_names[0] if len(cluster_names) == 1 else None,
+        "name": cluster_names[0] if len(cluster_names) == 1 else hosts[0]["name"] if len(hosts) == 1 else None,
+        "hosts": hosts,
+    }

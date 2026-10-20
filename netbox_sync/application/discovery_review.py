@@ -291,9 +291,15 @@ def build_esxi_review(plan, config):
         "UNMATCHED": (ReviewClassification.WOULD_CREATE, "NO_IDENTITY_MATCH", "create"),
     }
     reasons = {
-        "VM_RECREATED_NAME": "The name belongs to a retained VM with a different identity. Only this VM is skipped; other objects can synchronize. Rename the new VM and rebuild the plan. Existing bindings are preserved.",
+        "VM_RECREATED_NAME": (
+            "The name belongs to a retained VM with a different identity. "
+            "Only this VM is skipped; other objects can synchronize. Rename "
+            "the new VM and rebuild the plan. Existing bindings are preserved."
+        ),
         "IDENTITY_MATCH": "Stable source identity matches an existing NetBox object.",
-        "SELECTEL_HARDWARE_MATCH": "Unique hardware identity matches the existing Selectel device. Its provider fields are preserved.",
+        "SELECTEL_HARDWARE_MATCH": (
+            "Unique hardware identity matches the existing Selectel device. " "Its provider fields are preserved."
+        ),
         "SAFE_ADOPTION_CANDIDATE": "Stable evidence exists, but Web discovery never adopts objects.",
         "LEGACY_REVIEW_REQUIRED": "Legacy evidence requires operator review and is not adopted.",
         "AMBIGUOUS_LEGACY_MATCH": "Legacy evidence is ambiguous; processing is blocked.",
@@ -324,29 +330,27 @@ def build_esxi_review(plan, config):
             for value in sorted(item.candidates, key=lambda c: str(c.object_id)):
                 identities = json.loads(value.custom_fields_snapshot).get("sync_identities") or []
                 evidence.append(
-                    dict(
-                        id=value.object_id,
-                        name=value.object_name,
-                        url=(
-                            (
-                                base
-                                + (
-                                    "/virtualization/virtual-machines/"
-                                    if item.object_kind == "vm"
-                                    else "/dcim/devices/"
-                                )
-                                + str(value.object_id)
-                                + "/"
-                            )
+                    {
+                        "id": value.object_id,
+                        "name": value.object_name,
+                        "url": (
+                            base
+                            + ("/virtualization/virtual-machines/" if item.object_kind == "vm" else "/dcim/devices/")
+                            + str(value.object_id)
+                            + "/"
                             if base
                             else ""
                         ),
-                        external_ids=sorted(
-                            str(v.get("external_id", v.get("source_id", ""))) for v in identities if isinstance(v, dict)
+                        "external_ids": sorted(
+                            (
+                                str(v.get("external_id", v.get("source_id", "")))
+                                for v in identities
+                                if isinstance(v, dict)
+                            )
                         ),
-                        signals=list(value.signals),
-                        conflicts=list(value.conflicts),
-                    )
+                        "signals": list(value.signals),
+                        "conflicts": list(value.conflicts),
+                    }
                 )
         items.append(
             ReviewItem(
@@ -370,7 +374,12 @@ def build_esxi_review(plan, config):
                     item.identity.external_id,
                     ReviewClassification.UNSUPPORTED,
                     "ESXI_HOST_NETWORK_UNSUPPORTED",
-                    "ESXi topology is stored in a device snapshot. A verified connection IPv4 is synchronized separately as a native VMkernel interface/IP and device Primary IPv4; other host networking remains report-only.",
+                    (
+                        "ESXi topology is stored in a device snapshot. A verified "
+                        "connection IPv4 is synchronized separately as a native VMkernel "
+                        "interface/IP and device Primary IPv4; other host networking "
+                        "remains report-only."
+                    ),
                     "none",
                 )
             )

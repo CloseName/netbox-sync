@@ -23,17 +23,17 @@ def prepare_host_context(
 
     if not host_networking:
         desired, changed = _managed_metadata(host, device)
-        return dict(
-            host=host,
-            device=device,
-            match_reason=match_reason,
-            interfaces={},
-            management_interface=None,
-            management_address=None,
-            addresses=[],
-            desired_custom_fields=desired,
-            changed_custom_fields=changed,
-        )
+        return {
+            "host": host,
+            "device": device,
+            "match_reason": match_reason,
+            "interfaces": {},
+            "management_interface": None,
+            "management_address": None,
+            "addresses": [],
+            "desired_custom_fields": desired,
+            "changed_custom_fields": changed,
+        }
 
     existing_interfaces = _load_existing_interfaces(
         nb_api,

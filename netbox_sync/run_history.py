@@ -71,7 +71,12 @@ ERROR_STATUS = {
 SAFE_ERROR_MESSAGES = {
     "APPLY_LOCKED": "Another synchronization is already running.",
     "PLAN_BLOCKED": "The synchronization plan contains blocking conditions.",
-    "SOURCE_RECONCILIATION_REQUIRED": "Scheduled synchronization is blocked by unresolved previous writes or a pending manual sync after baseline acceptance. Review source recovery. No new plan was built and no writes were started.",
+    "SOURCE_RECONCILIATION_REQUIRED": (
+        "Scheduled synchronization is blocked by unresolved previous "
+        "writes or a pending manual sync after baseline acceptance. "
+        "Review source recovery. No new plan was built and no writes were "
+        "started."
+    ),
     "PLAN_STALE": "The synchronization plan is no longer current.",
     "CONFIRMATION_EXPIRED": "The synchronization confirmation expired.",
     "CONFIRMATION_INVALID": "The synchronization confirmation is invalid.",
@@ -163,7 +168,10 @@ class RunRepository:
             return bool(
                 connection.execute(
                     sql.SQL(
-                        "SELECT 1 FROM {} WHERE source_instance=%s AND status IN ('OUTCOME_UNCERTAIN','PARTIALLY_APPLIED') LIMIT 1"
+                        (
+                            "SELECT 1 FROM {} WHERE source_instance=%s AND status IN "
+                            "('OUTCOME_UNCERTAIN','PARTIALLY_APPLIED') LIMIT 1"
+                        )
                     ).format(blocking_runs(connection, self.schema)),
                     (source_instance,),
                 ).fetchone()

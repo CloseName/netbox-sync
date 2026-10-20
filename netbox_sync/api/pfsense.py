@@ -38,13 +38,13 @@ def routes(settings):
         try:
             result = control(
                 settings.bootstrap_socket,
-                dict(
-                    action="pfsense",
-                    operation=action,
-                    vm_id=vm_id,
-                    session=request.cookies.get(COOKIE),
-                    data=data or {},
-                ),
+                {
+                    "action": "pfsense",
+                    "operation": action,
+                    "vm_id": vm_id,
+                    "session": request.cookies.get(COOKIE),
+                    "data": data or {},
+                },
                 timeout=125,
             )["result"]
         except ControlError as error:

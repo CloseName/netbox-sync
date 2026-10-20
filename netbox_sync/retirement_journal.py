@@ -45,7 +45,10 @@ class RetirementJournal:
             raise LifecycleError("SOURCE_OPERATION_ACTIVE")
         if connection.execute(
             sql.SQL(
-                "SELECT 1 FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')"
+                (
+                    "SELECT 1 FROM {} WHERE source_instance=%s AND status IN "
+                    "('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')"
+                )
             ).format(blocking_runs(connection, self.store.schema)),
             (source,),
         ).fetchone():
@@ -62,7 +65,12 @@ class RetirementJournal:
             raise LifecycleError("RETIREMENT_BLOCKED")
         peers = connection.execute(
             sql.SQL(
-                "SELECT s.source_instance,s.settings FROM {} s WHERE s.source_instance<>%s AND NOT EXISTS(SELECT 1 FROM {} t WHERE t.source_instance=s.source_instance AND t.restored_at IS NULL) LIMIT 10001"
+                (
+                    "SELECT s.source_instance,s.settings FROM {} s WHERE "
+                    "s.source_instance<>%s AND NOT EXISTS(SELECT 1 FROM {} t WHERE "
+                    "t.source_instance=s.source_instance AND t.restored_at IS NULL) "
+                    "LIMIT 10001"
+                )
             ).format(self.store.table("sources"), self.store.table("source_tombstones")),
             (source,),
         ).fetchall()
@@ -135,7 +143,10 @@ class RetirementJournal:
                 return previous
             return connection.execute(
                 sql.SQL(
-                    "INSERT INTO {} (operation_id,source_instance,actor_id,revision,guard_instance,plan) VALUES (%s,%s,%s,%s,%s,%s) RETURNING *"
+                    (
+                        "INSERT INTO {} (operation_id,source_instance,actor_id,revision,gu"
+                        "ard_instance,plan) VALUES (%s,%s,%s,%s,%s,%s) RETURNING *"
+                    )
                 ).format(self.store.table("source_retirements")),
                 (operation, source, actor, revision, guard_instance, Jsonb(plan)),
             ).fetchone()
@@ -186,7 +197,10 @@ class RetirementJournal:
                 return record, False
             older = connection.execute(
                 sql.SQL(
-                    "SELECT state,receipt FROM {} WHERE source_instance=%s AND state IN ('SENDING','UNCERTAIN','SUCCEEDED')"
+                    (
+                        "SELECT state,receipt FROM {} WHERE source_instance=%s AND state "
+                        "IN ('SENDING','UNCERTAIN','SUCCEEDED')"
+                    )
                 ).format(self.store.table("source_retirements")),
                 (source,),
             ).fetchall()
@@ -204,7 +218,11 @@ class RetirementJournal:
             if record["plan"]["remote"]["manifest"].get("format") == 4:
                 connection.execute(
                     sql.SQL(
-                        "UPDATE {} SET superseded_by=%s WHERE source_instance=%s AND state='SUCCEEDED' AND COALESCE(receipt->>'generation_closed','false')<>'true' AND superseded_by IS NULL"
+                        (
+                            "UPDATE {} SET superseded_by=%s WHERE source_instance=%s AND "
+                            "state='SUCCEEDED' AND COALESCE(receipt->>'generation_closed','fal"
+                            "se')<>'true' AND superseded_by IS NULL"
+                        )
                     ).format(self.store.table("source_retirements")),
                     (record["operation_id"], source),
                 )
@@ -213,7 +231,10 @@ class RetirementJournal:
             # refused by _guard and is never assumed not to have written.
             connection.execute(
                 sql.SQL(
-                    "UPDATE {} SET state='ABANDONED',finished_at=clock_timestamp() WHERE source_instance=%s AND state='PREPARED'"
+                    (
+                        "UPDATE {} SET state='ABANDONED',finished_at=clock_timestamp() "
+                        "WHERE source_instance=%s AND state='PREPARED'"
+                    )
                 ).format(self.store.table("source_recoveries")),
                 (source,),
             )
@@ -254,7 +275,10 @@ class RetirementJournal:
             self._guard(connection, source, record["revision"], record["plan"]["source_flags"])
             if connection.execute(
                 sql.SQL(
-                    "SELECT 1 FROM {} WHERE source_instance=%s AND operation_id<>%s AND state IN ('SENDING','UNCERTAIN','SUCCEEDED')"
+                    (
+                        "SELECT 1 FROM {} WHERE source_instance=%s AND operation_id<>%s "
+                        "AND state IN ('SENDING','UNCERTAIN','SUCCEEDED')"
+                    )
                 ).format(self.store.table("source_retirements")),
                 (source, record["operation_id"]),
             ).fetchone():
@@ -316,7 +340,10 @@ class RetirementJournal:
                 raise LifecycleError("RETIREMENT_CONFLICT")
             return connection.execute(
                 sql.SQL(
-                    "UPDATE {} SET state='SUCCEEDED',receipt=%s,safe_code=NULL,finished_at=clock_timestamp() WHERE operation_id=%s RETURNING *"
+                    (
+                        "UPDATE {} SET state='SUCCEEDED',receipt=%s,safe_code=NULL,finishe"
+                        "d_at=clock_timestamp() WHERE operation_id=%s RETURNING *"
+                    )
                 ).format(self.store.table("source_retirements")),
                 (Jsonb(receipt), record["operation_id"]),
             ).fetchone()

@@ -63,7 +63,7 @@ class BootstrapControl:
             from uuid import uuid4
 
             return handle(
-                dict(action="namespace", operation_id=str(uuid4()), source_instance=payload["source_instance"])
+                {"action": "namespace", "operation_id": str(uuid4()), "source_instance": payload["source_instance"]}
             )["result"]
         if action == "registration-cluster":
             from .catalog_creation import CatalogCreation
@@ -74,18 +74,18 @@ class BootstrapControl:
                 {"action", "operation_id", "name", "site_id", "cluster_type_id", "source_instance"},
             ):
                 raise ControlError("BOOTSTRAP_INVALID")
-            command = dict(
-                action="catalog-create",
-                operation_id=payload["operation_id"],
-                kind="cluster",
-                object=dict(
-                    name=payload["name"],
-                    type=payload["cluster_type_id"],
-                    scope_type="dcim.site",
-                    scope_id=payload["site_id"],
-                ),
-                confirm=True,
-            )
+            command = {
+                "action": "catalog-create",
+                "operation_id": payload["operation_id"],
+                "kind": "cluster",
+                "object": {
+                    "name": payload["name"],
+                    "type": payload["cluster_type_id"],
+                    "scope_type": "dcim.site",
+                    "scope_id": payload["site_id"],
+                },
+                "confirm": True,
+            }
             try:
                 with apply_lock(self.lock_path):
                     result = CatalogCreation(self.store).execute(

@@ -3,7 +3,7 @@
 from uuid import UUID
 from psycopg import sql
 from psycopg.types.json import Jsonb
-from .host_registration import legacy_anchor, registration_anchor, esxi_anchor, HostRegistrationConflict
+from .host_registration import registration_anchor, esxi_anchor, HostRegistrationConflict
 from .source_lifecycle import LifecycleError
 from .source_operations import source_gate
 from .run_gates import blocking_runs
@@ -49,7 +49,10 @@ class LegacyAdmission:
     def _row(self, connection, source):
         row = connection.execute(
             sql.SQL(
-                "SELECT s.*,t.removed_at,t.restored_at FROM {} s LEFT JOIN {} t ON t.source_instance=s.source_instance WHERE s.source_instance=%s"
+                (
+                    "SELECT s.*,t.removed_at,t.restored_at FROM {} s LEFT JOIN {} t "
+                    "ON t.source_instance=s.source_instance WHERE s.source_instance=%s"
+                )
             ).format(self.store.table("sources"), self.store.table("source_tombstones")),
             (source,),
         ).fetchone()
@@ -68,20 +71,20 @@ class LegacyAdmission:
                 ),
                 (source,),
             ).fetchone()
-            return dict(
-                source_instance=source,
-                name=row["name"],
-                address=row["address"],
-                port=(row["settings"] or {}).get("api_port", 443),
-                verify_ssl=row["verify_ssl"],
-                revision=self.store.revision(row),
-                host_uuid=registration_anchor(row["settings"]),
-                state="REMOVED" if removed else "ACTIVE" if row["enabled"] else "DISABLED",
-                isolated=isolated(row),
-                site_slug=row["site_slug"],
-                cluster_name=row["cluster_name"],
-                decision=(row["settings"] or {}).get("legacy_admission"),
-            )
+            return {
+                "source_instance": source,
+                "name": row["name"],
+                "address": row["address"],
+                "port": (row["settings"] or {}).get("api_port", 443),
+                "verify_ssl": row["verify_ssl"],
+                "revision": self.store.revision(row),
+                "host_uuid": registration_anchor(row["settings"]),
+                "state": "REMOVED" if removed else "ACTIVE" if row["enabled"] else "DISABLED",
+                "isolated": isolated(row),
+                "site_slug": row["site_slug"],
+                "cluster_name": row["cluster_name"],
+                "decision": (row["settings"] or {}).get("legacy_admission"),
+            }
 
     def status(self, source, actor, operation):
         with self.store.connect() as connection:
@@ -110,7 +113,7 @@ class LegacyAdmission:
                 raise LifecycleError("SOURCE_IDENTITY_UNPROVED") from None
         elif anchor is not None:
             raise LifecycleError("REQUEST_INVALID")
-        proof = dict(purpose="LEGACY_ADMISSION", decision=decision, reason=reason.strip(), anchor=anchor)
+        proof = {"purpose": "LEGACY_ADMISSION", "decision": decision, "reason": reason.strip(), "anchor": anchor}
         with self.store.lock(self.store.lock_path):
             with self.store.connect() as connection:
                 admission_lock(connection, self.store.schema)
@@ -129,9 +132,12 @@ class LegacyAdmission:
                             previous["proof"],
                         ) != (source, actor, revision, proof):
                             raise LifecycleError("SOURCE_LIFECYCLE_CONFLICT")
-                        return dict(
-                            status="RECORDED", source_instance=source, operation_id=str(operation), decision=decision
-                        )
+                        return {
+                            "status": "RECORDED",
+                            "source_instance": source,
+                            "operation_id": str(operation),
+                            "decision": decision,
+                        }
                     row = self._row(connection, source)
                     if self.store.revision(row) != revision:
                         raise LifecycleError("SOURCE_LIFECYCLE_CONFLICT")
@@ -146,7 +152,10 @@ class LegacyAdmission:
                         raise LifecycleError("SOURCE_OPERATION_ACTIVE")
                     if connection.execute(
                         sql.SQL(
-                            "SELECT 1 FROM {} WHERE source_instance=%s AND status IN ('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')"
+                            (
+                                "SELECT 1 FROM {} WHERE source_instance=%s AND status IN "
+                                "('RUNNING','OUTCOME_UNCERTAIN','PARTIALLY_APPLIED')"
+                            )
                         ).format(blocking_runs(connection, self.store.schema)),
                         (source,),
                     ).fetchone():
@@ -162,7 +171,12 @@ class LegacyAdmission:
                     if decision == "OBSERVE":
                         others = connection.execute(
                             sql.SQL(
-                                "SELECT s.source_instance,s.settings FROM {} s WHERE s.source_type='esxi' AND s.source_instance<>%s AND NOT EXISTS (SELECT 1 FROM {} a WHERE a.source_instance=s.source_instance AND a.verified_at IS NOT NULL)"
+                                (
+                                    "SELECT s.source_instance,s.settings FROM {} s WHERE "
+                                    "s.source_type='esxi' AND s.source_instance<>%s AND NOT EXISTS "
+                                    "(SELECT 1 FROM {} a WHERE a.source_instance=s.source_instance "
+                                    "AND a.verified_at IS NOT NULL)"
+                                )
                             ).format(self.store.table("sources"), self.store.table("source_archives")),
                             (source,),
                         ).fetchall()
@@ -176,16 +190,19 @@ class LegacyAdmission:
                         ).fetchone()
                         if reserved and reserved["source_instance"] != source:
                             raise LifecycleError("SOURCE_IDENTITY_CONFLICT")
-                    settings["legacy_admission"] = dict(
-                        state="ISOLATED_UNPROVED" if decision == "ISOLATE" else "OBSERVED_ENDPOINT",
-                        operation_id=str(operation),
-                        observed_uuid=anchor,
-                        physical_identity_proved=False,
-                        object_ownership_proved=False,
-                    )
+                    settings["legacy_admission"] = {
+                        "state": "ISOLATED_UNPROVED" if decision == "ISOLATE" else "OBSERVED_ENDPOINT",
+                        "operation_id": str(operation),
+                        "observed_uuid": anchor,
+                        "physical_identity_proved": False,
+                        "object_ownership_proved": False,
+                    }
                     connection.execute(
                         sql.SQL(
-                            "INSERT INTO {} (operation_id,source_instance,actor_id,revision,anchor,proof) VALUES (%s,%s,%s,%s,%s,%s)"
+                            (
+                                "INSERT INTO {} (operation_id,source_instance,actor_id,revision,an"
+                                "chor,proof) VALUES (%s,%s,%s,%s,%s,%s)"
+                            )
                         ).format(self.store.table("source_identity_verifications")),
                         (operation, source, actor, revision, anchor or "UNPROVED", Jsonb(proof)),
                     )
@@ -198,10 +215,17 @@ class LegacyAdmission:
                     )
                     connection.execute(
                         sql.SQL(
-                            "UPDATE {} SET status='STALE',result=NULL,safe_error_code='PLAN_STALE',updated_at=clock_timestamp() WHERE source_instance=%s AND operation_kind='PLAN' AND status='READY'"
+                            (
+                                "UPDATE {} SET status='STALE',result=NULL,safe_error_code='PLAN_ST"
+                                "ALE',updated_at=clock_timestamp() WHERE source_instance=%s AND "
+                                "operation_kind='PLAN' AND status='READY'"
+                            )
                         ).format(self.store.table("source_operations")),
                         (source,),
                     )
-                    return dict(
-                        status="RECORDED", source_instance=source, operation_id=str(operation), decision=decision
-                    )
+                    return {
+                        "status": "RECORDED",
+                        "source_instance": source,
+                        "operation_id": str(operation),
+                        "decision": decision,
+                    }

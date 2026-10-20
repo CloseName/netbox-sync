@@ -81,7 +81,10 @@ class RegistrationJobs:
         with self.connect() as connection:
             connection.execute(
                 sql.SQL(
-                    "INSERT INTO {} (source_instance,operation_id,actor_id,payload) VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING"
+                    (
+                        "INSERT INTO {} (source_instance,operation_id,actor_id,payload) "
+                        "VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING"
+                    )
                 ).format(self.table()),
                 (request.source_instance, request.registration_id, actor, Jsonb(payload)),
             )
@@ -103,7 +106,11 @@ class RegistrationJobs:
         with self.connect() as connection:
             return connection.execute(
                 sql.SQL(
-                    "SELECT source_instance,operation_id FROM {} WHERE state IN ('STAGING','READY') ORDER BY (operation_id>%s) DESC,operation_id LIMIT 1"
+                    (
+                        "SELECT source_instance,operation_id FROM {} WHERE state IN "
+                        "('STAGING','READY') ORDER BY (operation_id>%s) DESC,operation_id "
+                        "LIMIT 1"
+                    )
                 ).format(self.table()),
                 (after,),
             ).fetchall()
@@ -129,7 +136,7 @@ class RegistrationJobs:
         # staging before any remote effect; it cannot restore or adopt objects.
         return {
             **preview,
-            "registration_resume": dict(source_instance=source, registration_id=str(operation), actor_id=actor),
+            "registration_resume": {"source_instance": source, "registration_id": str(operation), "actor_id": actor},
         }
 
     def public_attempts(self, actor):
@@ -141,14 +148,14 @@ class RegistrationJobs:
                 (actor,),
             ).fetchall()
         return [
-            dict(
-                source_instance=row["source_instance"],
-                registration_id=str(row["operation_id"]),
-                request=row["payload"]["request"],
-                created_at=row["updated_at"].isoformat(),
-                server_continuing=row["state"] == "READY",
-                safe_code=row["safe_code"],
-            )
+            {
+                "source_instance": row["source_instance"],
+                "registration_id": str(row["operation_id"]),
+                "request": row["payload"]["request"],
+                "created_at": row["updated_at"].isoformat(),
+                "server_continuing": row["state"] == "READY",
+                "safe_code": row["safe_code"],
+            }
             for row in rows
         ]
 

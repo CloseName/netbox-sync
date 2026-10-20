@@ -51,7 +51,10 @@ def source_gate(connection, schema, source, *, allow_retirement=False, allow_wai
             present
             and connection.execute(
                 sql.SQL(
-                    "SELECT source_instance FROM {} WHERE source_instance=%s AND state IN ('SENDING','UNCERTAIN','SUCCEEDED') LIMIT 1"
+                    (
+                        "SELECT source_instance FROM {} WHERE source_instance=%s AND "
+                        "state IN ('SENDING','UNCERTAIN','SUCCEEDED') LIMIT 1"
+                    )
                 ).format(sql.Identifier(schema, "source_retirements")),
                 (source,),
             ).fetchone()

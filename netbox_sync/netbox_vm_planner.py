@@ -1,3 +1,5 @@
+"""Render identity-based VM plans without automatically adopting name matches."""
+
 from .netbox_vm_name import netbox_vm_name
 import json
 

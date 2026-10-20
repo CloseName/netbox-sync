@@ -40,11 +40,11 @@ def apply_virtual_disks(api, hosts, config, *, confirmed=False):
                     raise ValueError("Disk name is already used by an unmanaged or different disk")
                 if disk.size_bytes < 0:
                     raise ValueError("Disk capacity cannot be negative")
-                desired = dict(
-                    name=disk.name,
-                    size=(disk.size_bytes + 999999) // 1000000,
-                    custom_fields={**(getattr(current, "custom_fields", {}) or {}), "sync_disk_identity": wanted},
-                )
+                desired = {
+                    "name": disk.name,
+                    "size": (disk.size_bytes + 999999) // 1000000,
+                    "custom_fields": {**(getattr(current, "custom_fields", {}) or {}), "sync_disk_identity": wanted},
+                }
                 if current is None:
                     pending.append((None, dict(virtual_machine=parent.id, **desired)))
                 else:

@@ -45,15 +45,15 @@ def runtime_interfaces(raw):
             match = re.fullmatch(r"([\w.:-]+): flags=[0-9a-f]+(?:<([^>]*)>)? metric \d+ mtu (\d+)", line)
             if not match or match[1] in result or len(result) >= 512:
                 fail()
-            current = dict(
-                device=match[1],
-                admin_up="UP" in (match[2] or "").split(","),
-                mtu=int(match[3]),
-                mac=None,
-                status=None,
-                addresses=[],
-                media=None,
-            )
+            current = {
+                "device": match[1],
+                "admin_up": "UP" in (match[2] or "").split(","),
+                "mtu": int(match[3]),
+                "mac": None,
+                "status": None,
+                "addresses": [],
+                "media": None,
+            }
             if not 1 <= current["mtu"] <= 1000000:
                 fail()
             result[match[1]] = current
@@ -83,17 +83,17 @@ def runtime_interfaces(raw):
                     address = ipaddress.IPv6Interface(host + "/" + fields[3])
                     if scope and scope != current["device"]:
                         fail()
-                value = dict(
-                    address=str(address),
-                    scope=scope or None,
-                    link_local=address.ip.is_link_local,
-                    ipam_candidate=not (
+                value = {
+                    "address": str(address),
+                    "scope": scope or None,
+                    "link_local": address.ip.is_link_local,
+                    "ipam_candidate": not (
                         address.ip.is_link_local
                         or address.ip.is_loopback
                         or address.ip.is_multicast
                         or address.ip.is_unspecified
                     ),
-                )
+                }
                 if value not in current["addresses"]:
                     current["addresses"].append(value)
                 if len(current["addresses"]) > 512:
@@ -150,7 +150,7 @@ def build_preview(snapshot, inventory, vm_id):
         target_ids.add(row["id"])
         name = text(row.get("name"))
         if row.get("mac"):
-            targets.setdefault(mac(row["mac"]), []).append(dict(id=row["id"], name=name))
+            targets.setdefault(mac(row["mac"]), []).append({"id": row["id"], "name": name})
     runtime_macs = Counter(row["mac"] for row in runtime.values() if row["mac"])
     seen_ids, seen_devices = set(), set()
     rows, issues = [], []
@@ -194,9 +194,14 @@ def build_preview(snapshot, inventory, vm_id):
         else:
             state = "MATCHED"
         if state != "MATCHED":
-            issues.append(dict(device=device, code=state))
+            issues.append({"device": device, "code": state})
         rows.append(
-            dict(configuration=selected, runtime=live, match=matches[0] if state == "MATCHED" else None, status=state)
+            {
+                "configuration": selected,
+                "runtime": live,
+                "match": matches[0] if state == "MATCHED" else None,
+                "status": state,
+            }
         )
     clean_vlans = []
     for vlan in vlans:
@@ -206,19 +211,19 @@ def build_preview(snapshot, inventory, vm_id):
             clean_vlans.append({key: text(vlan[key]) for key in ("parent", "tag", "device", "description")})
         except KeyError:
             fail()
-    return dict(
-        schema="netbox-sync.pfsense.preview.v1",
-        mode="READ_ONLY",
-        vm_id=vm_id,
-        collected_at=stamp,
-        version=version,
-        interfaces=rows,
-        vlans=clean_vlans,
-        issues=issues,
-        all_interfaces_matched=not issues,
-        unmapped_runtime_devices=sorted(set(runtime) - seen_devices),
-        unmatched_vm_interfaces=sorted(target_ids - {r["match"]["id"] for r in rows if r["match"]}),
-    )
+    return {
+        "schema": "netbox-sync.pfsense.preview.v1",
+        "mode": "READ_ONLY",
+        "vm_id": vm_id,
+        "collected_at": stamp,
+        "version": version,
+        "interfaces": rows,
+        "vlans": clean_vlans,
+        "issues": issues,
+        "all_interfaces_matched": not issues,
+        "unmapped_runtime_devices": sorted(set(runtime) - seen_devices),
+        "unmatched_vm_interfaces": sorted(target_ids - {r["match"]["id"] for r in rows if r["match"]}),
+    }
 
 
 def load_snapshot(path):
@@ -253,12 +258,12 @@ def netbox_preview(snapshot_path, vm_id):
         vm = VirtualMachine.objects.get(pk=vm_id)
         interfaces = list(vm.interfaces.select_related("primary_mac_address").all()[:513])
         inventory = [
-            dict(
-                id=iface.pk,
-                vm_id=iface.virtual_machine_id,
-                name=iface.name,
-                mac=str(iface.primary_mac_address.mac_address) if iface.primary_mac_address_id else None,
-            )
+            {
+                "id": iface.pk,
+                "vm_id": iface.virtual_machine_id,
+                "name": iface.name,
+                "mac": str(iface.primary_mac_address.mac_address) if iface.primary_mac_address_id else None,
+            }
             for iface in interfaces
         ]
     result = build_preview(snapshot, inventory, vm_id)

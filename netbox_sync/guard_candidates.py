@@ -27,13 +27,13 @@ def envelope(plan, run_id, source, digest):
         for item in plan["items"]
         if item["object_kind"] == "virtualization.virtual_machines" and item["action"] == "CREATE"
     ]
-    return dict(
-        format="sync-guard-candidates-v1",
-        run_id=str(UUID(str(run_id))),
-        source_instance=source,
-        plan_digest=digest,
-        candidates=candidates,
-    )
+    return {
+        "format": "sync-guard-candidates-v1",
+        "run_id": str(UUID(str(run_id))),
+        "source_instance": source,
+        "plan_digest": digest,
+        "candidates": candidates,
+    }
 
 
 def main():

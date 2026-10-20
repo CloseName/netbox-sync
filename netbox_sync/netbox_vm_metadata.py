@@ -1,3 +1,5 @@
+"""Build and match managed VM identity and custom-field metadata."""
+
 MANAGED_VM_CUSTOM_FIELDS = (
     "sync_identities",
     "sync_original_names",

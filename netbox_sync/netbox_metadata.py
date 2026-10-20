@@ -1,3 +1,5 @@
+"""Build host custom fields and match managed device identities."""
+
 MANAGED_DEVICE_CUSTOM_FIELDS = (
     "hardware_identity",
     "sync_identities",

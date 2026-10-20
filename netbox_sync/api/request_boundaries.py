@@ -12,7 +12,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
-from ..application.observability import ErrorCode
 from ..application.sources import SourceReadError
 from ..application.runs import RunReadError
 from ..application.schedules import ScheduleReadError
@@ -109,7 +108,10 @@ def _install_boundaries(app, settings, auth_client):
             ),
             "SOURCE_ARCHIVED": (
                 409,
-                "This registration generation is permanently archived. Start a new registration; old operations cannot be reused.",
+                (
+                    "This registration generation is permanently archived. Start a "
+                    "new registration; old operations cannot be reused."
+                ),
             ),
             "SOURCE_ARCHIVE_REVIEW_REQUIRED": (
                 409,
@@ -133,19 +135,32 @@ def _install_boundaries(app, settings, auth_client):
             ),
             "RETIREMENT_TOKEN_WRITE_REQUIRED": (
                 403,
-                "The integration token forbids writes. Source audit requires write permission only to record its AUDIT_ONLY journal entry.",
+                (
+                    "The integration token forbids writes. Source audit requires "
+                    "write permission only to record its AUDIT_ONLY journal entry."
+                ),
             ),
             "RETIREMENT_AUDIT_PERMISSION_REQUIRED": (
                 403,
-                "The NetBox service account lacks audit permission on Guard RetirementIntent. Grant scoped audit permission; Sync Admin is a separate role.",
+                (
+                    "The NetBox service account lacks audit permission on Guard "
+                    "RetirementIntent. Grant scoped audit permission; Sync Admin is a "
+                    "separate role."
+                ),
             ),
             "RETIREMENT_SOURCE_SCOPE_DENIED": (
                 403,
-                "Guard audit permission does not cover this Source ID. Review the ObjectPermission source_instance constraint.",
+                (
+                    "Guard audit permission does not cover this Source ID. Review the "
+                    "ObjectPermission source_instance constraint."
+                ),
             ),
             "RETIREMENT_OBJECT_VIEW_DENIED": (
                 403,
-                "At least one source object is outside the service account view permissions. No object details were returned.",
+                (
+                    "At least one source object is outside the service account view "
+                    "permissions. No object details were returned."
+                ),
             ),
             "RETIREMENT_UNAVAILABLE": (
                 503,
@@ -243,19 +258,51 @@ def _install_boundaries(app, settings, auth_client):
     async def host_registration_error(request, exc):
         messages = {
             "HOST_SOURCE_CLOSED": "This source was fully removed. Start a new registration with a new Source ID.",
-            "HOST_INTEGRATION_UPGRADE_REQUIRED": "NetBox Guard must support the source namespace check before registration. Ask the NetBox operator to update the integration.",
-            "HOST_INTEGRATION_UNAVAILABLE": "The NetBox integration check is unavailable. No source registration was started.",
-            "HOST_ARCHIVE_RECHECK_REQUIRED": "An archived generation was restored. An administrator must recheck its original Guard receipt before registration.",
-            "HOST_SOURCE_ARCHIVE_REQUIRED": "This previous generation requires closure, not identity recovery. Review its retained objects and archive it before a new registration.",
-            "HOST_LEGACY_PLACEMENT_PROTECTED": "This placement contains unverified legacy ownership. Select a separate placement or review the old object identity; isolation does not authorize adoption.",
-            "HOST_REGISTRY_REVIEW_REQUIRED": "An existing ESXi source lacks verified hardware identity. Administrator identity review is required before adding a host.",
-            "HOST_REGISTRATION_INTENT_CHANGED": "This attempt already started with different parameters. Restore the original confirmed parameters; do not create another source.",
+            "HOST_INTEGRATION_UPGRADE_REQUIRED": (
+                "NetBox Guard must support the source namespace check before "
+                "registration. Ask the NetBox operator to update the integration."
+            ),
+            "HOST_INTEGRATION_UNAVAILABLE": (
+                "The NetBox integration check is unavailable. No source " "registration was started."
+            ),
+            "HOST_ARCHIVE_RECHECK_REQUIRED": (
+                "An archived generation was restored. An administrator must "
+                "recheck its original Guard receipt before registration."
+            ),
+            "HOST_SOURCE_ARCHIVE_REQUIRED": (
+                "This previous generation requires closure, not identity "
+                "recovery. Review its retained objects and archive it before a "
+                "new registration."
+            ),
+            "HOST_LEGACY_PLACEMENT_PROTECTED": (
+                "This placement contains unverified legacy ownership. Select a "
+                "separate placement or review the old object identity; isolation "
+                "does not authorize adoption."
+            ),
+            "HOST_REGISTRY_REVIEW_REQUIRED": (
+                "An existing ESXi source lacks verified hardware identity. "
+                "Administrator identity review is required before adding a host."
+            ),
+            "HOST_REGISTRATION_INTENT_CHANGED": (
+                "This attempt already started with different parameters. Restore "
+                "the original confirmed parameters; do not create another source."
+            ),
             "HOST_REGISTRATION_INVALID": "A stable registration request ID is required. Reload the registration form.",
             "HOST_IDENTITY_UNAVAILABLE": "A reliable host identity could not be verified. Registration is blocked.",
-            "HOST_SOURCE_REMOVED": "This host belongs to a removed source. An administrator must review recovery of the original source.",
-            "HOST_ALREADY_REGISTERED": "This host already belongs to a source. Open that source; removed sources require administrator recovery.",
-            "HOST_IDENTITY_CONFLICT": "Several source records contain the same host identifier. Administrator reconciliation is required.",
-            "HOST_REGISTRATION_RESERVED": "An earlier registration reserved this host. Reconcile that attempt before registering again.",
+            "HOST_SOURCE_REMOVED": (
+                "This host belongs to a removed source. An administrator must "
+                "review recovery of the original source."
+            ),
+            "HOST_ALREADY_REGISTERED": (
+                "This host already belongs to a source. Open that source; removed "
+                "sources require administrator recovery."
+            ),
+            "HOST_IDENTITY_CONFLICT": (
+                "Several source records contain the same host identifier. " "Administrator reconciliation is required."
+            ),
+            "HOST_REGISTRATION_RESERVED": (
+                "An earlier registration reserved this host. Reconcile that " "attempt before registering again."
+            ),
         }
         request.state.error_code = exc.code
         existing = (
@@ -276,7 +323,7 @@ def _install_boundaries(app, settings, auth_client):
             from ..source_config import SOURCE_INSTANCE_PATTERN
 
             entries = [
-                dict(source_instance=row["source_instance"], state=row["state"])
+                {"source_instance": row["source_instance"], "state": row["state"]}
                 for row in exc.conflicts[:100]
                 if isinstance(row, dict)
                 and isinstance(row.get("source_instance"), str)
@@ -307,23 +354,42 @@ def _install_boundaries(app, settings, auth_client):
             "SOURCE_AUTH_FAILED": (422, "Source authentication failed"),
             "SOURCE_PERMISSION_DENIED": (
                 422,
-                "The source denied inventory access. Grant the service account read access at the ESXi host root, including children; keep lockdown enabled.",
+                (
+                    "The source denied inventory access. Grant the service account "
+                    "read access at the ESXi host root, including children; keep "
+                    "lockdown enabled."
+                ),
             ),
             "HOST_IDENTITY_MISSING": (
                 422,
-                "ESXi returned no hardware UUID in either host summary or hardware data. Verify SMBIOS system UUID and inventory visibility with the ESXi administrator; names and IP addresses cannot replace it.",
+                (
+                    "ESXi returned no hardware UUID in either host summary or "
+                    "hardware data. Verify SMBIOS system UUID and inventory "
+                    "visibility with the ESXi administrator; names and IP addresses "
+                    "cannot replace it."
+                ),
             ),
             "HOST_IDENTITY_INVALID": (
                 422,
-                "ESXi returned an invalid or placeholder hardware UUID. Verify SMBIOS system identity on the host before retrying.",
+                (
+                    "ESXi returned an invalid or placeholder hardware UUID. Verify "
+                    "SMBIOS system identity on the host before retrying."
+                ),
             ),
             "HOST_IDENTITY_INCONSISTENT": (
                 422,
-                "ESXi summary and hardware return different BIOS UUIDs. Re-read both fields under the same service account and investigate the discrepancy before retrying; neither value was selected.",
+                (
+                    "ESXi summary and hardware return different BIOS UUIDs. Re-read "
+                    "both fields under the same service account and investigate the "
+                    "discrepancy before retrying; neither value was selected."
+                ),
             ),
             "HOST_INVENTORY_EMPTY": (
                 422,
-                "No ESXi host is visible to this account. Verify host-root read permissions and lockdown account access.",
+                (
+                    "No ESXi host is visible to this account. Verify host-root read "
+                    "permissions and lockdown account access."
+                ),
             ),
             "SOURCE_TLS_FAILED": (422, "Source TLS verification failed"),
             "SOURCE_TIMEOUT": (504, "Source connection timed out"),
@@ -398,12 +464,12 @@ def _install_boundaries(app, settings, auth_client):
             "APPLY_LOCKED": 409,
             "OUTCOME_UNCERTAIN": 503,
         }
-        diagnostic = dict(
-            event_id=exc.event_id or request.state.request_id,
-            reason=exc.reason,
-            categories=exc.categories,
-            stage="validation",
-        )
+        diagnostic = {
+            "event_id": exc.event_id or request.state.request_id,
+            "reason": exc.reason,
+            "categories": exc.categories,
+            "stage": "validation",
+        }
         LOGGER.warning(
             json.dumps(
                 dict(component="api", code=exc.code, request_id=request.state.request_id, **diagnostic), sort_keys=True

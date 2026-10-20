@@ -134,23 +134,23 @@ class RegistrationRequest(PublicModel):
             raise ValueError("Cluster creation must match the source name and confirmed registration")
         try:
             source_view(
-                dict(
-                    source_instance=self.source_instance,
-                    source_type=self.source_type,
-                    name=self.name,
-                    address=self.address,
-                    enabled=True,
-                    sync_enabled=False,
-                    verify_ssl=self.verify_ssl,
-                    sync_interval_seconds=self.sync_interval_seconds,
-                    site_slug=self.site_slug,
-                    cluster_name=self.cluster_name,
-                    platform_slug=self.platform_slug,
-                    device_role_slug=self.device_role_slug,
-                    device_type_slug=self.device_type_slug,
-                    cluster_type_slug=self.cluster_type_slug,
-                    legacy_identity_owner=False,
-                )
+                {
+                    "source_instance": self.source_instance,
+                    "source_type": self.source_type,
+                    "name": self.name,
+                    "address": self.address,
+                    "enabled": True,
+                    "sync_enabled": False,
+                    "verify_ssl": self.verify_ssl,
+                    "sync_interval_seconds": self.sync_interval_seconds,
+                    "site_slug": self.site_slug,
+                    "cluster_name": self.cluster_name,
+                    "platform_slug": self.platform_slug,
+                    "device_role_slug": self.device_role_slug,
+                    "device_type_slug": self.device_type_slug,
+                    "cluster_type_slug": self.cluster_type_slug,
+                    "legacy_identity_owner": False,
+                }
             )
         except SourceReadError:
             raise ValueError("Invalid source metadata") from None

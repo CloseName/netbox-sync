@@ -101,7 +101,11 @@ def build_runtime_plan(nb_api, hosts, config):
                     name=host.original_name,
                     action=SyncAction.BLOCKED,
                     reason_code=error.code,
-                    reason="Selectel hardware matching requires review. Refresh provider inventory and check duplicate hardware identifiers and existing source bindings.",
+                    reason=(
+                        "Selectel hardware matching requires review. Refresh provider "
+                        "inventory and check duplicate hardware identifiers and existing "
+                        "source bindings."
+                    ),
                 ),
             ),
         )
@@ -130,7 +134,11 @@ def build_runtime_plan(nb_api, hosts, config):
                     name=netbox_vm_name(vms[0]),
                     action=SyncAction.BLOCKED,
                     reason_code="DUPLICATE_VM_NAME",
-                    reason="Multiple source VMs have the same NetBox name (case-insensitive, first 64 characters). Rename them in the source and build a new plan.",
+                    reason=(
+                        "Multiple source VMs have the same NetBox name (case-insensitive, "
+                        "first 64 characters). Rename them in the source and build a new "
+                        "plan."
+                    ),
                 )
                 for name, vms in sorted(duplicate_names.items())
             ),

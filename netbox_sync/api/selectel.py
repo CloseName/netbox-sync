@@ -42,7 +42,7 @@ def routes(settings):
     def call(request, operation, data):
         result = control(
             settings.bootstrap_socket,
-            dict(action="selectel", operation=operation, session=request.cookies.get(COOKIE), data=data),
+            {"action": "selectel", "operation": operation, "session": request.cookies.get(COOKIE), "data": data},
             timeout=100 if operation.startswith("lifecycle-") else 10,
             response_limit=2 * 1024 * 1024,
         )["result"]

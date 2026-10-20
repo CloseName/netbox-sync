@@ -1,6 +1,7 @@
+"""Map Proxmox VE API inventory into provider-neutral discovery models."""
+
 from .proxmox_components import qemu_interfaces, qemu_disks, lxc_interfaces, lxc_disks
 
-"""Map Proxmox VE API inventory into provider-neutral discovery models."""
 
 import logging
 import re

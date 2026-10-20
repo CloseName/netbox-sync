@@ -1,3 +1,5 @@
+"""Build and match managed guest interface identity metadata."""
+
 from .netbox_vm_metadata import (
     vm_identity_source_id,
 )

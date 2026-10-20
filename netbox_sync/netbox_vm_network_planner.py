@@ -1,3 +1,5 @@
+"""Orchestrate read-only VM interface, MAC, IP, VLAN and primary-IP planning."""
+
 from .vm_network_plan_report import print_vm_network_plan_summary
 from .vm_network_plan_interfaces import validate_plan_interfaces, match_plan_interface
 from .vm_network_plan_vlan import plan_interface_vlan
@@ -6,7 +8,7 @@ from .vm_network_plan_ip import plan_interface_ips
 from .vm_network_plan_mac import plan_interface_mac
 from .vm_network_plan_inventory import prepare_vm_network_plan_inventory
 from .netbox_record_values import object_id as _object_id
-from .interface_display import interface_display_name, validate_interface_names
+from .interface_display import validate_interface_names
 from .netbox_vm_network_apply import _interface_match
 from .netbox_vm_interface_metadata import find_nic_sync_identity_matches
 import ipaddress

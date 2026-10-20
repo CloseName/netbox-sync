@@ -1,6 +1,5 @@
 """Strict write contract; bind secrets are never part of a read projection."""
 
-from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 

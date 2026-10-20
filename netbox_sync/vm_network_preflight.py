@@ -3,7 +3,7 @@
 from .netbox_record_values import object_id as _object_id
 from .interface_display import interface_display_name, validate_interface_names
 import ipaddress
-from .network_scopes import scope_key, object_id as scope_object_id
+from .network_scopes import scope_key
 
 from .netbox_vm_metadata import (
     find_vm_sync_identity_matches,

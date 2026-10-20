@@ -251,7 +251,10 @@ def plan_from_mutations(review, config, mutations):
                 action=SyncAction.CREATE if mutation.operation == "create" else SyncAction.UPDATE,
                 reason_code="VM_GENERATION_REPLACE" if mutation.operation == "replace" else "GUARDED_EXECUTOR_ACTION",
                 reason=(
-                    "Recreated VM: reuse its creation-proven NetBox card, replace the old UUID and rebuild unconnected owned components."
+                    (
+                        "Recreated VM: reuse its creation-proven NetBox card, replace the "
+                        "old UUID and rebuild unconnected owned components."
+                    )
                     if mutation.operation == "replace"
                     else "Existing guarded executor would perform this managed-field mutation."
                 ),

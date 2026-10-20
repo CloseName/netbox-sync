@@ -80,6 +80,6 @@ def bounded_json(value):
 
 
 def import_payload(account, nonce, result):
-    payload = dict(account=account, nonce=nonce, document=result["document"], registry=result["registry"])
+    payload = {"account": account, "nonce": nonce, "document": result["document"], "registry": result["registry"]}
     bounded_json(payload)
     return payload

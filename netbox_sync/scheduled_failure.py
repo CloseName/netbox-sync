@@ -99,14 +99,14 @@ def record(exc, evidence, run_id):
     except (ValueError, TypeError, AttributeError):
         identifier = None
     name = type(exc).__name__
-    value = dict(
-        event="SCHEDULED_FAILURE",
-        run_id=identifier,
-        stage=evidence.stage,
-        exception_class=name if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,100}", name) else "Exception",
-        frames=diagnostic(exc, "planning")["frames"],
-        write_outcome="MAY_HAVE_WRITTEN" if evidence.writes_possible else "NOT_STARTED",
-    )
+    value = {
+        "event": "SCHEDULED_FAILURE",
+        "run_id": identifier,
+        "stage": evidence.stage,
+        "exception_class": name if re.fullmatch("[A-Za-z_][A-Za-z0-9_.]{0,100}", name) else "Exception",
+        "frames": diagnostic(exc, "planning")["frames"],
+        "write_outcome": "MAY_HAVE_WRITTEN" if evidence.writes_possible else "NOT_STARTED",
+    }
     current = exc
     seen = set()
     for _ in range(4):
