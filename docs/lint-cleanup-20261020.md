@@ -294,3 +294,13 @@ are unchanged apart from documentation metadata. Focused suite before and after:
 95 passed, 27 platform skips, one existing warning. Full Pylint: 9.12/10, zero
 Error/Fatal. Remaining missing docs: 68 classes and 360 functions. Black and
 whitespace pass. Last full executable-code suite: 2247 passed, 485 skipped.
+
+## Stage 20: placement resolution stages
+
+Separate request validation, site selection, host-type resolution and cluster
+matching. Keep catalog lookup/projection/creation callbacks distinct, retain
+query order and refuse automatic preparation without a selected site. Eight new
+cases pass before extraction; all 50 focused tests pass after. Full suite: 2255
+passed, 485 skipped, one existing warning. Pylint: 9.12/10, zero Error/Fatal;
+no complexity or missing-doc findings remain in placement_resolution. Black and
+whitespace pass. Exact integer checks still reject boolean IDs/counts.

@@ -114,3 +114,54 @@ def test_missing_dependencies_are_not_name_conflicts(missing):
     result = resolve(payload, listing, project)
     assert any(i['kind'] == missing for i in result['issues'])
     assert not any(i['kind'] == 'cluster' for i in result['issues'])
+
+
+@pytest.mark.parametrize('site_present', [True, False])
+def test_ensure_order_and_site_gate_preserve_unknown_hardware(site_present):
+    from copy import deepcopy
+    rows, payload, listing = fixture()
+    available = deepcopy(rows)
+    payload['hosts'][0].update(model=None, manufacturer=None)
+    for kind in ('platform', 'cluster_type', 'device_role', 'device_type'):
+        rows[kind] = []
+    if not site_present:
+        rows['site'] = []
+    calls = []
+    def ensure(kind, specification):
+        calls.append((kind, specification))
+        return project(kind, available[kind][0])
+    result = resolve(payload, listing, project, ensure=ensure)
+    if site_present:
+        assert [kind for kind, _ in calls] == ['platform', 'cluster_type', 'device_role', 'device_type']
+        assert calls[-1][1] == {'model': 'Оборудование не определено', 'manufacturer_name': 'Unknown'}
+        assert not result['issues'] and result['create_cluster']
+    else:
+        assert calls == [] and not result['create_cluster']
+        assert not result['host_types']
+
+
+def test_invalid_host_is_rejected_after_standard_catalog_queries():
+    from netbox_sync.bootstrap_probe import ProbeError
+    rows, payload, listing = fixture()
+    payload['hosts'] = [None]
+    calls = []
+    def recorded(kind, search):
+        calls.append(kind)
+        return listing(kind, search)
+    with pytest.raises(ProbeError, match='RESPONSE_INVALID'):
+        resolve(payload, recorded, project)
+    assert calls == ['site', 'platform', 'cluster_type', 'device_role']
+
+
+@pytest.mark.parametrize('change', [
+    {'provider': 'unsupported'}, {'hosts': []}, {'hosts': 'invalid'},
+    {'name': None}, {'host_types': {'foreign': {}}},
+])
+def test_invalid_placement_request_never_reads_catalog(change):
+    from netbox_sync.bootstrap_probe import ProbeError
+    rows, payload, listing = fixture()
+    payload.update(change)
+    def forbidden(*args):
+        raise AssertionError('invalid request reached catalog')
+    with pytest.raises(ProbeError, match='SELECTION_REQUIRED'):
+        resolve(payload, forbidden, project)
