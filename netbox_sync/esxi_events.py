@@ -33,10 +33,14 @@ TYPES = {
 
 
 def text(value, limit=256):
+    """Strip nonprintable characters and bound event text."""
+
     return "".join(c for c in str(value or "") if c.isprintable())[:limit]
 
 
 def normalize(event, source, host):
+    """Project a supported ESXi event into bounded, timestamped evidence with a stable digest."""
+
     kind = type(event).__name__.split(".")[-1]
     if kind not in TYPES:
         return None
@@ -175,6 +179,8 @@ def merge_events(previous, observed, source, host):
 
 
 def apply_event_snapshots(api, hosts):
+    """Merge event evidence only for uniquely matched hosts with a ready custom field."""
+
     from .netbox_metadata import find_sync_identity_matches
     from .prerequisites import reconcile
 

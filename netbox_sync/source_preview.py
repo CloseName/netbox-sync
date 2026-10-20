@@ -8,6 +8,8 @@ MAX_HOSTS = 16
 
 
 def text(value):
+    """Normalize bounded printable host-preview text, preserving missing values."""
+
     if not isinstance(value, str):
         return None
     value = "".join(c for c in value if c >= " " and c != "\x7f").strip()
@@ -18,6 +20,8 @@ def esxi(content):
     # A standalone HostAgent exposes rootFolder -> Datacenter -> hostFolder ->
     # ComputeResource -> host. No VM or guest property reads; hardware identity
     # is compared across summary and hardware without reading VM inventory.
+    """Build a bounded standalone ESXi host preview without reading guest inventory."""
+
     if getattr(content.about, "apiType", None) != "HostAgent":
         raise ValueError("Standalone ESXi required")
     nodes = [content.rootFolder]
@@ -82,6 +86,8 @@ def _host_external_id_summary(host, summary):
 
 
 def proxmox(credentials, host, context, getter):
+    """Build a bounded Proxmox node preview from cluster and node status APIs."""
+
     headers = {"Authorization": f"PVEAPIToken={credentials.username}!{credentials.token_id}={credentials.secret}"}
 
     def get(path):

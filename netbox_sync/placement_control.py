@@ -12,6 +12,8 @@ KINDS = {"site", "cluster", "platform", "device_role", "cluster_type"}
 
 
 def row(store, connection, source):
+    """Read an existing source and reject an active removal tombstone."""
+
     value = connection.execute(
         sql.SQL("SELECT * FROM {} WHERE source_instance=%s").format(store.table("sources")), (source,)
     ).fetchone()
@@ -29,6 +31,8 @@ def row(store, connection, source):
 
 
 def evidence(store, connection, source):
+    """Require recent bounded discovery evidence with unique host identifiers."""
+
     operation = connection.execute(
         sql.SQL(
             (
@@ -57,6 +61,8 @@ def evidence(store, connection, source):
 
 def choice(kind, value):
     # Return only the same bounded projection used by the catalog API.
+    """Reproject a catalog selection and require its saved fingerprint to match."""
+
     result = project(kind, {**value, **({"model": value.get("name")} if kind == "device_type" else {})})
     if result["fingerprint"] != value.get("fingerprint"):
         raise LifecycleError("REQUEST_INVALID")
@@ -64,6 +70,8 @@ def choice(kind, value):
 
 
 def read(store, source):
+    """Return source-revision-bound placement and discovery evidence under the source gate."""
+
     with store.connect() as connection, source_gate(connection, store.schema, source):
         current = row(store, connection, source)
         identifier, hosts = evidence(store, connection, source)
@@ -92,6 +100,8 @@ def read(store, source):
 
 
 def save(store, source, revision, discovery_id, mapping):
+    """Fence placement changes against active work and invalidate ready plans after the update."""
+
     with store.lock(store.lock_path):
         with store.connect() as connection, source_gate(connection, store.schema, source):
             current = row(store, connection, source)

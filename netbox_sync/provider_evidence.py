@@ -4,6 +4,8 @@ from .api.dto import DiscoveryHostDTO
 
 
 def validate(value, source):
+    """Validate exact source-bound discovery evidence with one to sixteen unique hosts."""
+
     if not isinstance(value, dict) or set(value) != {"source_instance", "hosts"} or value["source_instance"] != source:
         raise ValueError("Invalid provider evidence")
     rows = value["hosts"]

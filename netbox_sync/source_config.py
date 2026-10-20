@@ -190,6 +190,8 @@ class SourceConfig:
 
     @property
     def api_port(self):
+        """Resolve the explicit or provider-default API port from source settings."""
+
         return source_port(self.source_type, self.settings.get("api_port"))
 
     @classmethod

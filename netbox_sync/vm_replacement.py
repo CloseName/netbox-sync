@@ -8,6 +8,8 @@ from .netbox_auth import authorization
 
 
 def configure(api):
+    """Attach a bounded read-only replacement-review adapter when the API supports it."""
+
     if getattr(api, "replacement_review", None) is not None:
         return
     if not all(hasattr(api, key) for key in ("http_session", "token", "base_url")):

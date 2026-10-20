@@ -4,12 +4,18 @@ from .hardware_identity import canonical, tokens, compare, selectel_observation
 
 
 class SelectelMatchError(ValueError):
+    """Experimental reverse matching requires explicit hardware identity review."""
+
     def __init__(self, code):
+        """Retain the closed hardware matching refusal code."""
+
         self.code = code
         super().__init__(code)
 
 
 def matches(candidates, host):
+    """Match fresh typed Selectel hardware evidence, refusing conflicts or already-managed hosts."""
+
     wanted = tokens(getattr(host, "hardware_identity", None))
     if not wanted:
         return []

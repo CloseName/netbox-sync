@@ -25,6 +25,8 @@ CODES = frozenset(
 
 
 def handle(payload):
+    """Authorize a session-bound probe before running a bounded provider connection test."""
+
     destination_only = payload.pop("destination_only", False)
     if type(destination_only) is not bool:
         raise ControlError("CONTROL_REQUEST_INVALID")
@@ -63,6 +65,8 @@ def handle(payload):
 
 
 def remote_test(path, credentials, policy):
+    """Send the legacy policy-bearing probe envelope and normalize its closed failure result."""
+
     try:
         response = request(
             path, {"credentials": asdict(credentials), "policy": asdict(policy)}, timeout=PROBE_DEADLINE + 3
@@ -79,6 +83,8 @@ def remote_test(path, credentials, policy):
 
 
 def remote_test_authorized(path, credentials, session, revision, preview=False, destination_only=False):
+    """Request a session-authorized probe, preserving known auth and onboarding failure codes."""
+
     from .auth_policy import AuthError, CODES as AUTH_CODES
 
     try:

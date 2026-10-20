@@ -2,6 +2,8 @@
 
 
 def prepare_host_plan_targets(nb_api, hosts, config, *, _get_required, cluster_filter):
+    """Validate reviewed mappings and resolve planning prerequisites, allowing an absent cluster."""
+
     from .host_mapping import validate
 
     validate(nb_api, config, hosts)

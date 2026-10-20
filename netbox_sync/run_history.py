@@ -103,6 +103,8 @@ class ActionCounts:
 
     @classmethod
     def from_items(cls, items):
+        """Count recognized action names from mapping or typed plan items."""
+
         totals = {name: 0 for name in ACTION_NAMES}
         for item in items or ():
             action = item.get("action") if isinstance(item, dict) else getattr(item, "action", None)
@@ -178,6 +180,8 @@ class RunRepository:
             )
 
     def scheduled_reconciliation_required(self, source_instance):
+        """Check unresolved runs and migration-aware recovery schedule blocks."""
+
         if self.reconciliation_required(source_instance):
             return True
         with self._connect() as connection:

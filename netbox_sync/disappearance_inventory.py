@@ -2,6 +2,8 @@
 
 
 def resolve_disappearance_target(nb_api, config, *, cluster_filter):
+    """Require a visible site and exactly one cluster scoped to it."""
+
     site = nb_api.dcim.sites.get(slug=config.site_slug)
 
     if site is None:
@@ -24,6 +26,8 @@ def resolve_disappearance_target(nb_api, config, *, cluster_filter):
 
 
 def load_disappearance_inventory(nb_api, cluster, *, _object_id):
+    """Load cluster guests and index guest interfaces by their parent identifier."""
+
     target_vms = list(nb_api.virtualization.virtual_machines.filter(cluster_id=cluster.id))
 
     all_interfaces = list(nb_api.virtualization.interfaces.all())

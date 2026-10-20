@@ -13,6 +13,8 @@ def collect_discovered_identities(
     lxc_source_identity,
     lxc_nic_source_identity,
 ):
+    """Collect legacy and v2 guest/NIC identities with their permitted source scopes."""
+
     source_scopes = set()
     source_instances = set()
     discovered_guests = set()
@@ -78,6 +80,8 @@ def collect_discovered_identities(
 
 
 def build_managed_identity_resolver(source_scopes, source_instances, *, _identities, _v2_identities):
+    """Build a resolver that prefers unique in-scope v2 identities over legacy identities."""
+
     def managed_identity(
         custom_fields,
     ):

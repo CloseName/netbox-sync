@@ -15,6 +15,8 @@ ADMIN_SOCKET = "/run/netbox-sync-auth-admin/worker.sock"
 
 
 def store():
+    """Build the auth store from writer settings and the environment policy baseline."""
+
     return AuthStore(
         os.environ.get("NETBOX_SYNC_AUTH_WRITER_DSN", ""),
         os.environ.get("NETBOX_SYNC_REGISTRY_SCHEMA", ""),
@@ -23,10 +25,14 @@ def store():
 
 
 def admin():
+    """Serve root-only administrative auth commands."""
+
     serve(ADMIN_SOCKET, lambda payload: store().call(payload, root=True), allowed_uid=0)
 
 
 def pfsense_policy():
+    """Expose only the exact root-only pfSense policy read request."""
+
     def read(payload):
         if payload != {"action": "policy"}:
             raise AuthError("AUTH_INVALID")
@@ -36,6 +42,8 @@ def pfsense_policy():
 
 
 def directory_sync():
+    """Poll due directory synchronization while keeping failures out of daemon output."""
+
     import time
 
     while True:
@@ -47,6 +55,8 @@ def directory_sync():
 
 
 def main():
+    """Dispatch administrative CLI calls or supervise the local authentication services."""
+
     if len(sys.argv) > 1:
         if os.geteuid() != 0:
             raise SystemExit("Root required")

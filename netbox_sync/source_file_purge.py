@@ -10,6 +10,8 @@ from .source_config import SOURCE_INSTANCE_PATTERN
 
 
 def purge_source_files(root, source):
+    """Validate all source-bound journals before deleting them and syncing the private directory."""
+
     if not isinstance(source, str) or not SOURCE_INSTANCE_PATTERN.fullmatch(source):
         raise ControlError("CONTROL_REQUEST_INVALID")
     store = BootstrapStore(root)

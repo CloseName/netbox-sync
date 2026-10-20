@@ -8,6 +8,8 @@ from .pfsense_control import handle, state_root
 
 
 def tick(store, lock_path):
+    """Attempt scheduled pfSense collections and defer remaining work while apply is active."""
+
     root = state_root(store)
     if not root.exists():
         return
@@ -34,6 +36,8 @@ def tick(store, lock_path):
 
 
 def main():
+    """Poll pfSense collection scheduling with closed service-availability warnings."""
+
     store = BootstrapStore(os.environ.get("NETBOX_SYNC_NETBOX_STATE_DIR", "/var/lib/netbox-sync/netbox"))
     lock = os.environ.get("NETBOX_SYNC_APPLY_LOCK_PATH", "/run/netbox-sync-lock/apply.lock")
     while True:

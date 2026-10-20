@@ -10,6 +10,8 @@ def _text(value):
 
 
 def collect_neighbors(host):
+    """Collect optional CDP/LLDP evidence without claiming provider-confirmed switch ports."""
+
     result = {"version": 1, "status": "unavailable", "observations": [], "provider_port_confirmed": False}
     try:
         manager = getattr(getattr(host, "configManager", None), "networkSystem", None)

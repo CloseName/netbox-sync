@@ -12,6 +12,8 @@ from psycopg.rows import dict_row
 
 
 def envelope(plan, run_id, source, digest):
+    """Verify the saved plan digest and project its VM creation candidates for one run."""
+
     if not isinstance(plan, dict) or plan.get("source_instance") != source or plan.get("digest") != digest:
         raise ValueError("SAVED_PLAN_UNAVAILABLE_OR_REPLACED")
     canonical = {k: v for k, v in plan.items() if k != "digest"}
@@ -37,6 +39,8 @@ def envelope(plan, run_id, source, digest):
 
 
 def main():
+    """Export saved candidates in a read-only transaction without contacting providers or NetBox."""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", required=True)
     parser.add_argument("--run-id", type=UUID, required=True)

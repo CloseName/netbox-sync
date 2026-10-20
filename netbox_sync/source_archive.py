@@ -6,6 +6,8 @@ from .source_lifecycle import LifecycleError
 
 
 def archived(connection, schema, source):
+    """Check the source archive marker while supporting schemas predating the archive table."""
+
     present = connection.execute("SELECT to_regclass(%s)", (schema + ".source_archives",)).fetchone()
     exists = (present.get("to_regclass") if isinstance(present, dict) else present[0]) if present else None
     return bool(

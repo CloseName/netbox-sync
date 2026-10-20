@@ -16,6 +16,8 @@ class SchedulerTickResult:
 
     @property
     def counts(self):
+        """Count scheduling states only for successfully evaluated decisions."""
+
         result = {name: 0 for name in ("disabled", "waiting", "due", "running", "delayed")}
         for decision in self.decisions:
             if decision.evaluation_status is ScheduleEvaluationStatus.OK:

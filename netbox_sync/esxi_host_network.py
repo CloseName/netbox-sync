@@ -4,6 +4,8 @@ import json
 
 
 def value(obj, path, default=None):
+    """Follow an SDK attribute path, returning the default at the first missing value."""
+
     for part in path.split("."):
         obj = getattr(obj, part, None)
         if obj is None:
@@ -12,15 +14,21 @@ def value(obj, path, default=None):
 
 
 def text(obj, path):
+    """Render a present SDK attribute as text while preserving absence."""
+
     result = value(obj, path)
     return None if result is None else str(result)
 
 
 def ordered(rows):
+    """Sort topology records by their canonical JSON representation."""
+
     return sorted(rows, key=lambda row: json.dumps(row, sort_keys=True, ensure_ascii=True))
 
 
 def collect_host_network(host):
+    """Capture available host topology without inferring distributed or opaque connections."""
+
     network = value(host, "config.network")
     if network is None:
         return {"version": 1, "available": False}
@@ -99,7 +107,11 @@ def collect_host_network(host):
 
 
 class HostNetworkPrerequisiteError(ValueError):
+    """A required host network or hardware metadata field is not ready."""
+
     def __init__(self, name, status):
+        """Retain the incompatible field name and status for the operator-facing failure."""
+
         self.field_name = name
         self.field_status = status
         super().__init__(
@@ -108,6 +120,8 @@ class HostNetworkPrerequisiteError(ValueError):
 
 
 def require_host_network_field(api):
+    """Require compatible ESXi network and hardware identity metadata fields."""
+
     from .prerequisites import reconcile
 
     for name in ("esxi_host_network", "hardware_identity"):
