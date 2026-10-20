@@ -275,3 +275,12 @@ Existing focused suite: 132 passed before and after. Full lint: 9.09/10, zero
 Error/Fatal; missing-doc findings reduced to 98 classes and 384 functions. Black
 and whitespace checks pass. Full suite was green immediately before this
 pure documentation change (2244 passed, 485 skipped).
+
+## Stage 18: host primary-IP checks and writes
+
+Separate source-owned management target resolution from writes using a private
+validated target record. Preserve per-host order, manual primary retention, exact
+assignment/prefix checks, ambiguity refusals and idempotence. Three new ambiguity
+cases pass before and after extraction; focused suite: 47 passed. Full suite:
+2247 passed, 485 skipped, one existing warning. Pylint: 9.09/10, zero Error/Fatal;
+changed module: 10/10. Black and whitespace checks pass.

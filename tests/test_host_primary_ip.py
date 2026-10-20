@@ -187,3 +187,25 @@ def test_duplicate_names_reproduce_native_writer_failure(fake_netbox):
     with pytest.raises(RuntimeError, match='Duplicate discovered VM names'):
         execute_esxi_runtime(fake_netbox, hosts, config, confirmed=True)
     assert fake_netbox.mutations == []
+
+@pytest.mark.parametrize('mode, message', [
+    ('duplicate_host', 'one source-owned host'),
+    ('duplicate_interface', 'Ambiguous management interface'),
+    ('duplicate_ip', 'ambiguous across NetBox scopes'),
+])
+def test_primary_assignment_refuses_ambiguity_before_any_write(fake_netbox, mode, message):
+    from netbox_sync.host_primary_ip import HostPrimaryIPConflict
+    hosts, _ = prepared(fake_netbox)
+    device = fake_netbox.dcim.devices.all()[0]
+    if mode == 'duplicate_host':
+        fake_netbox.dcim.devices.add(id=999, name='duplicate', custom_fields=deepcopy(device.custom_fields))
+    elif mode == 'duplicate_interface':
+        for identifier in (77, 78):
+            fake_netbox.dcim.interfaces.add(id=identifier, device=device.id, name='vmk0', custom_fields={})
+    else:
+        for identifier in (77, 78):
+            fake_netbox.ipam.ip_addresses.add(id=identifier, address='198.51.100.10/25')
+    fake_netbox.clear_mutations()
+    with pytest.raises(HostPrimaryIPConflict, match=message):
+        apply_esxi_primary(fake_netbox, hosts)
+    assert fake_netbox.mutations == []
