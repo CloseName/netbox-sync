@@ -95,6 +95,8 @@ functions: one function can produce several findings.
   Complexity resolved; blocked-only reports, fingerprints and replay preserved.
 - Diagnostics: 2483 tests passed, 491 skipped; Pylint 9.39/10.
   Control flow resolved; public constructor and diagnostic fields preserved.
+- pfSense connection: 2487 tests passed, 491 skipped; Pylint 9.40/10.
+  Complexity resolved; session boundaries, progress and import checks preserved.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,
