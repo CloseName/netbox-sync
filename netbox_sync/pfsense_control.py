@@ -28,10 +28,14 @@ PUBLIC = (
 
 
 def public(value):
+    """Project public pfSense connection state without private key material."""
+
     return {k: value[k] for k in PUBLIC if k in value}
 
 
 def atomic(path, value):
+    """Replace private JSON state after syncing the temporary file."""
+
     temporary = path.with_suffix(".tmp")
     fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "w") as stream:
@@ -42,12 +46,16 @@ def atomic(path, value):
 
 
 def collection_due(state, now):
+    """Require enabled synchronization, prepared SSH credentials and an elapsed due time."""
+
     return bool(
         state.get("sync_enabled") and state.get("host_key") and state.get("key") and state.get("next_attempt", 0) <= now
     )
 
 
 def collector_username():
+    """Allow only the configured production or test collector account name."""
+
     value = os.environ.get("NETBOX_SYNC_PFSENSE_USER", "netbox-sync")
     if value not in ("netbox-sync", "netbox-sync-test"):
         raise ControlError("CONTROL_REQUEST_INVALID")
@@ -55,11 +63,15 @@ def collector_username():
 
 
 def state_root(store):
+    """Separate test-collector state under the pfSense directory."""
+
     base = store.root / "pfsense"
     return base if collector_username() == "netbox-sync" else base / "test"
 
 
 def handle(store, lock_path, payload, *, scheduled_policy=None):
+    """Authorize and serialize per-VM setup, scheduling and bounded collection operations."""
+
     from .api.auth import AuthClient
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from cryptography.hazmat.primitives import serialization

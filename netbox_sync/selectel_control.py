@@ -31,10 +31,14 @@ PUBLIC = (
 
 
 def public(state):
+    """Project the explicit public account fields while omitting stored credentials."""
+
     return {k: state[k] for k in PUBLIC if k in state}
 
 
 def running(state):
+    """Recognize a recent launch reservation or matching Linux process command line."""
+
     if state.get("status") != "running":
         return False
     if time.time() - state.get("started_at", 0) > 3600:
@@ -50,6 +54,8 @@ def running(state):
 
 
 def read(path):
+    """Read bounded private root-owned state without following a final symlink."""
+
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     with os.fdopen(fd) as stream:
         info = os.fstat(stream.fileno())
@@ -65,6 +71,8 @@ def read(path):
 
 
 def write(path, value):
+    """Atomically replace private account state and sync the file and containing directory."""
+
     tmp = path.parent / (uuid4().hex + ".tmp")
     fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
     try:
@@ -84,6 +92,8 @@ def write(path, value):
 
 
 def root(store):
+    """Create or validate the private root-owned Selectel state directory."""
+
     path = store.root / "selectel"
     path.mkdir(mode=0o700, exist_ok=True)
     info = path.lstat()
@@ -130,6 +140,8 @@ def launch(store, lock_path, path, state, trigger="manual"):
 
 
 def handle(store, lock_path, payload):
+    """Authorize and serialize experimental account configuration, scheduling and collection."""
+
     from .api.auth import AuthClient
     from .api.selectel import Account
 

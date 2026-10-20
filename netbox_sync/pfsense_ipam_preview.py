@@ -5,6 +5,8 @@ from collections import Counter
 
 
 def classify(address, interface_id, records, scope_selected=False, vrf_id=None):
+    """Classify one address against explicit scope and assignment evidence without writing."""
+
     wanted = ipaddress.ip_interface(address)
     if (
         wanted.version == 4
@@ -30,6 +32,8 @@ def classify(address, interface_id, records, scope_selected=False, vrf_id=None):
 
 
 def plan(preview, evidence, vrf_by_interface=None):
+    """Build read-only actions for matched interfaces and flag duplicate scoped observations."""
+
     if not preview["all_interfaces_matched"] or preview["issues"] or preview["unmatched_vm_interfaces"]:
         raise ValueError("Complete unambiguous VM interface matching is required")
     scopes = vrf_by_interface or {}
@@ -75,6 +79,8 @@ def plan(preview, evidence, vrf_by_interface=None):
 
 
 def netbox_ipam_preview(snapshot_path, vm_id, vrf_by_interface=None):
+    """Read bounded IPAM evidence in a repeatable read-only transaction and print the plan."""
+
     from django.db import connection, transaction
     from django.db.models import CharField, F, Func
     from virtualization.models import VirtualMachine

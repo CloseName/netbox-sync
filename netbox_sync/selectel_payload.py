@@ -80,6 +80,8 @@ def bounded_json(value):
 
 
 def import_payload(account, nonce, result):
+    """Build and size-check the complete experimental account-import envelope without truncation."""
+
     payload = {"account": account, "nonce": nonce, "document": result["document"], "registry": result["registry"]}
     bounded_json(payload)
     return payload

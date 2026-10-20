@@ -11,6 +11,8 @@ from tools.selectel_audit.client import AuditError
 
 
 def summary(document):
+    """Project account coverage counts and product summaries without raw audit responses."""
+
     value = account_overview(document)
     return {
         "projects": value["projects_visible"],
@@ -23,6 +25,8 @@ def summary(document):
 
 
 def run(value):
+    """Collect experimental Selectel inventory or send one configured guard operation."""
+
     if value["operation"] == "collect":
         credential = Credentials(value["account"], username=value["username"], password=value["password"])
         document = Collector(credential, profile="all", progress=lambda _: None).run()
@@ -52,6 +56,8 @@ def run(value):
 
 
 def main():
+    """Keep stdout as a bounded JSON protocol and retain uncertainty after possible writes."""
+
     value = {}
     operation = None
     try:

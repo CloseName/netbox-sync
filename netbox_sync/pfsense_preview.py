@@ -9,14 +9,20 @@ from pathlib import Path
 
 
 class SnapshotError(ValueError):
+    """Reject malformed or incomplete pfSense network evidence."""
+
     pass
 
 
 def fail():
+    """Raise the fixed snapshot-validation error without including input content."""
+
     raise SnapshotError("Invalid or incomplete network snapshot")
 
 
 def mac(value):
+    """Normalize a nonzero unicast MAC address or reject invalid evidence."""
+
     if not isinstance(value, str):
         fail()
     compact = re.sub("[:-]", "", value).lower()
@@ -28,12 +34,16 @@ def mac(value):
 
 
 def text(value, maximum=256):
+    """Require bounded text without control characters."""
+
     if not isinstance(value, str) or len(value) > maximum or any(ord(c) < 32 for c in value):
         fail()
     return value
 
 
 def runtime_interfaces(raw):
+    """Parse bounded ifconfig evidence with unique interfaces and scoped addresses."""
+
     if not isinstance(raw, str) or not raw or len(raw) > 1024 * 1024:
         fail()
     result = {}
@@ -110,6 +120,8 @@ def runtime_interfaces(raw):
 
 
 def build_preview(snapshot, inventory, vm_id):
+    """Validate configured/runtime evidence and match VM interfaces only by unambiguous MAC."""
+
     if type(vm_id) is not int or vm_id <= 0 or not isinstance(snapshot, dict):
         fail()
     if snapshot.get("schema") != "netbox-sync.pfsense.network.v1":
@@ -227,6 +239,8 @@ def build_preview(snapshot, inventory, vm_id):
 
 
 def load_snapshot(path):
+    """Load bounded JSON while rejecting duplicate object keys."""
+
     with Path(path).open("rb") as stream:
         data = stream.read(2 * 1024 * 1024 + 1)
     if len(data) > 2 * 1024 * 1024:

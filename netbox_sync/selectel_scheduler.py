@@ -7,6 +7,8 @@ from .selectel_control import root, read, write, running, launch
 
 
 def tick(store, lock_path, now=None):
+    """Launch the earliest eligible account and pause interrupted or uncertain runs."""
+
     now = time.time() if now is None else now
     with store.locked():
         base = root(store)
@@ -36,6 +38,8 @@ def tick(store, lock_path, now=None):
 
 
 def run(store, lock_path, stop):
+    """Poll experimental account schedules with closed diagnostic logging until stopped."""
+
     while not stop.is_set():
         try:
             tick(store, lock_path)
