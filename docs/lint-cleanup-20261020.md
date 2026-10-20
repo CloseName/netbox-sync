@@ -496,3 +496,12 @@ warning. Pylint 9.36/10, zero Error/Fatal; no missing class or function descript
 remain. Black checks all 227 modules; whitespace passes. Complexity audit remains
 open: 32 branch, 26 statement, 74 local-variable, 14 return and 32 boolean-expression
 findings, plus argument/record-shape compatibility metrics. Counts overlap.
+## Stage 42: pfSense preview stages
+
+Separate runtime address/detail parsing, snapshot metadata, target validation,
+configured-interface projection, matching and VLAN projection. Preserve input
+bounds, exception boundaries, matching priority and source order. Ten new edge
+cases plus 28 existing preview/IPAM cases pass before/after. Full suite: 2395
+passed, 491 skipped, one existing warning. Pylint 9.37/10, zero Error/Fatal; no
+complexity/doc findings remain in pfsense_preview. Exact integer checks intentionally
+reject booleans. Black and whitespace pass.

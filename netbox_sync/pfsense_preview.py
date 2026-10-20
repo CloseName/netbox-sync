@@ -41,6 +41,151 @@ def text(value, maximum=256):
     return value
 
 
+def _runtime_address(current, fields):
+    """Parse and deduplicate one scoped address with the existing failure boundary."""
+    try:
+        if fields[0] == "inet":
+            if fields[2] != "netmask":
+                fail()
+            mask = fields[3]
+            if mask.startswith("0x"):
+                mask = str(ipaddress.IPv4Address(int(mask, 16)))
+            prefix = ipaddress.IPv4Network("0.0.0.0/" + mask).prefixlen
+            address = ipaddress.IPv4Interface(fields[1] + "/" + str(prefix))
+            scope = None
+        else:
+            if fields[2] != "prefixlen":
+                fail()
+            host, _, scope = fields[1].partition("%")
+            address = ipaddress.IPv6Interface(host + "/" + fields[3])
+            if scope and scope != current["device"]:
+                fail()
+        value = {
+            "address": str(address),
+            "scope": scope or None,
+            "link_local": address.ip.is_link_local,
+            "ipam_candidate": not (
+                address.ip.is_link_local
+                or address.ip.is_loopback
+                or address.ip.is_multicast
+                or address.ip.is_unspecified
+            ),
+        }
+        if value not in current["addresses"]:
+            current["addresses"].append(value)
+        if len(current["addresses"]) > 512:
+            fail()
+    except (ValueError, IndexError):
+        fail()
+
+
+def _preview_targets(inventory, vm_id):
+    """Validate unique target identities and group candidate VM interfaces by MAC."""
+    targets = {}
+    target_ids = set()
+    for row in inventory:
+        if not isinstance(row, dict) or type(row.get("id")) is not int or row["id"] <= 0:
+            fail()
+        if row["id"] in target_ids or type(row.get("vm_id")) is not int or row["vm_id"] != vm_id:
+            fail()
+        target_ids.add(row["id"])
+        name = text(row.get("name"))
+        if row.get("mac"):
+            targets.setdefault(mac(row["mac"]), []).append({"id": row["id"], "name": name})
+    return targets, target_ids
+
+
+def _configured_interface(entry):
+    """Project the existing bounded configured interface fields without extra values."""
+    if not isinstance(entry, dict):
+        fail()
+    try:
+        selected = {
+            key: text(entry[key])
+            for key in (
+                "id",
+                "name",
+                "device",
+                "ipv4_config",
+                "ipv4_prefix",
+                "ipv6_config",
+                "ipv6_prefix",
+                "configured_mtu",
+            )
+        }
+        if type(entry["enabled"]) is not bool:
+            fail()
+        selected["enabled"] = entry["enabled"]
+    except (KeyError, TypeError):
+        fail()
+    return selected
+
+
+def _match_preview_interfaces(configured, runtime, targets):
+    """Preserve configured order and the existing priority of matching issues."""
+    runtime_macs = Counter(row["mac"] for row in runtime.values() if row["mac"])
+    seen_ids, seen_devices = set(), set()
+    rows, issues = [], []
+    for entry in configured:
+        selected = _configured_interface(entry)
+        device = selected["device"]
+        if not selected["id"] or not device or selected["id"] in seen_ids or device in seen_devices:
+            fail()
+        seen_ids.add(selected["id"])
+        seen_devices.add(device)
+        live = runtime.get(device)
+        matches = targets.get(live["mac"], []) if live else []
+        if live is None:
+            state = "RUNTIME_MISSING"
+        elif live["mac"] is None:
+            state = "MAC_MISSING"
+        elif runtime_macs[live["mac"]] > 1 or len(matches) > 1:
+            state = "AMBIGUOUS_MAC"
+        elif not matches:
+            state = "NO_VM_INTERFACE_MATCH"
+        else:
+            state = "MATCHED"
+        if state != "MATCHED":
+            issues.append({"device": device, "code": state})
+        rows.append(
+            {
+                "configuration": selected,
+                "runtime": live,
+                "match": matches[0] if state == "MATCHED" else None,
+                "status": state,
+            }
+        )
+    return rows, issues, seen_devices
+
+
+def _preview_vlans(vlans):
+    """Project VLAN evidence in source order without inferring network ownership."""
+    clean_vlans = []
+    for vlan in vlans:
+        if not isinstance(vlan, dict):
+            fail()
+        try:
+            clean_vlans.append({key: text(vlan[key]) for key in ("parent", "tag", "device", "description")})
+        except KeyError:
+            fail()
+    return clean_vlans
+
+
+def _runtime_detail(current, line):
+    """Apply one recognized runtime detail and ignore unknown ifconfig lines."""
+    fields = line.strip().split()
+    if fields[0] == "ether":
+        if len(fields) != 2 or current["mac"] is not None:
+            fail()
+        current["mac"] = mac(fields[1])
+    elif fields[0] in ("inet", "inet6"):
+        _runtime_address(current, fields)
+    elif fields[0] == "status:":
+        current["status"] = text(" ".join(fields[1:]))
+    elif fields[0] == "media:":
+        current["media"] = text(" ".join(fields[1:]))
+
+
 def runtime_interfaces(raw):
     """Parse bounded ifconfig evidence with unique interfaces and scoped addresses."""
 
@@ -70,62 +215,14 @@ def runtime_interfaces(raw):
             continue
         if current is None:
             fail()
-        fields = line.strip().split()
-        if fields[0] == "ether":
-            if len(fields) != 2 or current["mac"] is not None:
-                fail()
-            current["mac"] = mac(fields[1])
-        elif fields[0] in ("inet", "inet6"):
-            try:
-                if fields[0] == "inet":
-                    if fields[2] != "netmask":
-                        fail()
-                    mask = fields[3]
-                    if mask.startswith("0x"):
-                        mask = str(ipaddress.IPv4Address(int(mask, 16)))
-                    prefix = ipaddress.IPv4Network("0.0.0.0/" + mask).prefixlen
-                    address = ipaddress.IPv4Interface(fields[1] + "/" + str(prefix))
-                    scope = None
-                else:
-                    if fields[2] != "prefixlen":
-                        fail()
-                    host, _, scope = fields[1].partition("%")
-                    address = ipaddress.IPv6Interface(host + "/" + fields[3])
-                    if scope and scope != current["device"]:
-                        fail()
-                value = {
-                    "address": str(address),
-                    "scope": scope or None,
-                    "link_local": address.ip.is_link_local,
-                    "ipam_candidate": not (
-                        address.ip.is_link_local
-                        or address.ip.is_loopback
-                        or address.ip.is_multicast
-                        or address.ip.is_unspecified
-                    ),
-                }
-                if value not in current["addresses"]:
-                    current["addresses"].append(value)
-                if len(current["addresses"]) > 512:
-                    fail()
-            except (ValueError, IndexError):
-                fail()
-        elif fields[0] == "status:":
-            current["status"] = text(" ".join(fields[1:]))
-        elif fields[0] == "media:":
-            current["media"] = text(" ".join(fields[1:]))
+        _runtime_detail(current, line)
     if not result:
         fail()
     return result
 
 
-def build_preview(snapshot, inventory, vm_id):
-    """Validate configured/runtime evidence and match VM interfaces only by unambiguous MAC."""
-
-    if type(vm_id) is not int or vm_id <= 0 or not isinstance(snapshot, dict):
-        fail()
-    if snapshot.get("schema") != "netbox-sync.pfsense.network.v1":
-        fail()
+def _snapshot_parts(snapshot):
+    """Read timestamp, version and network sections under the original validation boundary."""
     try:
         stamp = text(snapshot["collected_at"])
         parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
@@ -138,91 +235,24 @@ def build_preview(snapshot, inventory, vm_id):
         runtime = runtime_interfaces(snapshot["runtime"]["ifconfig"])
     except (KeyError, TypeError, ValueError):
         fail()
-    if (
-        not isinstance(configured, list)
-        or not 1 <= len(configured) <= 512
-        or not isinstance(vlans, list)
-        or len(vlans) > 512
-        or not isinstance(inventory, list)
-        or len(inventory) > 512
-    ):
+    return stamp, version, configured, vlans, runtime
+
+
+def build_preview(snapshot, inventory, vm_id):
+    """Validate configured/runtime evidence and match VM interfaces only by unambiguous MAC."""
+
+    if type(vm_id) is not int or vm_id <= 0 or not isinstance(snapshot, dict):
         fail()
-    targets = {}
-    target_ids = set()
-    for row in inventory:
-        if (
-            not isinstance(row, dict)
-            or type(row.get("id")) is not int
-            or row["id"] <= 0
-            or row["id"] in target_ids
-            or type(row.get("vm_id")) is not int
-            or row["vm_id"] != vm_id
-        ):
-            fail()
-        target_ids.add(row["id"])
-        name = text(row.get("name"))
-        if row.get("mac"):
-            targets.setdefault(mac(row["mac"]), []).append({"id": row["id"], "name": name})
-    runtime_macs = Counter(row["mac"] for row in runtime.values() if row["mac"])
-    seen_ids, seen_devices = set(), set()
-    rows, issues = [], []
-    for entry in configured:
-        if not isinstance(entry, dict):
-            fail()
-        try:
-            selected = {
-                key: text(entry[key])
-                for key in (
-                    "id",
-                    "name",
-                    "device",
-                    "ipv4_config",
-                    "ipv4_prefix",
-                    "ipv6_config",
-                    "ipv6_prefix",
-                    "configured_mtu",
-                )
-            }
-            if type(entry["enabled"]) is not bool:
-                fail()
-            selected["enabled"] = entry["enabled"]
-        except (KeyError, TypeError):
-            fail()
-        device = selected["device"]
-        if not selected["id"] or not device or selected["id"] in seen_ids or device in seen_devices:
-            fail()
-        seen_ids.add(selected["id"])
-        seen_devices.add(device)
-        live = runtime.get(device)
-        matches = targets.get(live["mac"], []) if live else []
-        if live is None:
-            state = "RUNTIME_MISSING"
-        elif live["mac"] is None:
-            state = "MAC_MISSING"
-        elif runtime_macs[live["mac"]] > 1 or len(matches) > 1:
-            state = "AMBIGUOUS_MAC"
-        elif not matches:
-            state = "NO_VM_INTERFACE_MATCH"
-        else:
-            state = "MATCHED"
-        if state != "MATCHED":
-            issues.append({"device": device, "code": state})
-        rows.append(
-            {
-                "configuration": selected,
-                "runtime": live,
-                "match": matches[0] if state == "MATCHED" else None,
-                "status": state,
-            }
-        )
-    clean_vlans = []
-    for vlan in vlans:
-        if not isinstance(vlan, dict):
-            fail()
-        try:
-            clean_vlans.append({key: text(vlan[key]) for key in ("parent", "tag", "device", "description")})
-        except KeyError:
-            fail()
+    if snapshot.get("schema") != "netbox-sync.pfsense.network.v1":
+        fail()
+    stamp, version, configured, vlans, runtime = _snapshot_parts(snapshot)
+    if not isinstance(configured, list) or not 1 <= len(configured) <= 512:
+        fail()
+    if not isinstance(vlans, list) or len(vlans) > 512 or not isinstance(inventory, list) or len(inventory) > 512:
+        fail()
+    targets, target_ids = _preview_targets(inventory, vm_id)
+    rows, issues, seen_devices = _match_preview_interfaces(configured, runtime, targets)
+    clean_vlans = _preview_vlans(vlans)
     return {
         "schema": "netbox-sync.pfsense.preview.v1",
         "mode": "READ_ONLY",
