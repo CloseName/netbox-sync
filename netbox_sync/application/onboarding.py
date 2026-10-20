@@ -365,7 +365,8 @@ class SourceOnboardingService:
             if forget is not None:
                 forget(receipts)
 
-    def _register(self, request, receipts, registration=None):
+    def _consume_registration(self, request, registration):
+        """Validate the confirmed request and consume its matching ephemeral credentials."""
         if registration and request.source_type != "esxi":
             raise OnboardingError(ErrorCode.REGISTRATION_FAILED)
         if request.confirm_sync_disabled is not True:
@@ -381,6 +382,10 @@ class SourceOnboardingService:
             raise OnboardingError(ErrorCode.ONBOARDING_TOKEN_INVALID)
         if self._registry.find(request.source_instance) is not None:
             raise OnboardingError(ErrorCode.SOURCE_ALREADY_EXISTS)
+        return credentials
+
+    def _create_registration_secrets(self, request, credentials, receipts, registration):
+        """Retain receipts and preserve uncertain deterministic-key outcomes on failure."""
         try:
             if request.source_type == "proxmox":
                 token_receipt = self._secrets.create(
@@ -402,12 +407,10 @@ class SourceOnboardingService:
             if isinstance(exc, OnboardingError):
                 raise
             raise OnboardingError(ErrorCode.SECRET_STORE_FAILED) from None
-        config = self.staged_config(
-            request,
-            credentials.username,
-            token_receipt.key if request.source_type == "proxmox" else secret_receipt.key,
-            secret_receipt.key,
-        )
+        return (token_receipt if request.source_type == "proxmox" else None), secret_receipt
+
+    def _persist_registration(self, request, config, receipts, registration):
+        """Reconcile registry outcomes before deciding whether receipt rollback is safe."""
         try:
             return self._registry.create(config)
         except Exception as exc:
@@ -431,6 +434,17 @@ class SourceOnboardingService:
             if state == config:
                 return config
             raise OnboardingError(ErrorCode.REGISTRATION_UNCERTAIN) from None
+
+    def _register(self, request, receipts, registration=None):
+        credentials = self._consume_registration(request, registration)
+        token_receipt, secret_receipt = self._create_registration_secrets(request, credentials, receipts, registration)
+        config = self.staged_config(
+            request,
+            credentials.username,
+            token_receipt.key if request.source_type == "proxmox" else secret_receipt.key,
+            secret_receipt.key,
+        )
+        return self._persist_registration(request, config, receipts, registration)
 
     @staticmethod
     def staged_config(request, username, token_key, secret_key):
