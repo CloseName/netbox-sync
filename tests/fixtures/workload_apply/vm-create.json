@@ -1,0 +1,63 @@
+{
+  "output": "=== VM APPLY PRECHECK ===\ntarget_site=Test Site cluster=Test Cluster\ndiscovered=2 existing_in_cluster=0\n\nCREATE VM vmid=100 name='qemu-100' identity=proxmox:node-a:100\n  status=active vcpus=4 memory=4096 disk=32768 start_on_boot=on\n  managed_custom_fields_changed=2\nCREATE VM vmid=101 name='second-workload' identity=proxmox:node-a:100:second\n  status=active vcpus=4 memory=4096 disk=32768 start_on_boot=on\n  managed_custom_fields_changed=2\n\nPRECHECK PASSED\n\n=== VM APPLY ===\nCREATE VM id=1 vmid=100 name='qemu-100'\nCREATE VM id=2 vmid=101 name='second-workload'\n\nVM APPLY SUMMARY created=2 updated=0 skipped=0\n",
+  "mutations": [
+    [
+      "create",
+      "virtualization.virtual_machines",
+      1,
+      {
+        "name": "qemu-100",
+        "cluster": 3,
+        "status": "active",
+        "vcpus": 4,
+        "memory": 4096,
+        "disk": 32768,
+        "start_on_boot": "on",
+        "custom_fields": {
+          "sync_identities": [
+            {
+              "schema": "v2",
+              "type": "proxmox",
+              "instance": "pve-infra-test",
+              "kind": "qemu",
+              "external_id": "100"
+            }
+          ],
+          "sync_original_names": {
+            "proxmox/pve-infra-test/qemu": "qemu-100"
+          }
+        },
+        "id": 1
+      }
+    ],
+    [
+      "create",
+      "virtualization.virtual_machines",
+      2,
+      {
+        "name": "second-workload",
+        "cluster": 3,
+        "status": "active",
+        "vcpus": 4,
+        "memory": 4096,
+        "disk": 32768,
+        "start_on_boot": "on",
+        "custom_fields": {
+          "sync_identities": [
+            {
+              "schema": "v2",
+              "type": "proxmox",
+              "instance": "pve-infra-test",
+              "kind": "qemu",
+              "external_id": "101"
+            }
+          ],
+          "sync_original_names": {
+            "proxmox/pve-infra-test/qemu": "second-workload"
+          }
+        },
+        "id": 2
+      }
+    ]
+  ]
+}

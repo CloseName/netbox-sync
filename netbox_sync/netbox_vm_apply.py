@@ -1,3 +1,6 @@
+from .vm_apply_writes import write_virtual_machines
+from .vm_apply_report import report_vm_precheck
+from .vm_apply_preflight import prepare_vm_contexts
 from .vm_apply_inventory import prepare_vm_apply_inventory
 from .netbox_record_values import object_id as _object_id, choice_value as _choice_value
 from .netbox_vm_name import netbox_vm_name
@@ -478,201 +481,13 @@ def apply_virtual_machines(
     all_vms = inventory.all_vms
     target_vms = inventory.target_vms
 
-    discovered = []
-
-    for host in hosts:
-        discovered.extend(
-            host.virtual_machines
-        )
-
-    # Fail before NetBox matching if the
-    # source itself supplied duplicate IDs.
-    identities = {}
-    names = {}
-
-    for vm in discovered:
-        identity = _identity(vm)
-
-        identities.setdefault(
-            identity,
-            [],
-        ).append(vm)
-
-        names.setdefault(
-            netbox_vm_name(vm).casefold(),
-            [],
-        ).append(vm)
-
-    duplicate_identities = {
-        key: value
-        for key, value
-        in identities.items()
-        if len(value) > 1
-    }
-
-    if duplicate_identities:
-        details = ', '.join(
-            sorted(
-                duplicate_identities
-                .keys()
-            )
-        )
-
-        raise VMApplyError(
-            'Duplicate discovered VM '
-            f'identities: {details}'
-        )
-
-    duplicate_names = {
-        key: value
-        for key, value
-        in names.items()
-        if len(value) > 1
-    }
-
-    if duplicate_names:
-        details = ', '.join(
-            sorted(
-                duplicate_names.keys()
-            )
-        )
-
-        raise VMApplyError(
-            'Duplicate discovered VM '
-            f'names in target cluster: '
-            f'{details}'
-        )
-
-    contexts = []
-
-    for vm in sorted(
-        discovered,
-        key=lambda item: (
-            item.node_source_id,
-            item.vmid,
-        ),
-    ):
-        contexts.append(
-            _preflight_vm(
-                all_vms,
-                target_vms,
-                vm,
-                cluster,
-            )
-        )
-
-    native_disk_parents = {_object_id(d.serialize().get('virtual_machine')) for d in nb_api.virtualization.virtual_disks.all()}
-    for context in contexts:
-        existing_vm = context.get('existing')
-        if existing_vm is not None and existing_vm.id in native_disk_parents:
-            context.get('changes', {}).pop('disk', None)
-
-    print(
-        '=== VM APPLY PRECHECK ==='
+    discovered, contexts = prepare_vm_contexts(
+        nb_api, hosts, all_vms, target_vms, cluster, _identity=_identity, netbox_vm_name=netbox_vm_name, VMApplyError=VMApplyError, _preflight_vm=_preflight_vm, _object_id=_object_id,
     )
-    print(
-        f'target_site={site.name} '
-        f'cluster={cluster.name}'
+
+    report_vm_precheck(
+        site, cluster, discovered, target_vms, contexts, _identity=_identity, _desired_status=_desired_status, _desired_memory=_desired_memory, _desired_disk=_desired_disk, _desired_start_on_boot=_desired_start_on_boot, VMApplyError=VMApplyError,
     )
-    print(
-        f'discovered={len(discovered)} '
-        f'existing_in_cluster='
-        f'{len(target_vms)}'
-    )
-    print()
-
-    blocked = 0
-
-    for context in contexts:
-        vm = context['vm']
-
-        if context['action'] == 'blocked':
-            blocked += 1
-
-            print(
-                f'BLOCKED VM '
-                f'vmid={vm.vmid} '
-                f'name={vm.original_name!r} '
-                f'identity={_identity(vm)} '
-                f'reason={context["reason"]}'
-            )
-
-            for candidate in (
-                context['candidates']
-            ):
-                print(
-                    f'  candidate '
-                    f'id={candidate.id} '
-                    f'name={candidate.name!r}'
-                )
-
-            continue
-
-        if context['action'] == 'create':
-            print(
-                f'CREATE VM '
-                f'vmid={vm.vmid} '
-                f'name={vm.original_name!r} '
-                f'identity={_identity(vm)}'
-            )
-        else:
-            existing = context['existing']
-
-            print(
-                f'MATCH VM '
-                f'id={existing.id} '
-                f'vmid={vm.vmid} '
-                f'name={vm.original_name!r} '
-                f'identity={_identity(vm)} '
-                f'reason=sync_identity'
-            )
-
-        print(
-            f'  status='
-            f'{_desired_status(vm)} '
-            f'vcpus={vm.vcpus} '
-            f'memory={_desired_memory(vm)} '
-            f'disk={_desired_disk(vm)} '
-            f'start_on_boot='
-            f'{_desired_start_on_boot(vm)}'
-        )
-
-        print(
-            f'  managed_custom_fields_changed='
-            f'{len(context["changed_custom_fields"])}'
-        )
-
-        if context['action'] == 'match':
-            fields = list(
-                context['changes']
-            )
-
-            print(
-                '  pending_fields='
-                + (
-                    ','.join(fields)
-                    if fields
-                    else '-'
-                )
-            )
-
-    print()
-
-    if blocked:
-        print(
-            f'PRECHECK BLOCKED '
-            f'blocked={blocked}'
-        )
-        print(
-            'No changes were written '
-            'to NetBox.'
-        )
-
-        raise VMApplyError(
-            'VM apply precheck failed'
-        )
-
-    print('PRECHECK PASSED')
 
     if not confirmed:
         print(
@@ -685,68 +500,7 @@ def apply_virtual_machines(
         )
         return
 
-    print()
-    print('=== VM APPLY ===')
-
-    created = 0
-    updated = 0
-    skipped = 0
-
-    for context in contexts:
-        vm = context['vm']
-        existing = context.get(
-            'existing'
-        )
-
-        if context['action'] == 'create':
-            created_vm = (
-                nb_api.virtualization
-                .virtual_machines
-                .create(**build_vm_create_fields(
-                    vm,
-                    cluster,
-                    context['desired_custom_fields'],
-                ))
-            )
-
-            created += 1
-
-            print(
-                f'CREATE VM '
-                f'id={created_vm.id} '
-                f'vmid={vm.vmid} '
-                f'name={created_vm.name!r}'
-            )
-
-            continue
-
-        changes = context['changes']
-
-        if changes:
-            existing.update(changes)
-            updated += 1
-
-            print(
-                f'UPDATE VM '
-                f'id={existing.id} '
-                f'vmid={vm.vmid} '
-                f'fields='
-                f'{",".join(changes)}'
-            )
-        else:
-            skipped += 1
-
-            print(
-                f'SKIP VM '
-                f'id={existing.id} '
-                f'vmid={vm.vmid} '
-                f'name={existing.name!r}'
-            )
-
-    print()
-    print(
-        f'VM APPLY SUMMARY '
-        f'created={created} '
-        f'updated={updated} '
-        f'skipped={skipped}'
+    write_virtual_machines(
+        nb_api, cluster, contexts, build_vm_create_fields=build_vm_create_fields,
     )
+
