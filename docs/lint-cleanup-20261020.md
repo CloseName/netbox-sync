@@ -463,3 +463,12 @@ journals, registration, worker supervision and inventory prerequisites. Executab
 AST unchanged in every file. Full suite: 2378 passed, 491 skipped, one existing
 warning. Pylint 9.31/10, zero Error/Fatal. Black checks all 227 Python files;
 whitespace passes. Remaining documentation: 12 classes and 90 functions.
+## Stage 38: host write stages
+
+Extract device, interface, address and primary-address stages with local counters.
+Two new multi-host ordering cases pass with 20 existing write/preflight cases before
+and after extraction. Preserve late conflict failures and already completed writes.
+Full suite: 2380 passed, 491 skipped, one existing warning. Pylint 9.31/10, zero
+Error/Fatal. No control-flow or documentation findings remain in host_apply_writes;
+its existing public arguments remain for caller compatibility. Black and whitespace
+pass.
