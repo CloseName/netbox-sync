@@ -173,14 +173,6 @@ def plan_vm_networks(
         _canonical_mac=_canonical_mac,
         _canonical_address=_canonical_address,
     )
-    target_vms = inventory.target_vms
-    interfaces_by_vm = inventory.interfaces_by_vm
-    macs_by_address = inventory.macs_by_address
-    ips_by_address = inventory.ips_by_address
-    ips_by_id = inventory.ips_by_id
-    vlans_by_vid = inventory.vlans_by_vid
-    prefixes_by_prefix = inventory.prefixes_by_prefix
-
     counters = {
         "vm_match": 0,
         "vm_blocked": 0,
@@ -202,7 +194,7 @@ def plan_vm_networks(
         key=lambda item: item.vmid,
     ):
         vm_matches = _vm_identity_match(
-            target_vms,
+            inventory.target_vms,
             discovered_vm,
         )
 
@@ -225,7 +217,7 @@ def plan_vm_networks(
         print()
         print(f"    VM id={netbox_vm.id} " f"vmid={discovered_vm.vmid} " f"name={discovered_vm.original_name!r}")
 
-        existing_interfaces = interfaces_by_vm.get(
+        existing_interfaces = inventory.interfaces_by_vm.get(
             netbox_vm.id,
             [],
         )
@@ -257,7 +249,7 @@ def plan_vm_networks(
 
             plan_interface_vlan(
                 nic,
-                vlans_by_vid,
+                inventory.vlans_by_vid,
                 site,
                 counters,
                 _select_scoped=_select_scoped,
@@ -266,7 +258,7 @@ def plan_vm_networks(
             plan_interface_mac(
                 nic,
                 existing_interface,
-                macs_by_address,
+                inventory.macs_by_address,
                 counters,
                 _canonical_mac=_canonical_mac,
                 _assigned_object=_assigned_object,
@@ -275,8 +267,8 @@ def plan_vm_networks(
             plan_interface_ips(
                 nic,
                 existing_interface,
-                ips_by_address,
-                prefixes_by_prefix,
+                inventory.ips_by_address,
+                inventory.prefixes_by_prefix,
                 site,
                 counters,
                 discovered_ipv4,
@@ -289,7 +281,7 @@ def plan_vm_networks(
         plan_primary_ipv4(
             netbox_vm,
             discovered_ipv4,
-            ips_by_id,
+            inventory.ips_by_id,
             counters,
             _existing_primary_ipv4=_existing_primary_ipv4,
         )

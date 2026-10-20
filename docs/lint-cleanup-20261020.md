@@ -726,3 +726,17 @@ complexity findings remain in the six changed modules. Black and whitespace pass
 The public scheduler signature is unchanged. All network/database interactions in
 new tests are fakes; platform/real-PostgreSQL skips do not establish deployment
 acceptance. Selectel remains experimental; production untouched.
+
+## Stage 64: Proxmox inventory assembly and VM IP planning
+
+Separate node-address indexing, CPU projection and storage reads while retaining
+host/VM/LXC discovery order and distinct workload validation. Reuse the already
+loaded discovery model imports. Keep planner inventory grouped rather than seven
+aliases, and separate prefix reporting from IP ownership decisions. Preserve
+read-only planner behavior, candidate accumulation, output and counters.
+Ten new tests pass before changes; 53 focused tests pass before/after, including
+existing golden IP/prefix reports. Full suite: 2617 passed, 491 skipped, one existing
+warning. Pylint 9.41/10, zero Error/Fatal; all five local-variable findings in the
+changed functions are resolved. Existing callback signatures remain compatible.
+Black and whitespace pass. Work stops here at the user's request, with 78 primary
+complexity findings still pending. Selectel remains experimental; production untouched.
