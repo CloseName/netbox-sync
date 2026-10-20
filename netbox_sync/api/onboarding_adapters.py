@@ -39,19 +39,27 @@ class RegistrationRegistry:
         return registry
 
     def host_reservations(self):
+        """Bind host reservations to this registry connection and schema."""
+
         from ..host_registration import HostReservations
 
         return HostReservations(self._registry()._connect, self._schema)
 
     def check_provider_identity(self, preview):
+        """Check host reservations for ESXi previews only."""
+
         if isinstance(preview, dict) and preview.get("provider") == "esxi":
             self.host_reservations().check(preview)
 
     def reserve_provider_identity(self, preview, source, operation_id, actor, *, intent=None):
+        """Reserve ESXi ownership and optional replayable intent before registration effects."""
+
         if isinstance(preview, dict) and preview.get("provider") == "esxi":
             self.host_reservations().reserve(preview, source, operation_id, actor, intent=intent)
 
     def check_legacy_placement(self, request):
+        """Refuse placement shared with an unresolved, non-archived legacy ESXi source."""
+
         from ..host_registration import legacy_anchor, HostRegistrationConflict
         from psycopg import sql
         from psycopg.rows import dict_row
@@ -76,6 +84,8 @@ class RegistrationRegistry:
                         raise HostRegistrationConflict("HOST_LEGACY_PLACEMENT_PROTECTED", row["source_instance"])
 
     def registration_admission(self):
+        """Hold a shared admission lock while a registration is evaluated."""
+
         from contextlib import contextmanager
         from ..host_registration import HostRegistrationConflict
 
@@ -97,6 +107,8 @@ class RegistrationRegistry:
         return guard()
 
     def registration_guard(self, preview, source, operation_id, actor):
+        """Serialize ESXi registration effects, leaving other providers without this host lock."""
+
         from contextlib import nullcontext
 
         if isinstance(preview, dict) and preview.get("provider") == "esxi":
@@ -104,19 +116,27 @@ class RegistrationRegistry:
         return nullcontext()
 
     def check_registration_resume(self, preview, source, operation_id, actor):
+        """Validate that the actor owns the reserved ESXi registration attempt."""
+
         self.host_reservations().check(
             preview, resume={"source_instance": source, "registration_id": operation_id}, actor_id=actor
         )
 
     def registration_intent(self, preview, source, operation_id, actor, fingerprint, request=None):
+        """Bind replayable ESXi registration intent, returning None for other providers."""
+
         if isinstance(preview, dict) and preview.get("provider") == "esxi":
             return self.host_reservations().bind_intent(preview, source, operation_id, actor, fingerprint, request)
         return None
 
     def pending_registrations(self, actor):
+        """Return pending registration metadata scoped to the actor."""
+
         return self.host_reservations().pending_requests(actor)
 
     def registration_outcome(self, source, operation_id, actor):
+        """Read the actor-bound outcome without assuming that absence proves no writes."""
+
         return self.host_reservations().outcome(source, operation_id, actor)
 
     def find(self, instance):

@@ -14,6 +14,8 @@ POLICIES = ("strict", "observe")
 
 
 class ObservationPrerequisiteError(ValueError):
+    """Required observation metadata is unavailable or incompatible."""
+
     pass
 
 
@@ -71,6 +73,8 @@ def assignment_inventory(hosts, policy="strict"):
 
 
 def source_policy(config):
+    """Read the reviewed IP conflict policy, defaulting to strict handling."""
+
     target = getattr(config, "target", config)
     return getattr(target, "onboarding_mapping", {}).get("ip_conflict_policy", "strict")
 

@@ -45,6 +45,8 @@ class PendingCredentials:
 
     @property
     def api_port(self):
+        """Resolve the explicit or provider-default connection port."""
+
         return source_port(self.source_type, self.port)
 
 
@@ -81,6 +83,8 @@ class EphemeralOnboardingStore:
             self._timers.pop(token, None)
 
     def recovery_review(self, token, source, value=None):
+        """Read or update a non-expired review bound to the exact recovery source."""
+
         with self._lock:
             item = self._items.get(token)
             if item is None or item[0] <= self._clock() or (item[2] or {}).get("recovery_source") != source:
@@ -90,6 +94,8 @@ class EphemeralOnboardingStore:
             return item[2].get("recovery_review")
 
     def preview(self, token):
+        """Return preview evidence only while its ephemeral token remains valid."""
+
         with self._lock:
             item = self._items.get(token)
             if item is None or item[0] <= self._clock():
@@ -190,6 +196,8 @@ class SourceOnboardingService:
         return self._pending.issue(credentials, preview)
 
     def accept_registration_resume(self, credentials, preview, source, operation, actor):
+        """Validate an actor-owned ESXi attempt and issue a fresh resume token."""
+
         from ..host_registration import esxi_anchor, HostRegistrationConflict
 
         if credentials.source_type != "esxi":
@@ -209,6 +217,8 @@ class SourceOnboardingService:
         )
 
     def accept_recovery_credentials(self, credentials, preview, source, expected_anchor):
+        """Issue recovery credentials only for the expected ESXi hardware identity."""
+
         from ..host_registration import esxi_anchor, HostRegistrationConflict
 
         if credentials.source_type != "esxi" or esxi_anchor(preview) != expected_anchor:
@@ -216,13 +226,19 @@ class SourceOnboardingService:
         return self._pending.issue(credentials, {**preview, "recovery_source": source})
 
     def recovery_review(self, token, source, value=None):
+        """Delegate access to the source-bound ephemeral recovery review."""
+
         return self._pending.recovery_review(token, source, value)
 
     def take_recovery_credentials(self, token, source):
+        """Validate the recovery binding before consuming its credentials."""
+
         self._pending.recovery_review(token, source)
         return self._pending.consume(token)
 
     def create_recovery_secret(self, credentials, plan):
+        """Persist the planned recovery secret and release its temporary broker receipt."""
+
         receipt = self._secrets.create(
             plan["credential_key"], credentials.secret, operation_id=plan["broker_operation"]
         )
@@ -231,6 +247,8 @@ class SourceOnboardingService:
             forget([receipt])
 
     def preview(self, token):
+        """Read preview evidence for the current onboarding token."""
+
         return self._pending.preview(token)
 
     def cancel(self, token):
@@ -248,6 +266,8 @@ class SourceOnboardingService:
             raise OnboardingError(ErrorCode.SOURCE_ALREADY_EXISTS)
 
     def reserve_provider_identity(self, request, operation_id, actor, *, intent=None):
+        """Validate registration and placement before reserving provider identity and optional intent."""
+
         self.check_registration(request)
         self.check_placement(request.site_slug, request.cluster_name)
         reserve = getattr(self._registry, "reserve_provider_identity", None)
@@ -273,6 +293,8 @@ class SourceOnboardingService:
             )
 
     def check_placement(self, site_slug, cluster_name):
+        """Apply the registry legacy-placement guard when supported."""
+
         from types import SimpleNamespace
 
         check = getattr(self._registry, "check_legacy_placement", None)
@@ -280,6 +302,8 @@ class SourceOnboardingService:
             check(SimpleNamespace(site_slug=site_slug, cluster_name=cluster_name))
 
     def registration_admission(self):
+        """Use the registry admission context when available."""
+
         from contextlib import nullcontext
 
         guard = getattr(self._registry, "registration_admission", None)
@@ -287,6 +311,8 @@ class SourceOnboardingService:
 
     @contextmanager
     def registration_guard(self, request, operation_id, actor):
+        """Hold the provider registration guard while rechecking legacy placement."""
+
         from contextlib import nullcontext
 
         guard = getattr(self._registry, "registration_guard", None)
@@ -301,6 +327,8 @@ class SourceOnboardingService:
             yield
 
     def registration_intent(self, request, operation, actor, fingerprint, durable_request=None):
+        """Bind a durable registration intent when the registry supports it."""
+
         bind = getattr(self._registry, "registration_intent", None)
         return (
             bind(
@@ -316,10 +344,14 @@ class SourceOnboardingService:
         )
 
     def pending_registrations(self, actor):
+        """Read actor-scoped pending attempts, or an empty list for legacy registries."""
+
         lookup = getattr(self._registry, "pending_registrations", None)
         return lookup(actor) if lookup else []
 
     def registration_outcome(self, source, operation_id, actor):
+        """Read an actor-bound attempt outcome when supported by the registry."""
+
         lookup = getattr(self._registry, "registration_outcome", None)
         return lookup(source, operation_id, actor) if lookup else {"identity_status": "NO_BOUND_ATTEMPT"}
 
@@ -439,6 +471,8 @@ class SourceOnboardingService:
         return config
 
     def register_staged(self, request, username, token_key, secret_key):
+        """Reconcile an exact staged configuration before creation and after an uncertain response."""
+
         config = self.staged_config(request, username, token_key, secret_key)
         existing = self._registry.reconcile(request.source_instance)
         if existing is not None:

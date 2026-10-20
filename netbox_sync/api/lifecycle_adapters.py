@@ -43,6 +43,8 @@ class ActiveSourceReader(PostgresSourceReader):
 
 
 class LifecycleRegistrationRegistry(RegistrationRegistry):
+    """Registration adapter that reserves removed source identities for lifecycle recovery."""
+
     def find(self, instance):
         try:
             registry = self._registry()

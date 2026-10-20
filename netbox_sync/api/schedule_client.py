@@ -22,6 +22,8 @@ class ScheduleWorkerClient:
         self._socket, self._connector = socket_path, connector
 
     def update(self, source_instance, values):
+        """Send one bounded schedule update and validate the returned source-specific envelope."""
+
         payload = {"operation": "update_schedule", "source_instance": source_instance, **values}
         try:
             with self._connector(socket.AF_UNIX, socket.SOCK_STREAM) as connection:

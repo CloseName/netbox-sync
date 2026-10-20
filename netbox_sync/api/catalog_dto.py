@@ -5,6 +5,8 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictBool
 
 
 class CatalogCreateDTO(BaseModel):
+    """Confirmed catalog creation request with an operation ID and ephemeral write token."""
+
     model_config = ConfigDict(extra="forbid")
     operation_id: UUID
     object: dict

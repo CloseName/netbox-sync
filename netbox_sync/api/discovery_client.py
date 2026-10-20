@@ -102,4 +102,6 @@ class DiscoveryWorkerClient:
         return self._request(source_instance, "start_plan" if kind == "PLAN" else "start_discovery")
 
     def invalidate_plan(self, source_instance, operation_id):
+        """Invalidate a source plan through its operation-bound worker request."""
+
         return self._request(source_instance, "invalidate_plan", operation_id)

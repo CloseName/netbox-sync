@@ -112,6 +112,8 @@ class PlanningEndpoint:
         return self._reads[key]
 
     def all(self):
+        """Overlay planned creations and hide replacements in stable identifier order."""
+
         return sorted(
             [self._wrap(record) for record in self._read("all", {}) if record.id not in self._replacement_hidden]
             + list(self._created),
@@ -162,6 +164,8 @@ class PlanningEndpoint:
     def filter(self, **filters):
         # Nested facades must still search the lower plan's objects. Only the
         # final boundary may omit a query that cannot match a persisted row.
+        """Filter remote and local overlays without losing lower-layer planned relations."""
+
         remote_filters = filters if isinstance(self._endpoint, PlanningEndpoint) else self._remote_filters(filters)
         remote = [] if remote_filters is None else self._read("filter", remote_filters)
         matches = {}
@@ -184,6 +188,8 @@ class PlanningEndpoint:
         )
 
     def get(self, *args, **filters):
+        """Resolve one planned object by ID or filters, rejecting ambiguous matches."""
+
         if len(args) > 1 or (args and filters):
             raise TypeError("Use one ID or keyword filters")
         # An exact known ID is already complete evidence in this dry-run.
@@ -216,6 +222,8 @@ class PlanningEndpoint:
         return identifier
 
     def create(self, **fields):
+        """Record a local planned creation without writing to the remote endpoint."""
+
         values = deepcopy(fields)
         values.setdefault("id", self._allocate_id())
         record = type(

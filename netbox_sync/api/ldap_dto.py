@@ -4,6 +4,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class DirectoryConfig(BaseModel):
+    """Bounded directory connection, search and identity attribute settings."""
+
     model_config = ConfigDict(extra="forbid")
     enabled: bool
     host: str = Field(min_length=1, max_length=253)
@@ -22,6 +24,8 @@ class DirectoryConfig(BaseModel):
 
 
 class DirectoryChange(BaseModel):
+    """Revision-checked directory configuration with an optional replacement bind password."""
+
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=0, strict=True)
     config: DirectoryConfig

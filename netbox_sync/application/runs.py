@@ -54,6 +54,8 @@ class RunHistoryService:
             raise RunReadError(RunReadErrorCode.UNAVAILABLE) from exc
 
     def plan_run(self, source, digest, finished_at):
+        """Read the matching plan run and translate reader failures to an unavailable result."""
+
         try:
             return self._reader.plan_run(source, digest, finished_at)
         except Exception as exc:

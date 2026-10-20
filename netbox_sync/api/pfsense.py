@@ -8,6 +8,8 @@ from fastapi.responses import JSONResponse
 
 
 class Connect(BaseModel):
+    """Policy-bound pfSense connection and collection schedule with a protected password."""
+
     model_config = ConfigDict(extra="forbid")
     address: str = Field(min_length=1, max_length=253)
     port: int = Field(default=443, ge=1, le=65535)
@@ -20,16 +22,22 @@ class Connect(BaseModel):
 
 
 class Collect(BaseModel):
+    """Policy revision authorizing a pfSense collection request."""
+
     model_config = ConfigDict(extra="forbid")
     policy_revision: int = Field(ge=0)
 
 
 class Schedule(Collect):
+    """Policy-bound pfSense schedule update."""
+
     sync_enabled: bool
     interval_minutes: int = Field(default=60, ge=5, le=10080)
 
 
 def routes(settings):
+    """Build pfSense status, connection, collection and schedule control routes."""
+
     router = APIRouter(prefix="/api/v1/pfsense")
 
     def call(vm_id, action, request, data=None):
