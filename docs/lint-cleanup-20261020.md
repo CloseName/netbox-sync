@@ -531,3 +531,13 @@ Two new replay/numeric cases and four existing golden report/index cases pass
 before/after. Full suite: 2405 passed, 491 skipped, one existing warning. Pylint
 9.37/10, zero Error/Fatal; no findings remain in legacy_inventory. Black and
 whitespace pass.
+## Stage 46: workload preflight preparation
+
+Separate VM discovery uniqueness and host address validation; simplify the existing
+LXC cluster-relation comparison without accepting scalar IDs. Preserve VM sorting,
+native disk reads, LXC discovery order and first-conflict host failures. Six new
+ordering/boundary cases plus existing workload/host checks pass before/after
+(73 total). Full suite: 2411 passed, 491 skipped, one existing warning. Pylint
+9.37/10, zero Error/Fatal; control-flow/doc findings resolved in all three modules.
+VM preparation retains its existing dependency-injected call signature. Black and
+whitespace pass.

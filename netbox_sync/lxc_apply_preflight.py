@@ -37,17 +37,7 @@ def prepare_lxc_contexts(
             if len(identity_matches) == 1:
                 existing = identity_matches[0]
 
-                existing_cluster = getattr(
-                    getattr(
-                        existing,
-                        "cluster",
-                        None,
-                    ),
-                    "id",
-                    None,
-                )
-
-                if existing_cluster != cluster.id:
+                if getattr(getattr(existing, "cluster", None), "id", None) != cluster.id:
                     raise LXCApplyError(f"LXC identity " f"{source_id} exists " f"outside target cluster")
 
             else:
