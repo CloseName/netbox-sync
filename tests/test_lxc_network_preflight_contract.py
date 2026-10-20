@@ -68,3 +68,62 @@ def test_existing_primary_ipv4_is_not_a_lxc_preflight_refusal(fake_netbox, capsy
     assert 'LXC NETWORK APPLY PRECHECK' in capsys.readouterr().out
     assert records[1].primary_ip4 == 999
     assert fake_netbox.mutations == []
+
+
+@pytest.mark.parametrize('confirmed', [False, True])
+@pytest.mark.parametrize('earlier', ['cluster', 'duplicate_mac', 'foreign_mac', 'primary_mac', 'duplicate_ip', 'foreign_ip'])
+def test_lxc_error_precedence_before_batch_duplicates(fake_netbox, capsys, confirmed, earlier):
+    """Keep cluster, MAC ownership, primary-MAC and IP refusal order distinct."""
+    from netbox_sync.interface_display import interface_display_name
+
+    target, hosts, records, first, second = _two_containers(fake_netbox)
+    nic = first.interfaces[0]
+    nic.ip_addresses = ['192.0.2.71/24']
+    second.interfaces[0].mac_address = nic.mac_address
+    second.interfaces[0].ip_addresses = list(nic.ip_addresses)
+    if earlier in ('cluster', 'duplicate_mac', 'foreign_mac', 'primary_mac'):
+        fake_netbox.virtualization.interfaces.add(FakeRecord(
+            id=810, name=nic.name, virtual_machine=records[0], primary_mac_address=999,
+            enabled=True, custom_fields=build_nic_custom_fields(first, nic)))
+    if earlier in ('cluster', 'duplicate_mac', 'foreign_mac'):
+        for identifier in ([801, 802] if earlier == 'duplicate_mac' else [801]):
+            fake_netbox.dcim.mac_addresses.add(FakeRecord(
+                id=identifier, mac_address=nic.mac_address,
+                assigned_object_type='virtualization.vminterface', assigned_object_id=999))
+    # An IP conflict competes with every earlier failure.
+    for identifier in ([803, 804] if earlier == 'duplicate_ip' else [803]):
+        fake_netbox.ipam.ip_addresses.add(FakeRecord(
+            id=identifier, address=nic.ip_addresses[0],
+            assigned_object_type='virtualization.vminterface', assigned_object_id=999))
+    if earlier == 'cluster':
+        records[0].cluster = FakeRecord(id=999)
+        message = f'LXC {first.source_id} is outside target cluster'
+    elif earlier == 'duplicate_mac':
+        message = 'Duplicate NetBox MAC ' + nic.mac_address.upper()
+    elif earlier == 'foreign_mac':
+        message = f'MAC {nic.mac_address.upper()} already assigned to virtualization.vminterface:999'
+    elif earlier == 'primary_mac':
+        message = f'Primary MAC conflict on {first.original_name}:{interface_display_name(first, nic)}'
+    elif earlier == 'duplicate_ip':
+        message = f'Duplicate NetBox IP {nic.ip_addresses[0]}'
+    else:
+        message = f'IP {nic.ip_addresses[0]} already assigned to virtualization.vminterface:999'
+    capsys.readouterr()
+    with pytest.raises(LXCNetworkApplyError) as caught:
+        apply_lxc_networks(fake_netbox, hosts, target, confirmed=confirmed)
+    assert type(caught.value) is LXCNetworkApplyError
+    assert str(caught.value) == message
+    assert fake_netbox.mutations == []
+    assert capsys.readouterr().out == ''
+
+
+def test_lxc_batch_duplicate_mac_precedes_duplicate_ip(fake_netbox, capsys):
+    target, hosts, _, first, second = _two_containers(fake_netbox)
+    second.interfaces[0].mac_address = first.interfaces[0].mac_address
+    second.interfaces[0].ip_addresses = list(first.interfaces[0].ip_addresses)
+    capsys.readouterr()
+    with pytest.raises(LXCNetworkApplyError) as caught:
+        apply_lxc_networks(fake_netbox, hosts, target, confirmed=True)
+    assert str(caught.value) == 'Duplicate discovered MACs: ' + first.interfaces[0].mac_address.upper()
+    assert fake_netbox.mutations == []
+    assert capsys.readouterr().out == ''

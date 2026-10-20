@@ -120,3 +120,21 @@ The module has no branch, statement, local-variable or nesting complexity findin
 
 Full suite: 2062 passed, 485 skipped, one existing Starlette warning. Full Pylint
 passes at 9.03/10 with zero Error/Fatal; Black and whitespace checks pass.
+
+## Stage 7: LXC network preflight
+
+Separate LXC NIC metadata, MAC ownership/primary-MAC refusal, scoped IP validation
+and one-container context preparation. Retain global identity lookup followed by
+cluster validation, sorted duplicate-name messages, discovery order and MAC-before-IP
+batch duplicate errors. Unlike VM preflight, LXC still refuses primary-MAC rotation
+and does not validate the existing primary IPv4 during preparation.
+
+Thirteen new characterization cases pass before and after extraction, covering
+competing cluster, MAC ownership, primary-MAC and IP failures in preview and confirmed
+runs. All 67 focused inventory/preflight/report/write tests pass. AST comparison
+confirms unchanged existing helpers and extracted NIC/MAC/IP control flow. Both
+network preflight modules now have no branch, statement, local-variable or nesting
+complexity findings, without suppressing those checks.
+
+Full suite: 2075 passed, 485 skipped, one existing Starlette warning. Full Pylint
+passes at 9.03/10 with zero Error/Fatal; Black and whitespace checks pass.
