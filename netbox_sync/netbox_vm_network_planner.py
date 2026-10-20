@@ -188,6 +188,10 @@ def plan_vm_networks(
         '  QEMU VM NETWORK'
     )
 
+    if cluster is None:
+        print('    BLOCKED target cluster does not exist')
+        return
+
     inventory = prepare_vm_network_plan_inventory(
         nb_api, cluster, _canonical_mac=_canonical_mac, _canonical_address=_canonical_address,
     )

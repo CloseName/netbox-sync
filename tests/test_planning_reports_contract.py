@@ -78,14 +78,9 @@ def test_host_plan_output_is_read_only(fake_netbox, capsys, missing_cluster):
     hosts[0].hardware_identity['observed_at'] = '2026-01-01T00:00:00+00:00'
     if missing_cluster:
         fake_netbox.virtualization.clusters.records.clear()
-        # Existing behavior reaches guest planning without a cluster and raises.
     capsys.readouterr()
-    error = None
-    try:
-        plan_hosts(fake_netbox, {'devices': {}}, hosts, config)
-    except AttributeError as exc:
-        error = str(exc)
-    actual = {'output': capsys.readouterr().out, 'error': error}
+    assert plan_hosts(fake_netbox, {'devices': {}}, hosts, config) is None
+    actual = {'output': capsys.readouterr().out, 'error': None}
     fixture = Path(__file__).parent / 'fixtures' / 'planning_reports' / f'host-{missing_cluster}.json'
     assert actual == json.loads(fixture.read_text(encoding='utf-8'))
     assert fake_netbox.mutations == []
