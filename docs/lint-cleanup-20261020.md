@@ -584,3 +584,13 @@ on the original implementation and after extraction. Related checks: 52 passed,
 18 environment skips. Full suite: 2445 passed, 491 skipped, one existing warning;
 Pylint 9.38/10, zero Error/Fatal; no complexity findings remain in deployment.
 Black and whitespace pass. Tests use fake connections; no database was modified.
+
+## Stage 51: experimental Selectel lifecycle stages
+
+Separate request admission, locked account checks, durable intent/replay and receipt
+processing. Preserve lock nesting, nonce-before-child persistence, literal boolean
+receipt flags, credential retention and operation-specific state updates. Six new
+cases plus existing tests pass before/after (11 total). Full suite: 2451 passed,
+491 skipped, one existing warning; Pylint 9.38/10, zero Error/Fatal. No complexity
+findings remain in selectel_lifecycle_control. Black and whitespace pass. This is
+structural cleanup only: Selectel is still experimental and production is untouched.
