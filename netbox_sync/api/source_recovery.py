@@ -10,11 +10,15 @@ from .catalog import call
 
 
 class ReviewRequest(BaseModel):
+    """Opaque onboarding capability used to review same-source recovery evidence."""
+
     model_config = ConfigDict(extra="forbid")
     onboarding_token: str = Field(min_length=20, max_length=200, repr=False)
 
 
 class ConfirmRequest(ReviewRequest):
+    """Explicit recovery confirmation bound to an operation and reviewed evidence digest."""
+
     operation_id: UUID
     digest: str = Field(pattern="^[a-f0-9]{64}$")
     confirmed: Literal[True]
@@ -22,17 +26,23 @@ class ConfirmRequest(ReviewRequest):
     @field_validator("confirmed", mode="before")
     @classmethod
     def explicit_confirmation(cls, value):
+        """Require the literal boolean True before recovery confirmation."""
+
         if value is not True:
             raise ValueError("Explicit boolean confirmation required")
         return value
 
 
 class AbandonRequest(BaseModel):
+    """Identify the durable recovery or reconciliation operation to inspect or abandon."""
+
     model_config = ConfigDict(extra="forbid")
     operation_id: UUID
 
 
 class IdentityAuditRequest(BaseModel):
+    """Exactly two source identifiers for a read-only identity comparison."""
+
     model_config = ConfigDict(extra="forbid")
     sources: list[Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")]] = Field(
         min_length=2, max_length=2
@@ -40,12 +50,16 @@ class IdentityAuditRequest(BaseModel):
 
     @model_validator(mode="after")
     def distinct_sources(self):
+        """Reject comparison of a source identifier with itself."""
+
         if len(set(self.sources)) != 2:
             raise ValueError("Two distinct source IDs are required")
         return self
 
 
 class IdentityConfirmation(BaseModel):
+    """Explicit source-identity confirmation bound to revision, discovery and evidence."""
+
     model_config = ConfigDict(extra="forbid")
     revision: str = Field(pattern="^[a-f0-9]{64}$")
     discovery_id: UUID
@@ -55,12 +69,16 @@ class IdentityConfirmation(BaseModel):
     @field_validator("confirmed", mode="before")
     @classmethod
     def explicit_confirmation(cls, value):
+        """Require the literal boolean True before identity confirmation."""
+
         if value is not True:
             raise ValueError("Explicit boolean confirmation required")
         return value
 
 
 class BaselineConfirmation(AbandonRequest):
+    """Reconciliation acknowledgements retaining uncertainty and requiring a fresh plan."""
+
     digest: str = Field(pattern="^[a-f0-9]{64}$")
     old_writes_stopped: bool = Field(strict=True)
     outcome_stays_unknown: bool = Field(strict=True)
@@ -68,6 +86,8 @@ class BaselineConfirmation(AbandonRequest):
 
 
 def routes(settings, onboarding, auth, lifecycle, sources):
+    """Build recovery and identity-review routes backed by stored probes and fresh evidence."""
+
     router = APIRouter(prefix="/api/v1/sources")
 
     @router.post("/{source}/reconciliation-review")

@@ -8,15 +8,21 @@ from ..auth_policy import AuthError
 
 
 class Status(BaseModel):
+    """Identify a durable source retirement operation."""
+
     model_config = ConfigDict(extra="forbid")
     operation_id: UUID
 
 
 class Review(Status):
+    """Bind retirement review to the expected source revision."""
+
     revision: str = Field(pattern="^[a-f0-9]{64}$")
 
 
 class Confirm(Status):
+    """Confirm reviewed retirement evidence, source name and credential-cleanup choice."""
+
     digest: str = Field(pattern="^[a-f0-9]{64}$")
     confirmed: Literal[True]
     confirmed_source: str = Field(min_length=1, max_length=200)
@@ -25,23 +31,31 @@ class Confirm(Status):
     @field_validator("confirmed", mode="before")
     @classmethod
     def explicit(cls, value):
+        """Require literal boolean confirmation before retirement execution."""
+
         if value is not True:
             raise ValueError("Explicit confirmation required")
         return value
 
 
 class Queue(Review):
+    """Explicit revision-bound confirmation for queued source removal."""
+
     confirmed: Literal[True]
 
     @field_validator("confirmed", mode="before")
     @classmethod
     def explicit(cls, value):
+        """Require literal boolean confirmation before queuing removal."""
+
         if value is not True:
             raise ValueError("Explicit confirmation required")
         return value
 
 
 def admin(http):
+    """Extract an administrator actor only from authenticated middleware state."""
+
     # principal is supplied only by the existing authenticated server middleware.
     # Client role/body/header assertions are never consulted.
     principal = getattr(http.state, "principal", None)
@@ -54,6 +68,8 @@ def admin(http):
 
 
 def routes(lifecycle):
+    """Build administrator-only retirement review, confirmation, resume and status endpoints."""
+
     router = APIRouter(prefix="/api/v1/sources")
 
     @router.post("/lifecycle-review")

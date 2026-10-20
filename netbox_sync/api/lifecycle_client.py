@@ -6,16 +6,26 @@ from .operation_dto import LifecycleDTO
 
 
 class LifecycleRequestError(RuntimeError):
+    """Worker lifecycle refusal or bounded transport failure exposed to the API."""
+
     def __init__(self, code):
+        """Retain the worker error code without including transport or credential details."""
+
         self.code = code
         super().__init__(code)
 
 
 class LifecycleClient:
+    """No-retry lifecycle RPC adapter with bounded response sizes and operation timeouts."""
+
     def __init__(self, path):
+        """Bind the local lifecycle worker socket path."""
+
         self.path = path
 
     def operation_evidence(self):
+        """Read ordered evidence pages within a shared deadline and reject repeated cursors."""
+
         from ..local_control import request
         from datetime import datetime
         import time
@@ -46,6 +56,8 @@ class LifecycleClient:
         raise LifecycleRequestError("LIFECYCLE_UNAVAILABLE")
 
     def generations(self):
+        """Read source generations through the bounded local-control transport."""
+
         from ..local_control import request, ControlError
 
         try:
@@ -59,6 +71,8 @@ class LifecycleClient:
             raise LifecycleRequestError(exc.code) from None
 
     def removal(self, action, source, **payload):
+        """Allow only removal request/status verbs and verify the returned source identity."""
+
         from ..local_control import request, ControlError
 
         if action not in {"request", "status"}:
@@ -76,6 +90,8 @@ class LifecycleClient:
             raise LifecycleRequestError("RETIREMENT_UNAVAILABLE") from None
 
     def retirement(self, action, source, **payload):
+        """Call an allowlisted retirement verb and verify the result belongs to the source."""
+
         from ..local_control import request, ControlError
 
         if action not in {"context", "archive_check", "review", "archive_review", "execute", "resume", "status"}:
@@ -96,6 +112,8 @@ class LifecycleClient:
             raise LifecycleRequestError("RETIREMENT_UNAVAILABLE") from None
 
     def reconciliation(self, action, source, **payload):
+        """Forward review or confirmation for an uncertain run without automatic retries."""
+
         from ..local_control import request, ControlError
 
         if action not in {"review", "confirm"}:
@@ -113,6 +131,8 @@ class LifecycleClient:
             raise LifecycleRequestError("LIFECYCLE_UNAVAILABLE") from None
 
     def legacy(self, action, source, **payload):
+        """Forward an allowlisted legacy-admission operation with a bounded timeout."""
+
         from ..local_control import request, ControlError
 
         if action not in {"describe", "confirm", "status"}:
@@ -127,6 +147,8 @@ class LifecycleClient:
             raise LifecycleRequestError("LIFECYCLE_UNAVAILABLE") from None
 
     def identity(self, action, source, **payload):
+        """Request source identity description or confirmation through the worker."""
+
         from ..local_control import request, ControlError
 
         if action not in {"describe", "confirm"}:
@@ -141,6 +163,8 @@ class LifecycleClient:
             raise LifecycleRequestError("LIFECYCLE_UNAVAILABLE") from None
 
     def recovery(self, action, source, **payload):
+        """Forward an allowlisted recovery step with a bounded response and no retry."""
+
         from ..local_control import request, ControlError
 
         if action not in {
@@ -168,6 +192,8 @@ class LifecycleClient:
             raise LifecycleRequestError("LIFECYCLE_UNAVAILABLE") from None
 
     def placement(self, source):
+        """Validate source identity and every bounded host projection returned for placement."""
+
         from ..local_control import request, ControlError
         from .dto import DiscoveryHostDTO
 
@@ -184,6 +210,8 @@ class LifecycleClient:
             raise LifecycleRequestError("LIFECYCLE_UNAVAILABLE") from None
 
     def request(self, source, payload=None, action=None):
+        """Exchange one bounded lifecycle message and validate the response source and schema."""
+
         request = {
             "action": action or ("source_lifecycle" if payload is None else "remove_source"),
             "source_instance": source,

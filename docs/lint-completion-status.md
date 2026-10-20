@@ -43,7 +43,9 @@ functions: one function can produce several findings.
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,
   executable AST and 52 schemas unchanged apart from descriptions. Pylint 9.09/10.
-- Remaining documentation: 98 classes and 384 functions; compatibility metrics pending.
+- Control API/client documentation: 56 descriptions added; 95 focused tests pass,
+  27 skipped, executable AST and 25 schemas unchanged apart from descriptions.
+- Remaining documentation: 68 classes and 360 functions; compatibility metrics pending.
 
 Detailed per-PR verification remains in [the cleanup log](lint-cleanup-20261020.md).
 This file must not be interpreted as a completed audit until all pending entries

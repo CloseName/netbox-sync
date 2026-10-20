@@ -78,6 +78,8 @@ ROUTES = (
 
 
 def permission(method, path):
+    """Return the first matching route permission, denying unmapped method/path pairs."""
+
     for verb, pattern, value in ROUTES:
         if method == verb and re.fullmatch(pattern, path):
             return value
@@ -85,10 +87,16 @@ def permission(method, path):
 
 
 class AuthClient:
+    """Bounded authentication RPC adapter exposing only closed public error codes."""
+
     def __init__(self, path):
+        """Bind the configured authentication control socket path."""
+
         self.path = path
 
     def call(self, action, **payload):
+        """Forward an auth operation and translate transport failures into closed auth errors."""
+
         try:
             return request(self.path, {"action": action, **payload}, timeout=25)["result"]
         except ControlError as exc:
@@ -98,6 +106,8 @@ class AuthClient:
 
 
 class Login(BaseModel):
+    """Bounded login fields; the optional legacy provider hint does not choose privileges."""
+
     model_config = ConfigDict(extra="forbid")
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=1, max_length=256, repr=False)
@@ -105,15 +115,21 @@ class Login(BaseModel):
 
 
 class Reauthentication(BaseModel):
+    """Password confirmation for an already authenticated session."""
+
     model_config = ConfigDict(extra="forbid")
     password: str = Field(min_length=1, max_length=256, repr=False)
 
 
 class Enrollment(Login):
+    """Local account enrollment using a bounded invitation capability."""
+
     invitation: str = Field(min_length=32, max_length=128, repr=False)
 
 
 class PolicyChange(BaseModel):
+    """Idempotent, revision-bound allow/revoke request for one destination host."""
+
     model_config = ConfigDict(extra="forbid")
     operation: Literal["allow", "revoke"] = "allow"
     host: str = Field(min_length=1, max_length=253)
@@ -122,6 +138,8 @@ class PolicyChange(BaseModel):
 
 
 class DirectoryRoleChange(BaseModel):
+    """Revision-bound assignment of a supported role to a directory user."""
+
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=36, max_length=36)
     role: Literal["viewer", "operator", "admin"]
@@ -129,6 +147,8 @@ class DirectoryRoleChange(BaseModel):
 
 
 def routes(client, source_reader=None):
+    """Build cookie-session, team, policy and directory administration endpoints."""
+
     router = APIRouter(prefix="/api/v1")
 
     def session_response(result):
