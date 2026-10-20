@@ -15,7 +15,7 @@ from .netbox_vm_metadata import (
 
 
 class VMApplyError(RuntimeError):
-    pass
+    """A VM prerequisite, identity, status or precheck prevents safe application."""
 
 
 def _integer_value(value):
@@ -379,6 +379,12 @@ def apply_virtual_machines(
     *,
     confirmed=False,
 ):
+    """Prepare and report the whole VM batch, then write only when confirmed.
+
+    Unconfirmed calls still perform reads and precheck validation. A blocked
+    precheck raises before writes; transport failures during writing propagate
+    without rolling back earlier changes. Print results and return None.
+    """
     inventory = prepare_vm_apply_inventory(
         nb_api,
         config,

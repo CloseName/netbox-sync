@@ -15,7 +15,12 @@ class LXCApplyInventory:
 
 
 def prepare_lxc_apply_inventory(nb_api, config, *, cluster_filter, LXCApplyError):
-    """Preserve LXC-specific scope checks, reads and membership semantics."""
+    """Resolve one site-scoped cluster and load the global VM inventory once.
+
+    Raise LXCApplyError for a missing site or nonunique target cluster. Derive
+    target membership from each record's cluster.id attribute, preserving global
+    inventory order; do not substitute the VM endpoint-filtering policy.
+    """
     site = nb_api.dcim.sites.get(slug=config.site_slug)
 
     if site is None:

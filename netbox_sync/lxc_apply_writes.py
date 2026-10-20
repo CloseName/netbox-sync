@@ -2,6 +2,13 @@
 
 
 def write_lxc_containers(nb_api, contexts):
+    """Write validated LXC contexts after the caller has confirmed the operation.
+
+    Preserve context order, create with the prepared desired fields and update
+    only nonempty changes. Count unchanged containers without per-item skip
+    output. Propagate write failures without rollback or a final summary; earlier
+    successful writes remain. Return None.
+    """
     created = 0
     updated = 0
     skipped = 0

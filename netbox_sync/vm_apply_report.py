@@ -15,6 +15,12 @@ def report_vm_precheck(
     _desired_start_on_boot,
     VMApplyError,
 ):
+    """Print every VM precheck context and reject the batch if any is blocked.
+
+    Show blocked candidates and match/create details in context order, retaining
+    pending-field insertion order. Raise VMApplyError only after printing the
+    complete blocked report; perform no writes and return None on success.
+    """
     print("=== VM APPLY PRECHECK ===")
     print(f"target_site={site.name} " f"cluster={cluster.name}")
     print(f"discovered={len(discovered)} " f"existing_in_cluster=" f"{len(target_vms)}")

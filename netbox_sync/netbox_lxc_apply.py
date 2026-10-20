@@ -13,7 +13,7 @@ from .netbox_lxc_metadata import (
 
 
 class LXCApplyError(RuntimeError):
-    pass
+    """An LXC prerequisite, identity or status prevents safe application."""
 
 
 def _status(value):
@@ -130,6 +130,12 @@ def apply_lxc_containers(
     *,
     confirmed=False,
 ):
+    """Validate and report LXC contexts before the optional confirmed write phase.
+
+    Unconfirmed calls still read and validate the inventory. Preparation failures
+    prevent all writes; write failures propagate and can leave an applied prefix.
+    Preserve LXC discovery order and report conventions. Return None.
+    """
     inventory = prepare_lxc_apply_inventory(
         nb_api,
         config,
