@@ -689,3 +689,14 @@ before extraction; 18 focused tests pass after, one platform test skipped.
 Full suite: 2556 passed, 491 skipped, one existing warning; Pylint 9.40/10,
 zero Error/Fatal. No control-flow complexity remains in selectel_control.
 Black and whitespace pass. Selectel remains experimental; production untouched.
+
+## Stage 61: experimental Selectel run stages
+
+Separate guarded collection/import from final state persistence using explicit run
+identity and import progress. Eight new tests pass before extraction; 16 focused
+tests pass after, one skipped. Preserve account-disable/run-replacement exits and
+the exact boundary after which failures become IMPORT_UNCONFIRMED.
+Full suite: 2564 passed, 491 skipped, one existing warning; Pylint 9.40/10,
+zero Error/Fatal. Explicit None returns were then checked with the same focused
+suite and focused lint (10/10). Black and whitespace pass. No control-flow
+complexity remains in selectel_runner; experimental status unchanged.
