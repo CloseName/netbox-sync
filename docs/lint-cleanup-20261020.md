@@ -352,3 +352,12 @@ All 29 new cases pass on main and after extraction. Full suite: 2318 passed,
 complexity or missing-doc findings remain in bootstrap_worker. Keep its single
 public callable entry point; a second public method would unnecessarily widen its
 interface merely to satisfy a class-size metric. Black and whitespace pass.
+
+## Stage 26: bootstrap state file checks and contracts
+
+Split file type/link/size checks from POSIX owner/mode checks without changing
+short-circuit refusal order or descriptor cleanup. Seven new fake-descriptor cases
+pass before extraction. Add 11 descriptions of state persistence and transitions;
+the documentation itself preserves executable AST. Full suite: 2325 passed,
+491 skipped, one existing warning. Pylint 9.16/10, zero Error/Fatal; no complexity
+or missing-doc findings remain in bootstrap_state. Black and whitespace pass.
