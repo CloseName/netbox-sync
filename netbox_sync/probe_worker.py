@@ -1,4 +1,5 @@
 """Ephemeral source probe only: no DB, persistent credentials or host control."""
+
 from dataclasses import asdict
 from .local_control import serve, request, ControlError
 from .application.onboarding import PendingCredentials, OnboardingError
@@ -6,48 +7,71 @@ from .application.observability import ErrorCode
 from .api.connection_probe import run_connection_test, PROBE_DEADLINE
 from .api.egress import EgressPolicy
 
-CODES = frozenset({ErrorCode.SOURCE_DNS_FAILED, ErrorCode.SOURCE_TIMEOUT, ErrorCode.SOURCE_TLS_FAILED,
-    ErrorCode.SOURCE_AUTH_FAILED, ErrorCode.SOURCE_DESTINATION_DENIED,
-    ErrorCode.SOURCE_CONNECTION_FAILED, ErrorCode.SOURCE_PERMISSION_DENIED, ErrorCode.HOST_IDENTITY_MISSING, ErrorCode.HOST_IDENTITY_INVALID, ErrorCode.HOST_IDENTITY_INCONSISTENT, ErrorCode.HOST_INVENTORY_EMPTY})
+CODES = frozenset(
+    {
+        ErrorCode.SOURCE_DNS_FAILED,
+        ErrorCode.SOURCE_TIMEOUT,
+        ErrorCode.SOURCE_TLS_FAILED,
+        ErrorCode.SOURCE_AUTH_FAILED,
+        ErrorCode.SOURCE_DESTINATION_DENIED,
+        ErrorCode.SOURCE_CONNECTION_FAILED,
+        ErrorCode.SOURCE_PERMISSION_DENIED,
+        ErrorCode.HOST_IDENTITY_MISSING,
+        ErrorCode.HOST_IDENTITY_INVALID,
+        ErrorCode.HOST_IDENTITY_INCONSISTENT,
+        ErrorCode.HOST_INVENTORY_EMPTY,
+    }
+)
 
 
 def handle(payload):
-    destination_only=payload.pop('destination_only',False)
-    if type(destination_only) is not bool: raise ControlError('CONTROL_REQUEST_INVALID')
-    preview=payload.pop('preview',False)
-    if type(preview) is not bool: raise ControlError('CONTROL_REQUEST_INVALID')
-    if set(payload) == {'credentials', 'session', 'revision'}:
+    destination_only = payload.pop("destination_only", False)
+    if type(destination_only) is not bool:
+        raise ControlError("CONTROL_REQUEST_INVALID")
+    preview = payload.pop("preview", False)
+    if type(preview) is not bool:
+        raise ControlError("CONTROL_REQUEST_INVALID")
+    if set(payload) == {"credentials", "session", "revision"}:
         from .api.auth import AuthClient
-        policy = AuthClient('/run/netbox-sync-auth/worker.sock').call('probe.authorize',
-            session=payload['session'], revision=payload['revision'])
-        payload = {'credentials': payload['credentials'], 'policy': policy['effective']}
+
+        policy = AuthClient("/run/netbox-sync-auth/worker.sock").call(
+            "probe.authorize", session=payload["session"], revision=payload["revision"]
+        )
+        payload = {"credentials": payload["credentials"], "policy": policy["effective"]}
     else:
         # No unauthenticated policy-bearing RPC in the production handler.
-        raise ControlError('AUTH_REQUIRED')
-    if set(payload) != {'credentials', 'policy'}:
-        raise ControlError('CONTROL_REQUEST_INVALID')
+        raise ControlError("AUTH_REQUIRED")
+    if set(payload) != {"credentials", "policy"}:
+        raise ControlError("CONTROL_REQUEST_INVALID")
     try:
-        credentials = PendingCredentials(**payload['credentials'])
-        policy = EgressPolicy(**payload['policy'])
-        if credentials.source_type not in ('esxi', 'proxmox') or not isinstance(credentials.verify_ssl, bool):
+        credentials = PendingCredentials(**payload["credentials"])
+        policy = EgressPolicy(**payload["policy"])
+        if credentials.source_type not in ("esxi", "proxmox") or not isinstance(credentials.verify_ssl, bool):
             raise ValueError()
-        result=run_connection_test(credentials, policy, child_uid=10001, **({'preview':True} if preview else {}), **({'destination_only':True} if destination_only else {}))
-        return {'success': True, 'preview':result} if preview else {'success': True}
+        result = run_connection_test(
+            credentials,
+            policy,
+            child_uid=10001,
+            **({"preview": True} if preview else {}),
+            **({"destination_only": True} if destination_only else {}),
+        )
+        return {"success": True, "preview": result} if preview else {"success": True}
     except OnboardingError as exc:
-        return {'error': exc.code.value if exc.code in CODES else ErrorCode.SOURCE_CONNECTION_FAILED.value}
+        return {"error": exc.code.value if exc.code in CODES else ErrorCode.SOURCE_CONNECTION_FAILED.value}
     except Exception:
-        return {'error': ErrorCode.SOURCE_CONNECTION_FAILED.value}
+        return {"error": ErrorCode.SOURCE_CONNECTION_FAILED.value}
 
 
 def remote_test(path, credentials, policy):
     try:
-        response = request(path, {'credentials': asdict(credentials), 'policy': asdict(policy)},
-                           timeout=PROBE_DEADLINE + 3)
-        result = response['result']
-        if result == {'success': True}:
+        response = request(
+            path, {"credentials": asdict(credentials), "policy": asdict(policy)}, timeout=PROBE_DEADLINE + 3
+        )
+        result = response["result"]
+        if result == {"success": True}:
             return
-        code = ErrorCode(result['error'])
-        if set(result) != {'error'} or code not in CODES:
+        code = ErrorCode(result["error"])
+        if set(result) != {"error"} or code not in CODES:
             raise ValueError()
     except Exception:
         raise OnboardingError(ErrorCode.SOURCE_CONNECTION_FAILED) from None
@@ -56,25 +80,35 @@ def remote_test(path, credentials, policy):
 
 def remote_test_authorized(path, credentials, session, revision, preview=False, destination_only=False):
     from .auth_policy import AuthError, CODES as AUTH_CODES
+
     try:
-        result = request(path, {'credentials': asdict(credentials), 'session': session,
-                              'revision': revision, **({'preview':True} if preview else {}), **({'destination_only':True} if destination_only else {})}, timeout=PROBE_DEADLINE + 3)['result']
+        result = request(
+            path,
+            {
+                "credentials": asdict(credentials),
+                "session": session,
+                "revision": revision,
+                **({"preview": True} if preview else {}),
+                **({"destination_only": True} if destination_only else {}),
+            },
+            timeout=PROBE_DEADLINE + 3,
+        )["result"]
     except ControlError as exc:
         if exc.code in AUTH_CODES:
             raise AuthError(exc.code) from None
         raise OnboardingError(ErrorCode.SOURCE_CONNECTION_FAILED) from None
-    if preview and result.get('success') is True and isinstance(result.get('preview'),dict):
-        return result['preview']
-    if result == {'success': True}:
+    if preview and result.get("success") is True and isinstance(result.get("preview"), dict):
+        return result["preview"]
+    if result == {"success": True}:
         return
     try:
-        code = ErrorCode(result['error'])
+        code = ErrorCode(result["error"])
     except Exception:
         code = ErrorCode.SOURCE_CONNECTION_FAILED
     raise OnboardingError(code if code in CODES else ErrorCode.SOURCE_CONNECTION_FAILED)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Serial processing bounds concurrent children; request/read and probe deadlines
     # are enforced independently. SO_PEERCRED allows only the API UID.
-    serve('/run/netbox-sync-probe/worker.sock', handle, allowed_uid=10001)
+    serve("/run/netbox-sync-probe/worker.sock", handle, allowed_uid=10001)

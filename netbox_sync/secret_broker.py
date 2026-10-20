@@ -1,4 +1,5 @@
 """Root-run Unix-socket broker for exclusive, non-readable source secret storage."""
+
 # Linux-only OS APIs are deliberately unavailable to Windows pylint inference.
 # pylint: disable=no-member
 
@@ -15,20 +16,20 @@ import time
 from pathlib import Path
 
 
-KEY_PATTERN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]{15,127}$')
-OPERATION_PATTERN = re.compile(r'^[A-Za-z0-9_-]{20,128}$')
+KEY_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{15,127}$")
+OPERATION_PATTERN = re.compile(r"^[A-Za-z0-9_-]{20,128}$")
 MAX_SECRET_BYTES = 4096
 MAX_REQUEST_BYTES = 8192
 REQUEST_DEADLINE = 5
 XATTR_NAMES = {
-    'operation': 'user.netbox_sync.operation',
-    'receipt': 'user.netbox_sync.receipt',
-    'complete': 'user.netbox_sync.complete',
+    "operation": "user.netbox_sync.operation",
+    "receipt": "user.netbox_sync.receipt",
+    "complete": "user.netbox_sync.complete",
 }
 LEGACY_XATTR_NAMES = {
-    'operation': 'user.infra_sync.operation',
-    'receipt': 'user.infra_sync.receipt',
-    'complete': 'user.infra_sync.complete',
+    "operation": "user.infra_sync.operation",
+    "receipt": "user.infra_sync.receipt",
+    "complete": "user.infra_sync.complete",
 }
 
 
@@ -45,9 +46,9 @@ class SecretBrokerStore:
 
     def __init__(self, root):
         root = Path(root)
-        if not root.is_absolute() or '..' in root.parts:
-            raise RuntimeError('Secret root must be an absolute directory')
-        directory = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+        if not root.is_absolute() or ".." in root.parts:
+            raise RuntimeError("Secret root must be an absolute directory")
+        directory = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
         try:
             for part in root.parts[1:]:
                 child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
@@ -55,18 +56,19 @@ class SecretBrokerStore:
                 directory = child
             info = os.fstat(directory)
             if info.st_uid != 0 or info.st_gid != 0 or file_stat.S_IMODE(info.st_mode) != 0o700:
-                raise RuntimeError('Secret root must be a root-owned 0700 directory')
+                raise RuntimeError("Secret root must be a root-owned 0700 directory")
         except Exception:
             os.close(directory)
             raise
         if not file_stat.S_ISDIR(info.st_mode):
             os.close(directory)
-            raise RuntimeError('Secret root must be a root-owned 0700 directory')
+            raise RuntimeError("Secret root must be a root-owned 0700 directory")
         self._directory = directory
 
     def singleton(self):
         """Lock the root inode, never a replaceable lock filename; retained until process exit."""
         import fcntl  # pylint: disable=import-outside-toplevel,import-error
+
         fcntl.flock(self._directory, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
     def _unlink_owned(self, descriptor, key, attributes):
@@ -76,15 +78,20 @@ class SecretBrokerStore:
         race this check. Host administrators must not mutate the active directory.
         """
         info = os.fstat(descriptor)
-        if (not file_stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0
-                or info.st_nlink != 1 or file_stat.S_IMODE(info.st_mode) != 0o600):
-            raise BrokerError('ROLLBACK_NOT_AUTHORIZED')
+        if (
+            not file_stat.S_ISREG(info.st_mode)
+            or info.st_uid != 0
+            or info.st_gid != 0
+            or info.st_nlink != 1
+            or file_stat.S_IMODE(info.st_mode) != 0o600
+        ):
+            raise BrokerError("ROLLBACK_NOT_AUTHORIZED")
         for name, value in attributes.items():
             if os.getxattr(descriptor, name) != value:
-                raise BrokerError('ROLLBACK_NOT_AUTHORIZED')
+                raise BrokerError("ROLLBACK_NOT_AUTHORIZED")
         current = os.stat(key, dir_fd=self._directory, follow_symlinks=False)
         if (info.st_dev, info.st_ino) != (current.st_dev, current.st_ino):
-            raise BrokerError('ROLLBACK_NOT_AUTHORIZED')
+            raise BrokerError("ROLLBACK_NOT_AUTHORIZED")
         os.unlink(key, dir_fd=self._directory)
         os.fsync(self._directory)
 
@@ -96,20 +103,25 @@ class SecretBrokerStore:
         for names in (XATTR_NAMES, LEGACY_XATTR_NAMES):
             selected = set(names.values()).intersection(present)
             if selected and selected != set(names.values()):
-                raise BrokerError('ROLLBACK_NOT_AUTHORIZED')
+                raise BrokerError("ROLLBACK_NOT_AUTHORIZED")
             if selected:
-                complete.append({key: os.getxattr(descriptor, name)
-                                 for key, name in names.items()})
+                complete.append({key: os.getxattr(descriptor, name) for key, name in names.items()})
         if not complete or any(values != complete[0] for values in complete[1:]):
-            raise BrokerError('ROLLBACK_NOT_AUTHORIZED')
+            raise BrokerError("ROLLBACK_NOT_AUTHORIZED")
         names = XATTR_NAMES if set(XATTR_NAMES.values()).issubset(present) else LEGACY_XATTR_NAMES
         return complete[0], {names[key]: value for key, value in complete[0].items()}
 
     @staticmethod
     def _key(key):
-        if (not isinstance(key, str) or not KEY_PATTERN.fullmatch(key) or key in ('.', '..')
-                or '%' in key or '/' in key or '\\' in key):
-            raise BrokerError('SECRET_KEY_INVALID')
+        if (
+            not isinstance(key, str)
+            or not KEY_PATTERN.fullmatch(key)
+            or key in (".", "..")
+            or "%" in key
+            or "/" in key
+            or "\\" in key
+        ):
+            raise BrokerError("SECRET_KEY_INVALID")
         return key
 
     def create(self, operation_id, key, secret_value):
@@ -119,31 +131,34 @@ class SecretBrokerStore:
         try:
             value = base64.b64decode(secret_value, validate=True)
         except (ValueError, TypeError):
-            raise BrokerError('SECRET_VALUE_INVALID') from None
-        if not value or len(value) > MAX_SECRET_BYTES or b'\x00' in value:
-            raise BrokerError('SECRET_VALUE_INVALID')
+            raise BrokerError("SECRET_VALUE_INVALID") from None
+        if not value or len(value) > MAX_SECRET_BYTES or b"\x00" in value:
+            raise BrokerError("SECRET_VALUE_INVALID")
         descriptor = None
         rollback_token = secrets.token_urlsafe(32)
         attributes = {}
         try:
             descriptor = os.open(
-                key, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=self._directory,
+                key,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                0o600,
+                dir_fd=self._directory,
             )
             os.fchmod(descriptor, 0o600)
             os.fchown(descriptor, 0, 0)
-            os.setxattr(descriptor, XATTR_NAMES['operation'], operation_id.encode())
-            attributes[XATTR_NAMES['operation']] = operation_id.encode()
-            os.setxattr(descriptor, XATTR_NAMES['receipt'], rollback_token.encode())
-            attributes[XATTR_NAMES['receipt']] = rollback_token.encode()
+            os.setxattr(descriptor, XATTR_NAMES["operation"], operation_id.encode())
+            attributes[XATTR_NAMES["operation"]] = operation_id.encode()
+            os.setxattr(descriptor, XATTR_NAMES["receipt"], rollback_token.encode())
+            attributes[XATTR_NAMES["receipt"]] = rollback_token.encode()
             written = 0
             while written < len(value):
                 count = os.write(descriptor, value[written:])
                 if count <= 0:
-                    raise OSError('Secret write failed')
+                    raise OSError("Secret write failed")
                 written += count
             os.fsync(descriptor)
-            os.setxattr(descriptor, XATTR_NAMES['complete'], b'1')
-            attributes[XATTR_NAMES['complete']] = b'1'
+            os.setxattr(descriptor, XATTR_NAMES["complete"], b"1")
+            attributes[XATTR_NAMES["complete"]] = b"1"
             os.fsync(descriptor)
         except FileExistsError:
             return self._repeat_create(operation_id, key, value)
@@ -153,7 +168,7 @@ class SecretBrokerStore:
                     self._unlink_owned(descriptor, key, attributes)
                 except (OSError, BrokerError):
                     pass
-            raise BrokerError('SECRET_CREATE_FAILED') from None
+            raise BrokerError("SECRET_CREATE_FAILED") from None
         finally:
             if descriptor is not None:
                 os.close(descriptor)
@@ -162,18 +177,27 @@ class SecretBrokerStore:
 
     def verify_owned(self, operation_id, key):
         """Check complete ownership metadata only; never read or return secret bytes."""
-        key=self._key(key);_operation(operation_id)
-        descriptor=None
+        key = self._key(key)
+        _operation(operation_id)
+        descriptor = None
         try:
-            descriptor=os.open(key,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=self._directory)
-            info=os.fstat(descriptor)
-            stored,_=self._stored_attributes(descriptor)
-            return (file_stat.S_ISREG(info.st_mode) and info.st_uid==0 and info.st_gid==0
-                    and info.st_nlink==1 and file_stat.S_IMODE(info.st_mode)==0o600
-                    and stored['operation']==operation_id.encode() and stored['complete']==b'1')
-        except (OSError,BrokerError):return False
+            descriptor = os.open(key, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=self._directory)
+            info = os.fstat(descriptor)
+            stored, _ = self._stored_attributes(descriptor)
+            return (
+                file_stat.S_ISREG(info.st_mode)
+                and info.st_uid == 0
+                and info.st_gid == 0
+                and info.st_nlink == 1
+                and file_stat.S_IMODE(info.st_mode) == 0o600
+                and stored["operation"] == operation_id.encode()
+                and stored["complete"] == b"1"
+            )
+        except (OSError, BrokerError):
+            return False
         finally:
-            if descriptor is not None:os.close(descriptor)
+            if descriptor is not None:
+                os.close(descriptor)
 
     def _repeat_create(self, operation_id, key, value):
         """A same-attempt replay returns its receipt, never overwrites file contents."""
@@ -182,17 +206,22 @@ class SecretBrokerStore:
             descriptor = os.open(key, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=self._directory)
             info = os.fstat(descriptor)
             stored, _attributes = self._stored_attributes(descriptor)
-            if (not file_stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0
-                    or info.st_nlink != 1 or file_stat.S_IMODE(info.st_mode) != 0o600
-                    or stored['operation'] != operation_id.encode()
-                    or stored['complete'] != b'1'
-                    or os.read(descriptor, MAX_SECRET_BYTES + 1) != value):
-                raise BrokerError('SECRET_ALREADY_EXISTS')
+            if (
+                not file_stat.S_ISREG(info.st_mode)
+                or info.st_uid != 0
+                or info.st_gid != 0
+                or info.st_nlink != 1
+                or file_stat.S_IMODE(info.st_mode) != 0o600
+                or stored["operation"] != operation_id.encode()
+                or stored["complete"] != b"1"
+                or os.read(descriptor, MAX_SECRET_BYTES + 1) != value
+            ):
+                raise BrokerError("SECRET_ALREADY_EXISTS")
             os.fsync(descriptor)
             os.fsync(self._directory)
-            return stored['receipt'].decode()
+            return stored["receipt"].decode()
         except OSError:
-            raise BrokerError('SECRET_ALREADY_EXISTS') from None
+            raise BrokerError("SECRET_ALREADY_EXISTS") from None
         finally:
             if descriptor is not None:
                 os.close(descriptor)
@@ -207,22 +236,27 @@ class SecretBrokerStore:
             info = os.fstat(descriptor)
             current = os.stat(key, dir_fd=self._directory, follow_symlinks=False)
             stored, attributes = self._stored_attributes(descriptor)
-            if (not file_stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0
-                    or info.st_nlink != 1 or file_stat.S_IMODE(info.st_mode) != 0o600
-                    or (info.st_dev, info.st_ino) != (current.st_dev, current.st_ino)
-                    or stored['operation'] != operation_id.encode()
-                    or stored['complete'] != b'1'
-                    or not secrets.compare_digest(
-                        stored['receipt'].decode(), rollback_token or '',
-                    )):
-                raise BrokerError('ROLLBACK_NOT_AUTHORIZED')
+            if (
+                not file_stat.S_ISREG(info.st_mode)
+                or info.st_uid != 0
+                or info.st_gid != 0
+                or info.st_nlink != 1
+                or file_stat.S_IMODE(info.st_mode) != 0o600
+                or (info.st_dev, info.st_ino) != (current.st_dev, current.st_ino)
+                or stored["operation"] != operation_id.encode()
+                or stored["complete"] != b"1"
+                or not secrets.compare_digest(
+                    stored["receipt"].decode(),
+                    rollback_token or "",
+                )
+            ):
+                raise BrokerError("ROLLBACK_NOT_AUTHORIZED")
             self._unlink_owned(descriptor, key, attributes)
         except OSError:
-            raise BrokerError('ROLLBACK_NOT_AUTHORIZED') from None
+            raise BrokerError("ROLLBACK_NOT_AUTHORIZED") from None
         finally:
             if descriptor is not None:
                 os.close(descriptor)
-
 
     def remove_owned(self, keys):
         """Remove an exclusively referenced pair only after lifecycle authorization.
@@ -236,8 +270,7 @@ class SecretBrokerStore:
             for key in keys:
                 key = self._key(key)
                 try:
-                    descriptor = os.open(key, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
-                                         dir_fd=self._directory)
+                    descriptor = os.open(key, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=self._directory)
                 except FileNotFoundError:
                     # A retry after a lost reply or partial unlink needs no side effect
                     # for an absent file. Every remaining file still needs ownership proof.
@@ -245,10 +278,15 @@ class SecretBrokerStore:
                 opened.append((descriptor, key, None))
                 info = os.fstat(descriptor)
                 stored, attributes = self._stored_attributes(descriptor)
-                if (not file_stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0
-                        or info.st_nlink != 1 or file_stat.S_IMODE(info.st_mode) != 0o600
-                        or stored['complete'] != b'1'
-                        or not set(XATTR_NAMES.values()).issubset(set(attributes))):
+                if (
+                    not file_stat.S_ISREG(info.st_mode)
+                    or info.st_uid != 0
+                    or info.st_gid != 0
+                    or info.st_nlink != 1
+                    or file_stat.S_IMODE(info.st_mode) != 0o600
+                    or stored["complete"] != b"1"
+                    or not set(XATTR_NAMES.values()).issubset(set(attributes))
+                ):
                     return False
                 opened[-1] = (descriptor, key, attributes)
             deleting = True
@@ -266,13 +304,13 @@ class SecretBrokerStore:
 
 def _operation(value):
     if not isinstance(value, str) or not OPERATION_PATTERN.fullmatch(value):
-        raise BrokerError('OPERATION_ID_INVALID')
+        raise BrokerError("OPERATION_ID_INVALID")
     return value
 
 
 def _reply(connection, payload):
     try:
-        connection.sendall(json.dumps(payload, separators=(',', ':')).encode() + b'\n')
+        connection.sendall(json.dumps(payload, separators=(",", ":")).encode() + b"\n")
     except OSError:
         # A lost acknowledgement must not kill the broker or authorize cleanup.
         pass
@@ -286,15 +324,16 @@ def serve(socket_path, secret_root, allowed_uid):
     path.parent.mkdir(mode=0o755, parents=False, exist_ok=True)
     parent = path.parent.lstat()
     if path.parent.is_symlink() or parent.st_uid != 0 or parent.st_mode & 0o022:
-        raise RuntimeError('Unsafe socket directory')
+        raise RuntimeError("Unsafe socket directory")
     # Also exclude a second root configured against this same socket directory.
     import fcntl  # pylint: disable=import-outside-toplevel,import-error
+
     socket_directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     fcntl.flock(socket_directory, fcntl.LOCK_EX | fcntl.LOCK_NB)
     if path.exists() or path.is_symlink():
         previous = path.lstat()
         if not file_stat.S_ISSOCK(previous.st_mode) or previous.st_uid != 0:
-            raise RuntimeError('Refusing to replace non-broker socket path')
+            raise RuntimeError("Refusing to replace non-broker socket path")
         path.unlink()
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(str(path))
@@ -305,94 +344,105 @@ def serve(socket_path, secret_root, allowed_uid):
         connection, _ = server.accept()
         with connection:
             connection.settimeout(5)
-            _, uid, _ = struct.unpack('3i', connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+            _, uid, _ = struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
             if uid not in (allowed_uid, 0):
-                _reply(connection, {'ok': False, 'error': 'PEER_NOT_AUTHORIZED'})
+                _reply(connection, {"ok": False, "error": "PEER_NOT_AUTHORIZED"})
                 continue
             try:
                 raw = read_request(connection)
                 request = json.loads(raw)
-                if isinstance(request,dict) and request.get('action')=='verify_owned':
-                    if uid!=0 or set(request)!={'action','operation_id','key'}:
-                        raise BrokerError('PEER_NOT_AUTHORIZED')
-                    _reply(connection,{'ok':True,'verified':store.verify_owned(request['operation_id'],request['key'])})
+                if isinstance(request, dict) and request.get("action") == "verify_owned":
+                    if uid != 0 or set(request) != {"action", "operation_id", "key"}:
+                        raise BrokerError("PEER_NOT_AUTHORIZED")
+                    _reply(
+                        connection,
+                        {"ok": True, "verified": store.verify_owned(request["operation_id"], request["key"])},
+                    )
                     continue
-                if isinstance(request, dict) and request.get('action') == 'remove_owned':
-                    if uid != 0 or set(request) != {'action', 'keys'}:
-                        raise BrokerError('PEER_NOT_AUTHORIZED')
-                    keys = request['keys']
-                    if (not isinstance(keys, list) or not 1 <= len(keys) <= 2
-                            or any(not isinstance(key, str) or not KEY_PATTERN.fullmatch(key) for key in keys)
-                            or len(set(keys)) != len(keys)):
-                        raise BrokerError('REQUEST_INVALID')
-                    _reply(connection, {'ok': True, 'removed': store.remove_owned(keys)})
+                if isinstance(request, dict) and request.get("action") == "remove_owned":
+                    if uid != 0 or set(request) != {"action", "keys"}:
+                        raise BrokerError("PEER_NOT_AUTHORIZED")
+                    keys = request["keys"]
+                    if (
+                        not isinstance(keys, list)
+                        or not 1 <= len(keys) <= 2
+                        or any(not isinstance(key, str) or not KEY_PATTERN.fullmatch(key) for key in keys)
+                        or len(set(keys)) != len(keys)
+                    ):
+                        raise BrokerError("REQUEST_INVALID")
+                    _reply(connection, {"ok": True, "removed": store.remove_owned(keys)})
                     continue
                 if uid != allowed_uid:
-                    raise BrokerError('PEER_NOT_AUTHORIZED')
-                operation_id = _operation(request.get('operation_id'))
-                if request.get('action') == 'create' and set(request) == {
-                        'action', 'operation_id', 'key', 'value'}:
-                    token = store.create(operation_id, request['key'], request['value'])
-                    _reply(connection, {'ok': True, 'rollback_token': token})
-                elif request.get('action') == 'rollback' and set(request) == {
-                        'action', 'operation_id', 'key', 'rollback_token'}:
-                    store.rollback(operation_id, request['key'], request['rollback_token'])
-                    _reply(connection, {'ok': True})
+                    raise BrokerError("PEER_NOT_AUTHORIZED")
+                operation_id = _operation(request.get("operation_id"))
+                if request.get("action") == "create" and set(request) == {"action", "operation_id", "key", "value"}:
+                    token = store.create(operation_id, request["key"], request["value"])
+                    _reply(connection, {"ok": True, "rollback_token": token})
+                elif request.get("action") == "rollback" and set(request) == {
+                    "action",
+                    "operation_id",
+                    "key",
+                    "rollback_token",
+                }:
+                    store.rollback(operation_id, request["key"], request["rollback_token"])
+                    _reply(connection, {"ok": True})
                 else:
-                    raise BrokerError('OPERATION_NOT_ALLOWED')
+                    raise BrokerError("OPERATION_NOT_ALLOWED")
             except (BrokerError, json.JSONDecodeError) as exc:
-                code = exc.code if isinstance(exc, BrokerError) else 'REQUEST_INVALID'
-                _reply(connection, {'ok': False, 'error': code})
+                code = exc.code if isinstance(exc, BrokerError) else "REQUEST_INVALID"
+                _reply(connection, {"ok": False, "error": code})
             except Exception:  # pylint: disable=broad-exception-caught
-                _reply(connection, {'ok': False, 'error': 'BROKER_INTERNAL_ERROR'})
+                _reply(connection, {"ok": False, "error": "BROKER_INTERNAL_ERROR"})
             finally:
                 request = None
-                raw = b''
+                raw = b""
 
 
 def read_request(connection, clock=time.monotonic):
     """Absolute receive budget: slow-drip clients cannot extend it per byte."""
     deadline = clock() + REQUEST_DEADLINE
-    raw = b''
-    while not raw.endswith(b'\n') and len(raw) <= MAX_REQUEST_BYTES:
+    raw = b""
+    while not raw.endswith(b"\n") and len(raw) <= MAX_REQUEST_BYTES:
         remaining = deadline - clock()
         if remaining <= 0:
-            raise BrokerError('REQUEST_TIMEOUT')
+            raise BrokerError("REQUEST_TIMEOUT")
         connection.settimeout(remaining)
         try:
             chunk = connection.recv(MAX_REQUEST_BYTES + 1 - len(raw))
         except TimeoutError:
-            raise BrokerError('REQUEST_TIMEOUT') from None
+            raise BrokerError("REQUEST_TIMEOUT") from None
         if not chunk:
             break
         raw += chunk
-    if len(raw) > MAX_REQUEST_BYTES or not raw.endswith(b'\n'):
-        raise BrokerError('REQUEST_INVALID')
+    if len(raw) > MAX_REQUEST_BYTES or not raw.endswith(b"\n"):
+        raise BrokerError("REQUEST_INVALID")
     return raw
 
 
 def main():
     """Start only from explicit broker container configuration."""
     parser = argparse.ArgumentParser()
-    parser.add_argument('--socket', required=True)
-    parser.add_argument('--secret-root', required=True)
-    parser.add_argument('--allowed-uid', type=int, default=10001)
-    parser.add_argument('--auth-socket')
-    parser.add_argument('--auth-secret-root')
+    parser.add_argument("--socket", required=True)
+    parser.add_argument("--secret-root", required=True)
+    parser.add_argument("--allowed-uid", type=int, default=10001)
+    parser.add_argument("--auth-socket")
+    parser.add_argument("--auth-secret-root")
     arguments = parser.parse_args()
     if bool(arguments.auth_socket) != bool(arguments.auth_secret_root):
-        parser.error('Both auth socket and secret root are required')
+        parser.error("Both auth socket and secret root are required")
     auth_process = None
     if arguments.auth_socket:
         import multiprocessing
         from .auth_secrets import serve_auth_secrets
-        auth_process = multiprocessing.Process(target=serve_auth_secrets,
-            args=(arguments.auth_socket, arguments.auth_secret_root), daemon=True)
+
+        auth_process = multiprocessing.Process(
+            target=serve_auth_secrets, args=(arguments.auth_socket, arguments.auth_secret_root), daemon=True
+        )
         auth_process.start()
     try:
         serve(arguments.socket, arguments.secret_root, arguments.allowed_uid)
     except Exception:
-        print(json.dumps({'component': 'secret_broker', 'error_code': 'BROKER_FAILED'}))
+        print(json.dumps({"component": "secret_broker", "error_code": "BROKER_FAILED"}))
         raise SystemExit(1) from None
     finally:
         if auth_process is not None:
@@ -400,5 +450,5 @@ def main():
             auth_process.join(5)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

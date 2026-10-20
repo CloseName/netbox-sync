@@ -10,10 +10,10 @@ from .observability import ErrorCode
 class HealthStatus(str, Enum):
     """Public component states; unknown is not proof of availability."""
 
-    HEALTHY = 'healthy'
-    DEGRADED = 'degraded'
-    UNAVAILABLE = 'unavailable'
-    UNKNOWN = 'unknown'
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    UNAVAILABLE = "unavailable"
+    UNKNOWN = "unknown"
 
 
 @dataclass(frozen=True)
@@ -60,19 +60,20 @@ class SystemHealthService:
             configured = False
         if HealthStatus.UNAVAILABLE in (database.status, registry.status):
             overall = HealthStatus.UNAVAILABLE
-        elif (database.status != HealthStatus.HEALTHY
-              or registry.status != HealthStatus.HEALTHY or not configured):
+        elif database.status != HealthStatus.HEALTHY or registry.status != HealthStatus.HEALTHY or not configured:
             overall = HealthStatus.DEGRADED
         else:
             overall = HealthStatus.HEALTHY
         netbox_message = (
-            'Configuration present; connectivity and credentials not checked'
-            if configured else 'Configuration incomplete; connectivity not checked'
+            "Configuration present; connectivity and credentials not checked"
+            if configured
+            else "Configuration incomplete; connectivity not checked"
         )
         return SystemHealth(
             overall,
-            ComponentHealth(HealthStatus.HEALTHY, 'API is responding'),
-            ComponentHealth(HealthStatus.HEALTHY, 'Application health service is responding'),
-            database, registry,
+            ComponentHealth(HealthStatus.HEALTHY, "API is responding"),
+            ComponentHealth(HealthStatus.HEALTHY, "Application health service is responding"),
+            database,
+            registry,
             ComponentHealth(HealthStatus.UNKNOWN, netbox_message),
         )

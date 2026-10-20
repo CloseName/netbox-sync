@@ -1,4 +1,5 @@
 """Narrow first-run control: protected NetBox state, no DB or source credentials."""
+
 import json
 import logging
 import os
@@ -15,23 +16,30 @@ PROBE_TIMEOUT = 45
 
 
 def run_probe(value):
-    value={**value,'guard_instance':os.environ.get('NETBOX_SYNC_GUARD_INSTANCE','')}
+    value = {**value, "guard_instance": os.environ.get("NETBOX_SYNC_GUARD_INSTANCE", "")}
     try:
-        with child_process(subprocess.Popen, [sys.executable, '-B', '-m', 'netbox_sync.bootstrap_probe'],
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                env=_safe_environment(), preexec_fn=_drop_privileges(10001, 10001)) as process:
+        with child_process(
+            subprocess.Popen,
+            [sys.executable, "-B", "-m", "netbox_sync.bootstrap_probe"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            env=_safe_environment(),
+            preexec_fn=_drop_privileges(10001, 10001),
+        ) as process:
             try:
                 output, _ = process.communicate(json.dumps(value).encode(), timeout=PROBE_TIMEOUT)
             except subprocess.TimeoutExpired:
                 detail = stop_child(process)
-                logging.getLogger(__name__).warning(json.dumps({
-                    'code': 'BOOTSTRAP_PROBE_TIMEOUT', **detail}, sort_keys=True))
-                return {'safe_code': 'VALIDATION_UNAVAILABLE', 'checks': []}
+                logging.getLogger(__name__).warning(
+                    json.dumps({"code": "BOOTSTRAP_PROBE_TIMEOUT", **detail}, sort_keys=True)
+                )
+                return {"safe_code": "VALIDATION_UNAVAILABLE", "checks": []}
             if process.returncode or len(output) > 16384:
                 raise ValueError()
             return json.loads(output)
     except Exception:
-        return {'safe_code': 'VALIDATION_UNAVAILABLE', 'checks': []}
+        return {"safe_code": "VALIDATION_UNAVAILABLE", "checks": []}
 
 
 class BootstrapControl:
@@ -39,113 +47,183 @@ class BootstrapControl:
         self.store, self.lock_path, self.probe = store, lock_path, probe
 
     def __call__(self, payload):
-        if payload == {'action':'health'}:return {'status':'ok'}
-        action = payload.get('action')
-        if action == 'selectel':
+        if payload == {"action": "health"}:
+            return {"status": "ok"}
+        action = payload.get("action")
+        if action == "selectel":
             from .selectel_control import handle
+
             return handle(self.store, self.lock_path, payload)
-        if action == 'pfsense':
+        if action == "pfsense":
             from .pfsense_control import handle
+
             return handle(self.store, self.lock_path, payload)
-        if action == 'namespace-check' and set(payload)=={'action','source_instance'}:
+        if action == "namespace-check" and set(payload) == {"action", "source_instance"}:
             from .retirement_worker import handle
             from uuid import uuid4
-            return handle(dict(action='namespace',operation_id=str(uuid4()),source_instance=payload['source_instance']))['result']
-        if action == 'registration-cluster':
+
+            return handle(
+                dict(action="namespace", operation_id=str(uuid4()), source_instance=payload["source_instance"])
+            )["result"]
+        if action == "registration-cluster":
             from .catalog_creation import CatalogCreation
             from .bootstrap_probe import ProbeError
-            if set(payload) not in ({'action','operation_id','name','site_id','cluster_type_id'},
-                                    {'action','operation_id','name','site_id','cluster_type_id','source_instance'}):
-                raise ControlError('BOOTSTRAP_INVALID')
-            command = dict(action='catalog-create', operation_id=payload['operation_id'], kind='cluster',
-                object=dict(name=payload['name'], type=payload['cluster_type_id'],
-                            scope_type='dcim.site', scope_id=payload['site_id']), confirm=True)
+
+            if set(payload) not in (
+                {"action", "operation_id", "name", "site_id", "cluster_type_id"},
+                {"action", "operation_id", "name", "site_id", "cluster_type_id", "source_instance"},
+            ):
+                raise ControlError("BOOTSTRAP_INVALID")
+            command = dict(
+                action="catalog-create",
+                operation_id=payload["operation_id"],
+                kind="cluster",
+                object=dict(
+                    name=payload["name"],
+                    type=payload["cluster_type_id"],
+                    scope_type="dcim.site",
+                    scope_id=payload["site_id"],
+                ),
+                confirm=True,
+            )
             try:
                 with apply_lock(self.lock_path):
-                    result = CatalogCreation(self.store).execute(command, registration=True, source_instance=payload.get('source_instance'))
+                    result = CatalogCreation(self.store).execute(
+                        command, registration=True, source_instance=payload.get("source_instance")
+                    )
                 # Another intent may have reached NetBox first. Its journal is not
                 # evidence that this actor/source registration created the cluster.
-                if result.get('operation_id') != payload['operation_id']:
-                    return {'status':'EXISTS_REVIEW_REQUIRED','item':result.get('item')}
+                if result.get("operation_id") != payload["operation_id"]:
+                    return {"status": "EXISTS_REVIEW_REQUIRED", "item": result.get("item")}
                 return result
             except ProbeError as exc:
-                return {'error':exc.code}
-        if action in ('catalog-create','catalog-reconcile'):
+                return {"error": exc.code}
+        if action in ("catalog-create", "catalog-reconcile"):
             from .catalog_creation import CatalogCreation
             from .bootstrap_probe import ProbeError
+
             try:
-                with apply_lock(self.lock_path):return CatalogCreation(self.store).execute(payload)
-            except ProbeError as exc:return {'error':exc.code}
-        if action == 'catalog-prepare' and set(payload)=={'action','query'}:
+                with apply_lock(self.lock_path):
+                    return CatalogCreation(self.store).execute(payload)
+            except ProbeError as exc:
+                return {"error": exc.code}
+        if action == "catalog-prepare" and set(payload) == {"action", "query"}:
             from .bootstrap_state import runtime_netbox
-            if payload['query'].get('action') != 'resolve-placement':
-                raise ControlError('BOOTSTRAP_INVALID')
+
+            if payload["query"].get("action") != "resolve-placement":
+                raise ControlError("BOOTSTRAP_INVALID")
             with apply_lock(self.lock_path), self.store.locked():
-                url, read_token = runtime_netbox(self.store.path, 'read')
-                _, apply_token = runtime_netbox(self.store.path, 'apply')
+                url, read_token = runtime_netbox(self.store.path, "read")
+                _, apply_token = runtime_netbox(self.store.path, "apply")
                 try:
-                    result = subprocess.run([sys.executable, '-B', '-m', 'netbox_sync.netbox_catalog'],
-                        input=json.dumps({'url':url, 'read_token':read_token, 'apply_token':apply_token, 'query':payload['query']}).encode(),
-                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=90, check=True,
-                        env=_safe_environment(), preexec_fn=_drop_privileges(10001,10001))
-                    if len(result.stdout)>24576: raise ValueError()
+                    result = subprocess.run(
+                        [sys.executable, "-B", "-m", "netbox_sync.netbox_catalog"],
+                        input=json.dumps(
+                            {
+                                "url": url,
+                                "read_token": read_token,
+                                "apply_token": apply_token,
+                                "query": payload["query"],
+                            }
+                        ).encode(),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL,
+                        timeout=90,
+                        check=True,
+                        env=_safe_environment(),
+                        preexec_fn=_drop_privileges(10001, 10001),
+                    )
+                    if len(result.stdout) > 24576:
+                        raise ValueError()
                     return json.loads(result.stdout)
-                except Exception: return {'error':'NETWORK_UNREACHABLE'}
-        if action == 'catalog' and set(payload)=={'action','query'}:
+                except Exception:
+                    return {"error": "NETWORK_UNREACHABLE"}
+        if action == "catalog" and set(payload) == {"action", "query"}:
             from .bootstrap_state import runtime_netbox
             from contextlib import ExitStack
             import fcntl
+
             with ExitStack() as cleanup:
                 # Four cross-process read slots, independent of the shared apply
                 # lock. A catalog request never stops a running operation.
                 for slot in range(4):
-                    fd=os.open('/tmp/netbox-sync-catalog-'+str(slot)+'.lock',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
-                    try: fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
-                    except BlockingIOError: os.close(fd);continue
-                    cleanup.callback(os.close,fd);break
-                else: return {'error':'BUSY'}
-                url,token=runtime_netbox(self.store.path,'read')
+                    fd = os.open(
+                        "/tmp/netbox-sync-catalog-" + str(slot) + ".lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600
+                    )
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        os.close(fd)
+                        continue
+                    cleanup.callback(os.close, fd)
+                    break
+                else:
+                    return {"error": "BUSY"}
+                url, token = runtime_netbox(self.store.path, "read")
                 try:
-                    result=subprocess.run([sys.executable,'-B','-m','netbox_sync.netbox_catalog'],
-                        input=json.dumps({'url':url,'read_token':token,'query':payload['query']}).encode(),
-                        stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=30,check=True,
-                        env=_safe_environment(),preexec_fn=_drop_privileges(10001,10001))
-                    if len(result.stdout)>24576: raise ValueError()
+                    result = subprocess.run(
+                        [sys.executable, "-B", "-m", "netbox_sync.netbox_catalog"],
+                        input=json.dumps({"url": url, "read_token": token, "query": payload["query"]}).encode(),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL,
+                        timeout=30,
+                        check=True,
+                        env=_safe_environment(),
+                        preexec_fn=_drop_privileges(10001, 10001),
+                    )
+                    if len(result.stdout) > 24576:
+                        raise ValueError()
                     return json.loads(result.stdout)
-                except Exception: return {'error':'NETWORK_UNREACHABLE'}
-        if action == 'status' and set(payload) == {'action'}:
+                except Exception:
+                    return {"error": "NETWORK_UNREACHABLE"}
+        if action == "status" and set(payload) == {"action"}:
             return self.store.status()
-        if action in ('prerequisites-plan', 'prerequisites-cancel') and set(payload)=={'action','revision'}:
+        if action in ("prerequisites-plan", "prerequisites-cancel") and set(payload) == {"action", "revision"}:
             setup = Preparation(self.store)
-            return setup.plan(payload['revision']) if action=='prerequisites-plan' else setup.cancel(payload['revision'])
-        if action == 'prerequisites-apply' and set(payload)=={'action','revision','digest','confirm','setup_token'}:
+            return (
+                setup.plan(payload["revision"]) if action == "prerequisites-plan" else setup.cancel(payload["revision"])
+            )
+        if action == "prerequisites-apply" and set(payload) == {
+            "action",
+            "revision",
+            "digest",
+            "confirm",
+            "setup_token",
+        }:
             with apply_lock(self.lock_path):
                 return Preparation(self.store).apply(payload)
-        if action == 'configure':
+        if action == "configure":
             with apply_lock(self.lock_path):
                 return self.store.configure(payload)
-        if action in ('validate', 'finish') and set(payload) == {'action', 'revision'}:
-            if action == 'validate':
-                return self.store.validate(payload['revision'], self.probe)
+        if action in ("validate", "finish") and set(payload) == {"action", "revision"}:
+            if action == "validate":
+                return self.store.validate(payload["revision"], self.probe)
             with apply_lock(self.lock_path):
-                return self.store.finish(payload['revision'])
-        raise ControlError('BOOTSTRAP_INVALID')
+                return self.store.finish(payload["revision"])
+        raise ControlError("BOOTSTRAP_INVALID")
 
 
 def main():
-    control = BootstrapControl(BootstrapStore(os.environ.get('NETBOX_SYNC_NETBOX_STATE_DIR', '/var/lib/netbox-sync/netbox')),
-        os.environ.get('NETBOX_SYNC_APPLY_LOCK_PATH', '/run/netbox-sync-lock/apply.lock'))
+    control = BootstrapControl(
+        BootstrapStore(os.environ.get("NETBOX_SYNC_NETBOX_STATE_DIR", "/var/lib/netbox-sync/netbox")),
+        os.environ.get("NETBOX_SYNC_APPLY_LOCK_PATH", "/run/netbox-sync-lock/apply.lock"),
+    )
     import threading
     from .selectel_scheduler import run
+
     stop = threading.Event()
     scheduler = threading.Thread(target=run, args=(control.store, control.lock_path, stop), daemon=True)
     scheduler.start()
     try:
-        serve(os.environ.get('NETBOX_SYNC_BOOTSTRAP_SOCKET', '/run/netbox-sync-bootstrap/worker.sock'), control, concurrent=True)
+        serve(
+            os.environ.get("NETBOX_SYNC_BOOTSTRAP_SOCKET", "/run/netbox-sync-bootstrap/worker.sock"),
+            control,
+            concurrent=True,
+        )
     finally:
         stop.set()
         scheduler.join(timeout=5)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

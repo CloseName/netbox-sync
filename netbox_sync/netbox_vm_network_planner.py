@@ -22,82 +22,53 @@ def _canonical_mac(value):
 
 
 def _canonical_address(value):
-    return str(
-        ipaddress.ip_interface(
-            str(value)
-        )
-    )
+    return str(ipaddress.ip_interface(str(value)))
 
 
 def _usable_address(value):
     try:
-        interface = ipaddress.ip_interface(
-            str(value)
-        )
+        interface = ipaddress.ip_interface(str(value))
     except ValueError:
         return None
 
     address = interface.ip
 
-    if (
-        address.is_loopback
-        or address.is_link_local
-        or address.is_multicast
-        or address.is_unspecified
-    ):
+    if address.is_loopback or address.is_link_local or address.is_multicast or address.is_unspecified:
         return None
 
     return str(interface)
 
 
 def _network_of(address):
-    return str(
-        ipaddress.ip_interface(
-            address
-        ).network
-    )
+    return str(ipaddress.ip_interface(address).network)
 
 
 def _assigned_object(record):
     data = record.serialize()
 
     return (
-        data.get(
-            'assigned_object_type'
-        ),
-        data.get(
-            'assigned_object_id'
-        ),
+        data.get("assigned_object_type"),
+        data.get("assigned_object_id"),
     )
 
 
 def _scope_rank(data, site_id):
-    scope_type = data.get(
-        'scope_type'
-    )
+    scope_type = data.get("scope_type")
 
-    scope_id = data.get(
-        'scope_id'
-    )
+    scope_id = data.get("scope_id")
 
-    if (
-        scope_type == 'dcim.site'
-        and scope_id == site_id
-    ):
+    if scope_type == "dcim.site" and scope_id == site_id:
         return 0
 
-    if (
-        scope_type is None
-        and scope_id is None
-    ):
+    if scope_type is None and scope_id is None:
         return 1
 
     return None
 
 
 def _select_scoped(
-        records,
-        site_id,
+    records,
+    site_id,
 ):
     eligible = []
 
@@ -118,82 +89,67 @@ def _select_scoped(
             )
 
     if not eligible:
-        return None, 'not-found'
+        return None, "not-found"
 
-    best_rank = min(
-        item[0]
-        for item in eligible
-    )
+    best_rank = min(item[0] for item in eligible)
 
-    best = [
-        record
-        for rank, record
-        in eligible
-        if rank == best_rank
-    ]
+    best = [record for rank, record in eligible if rank == best_rank]
 
     if len(best) > 1:
-        return None, 'ambiguous'
+        return None, "ambiguous"
 
-    return best[0], 'match'
+    return best[0], "match"
 
 
 def _vm_identity_match(
-        target_vms,
-        discovered_vm,
+    target_vms,
+    discovered_vm,
 ):
     return find_vm_sync_identity_matches(target_vms, discovered_vm)
 
 
 def _existing_primary_ipv4(
-        vm,
-        ips_by_id,
+    vm,
+    ips_by_id,
 ):
     data = vm.serialize()
 
-    primary_id = _object_id(
-        data.get('primary_ip4')
-    )
+    primary_id = _object_id(data.get("primary_ip4"))
 
     if primary_id is None:
         return None
 
-    ip = ips_by_id.get(
-        primary_id
-    )
+    ip = ips_by_id.get(primary_id)
 
     if ip is None:
         return None
 
-    address = ip.serialize().get(
-        'address'
-    )
+    address = ip.serialize().get("address")
 
     if not address:
         return None
 
-    return _canonical_address(
-        address
-    )
+    return _canonical_address(address)
 
 
 def plan_vm_networks(
-        nb_api,
-        host,
-        cluster,
-        site,
+    nb_api,
+    host,
+    cluster,
+    site,
 ):
     print()
-    print(
-        '  QEMU VM NETWORK'
-    )
+    print("  QEMU VM NETWORK")
 
     if cluster is None:
-        print('    BLOCKED target cluster does not exist')
+        print("    BLOCKED target cluster does not exist")
         return
 
     inventory = prepare_vm_network_plan_inventory(
-        nb_api, cluster, _canonical_mac=_canonical_mac, _canonical_address=_canonical_address,
+        nb_api,
+        cluster,
+        _canonical_mac=_canonical_mac,
+        _canonical_address=_canonical_address,
     )
     target_vms = inventory.target_vms
     interfaces_by_vm = inventory.interfaces_by_vm
@@ -204,74 +160,60 @@ def plan_vm_networks(
     prefixes_by_prefix = inventory.prefixes_by_prefix
 
     counters = {
-        'vm_match': 0,
-        'vm_blocked': 0,
-
-        'interface_create': 0,
-        'interface_match': 0,
-        'interface_conflict': 0,
-
-        'mac_create': 0,
-        'mac_match': 0,
-        'mac_conflict': 0,
-
-        'ip_create': 0,
-        'ip_match': 0,
-        'ip_conflict': 0,
-
-        'primary_set': 0,
-        'warnings': 0,
+        "vm_match": 0,
+        "vm_blocked": 0,
+        "interface_create": 0,
+        "interface_match": 0,
+        "interface_conflict": 0,
+        "mac_create": 0,
+        "mac_match": 0,
+        "mac_conflict": 0,
+        "ip_create": 0,
+        "ip_match": 0,
+        "ip_conflict": 0,
+        "primary_set": 0,
+        "warnings": 0,
     }
 
     for discovered_vm in sorted(
         host.virtual_machines,
         key=lambda item: item.vmid,
     ):
-        vm_matches = (
-            _vm_identity_match(
-                target_vms,
-                discovered_vm,
-            )
+        vm_matches = _vm_identity_match(
+            target_vms,
+            discovered_vm,
         )
 
         if len(vm_matches) != 1:
-            counters[
-                'vm_blocked'
-            ] += 1
+            counters["vm_blocked"] += 1
 
             print(
-                f'    BLOCKED NETWORK '
-                f'vmid={discovered_vm.vmid} '
-                f'name={discovered_vm.original_name!r} '
-                f'vm_matches={len(vm_matches)}'
+                f"    BLOCKED NETWORK "
+                f"vmid={discovered_vm.vmid} "
+                f"name={discovered_vm.original_name!r} "
+                f"vm_matches={len(vm_matches)}"
             )
 
             continue
 
         netbox_vm = vm_matches[0]
 
-        counters[
-            'vm_match'
-        ] += 1
+        counters["vm_match"] += 1
 
         print()
-        print(
-            f'    VM id={netbox_vm.id} '
-            f'vmid={discovered_vm.vmid} '
-            f'name={discovered_vm.original_name!r}'
-        )
+        print(f"    VM id={netbox_vm.id} " f"vmid={discovered_vm.vmid} " f"name={discovered_vm.original_name!r}")
 
-        existing_interfaces = (
-            interfaces_by_vm.get(
-                netbox_vm.id,
-                [],
-            )
+        existing_interfaces = interfaces_by_vm.get(
+            netbox_vm.id,
+            [],
         )
 
         if not validate_plan_interfaces(
-                discovered_vm, existing_interfaces, counters,
-                validate_interface_names=validate_interface_names,
-                _interface_match=_interface_match,
+            discovered_vm,
+            existing_interfaces,
+            counters,
+            validate_interface_names=validate_interface_names,
+            _interface_match=_interface_match,
         ):
             continue
 
@@ -282,30 +224,51 @@ def plan_vm_networks(
             key=lambda item: item.name,
         ):
             can_continue, existing_interface = match_plan_interface(
-                discovered_vm, nic, existing_interfaces, counters,
+                discovered_vm,
+                nic,
+                existing_interfaces,
+                counters,
                 find_nic_sync_identity_matches=find_nic_sync_identity_matches,
             )
             if not can_continue:
                 continue
 
             plan_interface_vlan(
-                nic, vlans_by_vid, site, counters, _select_scoped=_select_scoped,
+                nic,
+                vlans_by_vid,
+                site,
+                counters,
+                _select_scoped=_select_scoped,
             )
 
             plan_interface_mac(
-                nic, existing_interface, macs_by_address, counters,
-                _canonical_mac=_canonical_mac, _assigned_object=_assigned_object,
+                nic,
+                existing_interface,
+                macs_by_address,
+                counters,
+                _canonical_mac=_canonical_mac,
+                _assigned_object=_assigned_object,
             )
 
             plan_interface_ips(
-                nic, existing_interface, ips_by_address, prefixes_by_prefix,
-                site, counters, discovered_ipv4, _usable_address=_usable_address,
-                _network_of=_network_of, _select_scoped=_select_scoped,
+                nic,
+                existing_interface,
+                ips_by_address,
+                prefixes_by_prefix,
+                site,
+                counters,
+                discovered_ipv4,
+                _usable_address=_usable_address,
+                _network_of=_network_of,
+                _select_scoped=_select_scoped,
                 _assigned_object=_assigned_object,
             )
 
         plan_primary_ipv4(
-            netbox_vm, discovered_ipv4, ips_by_id, counters,
+            netbox_vm,
+            discovered_ipv4,
+            ips_by_id,
+            counters,
             _existing_primary_ipv4=_existing_primary_ipv4,
         )
 

@@ -1,4 +1,5 @@
 """Operator-facing precheck report for validated LXC network contexts."""
+
 from .interface_display import interface_display_name
 
 
@@ -16,151 +17,89 @@ def print_lxc_network_precheck(contexts, site, cluster):
 
     primary_candidates = 0
 
-    print(
-        '=== LXC NETWORK APPLY PRECHECK ==='
-    )
+    print("=== LXC NETWORK APPLY PRECHECK ===")
 
-    print(
-        f'target_site={site.name} '
-        f'cluster={cluster.name}'
-    )
+    print(f"target_site={site.name} " f"cluster={cluster.name}")
 
     print()
 
     for context in contexts:
-        container = context['container']
+        container = context["container"]
 
-        netbox_vm = context[
-            'netbox_vm'
-        ]
+        netbox_vm = context["netbox_vm"]
 
-        print(
-            f'LXC id={netbox_vm.id} '
-            f'vmid={container.vmid} '
-            f'name={container.original_name!r}'
-        )
+        print(f"LXC id={netbox_vm.id} " f"vmid={container.vmid} " f"name={container.original_name!r}")
 
-        for nic_context in context[
-            'nics'
-        ]:
-            nic = nic_context[
-                'source'
-            ]
+        for nic_context in context["nics"]:
+            nic = nic_context["source"]
 
-            existing = nic_context[
-                'existing'
-            ]
+            existing = nic_context["existing"]
 
             if existing is None:
-                action = 'CREATE'
+                action = "CREATE"
                 interface_create += 1
 
-            elif nic_context['changes']:
-                action = 'UPDATE'
+            elif nic_context["changes"]:
+                action = "UPDATE"
                 interface_update += 1
 
             else:
-                action = 'SKIP'
+                action = "SKIP"
                 interface_skip += 1
 
             print(
-                f'  {action} INTERFACE '
-                f'name={interface_display_name(container, nic)} '
+                f"  {action} INTERFACE "
+                f"name={interface_display_name(container, nic)} "
                 f'bridge={nic.bridge or "-"} '
-                f'vlan='
+                f"vlan="
                 f'{nic.vlan_id if nic.vlan_id is not None else "-"}'
             )
 
-            if nic_context[
-                'mac_value'
-            ]:
-                if (
-                    nic_context[
-                        'existing_mac'
-                    ] is None
-                ):
+            if nic_context["mac_value"]:
+                if nic_context["existing_mac"] is None:
                     mac_create += 1
-                    mac_action = 'CREATE'
+                    mac_action = "CREATE"
                 else:
                     mac_match += 1
-                    mac_action = 'MATCH'
+                    mac_action = "MATCH"
 
-                print(
-                    f'    {mac_action} MAC '
-                    f'{nic_context["mac_value"]}'
-                )
+                print(f"    {mac_action} MAC " f'{nic_context["mac_value"]}')
 
-            for ip_context in (
-                nic_context['ips']
-            ):
-                if (
-                    ip_context[
-                        'existing'
-                    ] is None
-                ):
+            for ip_context in nic_context["ips"]:
+                if ip_context["existing"] is None:
                     ip_create += 1
-                    ip_action = 'CREATE'
+                    ip_action = "CREATE"
                 else:
                     ip_match += 1
-                    ip_action = 'MATCH'
+                    ip_action = "MATCH"
 
-                print(
-                    f'    {ip_action} IP '
-                    f'{ip_context["address"]}'
-                )
+                print(f"    {ip_action} IP " f'{ip_context["address"]}')
 
-        candidate = context[
-            'primary_candidate'
-        ]
+        candidate = context["primary_candidate"]
 
         if candidate is not None:
             primary_candidates += 1
 
-            print(
-                f'  PRIMARY IPv4 '
-                f'candidate={candidate}'
-            )
+            print(f"  PRIMARY IPv4 " f"candidate={candidate}")
 
     print()
-    print(
-        'LXC NETWORK PRECHECK SUMMARY'
-    )
+    print("LXC NETWORK PRECHECK SUMMARY")
 
-    print(
-        f'  interface_create='
-        f'{interface_create}'
-    )
+    print(f"  interface_create=" f"{interface_create}")
 
-    print(
-        f'  interface_update='
-        f'{interface_update}'
-    )
+    print(f"  interface_update=" f"{interface_update}")
 
-    print(
-        f'  interface_skip='
-        f'{interface_skip}'
-    )
+    print(f"  interface_skip=" f"{interface_skip}")
 
-    print(
-        f'  mac_create={mac_create}'
-    )
+    print(f"  mac_create={mac_create}")
 
-    print(
-        f'  mac_match={mac_match}'
-    )
+    print(f"  mac_match={mac_match}")
 
-    print(
-        f'  ip_create={ip_create}'
-    )
+    print(f"  ip_create={ip_create}")
 
-    print(
-        f'  ip_match={ip_match}'
-    )
+    print(f"  ip_match={ip_match}")
 
-    print(
-        f'  primary_candidates='
-        f'{primary_candidates}'
-    )
+    print(f"  primary_candidates=" f"{primary_candidates}")
 
     print()
-    print('PRECHECK PASSED')
+    print("PRECHECK PASSED")

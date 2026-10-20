@@ -16,21 +16,21 @@ from .source_identity import host_source_identity, virtual_machine_source_identi
 class ObjectMigrationClassification(str, Enum):
     """Migration classification for a discovered host or VM."""
 
-    MANAGED = 'MANAGED'
-    NEW = 'NEW'
-    REVIEW_REQUIRED = 'REVIEW_REQUIRED'
-    SAFE_LEGACY_CANDIDATE = 'SAFE_LEGACY_CANDIDATE'
-    AMBIGUOUS = 'AMBIGUOUS'
+    MANAGED = "MANAGED"
+    NEW = "NEW"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    SAFE_LEGACY_CANDIDATE = "SAFE_LEGACY_CANDIDATE"
+    AMBIGUOUS = "AMBIGUOUS"
 
 
 class InterfaceMigrationClassification(str, Enum):
     """Read-only correlation state for one discovered interface."""
 
-    MATCH_EXISTING = 'MATCH_EXISTING'
-    SAFE_RENAME_OR_REUSE_CANDIDATE = 'SAFE_RENAME_OR_REUSE_CANDIDATE'
-    CREATE = 'CREATE'
-    AMBIGUOUS = 'AMBIGUOUS'
-    CONFLICT = 'CONFLICT'
+    MATCH_EXISTING = "MATCH_EXISTING"
+    SAFE_RENAME_OR_REUSE_CANDIDATE = "SAFE_RENAME_OR_REUSE_CANDIDATE"
+    CREATE = "CREATE"
+    AMBIGUOUS = "AMBIGUOUS"
+    CONFLICT = "CONFLICT"
 
 
 @dataclass(frozen=True)
@@ -109,12 +109,12 @@ def _object_id(value):
     if isinstance(value, (int, str)):
         return value
     if isinstance(value, dict):
-        return value.get('id')
-    return getattr(value, 'id', None)
+        return value.get("id")
+    return getattr(value, "id", None)
 
 
 def _serialized(record):
-    serialize = getattr(record, 'serialize', None)
+    serialize = getattr(record, "serialize", None)
     return serialize() if callable(serialize) else vars(record)
 
 
@@ -125,12 +125,7 @@ def _canonical_ip(value):
         address = ipaddress.ip_interface(str(value)).ip
     except ValueError:
         return None
-    if (
-            address.is_loopback
-            or address.is_link_local
-            or address.is_multicast
-            or address.is_unspecified
-    ):
+    if address.is_loopback or address.is_link_local or address.is_multicast or address.is_unspecified:
         return None
     return str(address)
 
@@ -138,17 +133,14 @@ def _canonical_ip(value):
 def _canonical_mac(value):
     if not value:
         return None
-    compact = re.sub(r'[^0-9A-Fa-f]', '', str(value))
+    compact = re.sub(r"[^0-9A-Fa-f]", "", str(value))
     if len(compact) != 12:
         return None
-    return ':'.join(
-        compact[index:index + 2].upper()
-        for index in range(0, 12, 2)
-    )
+    return ":".join(compact[index : index + 2].upper() for index in range(0, 12, 2))
 
 
 def _record_name(record):
-    return str(getattr(record, 'name', f'id={record.id}'))
+    return str(getattr(record, "name", f"id={record.id}"))
 
 
 class _NetworkOwnership:
@@ -156,58 +148,50 @@ class _NetworkOwnership:
 
     def __init__(self, nb_api):
         self.interfaces = {
-            'host': list(nb_api.dcim.interfaces.all()),
-            'vm': list(nb_api.virtualization.interfaces.all()),
+            "host": list(nb_api.dcim.interfaces.all()),
+            "vm": list(nb_api.virtualization.interfaces.all()),
         }
         self.parents = {
-            'host': {item.id: item for item in nb_api.dcim.devices.all()},
-            'vm': {
-                item.id: item
-                for item in nb_api.virtualization.virtual_machines.all()
-            },
+            "host": {item.id: item for item in nb_api.dcim.devices.all()},
+            "vm": {item.id: item for item in nb_api.virtualization.virtual_machines.all()},
         }
-        self.by_id = {
-            kind: {item.id: item for item in records}
-            for kind, records in self.interfaces.items()
-        }
+        self.by_id = {kind: {item.id: item for item in records} for kind, records in self.interfaces.items()}
         self.ip_assignments = {}
         self.mac_assignments = {}
         for record in nb_api.ipam.ip_addresses.all():
             data = _serialized(record)
-            address = _canonical_ip(data.get('address'))
-            assigned_type = data.get('assigned_object_type')
-            assigned_id = _object_id(data.get('assigned_object_id'))
-            if (
-                    address
-                    and (assigned_type is not None or assigned_id is not None)
-            ):
-                self.ip_assignments.setdefault(address, []).append((
-                    assigned_type,
-                    assigned_id,
-                    record.id,
-                ))
+            address = _canonical_ip(data.get("address"))
+            assigned_type = data.get("assigned_object_type")
+            assigned_id = _object_id(data.get("assigned_object_id"))
+            if address and (assigned_type is not None or assigned_id is not None):
+                self.ip_assignments.setdefault(address, []).append(
+                    (
+                        assigned_type,
+                        assigned_id,
+                        record.id,
+                    )
+                )
         for record in nb_api.dcim.mac_addresses.all():
             data = _serialized(record)
-            address = _canonical_mac(data.get('mac_address'))
-            assigned_type = data.get('assigned_object_type')
-            assigned_id = _object_id(data.get('assigned_object_id'))
-            if (
-                    address
-                    and (assigned_type is not None or assigned_id is not None)
-            ):
-                self.mac_assignments.setdefault(address, []).append((
-                    assigned_type,
-                    assigned_id,
-                    record.id,
-                ))
+            address = _canonical_mac(data.get("mac_address"))
+            assigned_type = data.get("assigned_object_type")
+            assigned_id = _object_id(data.get("assigned_object_id"))
+            if address and (assigned_type is not None or assigned_id is not None):
+                self.mac_assignments.setdefault(address, []).append(
+                    (
+                        assigned_type,
+                        assigned_id,
+                        record.id,
+                    )
+                )
 
     @staticmethod
     def _relation(kind):
-        return 'device' if kind == 'host' else 'virtual_machine'
+        return "device" if kind == "host" else "virtual_machine"
 
     @staticmethod
     def _assigned_type(kind):
-        return 'dcim.interface' if kind == 'host' else 'virtualization.vminterface'
+        return "dcim.interface" if kind == "host" else "virtualization.vminterface"
 
     def owned_interfaces(self, kind, parent_id):
         """Return interfaces currently belonging to the selected parent."""
@@ -268,11 +252,12 @@ class _NetworkOwnership:
         parent = self.parents[kind].get(parent_id)
         ips, macs = self._current_network(kind, interface)
         ip_assignments, mac_assignments = self.current_assignments(
-            kind, interface,
+            kind,
+            interface,
         )
         return InterfaceCandidate(
             parent_id=parent_id,
-            parent_name=_record_name(parent) if parent else f'id={parent_id}',
+            parent_name=_record_name(parent) if parent else f"id={parent_id}",
             interface_id=interface.id,
             interface_name=_record_name(interface),
             signals=tuple(sorted(signals)),
@@ -287,16 +272,12 @@ class _NetworkOwnership:
 def _discovered_interface_network(interface, extra_ips=()):
     ips = {
         address
-        for value in (*getattr(interface, 'ip_addresses', ()), *extra_ips)
+        for value in (*getattr(interface, "ip_addresses", ()), *extra_ips)
         if (address := _canonical_ip(value)) is not None
     }
-    if hasattr(interface, 'addresses'):
-        ips.update(
-            address
-            for value in interface.addresses
-            if (address := _canonical_ip(value)) is not None
-        )
-    mac = _canonical_mac(getattr(interface, 'mac_address', None))
+    if hasattr(interface, "addresses"):
+        ips.update(address for value in interface.addresses if (address := _canonical_ip(value)) is not None)
+    mac = _canonical_mac(getattr(interface, "mac_address", None))
     return tuple(sorted(ips)), mac
 
 
@@ -305,75 +286,73 @@ def _network_hits(ownership, kind, discovered_ips, discovered_mac):
     hits = {}
     conflicts = []
     duplicate = False
-    values = [
-        ('ip', address, ownership.ip_assignments.get(address, ()))
-        for address in discovered_ips
-    ]
+    values = [("ip", address, ownership.ip_assignments.get(address, ())) for address in discovered_ips]
     if discovered_mac:
-        values.append((
-            'mac',
-            discovered_mac,
-            ownership.mac_assignments.get(discovered_mac, ()),
-        ))
+        values.append(
+            (
+                "mac",
+                discovered_mac,
+                ownership.mac_assignments.get(discovered_mac, ()),
+            )
+        )
     for signal_type, value, assignments in values:
         if len(assignments) > 1:
             duplicate = True
         for assigned_type, interface_id, record_id in assignments:
-            signal = f'{signal_type}:{value}'
+            signal = f"{signal_type}:{value}"
             if assigned_type != expected_type or interface_id is None:
-                conflicts.append(
-                    f'{signal} assigned to {assigned_type}:{interface_id}'
-                )
+                conflicts.append(f"{signal} assigned to {assigned_type}:{interface_id}")
                 continue
             interface = ownership.by_id[kind].get(interface_id)
             if interface is None:
-                conflicts.append(
-                    f'{signal} references missing interface id={interface_id}'
-                )
+                conflicts.append(f"{signal} references missing interface id={interface_id}")
                 continue
-            entry = hits.setdefault(interface_id, {
-                'interface': interface,
-                'signals': set(),
-                'records': set(),
-            })
-            entry['signals'].add(signal)
-            entry['records'].add((signal_type, record_id))
+            entry = hits.setdefault(
+                interface_id,
+                {
+                    "interface": interface,
+                    "signals": set(),
+                    "records": set(),
+                },
+            )
+            entry["signals"].add(signal)
+            entry["records"].add((signal_type, record_id))
     return hits, tuple(sorted(set(conflicts))), duplicate
 
 
 def _correlate_interface(
-        ownership,
-        kind,
-        parent,
-        discovered,
-        *,
-        extra_ips=(),
-        identity_matches=(),
+    ownership,
+    kind,
+    parent,
+    discovered,
+    *,
+    extra_ips=(),
+    identity_matches=(),
 ):
     discovered_ips, discovered_mac = _discovered_interface_network(
-        discovered, extra_ips,
+        discovered,
+        extra_ips,
     )
     if len(identity_matches) > 1:
-        candidates = tuple(
-            ownership.candidate(kind, item, ('source_identity_v2',))
-            for item in identity_matches
-        )
+        candidates = tuple(ownership.candidate(kind, item, ("source_identity_v2",)) for item in identity_matches)
         return InterfaceMigrationItem(
             discovered_name=discovered.name,
-            discovered_external_id=getattr(discovered, 'external_id', None),
+            discovered_external_id=getattr(discovered, "external_id", None),
             discovered_ips=discovered_ips,
             discovered_mac=discovered_mac,
             classification=InterfaceMigrationClassification.AMBIGUOUS,
             candidates=candidates,
-            conflicts=('duplicate interface identity',),
+            conflicts=("duplicate interface identity",),
         )
     if len(identity_matches) == 1:
         candidate = ownership.candidate(
-            kind, identity_matches[0], ('source_identity_v2',),
+            kind,
+            identity_matches[0],
+            ("source_identity_v2",),
         )
         return InterfaceMigrationItem(
             discovered_name=discovered.name,
-            discovered_external_id=getattr(discovered, 'external_id', None),
+            discovered_external_id=getattr(discovered, "external_id", None),
             discovered_ips=discovered_ips,
             discovered_mac=discovered_mac,
             classification=InterfaceMigrationClassification.MATCH_EXISTING,
@@ -381,7 +360,10 @@ def _correlate_interface(
         )
 
     hits, conflicts, duplicate = _network_hits(
-        ownership, kind, discovered_ips, discovered_mac,
+        ownership,
+        kind,
+        discovered_ips,
+        discovered_mac,
     )
     owned = {item.id for item in ownership.owned_interfaces(kind, parent.id)}
     foreign = [entry for key, entry in hits.items() if key not in owned]
@@ -389,36 +371,38 @@ def _correlate_interface(
     all_candidates = tuple(
         ownership.candidate(
             kind,
-            entry['interface'],
-            entry['signals'],
-            ('foreign_parent',) if entry in foreign else (),
+            entry["interface"],
+            entry["signals"],
+            ("foreign_parent",) if entry in foreign else (),
         )
         for entry in (*local, *foreign)
     )
     if conflicts or foreign:
         return InterfaceMigrationItem(
             discovered_name=discovered.name,
-            discovered_external_id=getattr(discovered, 'external_id', None),
+            discovered_external_id=getattr(discovered, "external_id", None),
             discovered_ips=discovered_ips,
             discovered_mac=discovered_mac,
             classification=InterfaceMigrationClassification.CONFLICT,
             candidates=all_candidates,
-            conflicts=conflicts or ('network evidence belongs to another object',),
+            conflicts=conflicts or ("network evidence belongs to another object",),
         )
     if duplicate or len(local) > 1:
         return InterfaceMigrationItem(
             discovered_name=discovered.name,
-            discovered_external_id=getattr(discovered, 'external_id', None),
+            discovered_external_id=getattr(discovered, "external_id", None),
             discovered_ips=discovered_ips,
             discovered_mac=discovered_mac,
             classification=InterfaceMigrationClassification.AMBIGUOUS,
             candidates=all_candidates,
-            conflicts=('duplicate network evidence',),
+            conflicts=("duplicate network evidence",),
         )
     if len(local) == 1:
         entry = local[0]
         candidate = ownership.candidate(
-            kind, entry['interface'], entry['signals'],
+            kind,
+            entry["interface"],
+            entry["signals"],
         )
         classification = (
             InterfaceMigrationClassification.MATCH_EXISTING
@@ -427,7 +411,7 @@ def _correlate_interface(
         )
         return InterfaceMigrationItem(
             discovered_name=discovered.name,
-            discovered_external_id=getattr(discovered, 'external_id', None),
+            discovered_external_id=getattr(discovered, "external_id", None),
             discovered_ips=discovered_ips,
             discovered_mac=discovered_mac,
             classification=classification,
@@ -435,14 +419,15 @@ def _correlate_interface(
         )
 
     exact_names = [
-        item for item in ownership.owned_interfaces(kind, parent.id)
+        item
+        for item in ownership.owned_interfaces(kind, parent.id)
         if _record_name(item).casefold() == discovered.name.casefold()
     ]
     if len(exact_names) == 1:
-        candidate = ownership.candidate(kind, exact_names[0], ('exact_name',))
+        candidate = ownership.candidate(kind, exact_names[0], ("exact_name",))
         return InterfaceMigrationItem(
             discovered_name=discovered.name,
-            discovered_external_id=getattr(discovered, 'external_id', None),
+            discovered_external_id=getattr(discovered, "external_id", None),
             discovered_ips=discovered_ips,
             discovered_mac=discovered_mac,
             classification=InterfaceMigrationClassification.MATCH_EXISTING,
@@ -451,19 +436,16 @@ def _correlate_interface(
     if len(exact_names) > 1:
         return InterfaceMigrationItem(
             discovered_name=discovered.name,
-            discovered_external_id=getattr(discovered, 'external_id', None),
+            discovered_external_id=getattr(discovered, "external_id", None),
             discovered_ips=discovered_ips,
             discovered_mac=discovered_mac,
             classification=InterfaceMigrationClassification.AMBIGUOUS,
-            candidates=tuple(
-                ownership.candidate(kind, item, ('exact_name',))
-                for item in exact_names
-            ),
-            conflicts=('duplicate interface names',),
+            candidates=tuple(ownership.candidate(kind, item, ("exact_name",)) for item in exact_names),
+            conflicts=("duplicate interface names",),
         )
     return InterfaceMigrationItem(
         discovered_name=discovered.name,
-        discovered_external_id=getattr(discovered, 'external_id', None),
+        discovered_external_id=getattr(discovered, "external_id", None),
         discovered_ips=discovered_ips,
         discovered_mac=discovered_mac,
         classification=InterfaceMigrationClassification.CREATE,
@@ -474,26 +456,23 @@ def _mark_shared_interface_claims(items):
     claims = {}
     for index, item in enumerate(items):
         if item.classification not in {
-                InterfaceMigrationClassification.MATCH_EXISTING,
-                InterfaceMigrationClassification.SAFE_RENAME_OR_REUSE_CANDIDATE,
+            InterfaceMigrationClassification.MATCH_EXISTING,
+            InterfaceMigrationClassification.SAFE_RENAME_OR_REUSE_CANDIDATE,
         }:
             continue
         for candidate in item.candidates:
             claims.setdefault(candidate.interface_id, []).append(index)
-    ambiguous = {
-        index
-        for indexes in claims.values()
-        if len(set(indexes)) > 1
-        for index in indexes
-    }
+    ambiguous = {index for indexes in claims.values() if len(set(indexes)) > 1 for index in indexes}
     return tuple(
-        replace(
-            item,
-            classification=InterfaceMigrationClassification.AMBIGUOUS,
-            conflicts=tuple(sorted({*item.conflicts, 'shared interface claim'})),
+        (
+            replace(
+                item,
+                classification=InterfaceMigrationClassification.AMBIGUOUS,
+                conflicts=tuple(sorted({*item.conflicts, "shared interface claim"})),
+            )
+            if index in ambiguous
+            else item
         )
-        if index in ambiguous
-        else item
         for index, item in enumerate(items)
     )
 
@@ -501,12 +480,9 @@ def _mark_shared_interface_claims(items):
 _OBJECT_CLASSIFICATIONS = {
     AdoptionClassification.RETAINED_NAME: ObjectMigrationClassification.REVIEW_REQUIRED,
     AdoptionClassification.MANAGED: ObjectMigrationClassification.MANAGED,
-    AdoptionClassification.SAFE_ADOPTION_CANDIDATE:
-        ObjectMigrationClassification.SAFE_LEGACY_CANDIDATE,
-    AdoptionClassification.REVIEW_REQUIRED:
-        ObjectMigrationClassification.REVIEW_REQUIRED,
-    AdoptionClassification.AMBIGUOUS:
-        ObjectMigrationClassification.AMBIGUOUS,
+    AdoptionClassification.SAFE_ADOPTION_CANDIDATE: ObjectMigrationClassification.SAFE_LEGACY_CANDIDATE,
+    AdoptionClassification.REVIEW_REQUIRED: ObjectMigrationClassification.REVIEW_REQUIRED,
+    AdoptionClassification.AMBIGUOUS: ObjectMigrationClassification.AMBIGUOUS,
     AdoptionClassification.UNMATCHED: ObjectMigrationClassification.NEW,
 }
 
@@ -538,52 +514,56 @@ def build_esxi_migration_plan(nb_api, hosts, config):
         if host_item.classification == AdoptionClassification.MANAGED:
             device = nb_api.dcim.devices.get(id=host_item.selected_object_id)
             for interface in host.interfaces:
-                extra_ips = (
-                    (host.management_ip,)
-                    if interface.management and host.management_ip
-                    else ()
+                extra_ips = (host.management_ip,) if interface.management and host.management_ip else ()
+                host_interfaces.append(
+                    _correlate_interface(
+                        ownership,
+                        "host",
+                        device,
+                        interface,
+                        extra_ips=extra_ips,
+                    )
                 )
-                host_interfaces.append(_correlate_interface(
-                    ownership,
-                    'host',
-                    device,
-                    interface,
-                    extra_ips=extra_ips,
-                ))
-        host_results.append(HostMigrationItem(
-            discovered_name=host.original_name,
-            external_id=host.source_id,
-            classification=_OBJECT_CLASSIFICATIONS[host_item.classification],
-            candidates=_object_candidates(host_item),
-            interfaces=_mark_shared_interface_claims(host_interfaces),
-        ))
+        host_results.append(
+            HostMigrationItem(
+                discovered_name=host.original_name,
+                external_id=host.source_id,
+                classification=_OBJECT_CLASSIFICATIONS[host_item.classification],
+                candidates=_object_candidates(host_item),
+                interfaces=_mark_shared_interface_claims(host_interfaces),
+            )
+        )
 
         for vm in host.virtual_machines:
             vm_item = adoption_by_identity[virtual_machine_source_identity(vm)]
             vm_interfaces = []
             if vm_item.classification == AdoptionClassification.MANAGED:
-                netbox_vm = nb_api.virtualization.virtual_machines.get(
-                    id=vm_item.selected_object_id
-                )
-                existing = ownership.owned_interfaces('vm', netbox_vm.id)
+                netbox_vm = nb_api.virtualization.virtual_machines.get(id=vm_item.selected_object_id)
+                existing = ownership.owned_interfaces("vm", netbox_vm.id)
                 for interface in vm.interfaces:
                     identity_matches = find_nic_sync_identity_matches(
-                        existing, vm, interface,
-                    )
-                    vm_interfaces.append(_correlate_interface(
-                        ownership,
-                        'vm',
-                        netbox_vm,
+                        existing,
+                        vm,
                         interface,
-                        identity_matches=identity_matches,
-                    ))
-            vm_results.append(VirtualMachineMigrationItem(
-                discovered_name=vm.original_name,
-                external_id=str(vm.external_id or vm.vmid),
-                classification=_OBJECT_CLASSIFICATIONS[vm_item.classification],
-                candidates=_object_candidates(vm_item),
-                interfaces=_mark_shared_interface_claims(vm_interfaces),
-            ))
+                    )
+                    vm_interfaces.append(
+                        _correlate_interface(
+                            ownership,
+                            "vm",
+                            netbox_vm,
+                            interface,
+                            identity_matches=identity_matches,
+                        )
+                    )
+            vm_results.append(
+                VirtualMachineMigrationItem(
+                    discovered_name=vm.original_name,
+                    external_id=str(vm.external_id or vm.vmid),
+                    classification=_OBJECT_CLASSIFICATIONS[vm_item.classification],
+                    candidates=_object_candidates(vm_item),
+                    interfaces=_mark_shared_interface_claims(vm_interfaces),
+                )
+            )
 
     return EsxiMigrationPlan(
         source_instance=config.source_instance,

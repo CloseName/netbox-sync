@@ -1,4 +1,5 @@
 """DB-only lifecycle coordinator; it never mounts source or NetBox secrets."""
+
 import os
 from .local_control import request, serve, ControlError
 from .source_lifecycle import LifecycleStore
@@ -10,30 +11,39 @@ class BrokerCleanup:
         self.path = path
 
     def verify_owned(self, key, operation):
-        result=request(self.path, {'action':'verify_owned','key':key,'operation_id':operation})
-        if type(result.get('verified')) is not bool:raise ControlError()
-        return result['verified']
+        result = request(self.path, {"action": "verify_owned", "key": key, "operation_id": operation})
+        if type(result.get("verified")) is not bool:
+            raise ControlError()
+        return result["verified"]
 
     def remove_owned(self, keys):
-        result = request(self.path, {'action': 'remove_owned', 'keys': keys})
-        if type(result.get('removed')) is not bool:
+        result = request(self.path, {"action": "remove_owned", "keys": keys})
+        if type(result.get("removed")) is not bool:
             raise ControlError()
-        return result['removed']
+        return result["removed"]
 
 
 def main():
-    store = LifecycleStore(os.environ.get('NETBOX_SYNC_LIFECYCLE_WRITER_DSN', ''),
-        os.environ.get('NETBOX_SYNC_REGISTRY_SCHEMA', ''),
-        os.environ.get('NETBOX_SYNC_APPLY_LOCK_PATH', '/run/netbox-sync-lock/apply.lock'))
-    broker = BrokerCleanup(os.environ.get('NETBOX_SYNC_BROKER_SOCKET', '/run/netbox-sync-broker/broker.sock'))
+    store = LifecycleStore(
+        os.environ.get("NETBOX_SYNC_LIFECYCLE_WRITER_DSN", ""),
+        os.environ.get("NETBOX_SYNC_REGISTRY_SCHEMA", ""),
+        os.environ.get("NETBOX_SYNC_APPLY_LOCK_PATH", "/run/netbox-sync-lock/apply.lock"),
+    )
+    broker = BrokerCleanup(os.environ.get("NETBOX_SYNC_BROKER_SOCKET", "/run/netbox-sync-broker/broker.sock"))
     from .retirement_coordinator import RetirementCoordinator
     from .retirement_worker import RetirementClient
-    retirement=RetirementCoordinator(store,RetirementClient('/run/netbox-sync-retirement/worker.sock'),broker.remove_owned)
+
+    retirement = RetirementCoordinator(
+        store, RetirementClient("/run/netbox-sync-retirement/worker.sock"), broker.remove_owned
+    )
     from .retirement_continuation import RetirementContinuation
-    serve(os.environ.get('NETBOX_SYNC_LIFECYCLE_SOCKET', '/run/netbox-sync-lifecycle/worker.sock'),
-          lambda payload: handle_lifecycle(store, broker, payload, retirement=retirement),
-          maintenance=RetirementContinuation(retirement))
+
+    serve(
+        os.environ.get("NETBOX_SYNC_LIFECYCLE_SOCKET", "/run/netbox-sync-lifecycle/worker.sock"),
+        lambda payload: handle_lifecycle(store, broker, payload, retirement=retirement),
+        maintenance=RetirementContinuation(retirement),
+    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -1,16 +1,16 @@
 MANAGED_DEVICE_CUSTOM_FIELDS = (
-    'hardware_identity',
-    'sync_identities',
-    'sync_original_names',
-    'hypervisor_version',
-    'cpu_model',
-    'cpu_vendor',
-    'cpu_sockets',
-    'cpu_cores',
-    'cpu_threads',
-    'memory_mb',
-    'esxi_host_network',
-    'proxmox_host_network',
+    "hardware_identity",
+    "sync_identities",
+    "sync_original_names",
+    "hypervisor_version",
+    "cpu_model",
+    "cpu_vendor",
+    "cpu_sockets",
+    "cpu_cores",
+    "cpu_threads",
+    "memory_mb",
+    "esxi_host_network",
+    "proxmox_host_network",
 )
 
 from .source_identity import (
@@ -23,8 +23,8 @@ from .source_identity import (
 
 
 def matches_sync_identity(
-        custom_fields,
-        host,
+    custom_fields,
+    host,
 ):
     return bool(sync_identity_match_rank(custom_fields, host))
 
@@ -47,70 +47,59 @@ def find_sync_identity_matches(candidates, host):
     matched = select_best_identity_matches(
         candidates,
         lambda candidate: sync_identity_match_rank(
-            getattr(candidate, 'custom_fields', None) or {}, host,
+            getattr(candidate, "custom_fields", None) or {},
+            host,
         ),
     )
     if matched:
         return matched
     from .selectel_host_match import matches
+
     return matches(candidates, host)
 
 
 def build_device_custom_fields(
-        host,
-        existing_custom_fields=None,
+    host,
+    existing_custom_fields=None,
 ):
-    existing = dict(
-        existing_custom_fields or {}
-    )
+    existing = dict(existing_custom_fields or {})
 
     desired_identity = host_source_identity(host)
     merged_identities = merge_source_identities(existing, desired_identity)
     merged_original_names = merge_original_name(
-        existing, desired_identity, host.original_name,
+        existing,
+        desired_identity,
+        host.original_name,
     )
 
     result = dict(existing)
     if host.hardware_identity is not None:
         from copy import deepcopy
-        result['hardware_identity'] = deepcopy(host.hardware_identity)
 
-    result.update({
-        'sync_identities':
-            merged_identities,
+        result["hardware_identity"] = deepcopy(host.hardware_identity)
 
-        'sync_original_names':
-            merged_original_names,
+    result.update(
+        {
+            "sync_identities": merged_identities,
+            "sync_original_names": merged_original_names,
+            "hypervisor_version": host.hypervisor_version,
+            "cpu_model": host.cpu.model,
+            "cpu_vendor": host.cpu.vendor,
+            "cpu_sockets": host.cpu.sockets,
+            "cpu_cores": host.cpu.cores,
+            "cpu_threads": host.cpu.logical_cpus,
+            "memory_mb": host.memory_bytes // 1024**2,
+        }
+    )
 
-        'hypervisor_version':
-            host.hypervisor_version,
-
-        'cpu_model':
-            host.cpu.model,
-
-        'cpu_vendor':
-            host.cpu.vendor,
-
-        'cpu_sockets':
-            host.cpu.sockets,
-
-        'cpu_cores':
-            host.cpu.cores,
-
-        'cpu_threads':
-            host.cpu.logical_cpus,
-
-        'memory_mb':
-            host.memory_bytes // 1024**2,
-
-    })
-
-    if host.source == 'esxi' and host.esxi_host_network is not None:
+    if host.source == "esxi" and host.esxi_host_network is not None:
         from copy import deepcopy
-        result['esxi_host_network'] = deepcopy(host.esxi_host_network)
 
-    if host.source == 'proxmox' and host.proxmox_host_network is not None:
+        result["esxi_host_network"] = deepcopy(host.esxi_host_network)
+
+    if host.source == "proxmox" and host.proxmox_host_network is not None:
         from copy import deepcopy
-        result['proxmox_host_network'] = deepcopy(host.proxmox_host_network)
+
+        result["proxmox_host_network"] = deepcopy(host.proxmox_host_network)
 
     return result

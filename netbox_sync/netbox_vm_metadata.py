@@ -1,6 +1,6 @@
 MANAGED_VM_CUSTOM_FIELDS = (
-    'sync_identities',
-    'sync_original_names',
+    "sync_identities",
+    "sync_original_names",
 )
 
 from .source_identity import (
@@ -25,17 +25,17 @@ def vm_identity_source_id(vm):
     """
 
     source_id = str(vm.source_id)
-    prefix = f'{vm.source}:'
+    prefix = f"{vm.source}:"
 
     if source_id.startswith(prefix):
-        return source_id[len(prefix):]
+        return source_id[len(prefix) :]
 
     return source_id
 
 
 def matches_vm_sync_identity(
-        custom_fields,
-        vm,
+    custom_fields,
+    vm,
 ):
     return bool(vm_sync_identity_match_rank(custom_fields, vm))
 
@@ -58,38 +58,38 @@ def find_vm_sync_identity_matches(candidates, vm):
     return select_best_identity_matches(
         candidates,
         lambda candidate: vm_sync_identity_match_rank(
-            getattr(candidate, 'custom_fields', None) or {}, vm,
+            getattr(candidate, "custom_fields", None) or {},
+            vm,
         ),
     )
 
 
 def build_vm_custom_fields(
-        vm,
-        existing_custom_fields=None,
+    vm,
+    existing_custom_fields=None,
 ):
-    existing = dict(
-        existing_custom_fields or {}
-    )
+    existing = dict(existing_custom_fields or {})
     normalized = dict(existing)
-    if normalized.get('sync_identities') is None:
-        normalized['sync_identities'] = []
-    if normalized.get('sync_original_names') is None:
-        normalized['sync_original_names'] = {}
+    if normalized.get("sync_identities") is None:
+        normalized["sync_identities"] = []
+    if normalized.get("sync_original_names") is None:
+        normalized["sync_original_names"] = {}
 
     desired_identity = virtual_machine_source_identity(vm)
     merged_identities = merge_source_identities(normalized, desired_identity)
     merged_original_names = merge_original_name(
-        normalized, desired_identity, vm.original_name,
+        normalized,
+        desired_identity,
+        vm.original_name,
     )
 
     result = dict(existing)
 
-    result.update({
-        'sync_identities':
-            merged_identities,
-
-        'sync_original_names':
-            merged_original_names,
-    })
+    result.update(
+        {
+            "sync_identities": merged_identities,
+            "sync_original_names": merged_original_names,
+        }
+    )
 
     return result

@@ -7,25 +7,23 @@ from typing import Optional
 
 from .source_config import SourceConfig
 from . import scheduled_failure
-from .run_history import (ActionCounts, RunStatus, RunTrigger, safe_error_code,
-                          safe_error_message, terminal_status)
+from .run_history import ActionCounts, RunStatus, RunTrigger, safe_error_code, safe_error_message, terminal_status
 
 
 class HistoryStatus(str, Enum):
     """Bounded persistence outcome independent of source execution."""
 
-    NOT_REQUESTED = 'NOT_REQUESTED'
-    RECORDED = 'RECORDED'
-    START_FAILED = 'START_FAILED'
-    FINALIZE_FAILED = 'FINALIZE_FAILED'
+    NOT_REQUESTED = "NOT_REQUESTED"
+    RECORDED = "RECORDED"
+    START_FAILED = "START_FAILED"
+    FINALIZE_FAILED = "FINALIZE_FAILED"
 
 
-HISTORY_UNAVAILABLE = 'RUN_HISTORY_UNAVAILABLE'
+HISTORY_UNAVAILABLE = "RUN_HISTORY_UNAVAILABLE"
 
 
 class SourceReconciliationRequired(RuntimeError):
-    code = 'SOURCE_RECONCILIATION_REQUIRED'
-
+    code = "SOURCE_RECONCILIATION_REQUIRED"
 
 
 @dataclass(frozen=True)
@@ -92,7 +90,7 @@ def run_sources(sources, execute_source, clock=None, run_repository=None):
     configs = tuple(sources)
     for config in configs:
         if not isinstance(config, SourceConfig):
-            raise TypeError('sources must contain only SourceConfig objects')
+            raise TypeError("sources must contain only SourceConfig objects")
 
     results = []
     for source in sorted(configs, key=lambda config: config.id):
@@ -102,39 +100,49 @@ def run_sources(sources, execute_source, clock=None, run_repository=None):
         if run_repository:
             try:
                 run = run_repository.start_run(
-                    source.source_instance, source.source_type, RunTrigger.SCHEDULED,
-                    'system/scheduler',
+                    source.source_instance,
+                    source.source_type,
+                    RunTrigger.SCHEDULED,
+                    "system/scheduler",
                 )
                 history_status = HistoryStatus.RECORDED
             except Exception:  # pylint: disable=broad-exception-caught
-                results.append(SourceRunResult(
-                    source_id=source.id, source_instance=source.source_instance,
-                    source_type=source.source_type, success=False, started_at=started_at,
-                    finished_at=now(), error_type='HistoryPersistenceError',
-                    error_summary='source execution skipped because run history is unavailable',
-                    history_status=HistoryStatus.START_FAILED,
-                    history_error_code=HISTORY_UNAVAILABLE,
-                ))
+                results.append(
+                    SourceRunResult(
+                        source_id=source.id,
+                        source_instance=source.source_instance,
+                        source_type=source.source_type,
+                        success=False,
+                        started_at=started_at,
+                        finished_at=now(),
+                        error_type="HistoryPersistenceError",
+                        error_summary="source execution skipped because run history is unavailable",
+                        history_status=HistoryStatus.START_FAILED,
+                        history_error_code=HISTORY_UNAVAILABLE,
+                    )
+                )
                 continue
         evidence, diagnostic_token = scheduled_failure.begin(run.run_id if run else None)
         try:
             if run_repository and run_repository.scheduled_reconciliation_required(source.source_instance):
-                raise SourceReconciliationRequired('Previous outcome requires reconciliation')
+                raise SourceReconciliationRequired("Previous outcome requires reconciliation")
             execution = execute_source(source)
         except (Exception, SystemExit) as exc:  # pylint: disable=broad-exception-caught
             scheduled_failure.emit(exc, evidence, run.run_id if run else None)
-            code = safe_error_code(getattr(exc, 'code', None))
-            if code == 'APPLY_FAILED' and evidence.writes_possible:
-                code = 'OUTCOME_UNCERTAIN'
-            elif code == 'APPLY_FAILED' and evidence.stage == 'planning':
-                code = 'FAILED_BEFORE_WRITE'
+            code = safe_error_code(getattr(exc, "code", None))
+            if code == "APPLY_FAILED" and evidence.writes_possible:
+                code = "OUTCOME_UNCERTAIN"
+            elif code == "APPLY_FAILED" and evidence.stage == "planning":
+                code = "FAILED_BEFORE_WRITE"
             if run:
                 try:
                     run_repository.finish_run(
-                        run.run_id, terminal_status(code), error_code=code,
+                        run.run_id,
+                        terminal_status(code),
+                        error_code=code,
                         error_message_safe=safe_error_message(code),
-                        plan_digest=getattr(evidence.plan, 'digest', None),
-                        planner_version=getattr(evidence.plan, 'planner_version', None),
+                        plan_digest=getattr(evidence.plan, "digest", None),
+                        planner_version=getattr(evidence.plan, "planner_version", None),
                     )
                 except Exception:  # pylint: disable=broad-exception-caught
                     history_status = HistoryStatus.FINALIZE_FAILED
@@ -147,10 +155,11 @@ def run_sources(sources, execute_source, clock=None, run_repository=None):
                     started_at=started_at,
                     finished_at=now(),
                     error_type=type(exc).__name__,
-                    error_summary='source execution failed',
+                    error_summary="source execution failed",
                     history_status=history_status,
-                    history_error_code=(HISTORY_UNAVAILABLE
-                                        if history_status is HistoryStatus.FINALIZE_FAILED else None),
+                    history_error_code=(
+                        HISTORY_UNAVAILABLE if history_status is HistoryStatus.FINALIZE_FAILED else None
+                    ),
                 )
             )
             continue
@@ -159,10 +168,11 @@ def run_sources(sources, execute_source, clock=None, run_repository=None):
         if run:
             try:
                 run_repository.finish_run(
-                    run.run_id, RunStatus.SUCCEEDED,
-                    counts=ActionCounts.from_items(getattr(execution, 'items', ())),
-                    plan_digest=getattr(execution, 'digest', None),
-                    planner_version=getattr(execution, 'planner_version', None),
+                    run.run_id,
+                    RunStatus.SUCCEEDED,
+                    counts=ActionCounts.from_items(getattr(execution, "items", ())),
+                    plan_digest=getattr(execution, "digest", None),
+                    planner_version=getattr(execution, "planner_version", None),
                 )
             except Exception:  # pylint: disable=broad-exception-caught
                 history_status = HistoryStatus.FINALIZE_FAILED
@@ -175,8 +185,7 @@ def run_sources(sources, execute_source, clock=None, run_repository=None):
                 started_at=started_at,
                 finished_at=now(),
                 history_status=history_status,
-                history_error_code=(HISTORY_UNAVAILABLE
-                                    if history_status is HistoryStatus.FINALIZE_FAILED else None),
+                history_error_code=(HISTORY_UNAVAILABLE if history_status is HistoryStatus.FINALIZE_FAILED else None),
             )
         )
     return MultiSourceRunResult(results=tuple(results))

@@ -1,13 +1,13 @@
 """VM application preflight; preserve provider-specific behavior."""
 
 
-def prepare_vm_contexts(nb_api, hosts, all_vms, target_vms, cluster, *, _identity, netbox_vm_name, VMApplyError, _preflight_vm, _object_id):
+def prepare_vm_contexts(
+    nb_api, hosts, all_vms, target_vms, cluster, *, _identity, netbox_vm_name, VMApplyError, _preflight_vm, _object_id
+):
     discovered = []
 
     for host in hosts:
-        discovered.extend(
-            host.virtual_machines
-        )
+        discovered.extend(host.virtual_machines)
 
     # Fail before NetBox matching if the
     # source itself supplied duplicate IDs.
@@ -27,45 +27,19 @@ def prepare_vm_contexts(nb_api, hosts, all_vms, target_vms, cluster, *, _identit
             [],
         ).append(vm)
 
-    duplicate_identities = {
-        key: value
-        for key, value
-        in identities.items()
-        if len(value) > 1
-    }
+    duplicate_identities = {key: value for key, value in identities.items() if len(value) > 1}
 
     if duplicate_identities:
-        details = ', '.join(
-            sorted(
-                duplicate_identities
-                .keys()
-            )
-        )
+        details = ", ".join(sorted(duplicate_identities.keys()))
 
-        raise VMApplyError(
-            'Duplicate discovered VM '
-            f'identities: {details}'
-        )
+        raise VMApplyError("Duplicate discovered VM " f"identities: {details}")
 
-    duplicate_names = {
-        key: value
-        for key, value
-        in names.items()
-        if len(value) > 1
-    }
+    duplicate_names = {key: value for key, value in names.items() if len(value) > 1}
 
     if duplicate_names:
-        details = ', '.join(
-            sorted(
-                duplicate_names.keys()
-            )
-        )
+        details = ", ".join(sorted(duplicate_names.keys()))
 
-        raise VMApplyError(
-            'Duplicate discovered VM '
-            f'names in target cluster: '
-            f'{details}'
-        )
+        raise VMApplyError("Duplicate discovered VM " f"names in target cluster: " f"{details}")
 
     contexts = []
 
@@ -85,10 +59,12 @@ def prepare_vm_contexts(nb_api, hosts, all_vms, target_vms, cluster, *, _identit
             )
         )
 
-    native_disk_parents = {_object_id(d.serialize().get('virtual_machine')) for d in nb_api.virtualization.virtual_disks.all()}
+    native_disk_parents = {
+        _object_id(d.serialize().get("virtual_machine")) for d in nb_api.virtualization.virtual_disks.all()
+    }
     for context in contexts:
-        existing_vm = context.get('existing')
+        existing_vm = context.get("existing")
         if existing_vm is not None and existing_vm.id in native_disk_parents:
-            context.get('changes', {}).pop('disk', None)
+            context.get("changes", {}).pop("disk", None)
 
     return discovered, contexts

@@ -1,4 +1,5 @@
 """Read-through, write-recording NetBox facade for exact dry-run plans."""
+
 # pylint: disable=too-few-public-methods
 
 import json
@@ -21,15 +22,15 @@ class PlanningRecord:
     """Isolate attribute changes from the underlying pynetbox record."""
 
     def __init__(self, record, endpoint, recorder, created=False):
-        object.__setattr__(self, '_record', record)
-        object.__setattr__(self, '_endpoint', endpoint)
-        object.__setattr__(self, '_recorder', recorder)
-        serialized = record.serialize() if hasattr(record, 'serialize') else vars(record)
-        object.__setattr__(self, '_original', deepcopy(serialized))
-        object.__setattr__(self, '_baseline', deepcopy(serialized))
-        object.__setattr__(self, '_changes', deepcopy(serialized) if created else {})
-        if not created and 'custom_fields' in serialized:
-            self._changes['custom_fields'] = deepcopy(serialized['custom_fields'])
+        object.__setattr__(self, "_record", record)
+        object.__setattr__(self, "_endpoint", endpoint)
+        object.__setattr__(self, "_recorder", recorder)
+        serialized = record.serialize() if hasattr(record, "serialize") else vars(record)
+        object.__setattr__(self, "_original", deepcopy(serialized))
+        object.__setattr__(self, "_baseline", deepcopy(serialized))
+        object.__setattr__(self, "_changes", deepcopy(serialized) if created else {})
+        if not created and "custom_fields" in serialized:
+            self._changes["custom_fields"] = deepcopy(serialized["custom_fields"])
 
     def __getattr__(self, name):
         if name in self._changes:
@@ -50,25 +51,24 @@ class PlanningRecord:
         current = self.serialize()
         before = {key: deepcopy(current.get(key)) for key in changes}
         self._changes.update(deepcopy(changes))
-        self._recorder.append(PlannedMutation(
-            'update', self._endpoint, current.get('id'), before, deepcopy(changes)))
+        self._recorder.append(PlannedMutation("update", self._endpoint, current.get("id"), before, deepcopy(changes)))
         return True
 
     def save(self):
         """Record changed assigned attributes without calling NetBox."""
-        changes = {key: deepcopy(value) for key, value in self._changes.items()
-                   if self._original.get(key) != value}
+        changes = {key: deepcopy(value) for key, value in self._changes.items() if self._original.get(key) != value}
         if changes:
             before = {key: deepcopy(self._original.get(key)) for key in changes}
-            self._recorder.append(PlannedMutation(
-                'update', self._endpoint, self.serialize().get('id'), before, changes))
+            self._recorder.append(
+                PlannedMutation("update", self._endpoint, self.serialize().get("id"), before, changes)
+            )
             self._original.update(deepcopy(changes))
-            object.__setattr__(self, '_changes', {})
+            object.__setattr__(self, "_changes", {})
         return True
 
     def delete(self):
         """There is intentionally no planning or runtime delete capability."""
-        raise AssertionError('Delete is forbidden during sync planning')
+        raise AssertionError("Delete is forbidden during sync planning")
 
 
 class PlanningEndpoint:
@@ -105,29 +105,35 @@ class PlanningEndpoint:
             # Materialize completely before committing: a failed page is never
             # cached as an empty or partial successful response.
             from ..child_process import planning_read
+
             with planning_read() as metrics:
                 self._reads[key] = list(getattr(self._endpoint, method)(**filters))
-                metrics['objects'] = len(self._reads[key])
+                metrics["objects"] = len(self._reads[key])
         return self._reads[key]
 
     def all(self):
-        return sorted([self._wrap(record) for record in self._read('all', {}) if record.id not in self._replacement_hidden] + list(self._created),
-                      key=lambda record: record.id)
+        return sorted(
+            [self._wrap(record) for record in self._read("all", {}) if record.id not in self._replacement_hidden]
+            + list(self._created),
+            key=lambda record: record.id,
+        )
 
     @staticmethod
     def _matches(record, filters):
         # Inspect only compared fields; serializing deep-copies every snapshot.
         for key, expected in filters.items():
-            field = key[:-3] if key.endswith('_id') else key
+            field = key[:-3] if key.endswith("_id") else key
             actual = record._changes.get(field, record._original.get(field))
             if isinstance(actual, dict):
-                actual = actual.get('id')
-            elif hasattr(actual, 'id'):
+                actual = actual.get("id")
+            elif hasattr(actual, "id"):
                 actual = actual.id
             alternatives = expected if isinstance(expected, (list, tuple, set)) else [expected]
-            if key == 'id' or key.endswith('_id'):
-                alternatives = [int(value) if isinstance(value, str) and value.lstrip('-').isdigit()
-                                else value for value in alternatives]
+            if key == "id" or key.endswith("_id"):
+                alternatives = [
+                    int(value) if isinstance(value, str) and value.lstrip("-").isdigit() else value
+                    for value in alternatives
+                ]
             if actual not in alternatives:
                 return False
         return True
@@ -135,13 +141,14 @@ class PlanningEndpoint:
     @staticmethod
     def _temporary(value):
         return (isinstance(value, int) and value < 0) or (
-            isinstance(value, str) and value.startswith('-') and value[1:].isdigit())
+            isinstance(value, str) and value.startswith("-") and value[1:].isdigit()
+        )
 
     def _remote_filters(self, filters):
         """Strip virtual alternatives only at the real API boundary."""
         result = dict(filters)
         for key, value in filters.items():
-            if key != 'id' and not key.endswith('_id'):
+            if key != "id" and not key.endswith("_id"):
                 continue
             if isinstance(value, (list, tuple, set)):
                 remaining = [item for item in value if not self._temporary(item)]
@@ -155,9 +162,8 @@ class PlanningEndpoint:
     def filter(self, **filters):
         # Nested facades must still search the lower plan's objects. Only the
         # final boundary may omit a query that cannot match a persisted row.
-        remote_filters = (filters if isinstance(self._endpoint, PlanningEndpoint)
-                          else self._remote_filters(filters))
-        remote = [] if remote_filters is None else self._read('filter', remote_filters)
+        remote_filters = filters if isinstance(self._endpoint, PlanningEndpoint) else self._remote_filters(filters)
+        remote = [] if remote_filters is None else self._read("filter", remote_filters)
         matches = {}
         for record in remote:
             wrapped = self._wrap(record)
@@ -168,18 +174,22 @@ class PlanningEndpoint:
             if self._matches(record, filters):
                 matches[record.id] = record
             elif record.id in matches and any(
-                    record.serialize().get(field) != record._baseline.get(field)
-                    for field in (key[:-3] if key.endswith('_id') else key for key in filters)):
+                record.serialize().get(field) != record._baseline.get(field)
+                for field in (key[:-3] if key.endswith("_id") else key for key in filters)
+            ):
                 del matches[record.id]
-        return sorted((record for record in matches.values() if record.id not in self._replacement_hidden), key=lambda record: record.id)
+        return sorted(
+            (record for record in matches.values() if record.id not in self._replacement_hidden),
+            key=lambda record: record.id,
+        )
 
     def get(self, *args, **filters):
         if len(args) > 1 or (args and filters):
-            raise TypeError('Use one ID or keyword filters')
+            raise TypeError("Use one ID or keyword filters")
         # An exact known ID is already complete evidence in this dry-run.
         # Never share it across plans or cache a lower layer's mutable overlay.
-        identifier = args[0] if args else filters.get('id') if set(filters) == {'id'} else None
-        if isinstance(identifier, str) and identifier.lstrip('-').isdigit():
+        identifier = args[0] if args else filters.get("id") if set(filters) == {"id"} else None
+        if isinstance(identifier, str) and identifier.lstrip("-").isdigit():
             identifier = int(identifier)
         if type(identifier) is int:
             if identifier in self._replacement_hidden:
@@ -191,9 +201,9 @@ class PlanningEndpoint:
                     return record
             if isinstance(self._endpoint, PlanningEndpoint):
                 return self._wrap(self._endpoint.get(identifier))
-        records = self.filter(**({'id': args[0]} if args else filters))
+        records = self.filter(**({"id": args[0]} if args else filters))
         if len(records) > 1:
-            raise ValueError('Multiple records match')
+            raise ValueError("Multiple records match")
         return records[0] if records else None
 
     def _allocate_id(self):
@@ -207,15 +217,18 @@ class PlanningEndpoint:
 
     def create(self, **fields):
         values = deepcopy(fields)
-        values.setdefault('id', self._allocate_id())
-        record = type('PlannedRecord', (), {
-            'serialize': lambda current: deepcopy(current._planned_values),
-        })()
+        values.setdefault("id", self._allocate_id())
+        record = type(
+            "PlannedRecord",
+            (),
+            {
+                "serialize": lambda current: deepcopy(current._planned_values),
+            },
+        )()
         record._planned_values = values  # pylint: disable=protected-access
         wrapped = PlanningRecord(record, self._name, self._recorder, created=True)
         self._created.append(wrapped)
-        self._recorder.append(PlannedMutation(
-            'create', self._name, values['id'], {}, deepcopy(values)))
+        self._recorder.append(PlannedMutation("create", self._name, values["id"], {}, deepcopy(values)))
         return wrapped
 
 
@@ -229,8 +242,7 @@ class PlanningNamespace:
     def __getattr__(self, name):
         if name not in self._cache:
             endpoint = getattr(self._namespace, name)
-            self._cache[name] = PlanningEndpoint(
-                endpoint, f'{self._prefix}.{name}', self._recorder)
+            self._cache[name] = PlanningEndpoint(endpoint, f"{self._prefix}.{name}", self._recorder)
         return self._cache[name]
 
 
@@ -238,10 +250,10 @@ class PlanningNetBox:
     """Facade whose only side effect is appending in-memory mutation records."""
 
     def __init__(self, api):
-        self.base_url = getattr(api, 'base_url', '')
-        self.replacement_review = getattr(api, 'replacement_review', None)
+        self.base_url = getattr(api, "base_url", "")
+        self.replacement_review = getattr(api, "replacement_review", None)
         self.mutations = []
-        for name in ('dcim', 'ipam', 'virtualization', 'extras'):
+        for name in ("dcim", "ipam", "virtualization", "extras"):
             if hasattr(api, name):
                 setattr(self, name, PlanningNamespace(getattr(api, name), name, self.mutations))
 
@@ -249,17 +261,33 @@ class PlanningNetBox:
         """Only the Guard-reviewed reset; ordinary DELETE stays forbidden."""
         vm = self.virtualization.virtual_machines.get(identifier)
         before = vm.serialize()
-        identity = body['new_identity']
-        if (before.get('custom_fields') or {}).get('sync_identities') == [identity]:
+        identity = body["new_identity"]
+        if (before.get("custom_fields") or {}).get("sync_identities") == [identity]:
             return
-        fields = {**(before.get('custom_fields') or {}), 'sync_identities': [identity],
-            'sync_original_names': {f"esxi/{body['source_instance']}/vm": body['name']}}
-        vm._changes.update(name=body['name'], custom_fields=fields)
-        endpoints = {'vminterface': self.virtualization.interfaces,
-                     'disk': self.virtualization.virtual_disks, 'mac': self.dcim.mac_addresses}
-        for kind, pk in body['expected']['children']:
+        fields = {
+            **(before.get("custom_fields") or {}),
+            "sync_identities": [identity],
+            "sync_original_names": {f"esxi/{body['source_instance']}/vm": body["name"]},
+        }
+        vm._changes.update(name=body["name"], custom_fields=fields)
+        endpoints = {
+            "vminterface": self.virtualization.interfaces,
+            "disk": self.virtualization.virtual_disks,
+            "mac": self.dcim.mac_addresses,
+        }
+        for kind, pk in body["expected"]["children"]:
             endpoints[kind]._replacement_hidden.add(pk)
-        self.mutations.append(PlannedMutation('replace', 'virtualization.virtual_machines', identifier,
-            {'custom_fields': before.get('custom_fields'), 'replacement_evidence': body['expected'],
-             'replacement_card_url': self.base_url.rstrip('/').removesuffix('/api') + f'/virtualization/virtual-machines/{identifier}/'},
-            {'name': body['name'], 'custom_fields': fields}))
+        self.mutations.append(
+            PlannedMutation(
+                "replace",
+                "virtualization.virtual_machines",
+                identifier,
+                {
+                    "custom_fields": before.get("custom_fields"),
+                    "replacement_evidence": body["expected"],
+                    "replacement_card_url": self.base_url.rstrip("/").removesuffix("/api")
+                    + f"/virtualization/virtual-machines/{identifier}/",
+                },
+                {"name": body["name"], "custom_fields": fields},
+            )
+        )

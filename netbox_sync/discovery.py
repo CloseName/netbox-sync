@@ -73,8 +73,8 @@ class DiscoveredHost:
     disks: list[DiscoveredDisk] = field(default_factory=list)
     storages: list[DiscoveredStorage] = field(default_factory=list)
     interfaces: list[DiscoveredHostInterface] = field(default_factory=list)
-    virtual_machines: list['DiscoveredVirtualMachine'] = field(default_factory=list)
-    containers: list['DiscoveredContainer'] = field(default_factory=list)
+    virtual_machines: list["DiscoveredVirtualMachine"] = field(default_factory=list)
+    containers: list["DiscoveredContainer"] = field(default_factory=list)
     esxi_events: dict | None = None
     esxi_host_network: dict | None = None
     proxmox_host_network: dict | None = None

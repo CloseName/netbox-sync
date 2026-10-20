@@ -42,44 +42,65 @@ class SourceView:
 
 def source_view(row):
     """Fail closed on malformed metadata; never echo credential-bearing URLs."""
-    fields = ('source_instance', 'name', 'address', 'site_slug', 'cluster_name',
-              'platform_slug', 'device_role_slug', 'device_type_slug', 'cluster_type_slug')
+    fields = (
+        "source_instance",
+        "name",
+        "address",
+        "site_slug",
+        "cluster_name",
+        "platform_slug",
+        "device_role_slug",
+        "device_type_slug",
+        "cluster_type_slug",
+    )
     try:
         for name in fields:
             value = row[name]
-            if (not isinstance(value, str) or not value.strip() or len(value) > 1024
-                    or any(ord(char) < 32 for char in value)):
-                raise ValueError('Invalid public text')
-        if not SOURCE_INSTANCE_PATTERN.fullmatch(row['source_instance']):
-            raise ValueError('Invalid instance')
-        if row['source_type'] not in ('proxmox', 'esxi'):
-            raise ValueError('Unsupported source')
-        address = row['address']
-        parsed = urlsplit(address if '://' in address else '//' + address)
-        if (not parsed.hostname or parsed.username is not None or parsed.password is not None
-                or parsed.query or parsed.fragment or '%' in address
-                or ('://' in address and parsed.scheme not in ('http', 'https'))):
-            raise ValueError('Unsafe endpoint')
+            if (
+                not isinstance(value, str)
+                or not value.strip()
+                or len(value) > 1024
+                or any(ord(char) < 32 for char in value)
+            ):
+                raise ValueError("Invalid public text")
+        if not SOURCE_INSTANCE_PATTERN.fullmatch(row["source_instance"]):
+            raise ValueError("Invalid instance")
+        if row["source_type"] not in ("proxmox", "esxi"):
+            raise ValueError("Unsupported source")
+        address = row["address"]
+        parsed = urlsplit(address if "://" in address else "//" + address)
+        if (
+            not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or "%" in address
+            or ("://" in address and parsed.scheme not in ("http", "https"))
+        ):
+            raise ValueError("Unsafe endpoint")
         # Paths can contain opaque credentials: expose only host/port or an origin URL.
-        if parsed.path not in ('', '/'):
-            raise ValueError('Endpoint path is not public metadata')
+        if parsed.path not in ("", "/"):
+            raise ValueError("Endpoint path is not public metadata")
         _ = parsed.port
-        flags = ('enabled', 'sync_enabled', 'verify_ssl', 'legacy_identity_owner')
+        flags = ("enabled", "sync_enabled", "verify_ssl", "legacy_identity_owner")
         if any(not isinstance(row[name], bool) for name in flags):
-            raise ValueError('Invalid flag')
-        interval = row['sync_interval_seconds']
+            raise ValueError("Invalid flag")
+        interval = row["sync_interval_seconds"]
         if not isinstance(interval, int) or isinstance(interval, bool) or interval <= 0:
-            raise ValueError('Invalid interval')
-        status = 'disabled' if not row['enabled'] else (
-            'enabled' if row['sync_enabled'] else 'sync_disabled'
-        )
+            raise ValueError("Invalid interval")
+        status = "disabled" if not row["enabled"] else ("enabled" if row["sync_enabled"] else "sync_disabled")
         from ..calendar_schedule import validate_calendar
-        calendar = validate_calendar(row.get('sync_calendar'))
+
+        calendar = validate_calendar(row.get("sync_calendar"))
         return SourceView(
             **{name: row[name] for name in fields},
             **{name: row[name] for name in flags},
-            type=row['source_type'], sync_interval_seconds=interval, status=status,
-            sync_calendar=calendar, schedule_changed_at=row.get('schedule_changed_at'),
+            type=row["source_type"],
+            sync_interval_seconds=interval,
+            status=status,
+            sync_calendar=calendar,
+            schedule_changed_at=row.get("schedule_changed_at"),
         )
     except (KeyError, TypeError, ValueError):
         raise SourceReadError(ErrorCode.SOURCE_DATA_INVALID) from None

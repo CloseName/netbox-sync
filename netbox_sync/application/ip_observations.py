@@ -3,37 +3,38 @@
 Never infer network areas from bridge names or choose one conflicting mask.
 The caller must persist the returned interface evidence with the reviewed plan.
 """
+
 from ipaddress import ip_interface
-from ..network_scopes import scope_key,scoped_inventory
+from ..network_scopes import scope_key, scoped_inventory
 from .inventory_order import canonical_hosts
 from .inventory_conflicts import inventory_conflicts
 
 
-POLICIES = ('strict', 'observe')
+POLICIES = ("strict", "observe")
 
 
 class ObservationPrerequisiteError(ValueError):
     pass
 
 
-def assignment_inventory(hosts, policy='strict'):
+def assignment_inventory(hosts, policy="strict"):
     """Return a copy for assignment and all excluded facts, keeping strict default.
 
     VM identity conflicts are returned as blockers even in observe mode. The input
     Discovery inventory is untouched; no address is removed from NetBox here.
     """
     if policy not in POLICIES:
-        raise ValueError('Unknown IP conflict policy')
+        raise ValueError("Unknown IP conflict policy")
     result = canonical_hosts(hosts)
     conflicts = inventory_conflicts(result)
-    if policy == 'strict':
+    if policy == "strict":
         return result, conflicts, ()
-    blockers = tuple(c for c in conflicts if c.kind not in ('IP_ASSIGNMENT', 'MAC_ASSIGNMENT'))
-    observations = tuple(c for c in conflicts if c.kind in ('IP_ASSIGNMENT', 'MAC_ASSIGNMENT'))
+    blockers = tuple(c for c in conflicts if c.kind not in ("IP_ASSIGNMENT", "MAC_ASSIGNMENT"))
+    observations = tuple(c for c in conflicts if c.kind in ("IP_ASSIGNMENT", "MAC_ASSIGNMENT"))
     if blockers:
         return result, conflicts, ()
-    excluded = {c.value for c in observations if c.kind == 'IP_ASSIGNMENT'}
-    excluded_macs = {c.value for c in observations if c.kind == 'MAC_ASSIGNMENT'}
+    excluded = {c.value for c in observations if c.kind == "IP_ASSIGNMENT"}
+    excluded_macs = {c.value for c in observations if c.kind == "MAC_ASSIGNMENT"}
     for host in result:
         for vm in [*host.virtual_machines, *host.containers]:
             for nic in vm.interfaces:
@@ -41,7 +42,7 @@ def assignment_inventory(hosts, policy='strict'):
                 observed = []
                 for raw in nic.ip_addresses:
                     try:
-                        disputed = scope_key(str(ip_interface(raw).ip),nic.ip_vrf_id) in excluded
+                        disputed = scope_key(str(ip_interface(raw).ip), nic.ip_vrf_id) in excluded
                     except ValueError:
                         disputed = False  # Existing validation remains authoritative.
                     if disputed:
@@ -49,38 +50,43 @@ def assignment_inventory(hosts, policy='strict'):
                     else:
                         kept.append(raw)
                 nic.ip_addresses = kept
-                mac = str(nic.mac_address or '').strip().upper()
+                mac = str(nic.mac_address or "").strip().upper()
                 observed_macs = [mac] if mac in excluded_macs else []
                 if observed_macs:
                     nic.mac_address = None  # Preserve evidence, never choose a clone/foreign owner.
                 nic.network_observations = {
-                    'version': 1, 'status': 'REVIEW_REQUIRED' if observed or observed_macs else 'NO_DISPUTED_ADDRESSES',
-                    'addresses': observed, 'bridge': nic.bridge, 'vlan_id': nic.vlan_id,
-                    'ipam_complete': not bool(observed),
-                    'mac_addresses': observed_macs, 'mac_assignment_complete': not bool(observed_macs),
-                    **({'mac_conflicts':nic.mac_scope_conflicts} if nic.mac_scope_conflicts else {}),
-                    **({'vrf_id':nic.ip_vrf_id} if nic.ip_vrf_id is not None else {}),
-                    **({'scope_conflicts':nic.ip_scope_conflicts} if nic.ip_scope_conflicts else {}),
+                    "version": 1,
+                    "status": "REVIEW_REQUIRED" if observed or observed_macs else "NO_DISPUTED_ADDRESSES",
+                    "addresses": observed,
+                    "bridge": nic.bridge,
+                    "vlan_id": nic.vlan_id,
+                    "ipam_complete": not bool(observed),
+                    "mac_addresses": observed_macs,
+                    "mac_assignment_complete": not bool(observed_macs),
+                    **({"mac_conflicts": nic.mac_scope_conflicts} if nic.mac_scope_conflicts else {}),
+                    **({"vrf_id": nic.ip_vrf_id} if nic.ip_vrf_id is not None else {}),
+                    **({"scope_conflicts": nic.ip_scope_conflicts} if nic.ip_scope_conflicts else {}),
                 }
     return result, (), observations
 
 
 def source_policy(config):
-    target = getattr(config, 'target', config)
-    return getattr(target, 'onboarding_mapping', {}).get('ip_conflict_policy', 'strict')
+    target = getattr(config, "target", config)
+    return getattr(target, "onboarding_mapping", {}).get("ip_conflict_policy", "strict")
 
 
 def executable_inventory(api, hosts, config):
     """Executors repeat the same projection and refuse unresolved identity conflicts."""
-    hosts=scoped_inventory(api,hosts,config)
+    hosts = scoped_inventory(api, hosts, config)
     policy = source_policy(config)
     projected, blockers, observations = assignment_inventory(hosts, policy)
-    if policy == 'observe':
+    if policy == "observe":
         if blockers:
-            raise ValueError('Inventory identity conflict')
+            raise ValueError("Inventory identity conflict")
         from ..prerequisites import reconcile
-        rows = [row.serialize() for row in api.extras.custom_fields.filter(name='sync_network_observations')]
-        field = next(row for row in reconcile(rows) if row['name'] == 'sync_network_observations')
-        if field['status'] != 'ready':
-            raise ObservationPrerequisiteError('Network observation prerequisite requires preparation')
+
+        rows = [row.serialize() for row in api.extras.custom_fields.filter(name="sync_network_observations")]
+        field = next(row for row in reconcile(rows) if row["name"] == "sync_network_observations")
+        if field["status"] != "ready":
+            raise ObservationPrerequisiteError("Network observation prerequisite requires preparation")
     return projected, observations

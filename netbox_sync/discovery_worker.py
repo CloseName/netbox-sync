@@ -1,4 +1,5 @@
 """Dedicated Unix-socket supervisor for bounded, read-only discovery."""
+
 # Platform APIs are Linux-only and provider imports are intentionally confined to the child.
 # pylint: disable=no-member,import-outside-toplevel,too-few-public-methods
 # pylint: disable=too-many-instance-attributes,too-many-arguments,too-many-positional-arguments
@@ -35,6 +36,7 @@ MAX_SECRET = 4096
 
 class WorkerError(RuntimeError):
     """One stable, secret-free worker failure."""
+
     def __init__(self, code, diagnostic=None, evidence=None):
         self.code = code
         self.diagnostic = diagnostic
@@ -43,9 +45,12 @@ class WorkerError(RuntimeError):
 
 
 def _safe_environment():
-    result = {key: value for key, value in os.environ.items()
-              if key in ('PATH', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL')}
-    result['PYTHONDONTWRITEBYTECODE'] = '1'
+    result = {
+        key: value
+        for key, value in os.environ.items()
+        if key in ("PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "LANG", "LC_ALL")
+    }
+    result["PYTHONDONTWRITEBYTECODE"] = "1"
     return result
 
 
@@ -54,22 +59,33 @@ def _drop_privileges(uid, gid):
         os.setgroups([])
         os.setgid(gid)
         os.setuid(uid)
+
     return drop
 
 
 def _bounded_secret(path):
-    with Path(path).open('rb') as stream:
+    with Path(path).open("rb") as stream:
         value = stream.read(MAX_SECRET + 1)
     if len(value) > MAX_SECRET:
-        raise OSError('secret exceeds limit')
-    return value.decode('utf-8').strip()
+        raise OSError("secret exceeds limit")
+    return value.decode("utf-8").strip()
 
 
 class DiscoverySupervisor:
     """Resolve configuration/secrets, then execute provider code outside the root process."""
 
-    def __init__(self, dsn, schema, secret_root, source_secret_root, netbox_url,
-                 netbox_token_file, child_uid, child_gid, popen=subprocess.Popen):
+    def __init__(
+        self,
+        dsn,
+        schema,
+        secret_root,
+        source_secret_root,
+        netbox_url,
+        netbox_token_file,
+        child_uid,
+        child_gid,
+        popen=subprocess.Popen,
+    ):
         self._dsn = dsn
         self._schema = schema
         self._secret_root = secret_root
@@ -83,98 +99,162 @@ class DiscoverySupervisor:
 
     def _source(self, instance):
         try:
-            registry = SourceRegistry(lambda: psycopg.connect(
-                self._dsn, connect_timeout=3,
-                options='-c statement_timeout=3000 -c default_transaction_read_only=on'), self._schema)
+            registry = SourceRegistry(
+                lambda: psycopg.connect(
+                    self._dsn,
+                    connect_timeout=3,
+                    options="-c statement_timeout=3000 -c default_transaction_read_only=on",
+                ),
+                self._schema,
+            )
             if registry.schema_version() != 1:
-                raise WorkerError('REGISTRY_UNAVAILABLE')
+                raise WorkerError("REGISTRY_UNAVAILABLE")
             record = registry.get_by_source_instance(instance)
         except WorkerError:
             raise
         except Exception:
-            raise WorkerError('REGISTRY_UNAVAILABLE') from None
+            raise WorkerError("REGISTRY_UNAVAILABLE") from None
         if record is None:
-            raise WorkerError('SOURCE_NOT_FOUND')
+            raise WorkerError("SOURCE_NOT_FOUND")
         if not record.config.enabled:
-            raise WorkerError('SOURCE_DISABLED')
+            raise WorkerError("SOURCE_DISABLED")
         return record.config
 
-    def run(self, instance, operation='discover'):
+    def run(self, instance, operation="discover"):
         """Resolve one source and execute its isolated child."""
         from .secret_resolver import FileSecretResolver, SecretResolutionError
+
         try:
             config = self._source(instance)
-            resolver = FileSecretResolver(secret_root=self._secret_root,
-                                          source_secret_root=self._source_secret_root,
-                                          max_secret_bytes=MAX_SECRET)
+            resolver = FileSecretResolver(
+                secret_root=self._secret_root, source_secret_root=self._source_secret_root, max_secret_bytes=MAX_SECRET
+            )
             credentials = resolver.resolve_credentials(config.credentials)
             netbox_url = self._netbox_url
-            if os.environ.get('NETBOX_SYNC_NETBOX_CONFIG_FILE'):
+            if os.environ.get("NETBOX_SYNC_NETBOX_CONFIG_FILE"):
                 from .bootstrap_state import runtime_netbox
-                netbox_url, netbox_token = runtime_netbox(os.environ['NETBOX_SYNC_NETBOX_CONFIG_FILE'], 'read')
+
+                netbox_url, netbox_token = runtime_netbox(os.environ["NETBOX_SYNC_NETBOX_CONFIG_FILE"], "read")
             else:
                 netbox_token = _bounded_secret(self._netbox_token_file)
-            if (not netbox_token or any(len(value.encode()) > MAX_SECRET for value in
-                                        (credentials.token_id, credentials.token_secret))):
-                raise OSError('empty token')
+            if not netbox_token or any(
+                len(value.encode()) > MAX_SECRET for value in (credentials.token_id, credentials.token_secret)
+            ):
+                raise OSError("empty token")
         except (SecretResolutionError, OSError):
-            raise WorkerError('CREDENTIAL_UNAVAILABLE') from None
-        payload = json.dumps({
-            'source': _config_payload(config), 'credentials': asdict(credentials),
-            'netbox_url': netbox_url, 'netbox_token': netbox_token,
-            'operation': operation,
-        }).encode()
+            raise WorkerError("CREDENTIAL_UNAVAILABLE") from None
+        payload = json.dumps(
+            {
+                "source": _config_payload(config),
+                "credentials": asdict(credentials),
+                "netbox_url": netbox_url,
+                "netbox_token": netbox_token,
+                "operation": operation,
+            }
+        ).encode()
         started = time.monotonic()
         try:
-            with child_process(self._popen, [sys.executable, '-B', '-m', 'netbox_sync.discovery_worker', '--child'],
-                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                             env=_safe_environment(), preexec_fn=_drop_privileges(
-                                 self._child_uid, self._child_gid) if os.name == 'posix' else None) as process:
+            with child_process(
+                self._popen,
+                [sys.executable, "-B", "-m", "netbox_sync.discovery_worker", "--child"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                env=_safe_environment(),
+                preexec_fn=_drop_privileges(self._child_uid, self._child_gid) if os.name == "posix" else None,
+            ) as process:
                 try:
                     output, _ = process.communicate(payload, timeout=DISCOVERY_TIMEOUT)
                 except subprocess.TimeoutExpired:
                     cleanup = stop_child(process)
-                    raise WorkerError('DISCOVERY_TIMEOUT', dict(cleanup, phase='child_wait', duration_ms=int((time.monotonic()-started)*1000))) from None
+                    raise WorkerError(
+                        "DISCOVERY_TIMEOUT",
+                        dict(cleanup, phase="child_wait", duration_ms=int((time.monotonic() - started) * 1000)),
+                    ) from None
         finally:
-            payload = b''
-        logging.getLogger(__name__).info(json.dumps({'event':'CHILD_PHASES','source_instance':instance,'operation':operation,'phases':getattr(process,'_phases',[])}))
+            payload = b""
+        logging.getLogger(__name__).info(
+            json.dumps(
+                {
+                    "event": "CHILD_PHASES",
+                    "source_instance": instance,
+                    "operation": operation,
+                    "phases": getattr(process, "_phases", []),
+                }
+            )
+        )
         if process.returncode or len(output) > MAX_RESPONSE:
-            raise WorkerError('DISCOVERY_FAILED', dict(phase='child_response', termination='exit' if process.returncode else 'response_too_large', returncode=process.returncode, duration_ms=int((time.monotonic()-started)*1000)))
+            raise WorkerError(
+                "DISCOVERY_FAILED",
+                dict(
+                    phase="child_response",
+                    termination="exit" if process.returncode else "response_too_large",
+                    returncode=process.returncode,
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                ),
+            )
         try:
             result = json.loads(output)
         except (UnicodeDecodeError, json.JSONDecodeError):
-            raise WorkerError('DISCOVERY_FAILED', dict(phase='child_response', termination='invalid_response', returncode=process.returncode, duration_ms=int((time.monotonic()-started)*1000))) from None
-        if not isinstance(result, dict) or set(result) - {'result', 'error', 'diagnostic', 'evidence'}:
-            raise WorkerError('DISCOVERY_FAILED')
-        if result.get('error'):
+            raise WorkerError(
+                "DISCOVERY_FAILED",
+                dict(
+                    phase="child_response",
+                    termination="invalid_response",
+                    returncode=process.returncode,
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                ),
+            ) from None
+        if not isinstance(result, dict) or set(result) - {"result", "error", "diagnostic", "evidence"}:
+            raise WorkerError("DISCOVERY_FAILED")
+        if result.get("error"):
             from .worker_failure import ERRORS, safe_diagnostic
-            code=result['error'] if result['error'] in ERRORS or result['error']=='CREDENTIAL_UNAVAILABLE' else 'DISCOVERY_FAILED'
-            detail = dict(result['diagnostic']) if isinstance(result.get('diagnostic'), dict) else {}
-            detail['phases'] = getattr(process, '_phases', [])
+
+            code = (
+                result["error"]
+                if result["error"] in ERRORS or result["error"] == "CREDENTIAL_UNAVAILABLE"
+                else "DISCOVERY_FAILED"
+            )
+            detail = dict(result["diagnostic"]) if isinstance(result.get("diagnostic"), dict) else {}
+            detail["phases"] = getattr(process, "_phases", [])
             evidence = None
-            if code == 'NETBOX_PLACEMENT_MISSING' and operation == 'discover' and result.get('evidence') is not None:
+            if code == "NETBOX_PLACEMENT_MISSING" and operation == "discover" and result.get("evidence") is not None:
                 from .provider_evidence import validate
-                try: evidence = validate(result['evidence'], instance)
-                except ValueError: raise WorkerError('DISCOVERY_FAILED') from None
-            raise WorkerError(code, safe_diagnostic(detail,code), evidence=evidence)
-        return result.get('result')
+
+                try:
+                    evidence = validate(result["evidence"], instance)
+                except ValueError:
+                    raise WorkerError("DISCOVERY_FAILED") from None
+            raise WorkerError(code, safe_diagnostic(detail, code), evidence=evidence)
+        return result.get("result")
 
 
 def _config_payload(config):
     return {
-        'id': config.id, 'source_instance': config.source_instance, 'name': config.name,
-        'source_type': config.source_type, 'address': config.address, 'enabled': config.enabled,
-        'sync_enabled': config.sync_enabled, 'sync_interval_seconds': config.sync_interval_seconds,
-        'verify_ssl': config.verify_ssl, 'legacy_identity_owner': config.legacy_identity_owner,
-        'settings': dict(config.settings), 'target': asdict(config.target),
+        "id": config.id,
+        "source_instance": config.source_instance,
+        "name": config.name,
+        "source_type": config.source_type,
+        "address": config.address,
+        "enabled": config.enabled,
+        "sync_enabled": config.sync_enabled,
+        "sync_interval_seconds": config.sync_interval_seconds,
+        "verify_ssl": config.verify_ssl,
+        "legacy_identity_owner": config.legacy_identity_owner,
+        "settings": dict(config.settings),
+        "target": asdict(config.target),
     }
 
 
 def _child_config(value):
     from .source_config import NetBoxTargetConfig, SecretReference, SourceConfig, SourceCredentials
-    placeholder = SecretReference('env', 'DISPOSABLE_CHILD_VALUE')
-    return SourceConfig(target=NetBoxTargetConfig(**value.pop('target')),
-                        credentials=SourceCredentials(value.pop('username'), placeholder, placeholder), **value)
+
+    placeholder = SecretReference("env", "DISPOSABLE_CHILD_VALUE")
+    return SourceConfig(
+        target=NetBoxTargetConfig(**value.pop("target")),
+        credentials=SourceCredentials(value.pop("username"), placeholder, placeholder),
+        **value,
+    )
 
 
 def execute_child(payload):
@@ -188,70 +268,99 @@ def execute_child(payload):
     from .esxi_discovery import discover_hosts as discover_esxi
     from .proxmox_discovery import discover_hosts as discover_proxmox
     from .host_primary_ip import select_endpoint
-    source = dict(payload['source'])
-    credentials = payload['credentials']
-    source['username'] = credentials['username']
+
+    source = dict(payload["source"])
+    credentials = payload["credentials"]
+    source["username"] = credentials["username"]
     config = _child_config(source)
-    nb_api = pynetbox.api(payload['netbox_url'], token=payload['netbox_token'])
+    nb_api = pynetbox.api(payload["netbox_url"], token=payload["netbox_token"])
     from .netbox_tls import configure_session
+
     configure_session(nb_api.http_session)
     from .worker_failure import failure_stage
-    if config.source_type == 'proxmox':
-        token_name = credentials['token_id'].split('!', 1)[-1]
-        with failure_stage('provider'):
-            provider = ProxmoxAPI(config.address, user=credentials['username'], token_name=token_name,
-                                  token_value=credentials['token_secret'], verify_ssl=config.verify_ssl, port=config.api_port)
+
+    if config.source_type == "proxmox":
+        token_name = credentials["token_id"].split("!", 1)[-1]
+        with failure_stage("provider"):
+            provider = ProxmoxAPI(
+                config.address,
+                user=credentials["username"],
+                token_name=token_name,
+                token_value=credentials["token_secret"],
+                verify_ssl=config.verify_ssl,
+                port=config.api_port,
+            )
             from .source_tls import configure_proxmox
+
             configure_proxmox(provider, config.verify_ssl)
             hosts = select_endpoint(discover_proxmox(provider, config), config)
-        if payload.get('operation') != 'plan':
+        if payload.get("operation") != "plan":
             review = _comparison(lambda: build_proxmox_review(nb_api, hosts, config), hosts, config)
-    elif config.source_type == 'esxi':
+    elif config.source_type == "esxi":
+
         class Resolved:
             """Ephemeral already-resolved ESXi password adapter."""
+
             def resolve(self, _reference):
                 """Return the in-memory password without touching a file."""
-                return credentials['token_secret']
-        with failure_stage('provider'):
+                return credentials["token_secret"]
+
+        with failure_stage("provider"):
             with EsxiClient(resolver=Resolved()).session(config) as service:
                 hosts = select_endpoint(discover_esxi(service, config), config)
-        if payload.get('operation') != 'plan':
+        if payload.get("operation") != "plan":
             from .esxi_vm_identity import resolve_vm_identities
+
             hosts, _ = resolve_vm_identities(nb_api, hosts, config)
-            review = _comparison(lambda: build_esxi_review(build_esxi_adoption_plan(nb_api, hosts, config), config), hosts, config)
+            review = _comparison(
+                lambda: build_esxi_review(build_esxi_adoption_plan(nb_api, hosts, config), config), hosts, config
+            )
     else:
-        raise WorkerError('DISCOVERY_FAILED')
-    if payload.get('operation') == 'plan':
-        with failure_stage('planning'):
+        raise WorkerError("DISCOVERY_FAILED")
+    if payload.get("operation") == "plan":
+        with failure_stage("planning"):
             plan = build_runtime_plan(nb_api, hosts, config)
-        return {**plan.canonical_dict(), 'digest': plan.digest}
+        return {**plan.canonical_dict(), "digest": plan.digest}
     evidence = _host_evidence(hosts)
     from .application.discovery_review import enrich_review
-    return {**asdict(enrich_review(review, hosts)), 'hosts': evidence}
+
+    return {**asdict(enrich_review(review, hosts)), "hosts": evidence}
 
 
 def _host_evidence(hosts):
     from .source_preview import text, MAX_HOSTS
+
     evidence = []
     if 1 <= len(hosts) <= MAX_HOSTS:
-        evidence = [dict(id=host.source_id, name=text(host.original_name),
-            manufacturer=text(host.manufacturer), model=text(host.model),
-            version=text(host.hypervisor_version), cpu=text(host.cpu.model),
-            memory_bytes=max(0,host.memory_bytes)) for host in hosts]
+        evidence = [
+            dict(
+                id=host.source_id,
+                name=text(host.original_name),
+                manufacturer=text(host.manufacturer),
+                model=text(host.model),
+                version=text(host.hypervisor_version),
+                cpu=text(host.cpu.model),
+                memory_bytes=max(0, host.memory_bytes),
+            )
+            for host in hosts
+        ]
     return evidence
 
 
 def _comparison(callback, hosts, config):
     from .worker_failure import failure_stage, DiagnosticFailure
+
     try:
-        with failure_stage('netbox'):
+        with failure_stage("netbox"):
             return callback()
     except DiagnosticFailure as exc:
-        if exc.code == 'NETBOX_PLACEMENT_MISSING':
+        if exc.code == "NETBOX_PLACEMENT_MISSING":
             from .provider_evidence import validate
+
             try:
-                exc.evidence = validate({'source_instance': config.source_instance,
-                                         'hosts': _host_evidence(hosts)}, config.source_instance)
+                exc.evidence = validate(
+                    {"source_instance": config.source_instance, "hosts": _host_evidence(hosts)}, config.source_instance
+                )
             except ValueError:
                 pass  # Missing/ambiguous host evidence never permits placement repair.
         raise
@@ -261,22 +370,23 @@ def child_main():
     """Execute one bounded stdin/stdout child request without logging."""
     logging.disable(logging.CRITICAL)
     from .worker_failure import DiagnosticFailure, diagnostic
+
     try:
         raw = sys.stdin.buffer.read(MAX_RESPONSE + 1)
         if len(raw) > MAX_RESPONSE:
-            raise ValueError('payload too large')
+            raise ValueError("payload too large")
         with redirect_stdout(sys.stderr):
             value = execute_child(json.loads(raw))
-        result = {'result': value}
+        result = {"result": value}
     except DiagnosticFailure as exc:
-        result = {'error':exc.code,'diagnostic':exc.diagnostic}
-        if getattr(exc, 'evidence', None) is not None:
-            result['evidence'] = exc.evidence
+        result = {"error": exc.code, "diagnostic": exc.diagnostic}
+        if getattr(exc, "evidence", None) is not None:
+            result["evidence"] = exc.evidence
     except WorkerError as exc:
-        result = {'error': exc.code}
+        result = {"error": exc.code}
     except Exception as exc:  # No exception text or stderr passthrough.
-        detail=diagnostic(exc,'discovery')
-        result = {'error': detail['code'],'diagnostic':detail}
+        detail = diagnostic(exc, "discovery")
+        result = {"error": detail["code"], "diagnostic": detail}
     sys.stdout.write(json.dumps(result))
 
 
@@ -284,95 +394,105 @@ def _receive(connection):
     connection.settimeout(REQUEST_TIMEOUT)
     data = connection.recv(MAX_REQUEST + 1)
     if len(data) > MAX_REQUEST:
-        raise WorkerError('REQUEST_INVALID')
+        raise WorkerError("REQUEST_INVALID")
     try:
         request = json.loads(data)
     except (UnicodeDecodeError, json.JSONDecodeError):
-        raise WorkerError('REQUEST_INVALID') from None
-    if request == {'operation': 'health'}:
-        return None, 'health'
-    if isinstance(request, dict) and request.get('operation') == 'invalidate_plan':
+        raise WorkerError("REQUEST_INVALID") from None
+    if request == {"operation": "health"}:
+        return None, "health"
+    if isinstance(request, dict) and request.get("operation") == "invalidate_plan":
         from uuid import UUID
+
         try:
-            if set(request) != {'operation','source_instance','operation_id'} or not SOURCE_INSTANCE_PATTERN.fullmatch(request['source_instance']):
+            if set(request) != {
+                "operation",
+                "source_instance",
+                "operation_id",
+            } or not SOURCE_INSTANCE_PATTERN.fullmatch(request["source_instance"]):
                 raise ValueError()
-            UUID(request['operation_id'])
+            UUID(request["operation_id"])
         except (ValueError, TypeError, AttributeError):
-            raise WorkerError('REQUEST_INVALID') from None
-        return request['source_instance'], request
-    if set(request) not in ({'source_instance'}, {'source_instance', 'operation'}) \
-            or request.get('operation', 'discover') not in ('discover', 'plan', 'start_plan', 'start_discovery', 'operations') \
-            or not SOURCE_INSTANCE_PATTERN.fullmatch(request.get('source_instance', '')):
-        raise WorkerError('REQUEST_INVALID')
-    return request['source_instance'], request.get('operation', 'discover')
+            raise WorkerError("REQUEST_INVALID") from None
+        return request["source_instance"], request
+    if (
+        set(request) not in ({"source_instance"}, {"source_instance", "operation"})
+        or request.get("operation", "discover")
+        not in ("discover", "plan", "start_plan", "start_discovery", "operations")
+        or not SOURCE_INSTANCE_PATTERN.fullmatch(request.get("source_instance", ""))
+    ):
+        raise WorkerError("REQUEST_INVALID")
+    return request["source_instance"], request.get("operation", "discover")
 
 
 def _authorize_peer(connection, allowed_uid):
-    if not hasattr(socket, 'SO_PEERCRED'):
-        raise WorkerError('PEER_FORBIDDEN')
-    _pid, uid, _gid = struct.unpack('3i', connection.getsockopt(
-        socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize('3i')))
+    if not hasattr(socket, "SO_PEERCRED"):
+        raise WorkerError("PEER_FORBIDDEN")
+    _pid, uid, _gid = struct.unpack(
+        "3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
+    )
     if uid != allowed_uid:
-        raise WorkerError('PEER_FORBIDDEN')
+        raise WorkerError("PEER_FORBIDDEN")
 
 
 def _operation_public(row):
     row = dict(row)
-    if row.get('status') == 'FAILED':
-        row['result'] = None  # Provider evidence is private placement input, not a successful review.
-    return {key: (str(value) if key == 'operation_id' else value.isoformat()
-                  if hasattr(value, 'isoformat') else value) for key, value in row.items()}
+    if row.get("status") == "FAILED":
+        row["result"] = None  # Provider evidence is private placement input, not a successful review.
+    return {
+        key: (str(value) if key == "operation_id" else value.isoformat() if hasattr(value, "isoformat") else value)
+        for key, value in row.items()
+    }
 
 
 def _handle_request(supervisor, instance, operation, launch=None):
     """Own operation state outside HTTP; preserve injected test supervisors."""
-    if operation == 'health':
-        return {'status': 'ok'}
-    store = getattr(supervisor, 'operations', None)
+    if operation == "health":
+        return {"status": "ok"}
+    store = getattr(supervisor, "operations", None)
     if store is None:
-        if operation in ('start_plan', 'start_discovery', 'operations'):
-            raise WorkerError('OPERATIONS_UNAVAILABLE')
+        if operation in ("start_plan", "start_discovery", "operations"):
+            raise WorkerError("OPERATIONS_UNAVAILABLE")
         return supervisor.run(instance, operation)
     if isinstance(operation, dict):
-        store.invalidate_plan(instance, operation['operation_id'])
+        store.invalidate_plan(instance, operation["operation_id"])
         return {}
-    if operation == 'operations':
-        return {'operations': [_operation_public(row) for row in store.latest(instance)]}
-    kind = 'PLAN' if operation in ('plan', 'start_plan') else 'DISCOVERY'
+    if operation == "operations":
+        return {"operations": [_operation_public(row) for row in store.latest(instance)]}
+    kind = "PLAN" if operation in ("plan", "start_plan") else "DISCOVERY"
     row, created = store.start(instance, kind)
-    run = lambda: store.execute(row, lambda: supervisor.run(
-        instance, 'plan' if kind == 'PLAN' else 'discover'))
-    if operation.startswith('start_'):
+    run = lambda: store.execute(row, lambda: supervisor.run(instance, "plan" if kind == "PLAN" else "discover"))
+    if operation.startswith("start_"):
         if created:
             launch(run)
-        return {'operation': _operation_public(row)}
+        return {"operation": _operation_public(row)}
     if created:
         run()
     deadline = time.monotonic() + 130
     while time.monotonic() < deadline:
-        current = next((item for item in store.latest(instance)
-                        if item['operation_id'] == row['operation_id']), None)
+        current = next((item for item in store.latest(instance) if item["operation_id"] == row["operation_id"]), None)
         if current is None:
-            raise WorkerError('PLAN_STALE')
-        if current['status'] != 'RUNNING':
-            if current['result'] is not None:
-                return current['result']
-            raise WorkerError(current['safe_error_code'] or 'OPERATION_FAILED')
+            raise WorkerError("PLAN_STALE")
+        if current["status"] != "RUNNING":
+            if current["result"] is not None:
+                return current["result"]
+            raise WorkerError(current["safe_error_code"] or "OPERATION_FAILED")
         time.sleep(0.5)
-    raise WorkerError('OPERATION_STILL_EXECUTING')
+    raise WorkerError("OPERATION_STILL_EXECUTING")
 
 
 def serve(socket_path, supervisor, allowed_uid):
     """Serve the single-purpose protocol and authenticate every Unix peer."""
     import fcntl  # pylint: disable=import-outside-toplevel
+
     path = Path(socket_path)
     path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
-    lock_fd = os.open(path.parent / '.worker.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    lock_fd = os.open(path.parent / ".worker.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError as exc:
         os.close(lock_fd)
-        raise WorkerError('WORKER_ALREADY_RUNNING') from exc
+        raise WorkerError("WORKER_ALREADY_RUNNING") from exc
     try:
         path.unlink()
     except FileNotFoundError:
@@ -389,7 +509,7 @@ def serve(socket_path, supervisor, allowed_uid):
                 _authorize_peer(connection, allowed_uid)
             except WorkerError as exc:
                 try:
-                    connection.sendall(json.dumps({'ok': False, 'error': exc.code}).encode())
+                    connection.sendall(json.dumps({"ok": False, "error": exc.code}).encode())
                 finally:
                     connection.close()
                 continue
@@ -399,6 +519,7 @@ def serve(socket_path, supervisor, allowed_uid):
                 continue
             signal.signal(signal.SIGCHLD, signal.SIG_DFL)
             server.close()
+
             def launch(callback):
                 worker_pid = os.fork()
                 if worker_pid == 0:
@@ -407,17 +528,18 @@ def serve(socket_path, supervisor, allowed_uid):
                         callback()
                     finally:
                         os._exit(0)
+
             with connection:
                 try:
                     _authorize_peer(connection, allowed_uid)
                     instance, operation = _receive(connection)
-                    result = {'ok': True, 'result': _handle_request(supervisor, instance, operation, launch)}
+                    result = {"ok": True, "result": _handle_request(supervisor, instance, operation, launch)}
                 except (WorkerError, OperationError) as exc:
-                    result = {'ok': False, 'error': exc.code}
+                    result = {"ok": False, "error": exc.code}
                 except Exception:  # pylint: disable=broad-exception-caught
-                    result = {'ok': False, 'error': 'WORKER_INTERNAL_ERROR'}
+                    result = {"ok": False, "error": "WORKER_INTERNAL_ERROR"}
                 try:
-                    connection.sendall(json.dumps(result, separators=(',', ':')).encode())
+                    connection.sendall(json.dumps(result, separators=(",", ":")).encode())
                 finally:
                     os._exit(0)
 
@@ -425,17 +547,17 @@ def serve(socket_path, supervisor, allowed_uid):
 def main():
     """Start either the isolated child or single-purpose supervisor."""
     parser = argparse.ArgumentParser()
-    parser.add_argument('--child', action='store_true')
-    parser.add_argument('--socket')
-    parser.add_argument('--registry-dsn')
-    parser.add_argument('--registry-schema')
-    parser.add_argument('--secret-root')
-    parser.add_argument('--source-secret-root')
-    parser.add_argument('--netbox-url')
-    parser.add_argument('--netbox-token-file')
-    parser.add_argument('--api-uid', type=int, default=10001)
-    parser.add_argument('--child-uid', type=int, default=10001)
-    parser.add_argument('--child-gid', type=int, default=10001)
+    parser.add_argument("--child", action="store_true")
+    parser.add_argument("--socket")
+    parser.add_argument("--registry-dsn")
+    parser.add_argument("--registry-schema")
+    parser.add_argument("--secret-root")
+    parser.add_argument("--source-secret-root")
+    parser.add_argument("--netbox-url")
+    parser.add_argument("--netbox-token-file")
+    parser.add_argument("--api-uid", type=int, default=10001)
+    parser.add_argument("--child-uid", type=int, default=10001)
+    parser.add_argument("--child-gid", type=int, default=10001)
     args = parser.parse_args()
     if args.child:
         child_main()
@@ -444,17 +566,22 @@ def main():
     telemetry.setLevel(logging.INFO)
     telemetry.addHandler(logging.StreamHandler())
     telemetry.propagate = False
-    supervisor = DiscoverySupervisor(args.registry_dsn or os.environ.get('NETBOX_SYNC_DISCOVERY_REGISTRY_DSN', ''),
-                                     args.registry_schema or os.environ.get('NETBOX_SYNC_REGISTRY_SCHEMA', ''),
-                                     args.secret_root, args.source_secret_root,
-                                     args.netbox_url or os.environ.get('NETBOX_SYNC_DISCOVERY_NB_API_URL', ''),
-                                     args.netbox_token_file,
-                                     args.child_uid, args.child_gid)
+    supervisor = DiscoverySupervisor(
+        args.registry_dsn or os.environ.get("NETBOX_SYNC_DISCOVERY_REGISTRY_DSN", ""),
+        args.registry_schema or os.environ.get("NETBOX_SYNC_REGISTRY_SCHEMA", ""),
+        args.secret_root,
+        args.source_secret_root,
+        args.netbox_url or os.environ.get("NETBOX_SYNC_DISCOVERY_NB_API_URL", ""),
+        args.netbox_token_file,
+        args.child_uid,
+        args.child_gid,
+    )
     supervisor.operations = OperationStore(
-        os.environ.get('NETBOX_SYNC_OPERATION_WRITER_DSN', ''),
-        args.registry_schema or os.environ.get('NETBOX_SYNC_REGISTRY_SCHEMA', ''))
+        os.environ.get("NETBOX_SYNC_OPERATION_WRITER_DSN", ""),
+        args.registry_schema or os.environ.get("NETBOX_SYNC_REGISTRY_SCHEMA", ""),
+    )
     serve(args.socket, supervisor, args.api_uid)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

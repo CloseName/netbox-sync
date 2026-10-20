@@ -15,15 +15,17 @@ class PostgresRunReader:
 
     def _repository(self):
         if not self._settings.registry_dsn:
-            raise RuntimeError('history unavailable')
+            raise RuntimeError("history unavailable")
 
         def connect():
             connection = self._connector(
-                self._settings.registry_dsn, connect_timeout=3,
-                options='-c statement_timeout=2000 -c default_transaction_read_only=on',
+                self._settings.registry_dsn,
+                connect_timeout=3,
+                options="-c statement_timeout=2000 -c default_transaction_read_only=on",
             )
             connection.read_only = True
             return connection
+
         return RunRepository(connect, self._settings.registry_schema)
 
     def list_runs(self, **filters):
@@ -42,15 +44,14 @@ class PostgresRunReader:
         repository = self._repository()
         return HistorySnapshot(
             repository.latest_by_source(),
-            repository.latest_by_source(status='SUCCEEDED'),
-            repository.latest_by_source(trigger='scheduled'),
-            repository.latest_by_source(trigger='manual'),
+            repository.latest_by_source(status="SUCCEEDED"),
+            repository.latest_by_source(trigger="scheduled"),
+            repository.latest_by_source(trigger="manual"),
             repository.stale_running(stale_before, stale_limit),
-            repository.latest_by_source(trigger='scheduled', status='SUCCEEDED'),
-            repository.latest_by_source(trigger='scheduled', status='RUNNING'),
+            repository.latest_by_source(trigger="scheduled", status="SUCCEEDED"),
+            repository.latest_by_source(trigger="scheduled", status="RUNNING"),
         )
 
     def scheduled_for_source(self, source_instance):
         """Return bounded newest scheduled history for one source."""
-        return self._repository().list_runs(
-            source_instance=source_instance, trigger='scheduled', limit=100)
+        return self._repository().list_runs(source_instance=source_instance, trigger="scheduled", limit=100)

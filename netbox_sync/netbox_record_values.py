@@ -5,6 +5,7 @@ validators: boolean IDs, dictionary values and record attributes pass through
 unchanged. Stricter provider and network-scope helpers have separate contracts.
 """
 
+
 def object_id(value):
     if value is None:
         return None
@@ -13,9 +14,9 @@ def object_id(value):
         return value
 
     if isinstance(value, dict):
-        return value.get('id')
+        return value.get("id")
 
-    return getattr(value, 'id', None)
+    return getattr(value, "id", None)
 
 
 def choice_value(value):
@@ -26,6 +27,6 @@ def choice_value(value):
         return value
 
     if isinstance(value, dict):
-        return value.get('value')
+        return value.get("value")
 
-    return getattr(value, 'value', value)
+    return getattr(value, "value", value)

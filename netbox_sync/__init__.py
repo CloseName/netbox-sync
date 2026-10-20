@@ -59,24 +59,20 @@ from .entrypoint import VALID_SYNC_MODES, _get_sync_mode, _print_multi_source_re
 
 
 def _read_secret(variable_name: str) -> str:
-    file_variable_name = f'{variable_name}_FILE'
+    file_variable_name = f"{variable_name}_FILE"
     file_path = os.getenv(file_variable_name)
 
     if file_path:
         try:
-            with open(file_path, 'r', encoding='utf-8') as secret_file:
+            with open(file_path, "r", encoding="utf-8") as secret_file:
                 value = secret_file.read().strip()
         except OSError as exc:
-            raise RuntimeError(
-                f'Unable to read secret file configured by {file_variable_name}'
-            ) from exc
+            raise RuntimeError(f"Unable to read secret file configured by {file_variable_name}") from exc
     else:
-        value = os.getenv(variable_name, '').strip()
+        value = os.getenv(variable_name, "").strip()
 
     if not value:
-        raise RuntimeError(
-            f'Missing required secret: set {variable_name} or {file_variable_name}'
-        )
+        raise RuntimeError(f"Missing required secret: set {variable_name} or {file_variable_name}")
 
     return value
 
@@ -84,14 +80,18 @@ def _read_secret(variable_name: str) -> str:
 def _run_plan(_pve_api: ProxmoxAPI, _nb_objects: dict) -> None:
     """Keep the historical report API and per-call CPU helper lookup."""
     return _legacy_inventory._run_plan(
-        _pve_api, _nb_objects, _get_virtual_machine_vcpus=_get_virtual_machine_vcpus,
+        _pve_api,
+        _nb_objects,
+        _get_virtual_machine_vcpus=_get_virtual_machine_vcpus,
     )
 
 
 def execute_proxmox_source(source_config, sync_mode, legacy_secrets=False):
     """Keep the package API and existing adapter injection points available."""
     return _proxmox_executor.execute_proxmox_source(
-        source_config, sync_mode, legacy_secrets=legacy_secrets,
+        source_config,
+        sync_mode,
+        legacy_secrets=legacy_secrets,
         _scheduled_stage=_scheduled_stage,
         LegacyFileSecretResolver=LegacyFileSecretResolver,
         FileSecretResolver=FileSecretResolver,
@@ -105,7 +105,10 @@ def execute_proxmox_source(source_config, sync_mode, legacy_secrets=False):
 def execute_discovered_source(source_config, hosts, sync_mode, pve_api=None):
     """Preserve the package API and resolve existing collaborators per invocation."""
     return _sync_execution.execute_discovered_source(
-        source_config, hosts, sync_mode, pve_api=pve_api,
+        source_config,
+        hosts,
+        sync_mode,
+        pve_api=pve_api,
         _scheduled_stage=_scheduled_stage,
         _read_secret=_read_secret,
         execute_esxi_runtime=execute_esxi_runtime,
@@ -124,31 +127,35 @@ def execute_discovered_source(source_config, hosts, sync_mode, pve_api=None):
 
 
 def _source_dispatch(sync_mode):
-    return SourceExecutorDispatch({
-        'proxmox': lambda config: execute_proxmox_source(
-            config,
-            sync_mode,
-        ),
-        'esxi': lambda config: execute_esxi_source(
-            config,
-            sync_mode,
-            execute_discovered_source,
-        ),
-    })
+    return SourceExecutorDispatch(
+        {
+            "proxmox": lambda config: execute_proxmox_source(
+                config,
+                sync_mode,
+            ),
+            "esxi": lambda config: execute_esxi_source(
+                config,
+                sync_mode,
+                execute_discovered_source,
+            ),
+        }
+    )
 
 
 def main():
     """Stable console entrypoint; resolve dependencies at invocation time."""
     return _entrypoint.run(
-        _get_sync_mode=_get_sync_mode, runtime_source_mode=runtime_source_mode,
-        _source_dispatch=_source_dispatch, postgres_run_repository=postgres_run_repository,
+        _get_sync_mode=_get_sync_mode,
+        runtime_source_mode=runtime_source_mode,
+        _source_dispatch=_source_dispatch,
+        postgres_run_repository=postgres_run_repository,
         _print_multi_source_result=_print_multi_source_result,
         load_runtime_source_config=load_runtime_source_config,
         execute_proxmox_source=execute_proxmox_source,
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     main()
