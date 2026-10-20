@@ -349,3 +349,58 @@ def test_existing_visible_fields_remain_compatible_without_recreating_data():
     before = deepcopy(rows)
     assert all(field['status'] == 'ready' for field in reconcile(rows))
     assert rows == before
+
+@pytest.mark.parametrize('changes', [
+    {'key': 'OTHERKEY1234'}, {'version': 1}, {'id': True}, {'id': 0}, {'id': -1},
+])
+def test_executor_identification_rejects_nonmatching_token_metadata(executor, changes):
+    module, session, queries, identity, value = executor
+    identity.update(changes)
+    assert module.operate({**value, 'action': 'identify'}) == {'token_id': None}
+    assert not session.calls
+
+
+def test_executor_identification_query_failure_returns_unknown_id(executor, monkeypatch):
+    module, session, queries, identity, value = executor
+    original = module.fetch
+    def fail_token_query(session, url, token, method='GET'):
+        if '/users/tokens/?' in url:
+            raise module.ProbeError('PERMISSION_DENIED')
+        return original(session, url, token, method)
+    monkeypatch.setattr(module, 'fetch', fail_token_query)
+    assert module.operate({**value, 'action': 'identify'}) == {'token_id': None}
+    assert not session.calls
+
+
+@pytest.mark.parametrize('failure', ['before_post', 'during_post'])
+def test_executor_create_error_boundary_preserves_sent_state(executor, monkeypatch, failure):
+    module, session, queries, identity, value = executor
+    def fail(*args, **kwargs):
+        raise RuntimeError('fixture transport failed')
+    monkeypatch.setattr(module if failure == 'before_post' else session,
+                        'fields' if failure == 'before_post' else 'post', fail)
+    expected = 'NOT_SENT' if failure == 'before_post' else 'UNCERTAIN'
+    assert module.operate({**value, 'action': 'create', 'name': 'cpu_model'}) == {'code': expected}
+
+
+@pytest.mark.parametrize('status,expected', [(201, 'CREATED'), (400, 'REJECTED'),
+    (401, 'REJECTED'), (403, 'REJECTED'), (409, 'REJECTED'), (204, 'UNCERTAIN'), (500, 'UNCERTAIN')])
+def test_executor_create_response_classification(executor, monkeypatch, status, expected):
+    module, session, queries, identity, value = executor
+    original = session.post
+    def post(*args, **kwargs):
+        response = original(*args, **kwargs)
+        response.status_code = status
+        return response
+    monkeypatch.setattr(session, 'post', post)
+    assert module.operate({**value, 'action': 'create', 'name': 'cpu_model'}) == {'code': expected}
+    assert len(session.calls) == 1
+
+
+def test_executor_create_session_exit_failure_remains_uncertain(executor, monkeypatch):
+    module, session, queries, identity, value = executor
+    def fail_exit(*args):
+        raise RuntimeError('fixture session shutdown failure')
+    monkeypatch.setattr(type(session), '__exit__', fail_exit)
+    assert module.operate({**value, 'action': 'create', 'name': 'cpu_model'}) == {'code': 'UNCERTAIN'}
+    assert len(session.calls) == 1

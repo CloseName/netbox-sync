@@ -12,6 +12,7 @@ from .prerequisites import FIELDS, definition, reconcile, choice
 
 
 def fields(session, url, token):
+    """Read the complete bounded custom-field inventory and reconcile prerequisites."""
     data = fetch(session, url + "/api/extras/custom-fields/?limit=1000", token)
     rows = data.get("results")
     if not isinstance(rows, list) or data.get("next") is not None:
@@ -19,40 +20,80 @@ def fields(session, url, token):
     return reconcile(rows)
 
 
+def _identify(session, url, token):
+    """Resolve only the supplied version-two token after checking create permission."""
+    fetch(session, url + "/api/extras/custom-fields/?limit=1", token)
+    metadata = fetch(session, url + "/api/extras/custom-fields/", token, "OPTIONS")
+    if "POST" not in metadata.get("actions", {}):
+        return {"code": "PERMISSION_DENIED"}
+    key = token_key(token)
+    if key is None:
+        return {"token_id": None}
+    # A filtered public identifier query only. Never query plaintext or list all tokens.
+    try:
+        data = fetch(session, url + "/api/users/tokens/?version=2&key=" + key + "&limit=2", token)
+        rows = data.get("results", [])
+        if data.get("next") or data.get("count") != 1 or len(rows) != 1:
+            return {"token_id": None}
+        row = rows[0]
+        if (
+            row.get("key") != key
+            or choice(row.get("version")) != 2
+            or (type(row.get("id")) is not int or row["id"] <= 0)
+        ):
+            return {"token_id": None}
+        return {"token_id": row["id"]}
+    except Exception:
+        return {"token_id": None}
+
+
+def _post_field(session, url, token, name):
+    """Send the fixed field definition and classify the response without retrying."""
+    with session.post(
+        url + "/api/extras/custom-fields/",
+        json=definition(name),
+        headers={"Authorization": authorization(token)},
+        timeout=(3, 5),
+        allow_redirects=False,
+        stream=True,
+    ) as response:
+        if response.status_code == 201:
+            return {"code": "CREATED"}
+        if response.status_code in (400, 401, 403, 409):
+            return {"code": "REJECTED"}
+        return {"code": "UNCERTAIN"}
+
+
+def _revoke_token(session, url, token, token_id):
+    """Recheck the supplied token identity before deleting that exact token resource."""
+    endpoint = url + "/api/users/tokens/" + str(token_id) + "/"
+    row = fetch(session, endpoint, token)
+    if row.get("key") != token_key(token) or choice(row.get("version")) != 2:
+        return {"code": "UNCONFIRMED"}
+    with session.delete(
+        endpoint,
+        headers={"Authorization": authorization(token)},
+        timeout=(3, 5),
+        allow_redirects=False,
+        stream=True,
+    ) as response:
+        return {"code": "CONFIRMED" if response.status_code == 204 else "UNCONFIRMED"}
+
+
 def operate(value):
+    """Execute a fixed setup verb, distinguishing pre-send failures from uncertain writes."""
     post_sent = False
+    code = "INVALID"
     try:
         url, token, action = value["url"], value["token"], value["action"]
         parsed = urlsplit(url)
         host, address = EgressPolicy(allowed_hosts=(parsed.hostname,)).resolve(parsed.hostname, parsed.port or 443)
         with pinned_dns(host, address, parsed.port or 443), requests.Session() as session:
             configure_session(session)
-            if action == "inspect":
-                return {"fields": fields(session, url, token)}
-            if action == "identify":
-                fetch(session, url + "/api/extras/custom-fields/?limit=1", token)
-                metadata = fetch(session, url + "/api/extras/custom-fields/", token, "OPTIONS")
-                if "POST" not in metadata.get("actions", {}):
-                    return {"code": "PERMISSION_DENIED"}
-                key = token_key(token)
-                if key is None:
-                    return {"token_id": None}
-                # A filtered public identifier query only. Never query plaintext or list all tokens.
-                try:
-                    data = fetch(session, url + "/api/users/tokens/?version=2&key=" + key + "&limit=2", token)
-                    rows = data.get("results", [])
-                    if data.get("next") or data.get("count") != 1 or len(rows) != 1:
-                        return {"token_id": None}
-                    row = rows[0]
-                    if (
-                        row.get("key") != key
-                        or choice(row.get("version")) != 2
-                        or (type(row.get("id")) is not int or row["id"] <= 0)
-                    ):
-                        return {"token_id": None}
-                    return {"token_id": row["id"]}
-                except Exception:
-                    return {"token_id": None}
+            if action in ("inspect", "identify"):
+                return (
+                    {"fields": fields(session, url, token)} if action == "inspect" else _identify(session, url, token)
+                )
             if action == "create" and value.get("name") in FIELDS:
                 observed = fields(session, url, token)
                 current = next(f for f in observed if f["name"] == value["name"])
@@ -62,37 +103,14 @@ def operate(value):
                     )
                     return {"code": code, "fields": observed} if code != "NOT_SENT" else {"code": code}
                 post_sent = True
-                with session.post(
-                    url + "/api/extras/custom-fields/",
-                    json=definition(value["name"]),
-                    headers={"Authorization": authorization(token)},
-                    timeout=(3, 5),
-                    allow_redirects=False,
-                    stream=True,
-                ) as response:
-                    if response.status_code == 201:
-                        return {"code": "CREATED"}
-                    if response.status_code in (400, 401, 403, 409):
-                        return {"code": "REJECTED"}
-                    return {"code": "UNCERTAIN"}
+                return _post_field(session, url, token, value["name"])
             if action == "revoke" and type(value.get("token_id")) is int and value["token_id"] > 0 and token_key(token):
-                endpoint = url + "/api/users/tokens/" + str(value["token_id"]) + "/"
-                row = fetch(session, endpoint, token)
-                if row.get("key") != token_key(token) or choice(row.get("version")) != 2:
-                    return {"code": "UNCONFIRMED"}
-                with session.delete(
-                    endpoint,
-                    headers={"Authorization": authorization(token)},
-                    timeout=(3, 5),
-                    allow_redirects=False,
-                    stream=True,
-                ) as response:
-                    return {"code": "CONFIRMED" if response.status_code == 204 else "UNCONFIRMED"}
+                return _revoke_token(session, url, token, value["token_id"])
     except ProbeError as error:
-        return {"code": "NOT_SENT" if value.get("action") == "create" and not post_sent else error.code}
+        code = "NOT_SENT" if value.get("action") == "create" and not post_sent else error.code
     except Exception:
-        return {"code": "NOT_SENT" if value.get("action") == "create" and not post_sent else "UNCERTAIN"}
-    return {"code": "INVALID"}
+        code = "NOT_SENT" if value.get("action") == "create" and not post_sent else "UNCERTAIN"
+    return {"code": code}
 
 
 if __name__ == "__main__":
