@@ -62,3 +62,22 @@ existing aggregate gate intentionally permits these recommendations while making
 runtime errors fatal. No global complexity/docstring/typecheck disable was added.
 
 Final full suite: 2036 passed, 485 skipped, one existing Starlette warning.
+
+## Stage 4: virtual disk planning
+
+Separate one VM's disk validation and payload preparation from batch orchestration
+and confirmed writes. Both functions now document their contracts. Preserve the
+original inventory snapshot, lookup and validation order, identity fallback,
+decimal MB rounding, unrelated custom fields and retention of missing disks.
+This is a VM-only path; it does not introduce a shared VM/LXC disk policy.
+
+Fifteen characterization cases were added and passed before extraction. They
+cover late failures with no partial writes, preview validation, conflict error
+precedence, zero/boundary capacities and custom field preservation. Together with
+the existing disk tests, all 26 focused cases pass before and after extraction.
+The module no longer has missing-function-docstring, too-many-locals or
+too-many-branches findings. The compatibility parameter and unpacked dict
+construction remain unchanged.
+
+Full suite: 2051 passed, 485 skipped, one existing Starlette warning. Black check
+passes; full Pylint is 9.02/10 with zero Error/Fatal findings.

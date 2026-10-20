@@ -6,6 +6,12 @@ from .network_scopes import object_id
 
 
 def apply_virtual_disks(api, hosts, config, *, confirmed=False):
+    """Validate every VM disk before writing any changes when explicitly confirmed.
+
+    Both preview and confirmed runs validate the same inventory snapshot. The
+    compatibility argument ``config`` is unused; this VM-only operation does not
+    infer LXC disk policy. Return None, including when no changes are necessary.
+    """
     vms = list(api.virtualization.virtual_machines.all())
     existing = list(api.virtualization.virtual_disks.all())
     pending = []
@@ -15,45 +21,57 @@ def apply_virtual_disks(api, hosts, config, *, confirmed=False):
             if len(matches) != 1:
                 raise ValueError("Disk parent VM identity is not unique")
             parent = matches[0]
-            identity = virtual_machine_source_identity(vm).to_record()
-            seen = set()
-            for disk in vm.disks:
-                key = getattr(disk, "external_id", None) or disk.name
-                if not key or key in seen:
-                    raise ValueError("Missing or duplicate provider disk identity")
-                seen.add(key)
-                wanted = {**identity, "kind": "vm-disk", "external_id": identity["external_id"] + ":" + str(key)}
-                candidates = [
-                    d for d in existing if (getattr(d, "custom_fields", {}) or {}).get("sync_disk_identity") == wanted
-                ]
-                if len(candidates) > 1:
-                    raise ValueError("Duplicate NetBox disk identity")
-                current = candidates[0] if candidates else None
-                if current is not None and object_id(current.serialize().get("virtual_machine")) != parent.id:
-                    raise ValueError("Disk identity belongs to another VM")
-                if any(
-                    d.id != (current.id if current else None)
-                    and object_id(d.serialize().get("virtual_machine")) == parent.id
-                    and d.name == disk.name
-                    for d in existing
-                ):
-                    raise ValueError("Disk name is already used by an unmanaged or different disk")
-                if disk.size_bytes < 0:
-                    raise ValueError("Disk capacity cannot be negative")
-                desired = {
-                    "name": disk.name,
-                    "size": (disk.size_bytes + 999999) // 1000000,
-                    "custom_fields": {**(getattr(current, "custom_fields", {}) or {}), "sync_disk_identity": wanted},
-                }
-                if current is None:
-                    pending.append((None, dict(virtual_machine=parent.id, **desired)))
-                else:
-                    changes = {k: v for k, v in desired.items() if current.serialize().get(k) != v}
-                    if changes:
-                        pending.append((current, changes))
+            pending.extend(_plan_vm_disks(existing, vm, parent))
     if confirmed:
         for current, changes in pending:
             if current is None:
                 api.virtualization.virtual_disks.create(**changes)
             else:
                 current.update(changes)
+
+
+def _plan_vm_disks(existing, vm, parent):
+    """Validate one VM against the original disk snapshot and return pending writes.
+
+    Provider IDs fall back to names. Reject ambiguous identities, foreign owners,
+    name collisions and negative capacities in that order; round bytes up to
+    decimal MB and preserve unrelated custom fields. Missing disks are retained.
+    """
+    pending = []
+    identity = virtual_machine_source_identity(vm).to_record()
+    seen = set()
+    for disk in vm.disks:
+        key = getattr(disk, "external_id", None) or disk.name
+        if not key or key in seen:
+            raise ValueError("Missing or duplicate provider disk identity")
+        seen.add(key)
+        wanted = {**identity, "kind": "vm-disk", "external_id": identity["external_id"] + ":" + str(key)}
+        candidates = [
+            d for d in existing if (getattr(d, "custom_fields", {}) or {}).get("sync_disk_identity") == wanted
+        ]
+        if len(candidates) > 1:
+            raise ValueError("Duplicate NetBox disk identity")
+        current = candidates[0] if candidates else None
+        if current is not None and object_id(current.serialize().get("virtual_machine")) != parent.id:
+            raise ValueError("Disk identity belongs to another VM")
+        if any(
+            d.id != (current.id if current else None)
+            and object_id(d.serialize().get("virtual_machine")) == parent.id
+            and d.name == disk.name
+            for d in existing
+        ):
+            raise ValueError("Disk name is already used by an unmanaged or different disk")
+        if disk.size_bytes < 0:
+            raise ValueError("Disk capacity cannot be negative")
+        desired = {
+            "name": disk.name,
+            "size": (disk.size_bytes + 999999) // 1000000,
+            "custom_fields": {**(getattr(current, "custom_fields", {}) or {}), "sync_disk_identity": wanted},
+        }
+        if current is None:
+            pending.append((None, dict(virtual_machine=parent.id, **desired)))
+        else:
+            changes = {k: v for k, v in desired.items() if current.serialize().get(k) != v}
+            if changes:
+                pending.append((current, changes))
+    return pending
