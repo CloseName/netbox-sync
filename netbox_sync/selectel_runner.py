@@ -7,6 +7,8 @@ import sys
 import tempfile
 import time
 from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass
+from typing import NamedTuple
 from .bootstrap_state import BootstrapStore, runtime_netbox
 from .local_control import ControlError
 from .selectel_control import read, write, root
@@ -92,76 +94,88 @@ def child(value, timeout):
         return child_result(output, process.returncode, value["operation"])
 
 
-def main():
-    """Serialize collection and import, recheck account activation and persist the run outcome."""
+class _AccountRun(NamedTuple):
+    """Fixed account-run identity and paths used across collection stages."""
 
-    store = BootstrapStore(sys.argv[1])
-    account, run_id, lock = sys.argv[2:]
-    base = root(store)
-    path = base / (account + ".json")
-    import_started = False
-    try:
-        # Per-account lock survives API timeout and prevents overlap after interrupted runs.
-        with apply_lock(str(base / "collection.lock")), apply_lock(str(base / (account + ".lock"))):
-            with locked_store(store):
-                state = read(path)
-                if state["run_id"] != run_id:
-                    return
-            url, _ = runtime_netbox(store.path, "read")
-            token = read(base / "netbox-token.json")["token"]
-            access = {"url": url, "token": token, "guard_instance": os.environ.get("NETBOX_SYNC_GUARD_INSTANCE", "")}
-            result = child(dict(operation="preflight", **access), 90)
-            if result.get("ready") is True:
-                result = child(
-                    {
-                        "operation": "collect",
-                        "account": account,
-                        "username": state["username"],
-                        "password": state["password"],
+    store: object
+    account: str
+    run_id: str
+    lock: str
+    base: object
+    path: object
+
+
+@dataclass
+class _RunProgress:
+    """Track the exact point after which a failure may conceal committed writes."""
+
+    import_started: bool = False
+
+
+def _execute_run(run, progress):
+    """Collect and import under caller-held locks with a second activation check."""
+    with locked_store(run.store):
+        state = read(run.path)
+        if state["run_id"] != run.run_id:
+            return None
+    url, _ = runtime_netbox(run.store.path, "read")
+    token = read(run.base / "netbox-token.json")["token"]
+    access = {"url": url, "token": token, "guard_instance": os.environ.get("NETBOX_SYNC_GUARD_INSTANCE", "")}
+    result = child(dict(operation="preflight", **access), 90)
+    if result.get("ready") is True:
+        result = child(
+            {
+                "operation": "collect",
+                "account": run.account,
+                "username": state["username"],
+                "password": state["password"],
+            },
+            2800,
+        )
+    elif "error" not in result:
+        result = {"error": "SETUP_REQUIRED"}
+    if "error" not in result:
+        with apply_lock(run.lock):
+            # Disabling an account during collection also prevents its import.
+            with locked_store(run.store):
+                current = read(run.path)
+                if current.get("run_id") != run.run_id:
+                    return None
+                if not current.get("enabled", True):
+                    current.update(status="attention", error="ACCOUNT_DISABLED", finished_at=time.time())
+                    write(run.path, current)
+                    return None
+            url, _ = runtime_netbox(run.store.path, "read")
+            token = read(run.base / "netbox-token.json")["token"]
+            progress.import_started = True
+            imported = child(
+                {
+                    "operation": "import",
+                    "url": url,
+                    "token": token,
+                    "guard_instance": os.environ.get("NETBOX_SYNC_GUARD_INSTANCE", ""),
+                    "payload": {
+                        "account": run.account,
+                        "nonce": run.run_id,
+                        "document": result["document"],
+                        "registry": result["registry"],
                     },
-                    2800,
-                )
-            elif "error" not in result:
-                result = {"error": "SETUP_REQUIRED"}
-            if "error" not in result:
-                with apply_lock(lock):
-                    # Disabling an account during collection also prevents its import.
-                    with locked_store(store):
-                        current = read(path)
-                        if current.get("run_id") != run_id:
-                            return
-                        if not current.get("enabled", True):
-                            current.update(status="attention", error="ACCOUNT_DISABLED", finished_at=time.time())
-                            write(path, current)
-                            return
-                    url, _ = runtime_netbox(store.path, "read")
-                    token = read(base / "netbox-token.json")["token"]
-                    import_started = True
-                    imported = child(
-                        {
-                            "operation": "import",
-                            "url": url,
-                            "token": token,
-                            "guard_instance": os.environ.get("NETBOX_SYNC_GUARD_INSTANCE", ""),
-                            "payload": {
-                                "account": account,
-                                "nonce": run_id,
-                                "document": result["document"],
-                                "registry": result["registry"],
-                            },
-                        },
-                        90,
-                    )
-                if "error" in imported:
-                    result = imported
-                else:
-                    result = {"summary": {**result["summary"], **imported}}
-    except Exception:
-        result = {"error": "IMPORT_UNCONFIRMED" if import_started else "RUN_INTERRUPTED_OR_BUSY"}
+                },
+                90,
+            )
+        if "error" in imported:
+            result = imported
+        else:
+            result = {"summary": {**result["summary"], **imported}}
+    return result
+
+
+def _finish_run(run, result):
+    """Persist only the current run outcome, preserving uncertain-import scheduling."""
     # Do not expose exception bodies, provider payloads, or passwords.
-    with locked_store(store):
-        state = read(path)
-        if state.get("run_id") != run_id:
+    with locked_store(run.store):
+        state = read(run.path)
+        if state.get("run_id") != run.run_id:
             return
         if "error" in result:
             state.update(status="attention", error=result["error"])
@@ -170,7 +184,27 @@ def main():
         else:
             state.update(status="completed", error=None, summary=result["summary"])
         state["finished_at"] = time.time()
-        write(path, state)
+        write(run.path, state)
+
+
+def main():
+    """Serialize collection and import, recheck account activation and persist the run outcome."""
+
+    store = BootstrapStore(sys.argv[1])
+    account, run_id, lock = sys.argv[2:]
+    base = root(store)
+    path = base / (account + ".json")
+    run = _AccountRun(store, account, run_id, lock, base, path)
+    progress = _RunProgress()
+    try:
+        # Per-account lock survives API timeout and prevents overlap after interrupted runs.
+        with apply_lock(str(base / "collection.lock")), apply_lock(str(base / (account + ".lock"))):
+            result = _execute_run(run, progress)
+            if result is None:
+                return
+    except Exception:
+        result = {"error": "IMPORT_UNCONFIRMED" if progress.import_started else "RUN_INTERRUPTED_OR_BUSY"}
+    _finish_run(run, result)
 
 
 if __name__ == "__main__":
