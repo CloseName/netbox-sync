@@ -93,6 +93,8 @@ functions: one function can produce several findings.
   Server control flow resolved; ownership boolean checks still pending.
 - Retirement review: 2477 tests passed, 491 skipped; Pylint 9.39/10.
   Complexity resolved; blocked-only reports, fingerprints and replay preserved.
+- Diagnostics: 2483 tests passed, 491 skipped; Pylint 9.39/10.
+  Control flow resolved; public constructor and diagnostic fields preserved.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,

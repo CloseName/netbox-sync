@@ -626,3 +626,14 @@ reports match completely. Full suite: 2477 passed, 491 skipped, one existing war
 Pylint 9.39/10, zero Error/Fatal. No complexity findings remain in retirement_review.
 Black and whitespace pass. This review still always blocks execution; no deletion
 capability or deployment change was added.
+
+## Stage 55: diagnostic aggregation stages
+
+Separate isolated registry/history reads, operation evidence, per-source decisions,
+scheduler health and overall precedence. Preserve dependency order, complete-generator
+failure semantics, exact plan flags and bounded public projections. Six new cases
+pass on the original code; 22 focused tests pass after extraction. One thousand
+deterministic old/new projections match. Full suite: 2483 passed, 491 skipped, one
+existing warning; Pylint 9.39/10, zero Error/Fatal. Control-flow findings resolved.
+Existing constructor arguments and public diagnostic fields remain unchanged for
+API compatibility. Black and whitespace pass.
