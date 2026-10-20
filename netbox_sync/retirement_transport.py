@@ -54,6 +54,8 @@ RESOURCES = frozenset(("cluster", "device", "vm", "interface", "vminterface", "d
 
 
 def safe_guard_detail(value):
+    """Project only known guard codes, bounded HTTP status, resources and UUID references."""
+
     if not isinstance(value, dict):
         return {}
     result = {}
@@ -72,7 +74,11 @@ def safe_guard_detail(value):
 
 
 class GuardTransportError(RuntimeError):
+    """Guard failure with explicit mutation uncertainty and sanitized context."""
+
     def __init__(self, code, *, uncertain=False, detail=None):
+        """Bind the protocol code, uncertainty flag and filtered guard details."""
+
         self.code = code
         self.uncertain = uncertain
         self.guard_detail = safe_guard_detail(detail)
@@ -80,7 +86,11 @@ class GuardTransportError(RuntimeError):
 
 
 class GuardClient:
+    """No-retry HTTPS adapter for the pinned optional guard protocol and instance."""
+
     def __init__(self, session, base_url, authorization, instance):
+        """Validate HTTPS origin, verified session, authorization header and guard instance UUID."""
+
         parsed = urlsplit(base_url)
         if (
             parsed.scheme != "https"
@@ -102,6 +112,8 @@ class GuardClient:
         self.instance = str(UUID(instance))
 
     def _request(self, method, path, body=None):
+        """Send one bounded request and distinguish known refusals from uncertain mutations."""
+
         mutation = method == "POST"
         try:
             with self.session.request(
@@ -153,6 +165,8 @@ class GuardClient:
             raise GuardTransportError("GUARD_CONNECTION_FAILED", uncertain=mutation) from None
 
     def capabilities(self):
+        """Require the pinned protocol, NetBox version, instance and atomic receipt capabilities."""
+
         value = self._request("GET", "capabilities/")
         if (
             value.get("protocol") != 1
@@ -168,9 +182,13 @@ class GuardClient:
 
     @staticmethod
     def _nonce(value):
+        """Normalize a request nonce to canonical UUID text."""
+
         return str(UUID(str(value)))
 
     def create(self, nonce, source, resource, cluster, data):
+        """Send a guarded creation intent and require a positive integer object identifier."""
+
         value = self._request(
             "POST",
             "objects/create/",
@@ -213,6 +231,8 @@ class GuardClient:
         return obj
 
     def review(self, nonce, source, cluster, root):
+        """Request object retirement review and verify nonce, source, cluster and root."""
+
         nonce = self._nonce(nonce)
         value = self._request(
             "POST",
@@ -229,12 +249,16 @@ class GuardClient:
         return value
 
     def receipt(self, nonce):
+        """Read and validate an existing retirement receipt without repeating execution."""
+
         nonce = self._nonce(nonce)
         value = self._request("GET", "retirements/" + nonce + "/")
         self._receipt(value, nonce)
         return value
 
     def execute(self, nonce, digest):
+        """Execute a digest-bound object retirement and require a matching successful receipt."""
+
         nonce = self._nonce(nonce)
         if not isinstance(digest, str) or not re.fullmatch("[a-f0-9]{64}", digest):
             raise GuardTransportError("GUARD_DIGEST_INVALID")
@@ -245,6 +269,8 @@ class GuardClient:
         return value
 
     def audit_source(self, source, nonce):
+        """Verify a bounded source audit digest without treating it as proof of past outcomes."""
+
         # Kept dependency-free: the pinned transport is also loaded by the guard's
         # isolated compatibility probe without importing the Sync application.
         import hashlib
@@ -266,6 +292,8 @@ class GuardClient:
         return value
 
     def namespace_state(self, source):
+        """Read an exact source-namespace state only after capability confirmation."""
+
         if not isinstance(source, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,127}", source):
             raise GuardTransportError("GUARD_RESPONSE_INVALID")
         if self.capabilities().get("source_namespace_state") is not True:
@@ -280,6 +308,8 @@ class GuardClient:
         return value
 
     def review_source(self, nonce, source, cluster):
+        """Review source retirement and validate its format-two manifest and cluster."""
+
         nonce = self._nonce(nonce)
         value = self._request(
             "POST", "sources/review/", {"nonce": nonce, "source_instance": source, "cluster_id": cluster}
@@ -294,6 +324,8 @@ class GuardClient:
         return value
 
     def execute_source(self, nonce, digest):
+        """Execute source retirement and require a matching successful format-two receipt."""
+
         nonce = self._nonce(nonce)
         if not isinstance(digest, str) or not re.fullmatch("[a-f0-9]{64}", digest):
             raise GuardTransportError("GUARD_DIGEST_INVALID")
@@ -304,6 +336,8 @@ class GuardClient:
         return value
 
     def archive_review(self, nonce, source):
+        """Review source archive and validate its source-bound format-four manifest."""
+
         nonce = self._nonce(nonce)
         value = self._request("POST", "sources/archive-review/", {"nonce": nonce, "source_instance": source})
         self._receipt(value, nonce)
@@ -312,6 +346,8 @@ class GuardClient:
         return value
 
     def archive_execute(self, nonce, digest):
+        """Execute archive and require a successful format-four receipt with no deletions."""
+
         nonce = self._nonce(nonce)
         if not isinstance(digest, str) or not re.fullmatch("[a-f0-9]{64}", digest):
             raise GuardTransportError("GUARD_DIGEST_INVALID")
@@ -328,6 +364,8 @@ class GuardClient:
 
     @staticmethod
     def _receipt(value, nonce, *, uncertain=False):
+        """Validate nonce, status, manifest and digest while preserving caller uncertainty."""
+
         if (
             value.get("nonce") != nonce
             or value.get("status") not in ("REVIEWED", "SUCCEEDED")
