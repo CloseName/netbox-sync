@@ -860,3 +860,9 @@ extraction, with exact original ASTs restored by inlining the four helpers.
 ESXi discovery already separates staged SDK reads (`esxi_inventory.py`) from
 conversion, host networking and neighbor collection. Retain those boundaries and
 its property-collector behavior; no speculative provider unification is needed.
+
+## Completion
+
+The remaining structural pass is closed in
+[the completion report](refactoring-completion-20261020.md), including the module
+map, retained compatibility paths, script audit, final checks and existing findings.

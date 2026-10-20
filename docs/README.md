@@ -17,7 +17,7 @@ not proof that today's checkout or deployment passes those checks.
   [deployment paths](deployment-paths.md), [migrations](migrations.md), and
   [backup/restore](backup-restore.md): installation and operator procedures.
   Reading or changing these guides does not authorize running them on production.
-- [Incremental refactoring](refactoring-plan.md): scope and order of changes.
+- [Incremental refactoring](refactoring-plan.md): scope and order of changes. See the [completion report](refactoring-completion-20261020.md) for the current module map, audit and validation results.
 - [Selectel status](selectel-status.md): experimental integration and unresolved
   acceptance limits. Start here before the individual Selectel design reports.
 
