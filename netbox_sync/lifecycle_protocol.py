@@ -6,6 +6,12 @@ from .source_lifecycle import LifecycleError
 
 
 def handle_lifecycle(lifecycle, secrets, request, retirement=None):
+    """Dispatch fixed capabilities after source and service availability checks.
+
+    Preserve exact request keys and error precedence. Value, type and key errors
+    inside dispatch become REQUEST_INVALID; lifecycle codes remain closed errors.
+    Evidence cursor validation retains its separate early path.
+    """
     if request.get("action") == "source_evidence" and set(request) == {"action", "after"}:
         after = request["after"]
         if not isinstance(after, str) or len(after) > 200 or after and not SOURCE_INSTANCE_PATTERN.fullmatch(after):
@@ -32,228 +38,280 @@ def handle_lifecycle(lifecycle, secrets, request, retirement=None):
             from .source_archive import generations
 
             return generations(lifecycle)
-        if request.get("action") in {"legacy_describe", "legacy_confirm", "legacy_status"}:
-            from .legacy_admission import LegacyAdmission
-
-            service = LegacyAdmission(lifecycle)
-            if request["action"] == "legacy_describe" and set(request) == {"action", "source_instance"}:
-                return service.describe(source)
-            if request["action"] == "legacy_status" and set(request) == {
-                "action",
-                "source_instance",
-                "actor",
-                "operation",
-            }:
-                return service.status(source, request["actor"], request["operation"])
-            if request["action"] == "legacy_confirm" and set(request) == {
-                "action",
-                "source_instance",
-                "actor",
-                "operation",
-                "revision",
-                "decision",
-                "reason",
-                "anchor",
-            }:
-                return service.confirm(
-                    source,
-                    **{k: request[k] for k in ("actor", "operation", "revision", "decision", "reason", "anchor")},
-                )
-            raise LifecycleError("REQUEST_INVALID")
-        if request.get("action") in {"run_reconciliation_review", "run_reconciliation_confirm"}:
-            from .run_reconciliation import RunReconciliation
-
-            if retirement is None:
-                raise LifecycleError("RETIREMENT_UNAVAILABLE")
-            recovery = RunReconciliation(lifecycle, retirement.remote)
-            base = {"action", "source_instance", "operation_id"}
-            if request["action"] == "run_reconciliation_review" and set(request) == base:
-                return recovery.review(source, request["operation_id"])
-            if request["action"] == "run_reconciliation_confirm" and set(request) == base | {
-                "actor_id",
-                "digest",
-                "acknowledgements",
-            }:
-                return recovery.confirm(
-                    source, request["operation_id"], request["actor_id"], request["digest"], request["acknowledgements"]
-                )
-            raise LifecycleError("REQUEST_INVALID")
-        if request.get("action") in {"removal_request", "removal_status"}:
-            from .removal_queue import RemovalQueue
-
-            if retirement is None:
-                raise LifecycleError("RETIREMENT_UNAVAILABLE")
-            queue = RemovalQueue(retirement)
-            base = {"action", "source_instance", "operation_id", "actor_id"}
-            if request["action"] == "removal_request" and set(request) == base | {"revision", "confirmed"}:
-                return queue.enqueue(
-                    source, request["operation_id"], request["actor_id"], request["revision"], request["confirmed"]
-                )
-            if request["action"] == "removal_status" and set(request) == base:
-                return queue.status(source, request["operation_id"], request["actor_id"])
-            raise LifecycleError("REQUEST_INVALID")
-        if request.get("action") in {
-            "retirement_archive_check",
-            "retirement_context",
-            "retirement_archive_review",
-            "retirement_review",
-            "retirement_execute",
-            "retirement_resume",
-            "retirement_status",
-        }:
-            if retirement is None:
-                raise LifecycleError("RETIREMENT_UNAVAILABLE")
-            actor = request.get("actor_id")
-            if not isinstance(actor, str) or not actor or len(actor) > 200:
-                raise LifecycleError("REQUEST_INVALID")
-            if request["action"] == "retirement_archive_check" and set(request) == {
-                "action",
-                "source_instance",
-                "actor_id",
-            }:
-                from .source_archive import recheck
-
-                return recheck(lifecycle, retirement.remote, source)
-            if request["action"] == "retirement_context" and set(request) == {"action", "source_instance", "actor_id"}:
-                return retirement.retained_context(source)
-            base = {"action", "source_instance", "operation_id", "actor_id"}
-            if request["action"] in ("retirement_review", "retirement_archive_review") and set(request) == base | {
-                "revision"
-            }:
-                return retirement.review(
-                    source,
-                    request["operation_id"],
-                    actor,
-                    request["revision"],
-                    archive=request["action"] == "retirement_archive_review",
-                )
-            if request["action"] == "retirement_status" and set(request) == base:
-                return retirement.status(source, request["operation_id"], actor)
-            if request["action"] in {"retirement_execute", "retirement_resume"} and set(request) == base | {
-                "digest",
-                "confirmed_source",
-                "remove_credentials",
-            }:
-                return retirement.execute(
-                    source,
-                    request["operation_id"],
-                    actor,
-                    request["digest"],
-                    request["confirmed_source"],
-                    request["remove_credentials"],
-                    resume=request["action"] == "retirement_resume",
-                )
-            raise LifecycleError("REQUEST_INVALID")
-        if request.get("action") in {"identity_describe", "identity_confirm"}:
-            from .source_identity_verification import IdentityVerification
-
-            verification = IdentityVerification(lifecycle)
-            if request["action"] == "identity_describe" and set(request) == {"action", "source_instance"}:
-                return verification.describe(source)
-            if request["action"] == "identity_confirm" and set(request) == {
-                "action",
-                "source_instance",
-                "actor_id",
-                "revision",
-                "discovery_id",
-                "proof",
-            }:
-                return verification.confirm(
-                    source, request["actor_id"], request["revision"], request["discovery_id"], request["proof"]
-                )
-            raise LifecycleError("REQUEST_INVALID")
-        if request.get("action") in {
-            "recovery_inventory",
-            "recovery_records",
-            "recovery_retired_evidence",
-            "recovery_describe",
-            "recovery_prepare",
-            "recovery_credentials",
-            "recovery_complete",
-            "recovery_abandon",
-            "recovery_status",
-        }:
-            from .source_recovery import Recovery
-
-            recovery = Recovery(lifecycle, retirement.remote if retirement else None)
-            action = request["action"]
-            if action == "recovery_inventory" and set(request) == {"action", "source_instance", "operation_id"}:
-                return recovery.inventory(source, request["operation_id"])
-            if action == "recovery_records" and set(request) == {"action", "source_instance"}:
-                return recovery.records(source)
-            if action == "recovery_describe" and set(request) == {"action", "source_instance", "actor_id"}:
-                return recovery.describe(source, request["actor_id"])
-            base = {"action", "source_instance", "operation_id", "actor_id"}
-            if action == "recovery_retired_evidence" and set(request) == {"action", "source_instance", "operation_id"}:
-                return recovery.retired_evidence(source, request["operation_id"])
-            if action == "recovery_prepare" and set(request) == base | {"revision", "proof"}:
-                return recovery.prepare(
-                    source, request["operation_id"], request["actor_id"], request["revision"], request["proof"]
-                )
-            if action == "recovery_status" and set(request) == base:
-                return recovery.status(source, request["operation_id"], request["actor_id"])
-            if action == "recovery_credentials" and set(request) == base:
-                return recovery.begin_credentials(source, request["operation_id"], request["actor_id"])
-            if action == "recovery_complete" and set(request) == base | {"proof", "metadata"}:
-                return recovery.complete(
-                    source,
-                    request["operation_id"],
-                    request["actor_id"],
-                    request["proof"],
-                    request["metadata"],
-                    secrets.verify_owned,
-                )
-            if action == "recovery_abandon" and set(request) == base:
-                return recovery.abandon_prepared(source, request["operation_id"], request["actor_id"])
-            raise LifecycleError("REQUEST_INVALID")
-        if request["action"] == "source_lifecycle" and set(request) == {"action", "source_instance"}:
-            return lifecycle.read(source)
-        if request.get("action") == "read_placement" and set(request) == {"action", "source_instance"}:
-            from .placement_control import read
-
-            return read(lifecycle, source)
-        if request.get("action") == "save_placement":
-            from .placement_control import save
-            from uuid import UUID
-
-            if (
-                set(request) != {"action", "source_instance", "revision", "discovery_id", "mapping"}
-                or not isinstance(request["revision"], str)
-                or not re.fullmatch("[a-f0-9]{64}", request["revision"])
-            ):
-                raise LifecycleError("REQUEST_INVALID")
-            try:
-                UUID(request["discovery_id"])
-                return save(lifecycle, source, request["revision"], request["discovery_id"], request["mapping"])
-            except (ValueError, TypeError, KeyError):
-                raise LifecycleError("REQUEST_INVALID") from None
-        if request.get("action") == "rename_source":
-            if (
-                set(request) != {"action", "source_instance", "revision", "name"}
-                or not isinstance(request["revision"], str)
-                or not re.fullmatch("[a-f0-9]{64}", request["revision"])
-            ):
-                raise LifecycleError("REQUEST_INVALID")
-            return lifecycle.rename(source, request["revision"], request["name"])
-        fields = {"action", "source_instance", "revision", "confirmed_source", "remove_credentials"}
-        if (
-            request["action"] != "remove_source"
-            or set(request) != fields
-            or not isinstance(request["revision"], str)
-            or not re.fullmatch("[a-f0-9]{64}", request["revision"])
-            or type(request["remove_credentials"]) is not bool
-        ):
-            raise LifecycleError("REQUEST_INVALID")
-        if retirement is not None:
-            raise LifecycleError("SOURCE_RETIREMENT_REVIEW_REQUIRED")
-        return lifecycle.remove(
-            source,
-            request["revision"],
-            request["confirmed_source"],
-            request["remove_credentials"],
-            secrets.remove_owned,
+        routes = (
+            ({"legacy_confirm", "legacy_status", "legacy_describe"}, _handle_legacy, (lifecycle, source, request)),
+            (
+                {"run_reconciliation_review", "run_reconciliation_confirm"},
+                _handle_reconciliation,
+                (lifecycle, retirement, source, request),
+            ),
+            ({"removal_status", "removal_request"}, _handle_removal, (retirement, source, request)),
+            (
+                {
+                    "retirement_resume",
+                    "retirement_execute",
+                    "retirement_status",
+                    "retirement_archive_review",
+                    "retirement_context",
+                    "retirement_archive_check",
+                    "retirement_review",
+                },
+                _handle_retirement,
+                (lifecycle, retirement, source, request),
+            ),
+            ({"identity_describe", "identity_confirm"}, _handle_identity, (lifecycle, source, request)),
+            (
+                {
+                    "recovery_describe",
+                    "recovery_abandon",
+                    "recovery_inventory",
+                    "recovery_credentials",
+                    "recovery_records",
+                    "recovery_status",
+                    "recovery_prepare",
+                    "recovery_complete",
+                    "recovery_retired_evidence",
+                },
+                _handle_recovery,
+                (lifecycle, secrets, retirement, source, request),
+            ),
         )
+        for actions, handler, arguments in routes:
+            if request.get("action") in actions:
+                return handler(*arguments)
+        return _handle_source_controls(lifecycle, secrets, retirement, source, request)
     except (ValueError, TypeError, KeyError):
         raise LifecycleError("REQUEST_INVALID") from None
     except LifecycleError as exc:
         raise LifecycleError(exc.code) from None
+
+
+def _handle_legacy(lifecycle, source, request):
+    """Validate exact legacy envelopes before forwarding the operation."""
+    from .legacy_admission import LegacyAdmission
+
+    service = LegacyAdmission(lifecycle)
+    if request["action"] == "legacy_describe" and set(request) == {"action", "source_instance"}:
+        return service.describe(source)
+    if request["action"] == "legacy_status" and set(request) == {
+        "action",
+        "source_instance",
+        "actor",
+        "operation",
+    }:
+        return service.status(source, request["actor"], request["operation"])
+    if request["action"] == "legacy_confirm" and set(request) == {
+        "action",
+        "source_instance",
+        "actor",
+        "operation",
+        "revision",
+        "decision",
+        "reason",
+        "anchor",
+    }:
+        return service.confirm(
+            source,
+            **{k: request[k] for k in ("actor", "operation", "revision", "decision", "reason", "anchor")},
+        )
+    raise LifecycleError("REQUEST_INVALID")
+
+
+def _handle_reconciliation(lifecycle, retirement, source, request):
+    """Validate exact reconciliation envelopes before forwarding the operation."""
+    from .run_reconciliation import RunReconciliation
+
+    if retirement is None:
+        raise LifecycleError("RETIREMENT_UNAVAILABLE")
+    recovery = RunReconciliation(lifecycle, retirement.remote)
+    base = {"action", "source_instance", "operation_id"}
+    if request["action"] == "run_reconciliation_review" and set(request) == base:
+        return recovery.review(source, request["operation_id"])
+    if request["action"] == "run_reconciliation_confirm" and set(request) == base | {
+        "actor_id",
+        "digest",
+        "acknowledgements",
+    }:
+        return recovery.confirm(
+            source, request["operation_id"], request["actor_id"], request["digest"], request["acknowledgements"]
+        )
+    raise LifecycleError("REQUEST_INVALID")
+
+
+def _handle_removal(retirement, source, request):
+    """Validate exact removal envelopes before forwarding the operation."""
+    from .removal_queue import RemovalQueue
+
+    if retirement is None:
+        raise LifecycleError("RETIREMENT_UNAVAILABLE")
+    queue = RemovalQueue(retirement)
+    base = {"action", "source_instance", "operation_id", "actor_id"}
+    if request["action"] == "removal_request" and set(request) == base | {"revision", "confirmed"}:
+        return queue.enqueue(
+            source, request["operation_id"], request["actor_id"], request["revision"], request["confirmed"]
+        )
+    if request["action"] == "removal_status" and set(request) == base:
+        return queue.status(source, request["operation_id"], request["actor_id"])
+    raise LifecycleError("REQUEST_INVALID")
+
+
+def _handle_retirement(lifecycle, retirement, source, request):
+    """Validate exact retirement envelopes before forwarding the operation."""
+    if retirement is None:
+        raise LifecycleError("RETIREMENT_UNAVAILABLE")
+    actor = request.get("actor_id")
+    if not isinstance(actor, str) or not actor or len(actor) > 200:
+        raise LifecycleError("REQUEST_INVALID")
+    if request["action"] == "retirement_archive_check" and set(request) == {
+        "action",
+        "source_instance",
+        "actor_id",
+    }:
+        from .source_archive import recheck
+
+        return recheck(lifecycle, retirement.remote, source)
+    if request["action"] == "retirement_context" and set(request) == {"action", "source_instance", "actor_id"}:
+        return retirement.retained_context(source)
+    base = {"action", "source_instance", "operation_id", "actor_id"}
+    if request["action"] in ("retirement_review", "retirement_archive_review") and set(request) == base | {"revision"}:
+        return retirement.review(
+            source,
+            request["operation_id"],
+            actor,
+            request["revision"],
+            archive=request["action"] == "retirement_archive_review",
+        )
+    if request["action"] == "retirement_status" and set(request) == base:
+        return retirement.status(source, request["operation_id"], actor)
+    if request["action"] in {"retirement_execute", "retirement_resume"} and set(request) == base | {
+        "digest",
+        "confirmed_source",
+        "remove_credentials",
+    }:
+        return retirement.execute(
+            source,
+            request["operation_id"],
+            actor,
+            request["digest"],
+            request["confirmed_source"],
+            request["remove_credentials"],
+            resume=request["action"] == "retirement_resume",
+        )
+    raise LifecycleError("REQUEST_INVALID")
+
+
+def _handle_identity(lifecycle, source, request):
+    """Validate exact identity envelopes before forwarding the operation."""
+    from .source_identity_verification import IdentityVerification
+
+    verification = IdentityVerification(lifecycle)
+    if request["action"] == "identity_describe" and set(request) == {"action", "source_instance"}:
+        return verification.describe(source)
+    if request["action"] == "identity_confirm" and set(request) == {
+        "action",
+        "source_instance",
+        "actor_id",
+        "revision",
+        "discovery_id",
+        "proof",
+    }:
+        return verification.confirm(
+            source, request["actor_id"], request["revision"], request["discovery_id"], request["proof"]
+        )
+    raise LifecycleError("REQUEST_INVALID")
+
+
+def _handle_recovery(lifecycle, secrets, retirement, source, request):
+    """Validate exact recovery envelopes before forwarding the operation."""
+    from .source_recovery import Recovery
+
+    recovery = Recovery(lifecycle, retirement.remote if retirement else None)
+    action = request["action"]
+    base = {"action", "source_instance", "operation_id", "actor_id"}
+    if action in {"recovery_inventory", "recovery_records", "recovery_describe", "recovery_retired_evidence"}:
+        return _read_recovery(recovery, source, request)
+    if action == "recovery_prepare" and set(request) == base | {"revision", "proof"}:
+        return recovery.prepare(
+            source, request["operation_id"], request["actor_id"], request["revision"], request["proof"]
+        )
+    if action == "recovery_status" and set(request) == base:
+        return recovery.status(source, request["operation_id"], request["actor_id"])
+    if action == "recovery_credentials" and set(request) == base:
+        return recovery.begin_credentials(source, request["operation_id"], request["actor_id"])
+    if action == "recovery_complete" and set(request) == base | {"proof", "metadata"}:
+        return recovery.complete(
+            source,
+            request["operation_id"],
+            request["actor_id"],
+            request["proof"],
+            request["metadata"],
+            secrets.verify_owned,
+        )
+    if action == "recovery_abandon" and set(request) == base:
+        return recovery.abandon_prepared(source, request["operation_id"], request["actor_id"])
+    raise LifecycleError("REQUEST_INVALID")
+
+
+def _handle_source_controls(lifecycle, secrets, retirement, source, request):
+    """Validate source reads, placement, renaming and legacy removal envelopes."""
+    if request["action"] == "source_lifecycle" and set(request) == {"action", "source_instance"}:
+        return lifecycle.read(source)
+    if request.get("action") == "read_placement" and set(request) == {"action", "source_instance"}:
+        from .placement_control import read
+
+        return read(lifecycle, source)
+    if request.get("action") == "save_placement":
+        from .placement_control import save
+        from uuid import UUID
+
+        if (
+            set(request) != {"action", "source_instance", "revision", "discovery_id", "mapping"}
+            or not isinstance(request["revision"], str)
+            or not re.fullmatch("[a-f0-9]{64}", request["revision"])
+        ):
+            raise LifecycleError("REQUEST_INVALID")
+        try:
+            UUID(request["discovery_id"])
+            return save(lifecycle, source, request["revision"], request["discovery_id"], request["mapping"])
+        except (ValueError, TypeError, KeyError):
+            raise LifecycleError("REQUEST_INVALID") from None
+    if request.get("action") == "rename_source":
+        if (
+            set(request) != {"action", "source_instance", "revision", "name"}
+            or not isinstance(request["revision"], str)
+            or not re.fullmatch("[a-f0-9]{64}", request["revision"])
+        ):
+            raise LifecycleError("REQUEST_INVALID")
+        return lifecycle.rename(source, request["revision"], request["name"])
+    fields = {"action", "source_instance", "revision", "confirmed_source", "remove_credentials"}
+    if (
+        request["action"] != "remove_source"
+        or set(request) != fields
+        or not isinstance(request["revision"], str)
+        or not re.fullmatch("[a-f0-9]{64}", request["revision"])
+        or type(request["remove_credentials"]) is not bool
+    ):
+        raise LifecycleError("REQUEST_INVALID")
+    if retirement is not None:
+        raise LifecycleError("SOURCE_RETIREMENT_REVIEW_REQUIRED")
+    return lifecycle.remove(
+        source,
+        request["revision"],
+        request["confirmed_source"],
+        request["remove_credentials"],
+        secrets.remove_owned,
+    )
+
+
+def _read_recovery(recovery, source, request):
+    """Forward exact read-only recovery envelopes using the initialized service."""
+    action = request["action"]
+    if action == "recovery_inventory" and set(request) == {"action", "source_instance", "operation_id"}:
+        return recovery.inventory(source, request["operation_id"])
+    if action == "recovery_records" and set(request) == {"action", "source_instance"}:
+        return recovery.records(source)
+    if action == "recovery_describe" and set(request) == {"action", "source_instance", "actor_id"}:
+        return recovery.describe(source, request["actor_id"])
+    if action == "recovery_retired_evidence" and set(request) == {"action", "source_instance", "operation_id"}:
+        return recovery.retired_evidence(source, request["operation_id"])
+    raise LifecycleError("REQUEST_INVALID")

@@ -209,3 +209,16 @@ no provider apply policies or global lint suppressions are changed.
 Full suite: 2129 passed, 485 skipped, one existing Starlette warning. Full Pylint
 passes at 9.04/10 with zero Error/Fatal; Black and whitespace checks pass.
 No complexity or missing-docstring findings remain in network_scopes.
+
+
+## Stage 12: lifecycle capability dispatch
+
+Split exact-envelope handlers by capability, keeping the source/evidence gates
+and closed exception boundary in the dispatcher. Preserve retirement availability
+precedence, archive/resume flags and credential callback identity. Recovery reads
+remain separate from transitions. No complexity findings remain in this module.
+
+70 new characterization cases pass before and after extraction. Full suite:
+2199 passed, 485 skipped, one existing Starlette warning. Pylint: 9.05/10 with
+zero Error/Fatal; Black and whitespace checks pass. The complete remaining work
+is tracked in [completion status](lint-completion-status.md), not declared finished.

@@ -1,0 +1,38 @@
+# Complexity and documentation completion
+
+Work in progress from main `b10e14e4dc6fe28d5ae07d3a1b433a3e37aef8c1`.
+The user authorized independent, reviewed PRs and merging after successful checks,
+continuing through the remaining work rather than stopping after each PR.
+
+## Scope and invariants
+
+- Review all missing class/function documentation and complexity findings.
+- Add behavioral tests before restructuring logic; verify documentation against
+  implementation and preserve executable AST for documentation-only changes.
+- Preserve public signatures, serialized formats, ordering, error boundaries,
+  partial results, VM/LXC differences and explicit confirmation requirements.
+- Never lower project lint thresholds or use blanket complexity/docstring disables.
+- Treat interface/schema-related metrics separately from long control flow.
+  Any retained recommendation needs a concrete compatibility reason.
+- Selectel remains experimental. Local tests do not establish deployment
+  acceptance. No production access or deployment is part of this work.
+
+## Starting report
+
+The PR #55 report contains 416 missing-function and 129 missing-class docstrings.
+The principal control-flow findings are 52 branch, 41 statement, 90 local-variable,
+19 return-count and 3 nested-block findings. Counts are diagnostics, not independent
+functions: one function can produce several findings.
+
+## Progress
+
+- Lifecycle RPC dispatch: exact envelopes and refusal precedence characterized
+  before splitting independent operation groups. 2199 tests passed, 485 skipped;
+  full Pylint 9.05/10, zero Error/Fatal. No complexity findings remain in this module.
+- Remaining workers, authorization, catalog, provider reconciliation, reporting
+  and application services: pending.
+- Remaining documentation and compatibility metrics: pending.
+
+Detailed per-PR verification remains in [the cleanup log](lint-cleanup-20261020.md).
+This file must not be interpreted as a completed audit until all pending entries
+have been resolved and the final report has been checked.
