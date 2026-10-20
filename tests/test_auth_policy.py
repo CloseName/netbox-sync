@@ -19,6 +19,51 @@ def call(service, session, action, **payload):
     return service.call(dict(action=action, session=session, **payload))
 
 
+@pytest.mark.parametrize('action', [
+    'policy.update', 'receipt.issue', 'receipt.consume', 'receipt.cancel',
+    'receipt.check', 'teams.create', 'ldap.save', 'unknown', [],
+])
+def test_session_refusal_precedes_action_payload_validation(action):
+    service, _, _ = enrolled()
+    before = copy.deepcopy(service.state)
+    audit = copy.deepcopy(service.audit)
+    with pytest.raises(AuthError, match='^AUTH_REQUIRED$'):
+        call(service, 'forged', action, host=[], receipt=[], expected_revision=True)
+    assert service.state == before and service.audit == audit
+
+
+def test_malformed_enrollment_is_throttled_before_field_validation():
+    service = AuthPolicy(initial_state(), clock=lambda: 1000)
+    with pytest.raises(AuthError, match='^AUTH_INVALID$'):
+        service.call({'action': 'enroll', 'invitation': [], 'username': [], 'password': []})
+    assert service.state['attempts'] == [1000]
+    assert service.state['principal'] is None and service.audit == []
+
+
+def test_policy_recent_confirmation_precedes_invalid_host():
+    service, token, _ = enrolled()
+    service.root('managed', {'ceiling': 'public-ipv4'})
+    service.now += 901
+    with pytest.raises(AuthError, match='^AUTH_REAUTH_REQUIRED$'):
+        call(service, token, 'policy.update', host=[], expected_revision=True, request_id=None)
+    assert service.state['revision'] == 1 and service.state['allowed_hosts'] == []
+
+
+@pytest.mark.parametrize('action', ['receipt.check', 'receipt.consume', 'receipt.cancel'])
+def test_expired_receipt_cancel_retains_distinct_semantics(action):
+    from netbox_sync.auth_policy import digest
+    service, token, _ = enrolled()
+    call(service, token, 'receipt.issue', receipt='receipt', revision=0,
+         destination='source.example.test', provider='esxi')
+    service.now += 601
+    if action == 'receipt.cancel':
+        assert call(service, token, action, receipt='receipt') == {'consumed': True}
+        assert service.state['receipts'][digest('receipt')]['consumed'] is True
+    else:
+        with pytest.raises(AuthError, match='^PROBE_RECEIPT_INVALID$'):
+            call(service, token, action, receipt='receipt', destination='source.example.test', provider='esxi')
+
+
 def test_enrollment_double_use_hash_and_recovery():
     service, session, invite = enrolled()
     principal = call(service,session,'authorize')['principal_id']
