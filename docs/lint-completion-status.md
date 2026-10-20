@@ -91,6 +91,8 @@ functions: one function can produce several findings.
   Complexity resolved; VM/LXC occurrences and bounded evidence preserved.
 - Broker dispatch: 2471 tests passed, 491 skipped; Pylint 9.39/10.
   Server control flow resolved; ownership boolean checks still pending.
+- Retirement review: 2477 tests passed, 491 skipped; Pylint 9.39/10.
+  Complexity resolved; blocked-only reports, fingerprints and replay preserved.
 - Remaining workers, provider reconciliation, reporting
   and application services: pending.
 - Discovery/API documentation: 38 descriptions added; 132 focused tests pass,

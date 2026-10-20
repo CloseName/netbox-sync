@@ -61,14 +61,8 @@ def fingerprint(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def build_review(source, registry, objects, *, registry_complete, netbox_complete):
-    """Preserve unknown/foreign dependencies and reused clusters. Never authorize deletion.
-
-    Completeness flags attest successful bounded authoritative reads, not empty
-    failed responses. A future transport must obtain these snapshots server-side.
-    Owners must come from verified v2 identities or a durable creation claim;
-    names, placement, an empty cluster or an IP match are never ownership evidence.
-    """
+def _validate_snapshot(source, registry, objects, registry_complete, netbox_complete):
+    """Validate complete snapshot structure before constructing any blockers."""
     if not isinstance(source, str) or not SOURCE_INSTANCE_PATTERN.fullmatch(source):
         raise ValueError("Invalid source identity")
     if type(registry_complete) is not bool or type(netbox_complete) is not bool:
@@ -89,30 +83,33 @@ def build_review(source, registry, objects, *, registry_complete, netbox_complet
         ):
             raise ValueError("Invalid registry evidence")
     for row in objects:
-        if (
-            type(row.creation_proven) is not bool
-            or row.resource not in RESOURCES
-            or type(row.id) is not int
-            or row.id <= 0
-            or not isinstance(row.name, str)
-            or len(row.name) > 200
-            or any(ord(c) < 32 for c in row.name)
-            or any(not isinstance(owner, str) or not SOURCE_INSTANCE_PATTERN.fullmatch(owner) for owner in row.owners)
-            or len(row.owners) != len(set(row.owners))
-        ):
-            raise ValueError("Invalid object evidence")
-        if any(not isinstance(key, str) or len(key) > 100 for key in (*row.children, *row.referenced_by)):
-            raise ValueError("Invalid dependency evidence")
-    blockers = [{"code": "ATOMIC_NETBOX_GUARD_UNAVAILABLE", "objects": []}]
+        _validate_object(row)
+    return by_source, nodes
 
-    def block(code, keys=()):
-        blockers.append({"code": code, "objects": sorted(set(keys))})
 
-    if not registry_complete:
-        block("REGISTRY_SNAPSHOT_INCOMPLETE")
-    if not netbox_complete:
-        block("NETBOX_SNAPSHOT_INCOMPLETE")
-    entry = by_source.get(source)
+def _validate_object(row):
+    """Validate object ownership and dependency evidence without coercion."""
+    if (
+        type(row.creation_proven) is not bool
+        or row.resource not in RESOURCES
+        or type(row.id) is not int
+        or row.id <= 0
+        or not isinstance(row.name, str)
+    ):
+        raise ValueError("Invalid object evidence")
+    if (
+        len(row.name) > 200
+        or any(ord(c) < 32 for c in row.name)
+        or any(not isinstance(owner, str) or not SOURCE_INSTANCE_PATTERN.fullmatch(owner) for owner in row.owners)
+        or len(row.owners) != len(set(row.owners))
+    ):
+        raise ValueError("Invalid object evidence")
+    if any(not isinstance(key, str) or len(key) > 100 for key in (*row.children, *row.referenced_by)):
+        raise ValueError("Invalid dependency evidence")
+
+
+def _registry_blockers(source, registry, entry, block):
+    """Retain removal, uncertainty and reused-cluster blocker ordering."""
     if entry is None:
         block("NO_DURABLE_REMOVAL_INTENT")
     elif not entry.removed:
@@ -124,7 +121,10 @@ def build_review(source, registry, objects, *, registry_complete, netbox_complet
         for other in registry
     ):
         block("CLUSTER_REUSED_BY_ACTIVE_SOURCE", [f"cluster:{entry.cluster_id}"])
-    root = f"cluster:{entry.cluster_id}" if entry else None
+
+
+def _reachable_objects(root, nodes, block):
+    """Traverse the original LIFO dependency graph, retaining missing evidence."""
     reachable = set()
     pending = [root] if root else []
     while pending:
@@ -137,6 +137,11 @@ def build_review(source, registry, objects, *, registry_complete, netbox_complet
             block("DEPENDENCY_NOT_PROVEN", [key])
             continue
         pending.extend(node.children)
+    return reachable
+
+
+def _classify_objects(source, nodes, reachable, block):
+    """Separate proven candidates from retained and out-of-placement objects."""
     candidates = []
     retained = []
     for key, row in sorted(nodes.items()):
@@ -152,6 +157,11 @@ def build_review(source, registry, objects, *, registry_complete, netbox_complet
             block("CREATION_NOT_PROVEN", [key])
         else:
             candidates.append(key)
+    return candidates, retained
+
+
+def _candidate_dependencies(candidates, nodes, block):
+    """Record external dependencies and retained children after classification."""
     candidate_set = set(candidates)
     for key in candidates:
         row = nodes[key]
@@ -160,6 +170,62 @@ def build_review(source, registry, objects, *, registry_complete, netbox_complet
             block("EXTERNAL_DEPENDENCY", [key, *foreign])
         if any(child not in candidate_set for child in row.children):
             block("RETAINED_CHILD", [key])
+
+
+def _validate_review(review):
+    """Reject executable or malformed review artifacts before acquiring locks."""
+    if review.get("status") != "BLOCKED" or review.get("executable") is not False:
+        raise RetirementBlocked("ATOMIC_NETBOX_GUARD_UNAVAILABLE")
+    fields = {
+        "format",
+        "source_instance",
+        "status",
+        "executable",
+        "registry_fingerprint",
+        "netbox_fingerprint",
+        "candidates",
+        "retained",
+        "blockers",
+        "objects",
+    }
+    if set(review) != fields or review["format"] != 1:
+        raise ValueError("Invalid review fields")
+    if not SOURCE_INSTANCE_PATTERN.fullmatch(review["source_instance"]):
+        raise ValueError("Invalid review identity")
+    for field in ("registry_fingerprint", "netbox_fingerprint"):
+        if not isinstance(review[field], str) or not re.fullmatch("[a-f0-9]{64}", review[field]):
+            raise ValueError("Invalid review fingerprint")
+    for item in review["objects"]:
+        if set(item) != {"resource", "id", "name", "owners", "children", "referenced_by", "creation_proven"}:
+            raise ValueError("Invalid object projection")
+    for item in review["blockers"]:
+        if set(item) != {"code", "objects"} or not re.fullmatch("[A-Z_]{1,64}", item["code"]):
+            raise ValueError("Invalid blocker projection")
+
+
+def build_review(source, registry, objects, *, registry_complete, netbox_complete):
+    """Preserve unknown/foreign dependencies and reused clusters. Never authorize deletion.
+
+    Completeness flags attest successful bounded authoritative reads, not empty
+    failed responses. A future transport must obtain these snapshots server-side.
+    Owners must come from verified v2 identities or a durable creation claim;
+    names, placement, an empty cluster or an IP match are never ownership evidence.
+    """
+    by_source, nodes = _validate_snapshot(source, registry, objects, registry_complete, netbox_complete)
+    blockers = [{"code": "ATOMIC_NETBOX_GUARD_UNAVAILABLE", "objects": []}]
+
+    def block(code, keys=()):
+        blockers.append({"code": code, "objects": sorted(set(keys))})
+
+    if not registry_complete:
+        block("REGISTRY_SNAPSHOT_INCOMPLETE")
+    if not netbox_complete:
+        block("NETBOX_SNAPSHOT_INCOMPLETE")
+    entry = by_source.get(source)
+    _registry_blockers(source, registry, entry, block)
+    reachable = _reachable_objects(f"cluster:{entry.cluster_id}" if entry else None, nodes, block)
+    candidates, retained = _classify_objects(source, nodes, reachable, block)
+    _candidate_dependencies(candidates, nodes, block)
     projection = [
         {
             **asdict(row),
@@ -201,33 +267,7 @@ class RetirementReviewJournal:
         identifier = str(UUID(request_id))
         if not isinstance(actor, str) or not actor or len(actor) > 128:
             raise ValueError("Invalid audit actor")
-        if review.get("status") != "BLOCKED" or review.get("executable") is not False:
-            raise RetirementBlocked("ATOMIC_NETBOX_GUARD_UNAVAILABLE")
-        fields = {
-            "format",
-            "source_instance",
-            "status",
-            "executable",
-            "registry_fingerprint",
-            "netbox_fingerprint",
-            "candidates",
-            "retained",
-            "blockers",
-            "objects",
-        }
-        if set(review) != fields or review["format"] != 1:
-            raise ValueError("Invalid review fields")
-        if not SOURCE_INSTANCE_PATTERN.fullmatch(review["source_instance"]):
-            raise ValueError("Invalid review identity")
-        for field in ("registry_fingerprint", "netbox_fingerprint"):
-            if not isinstance(review[field], str) or not re.fullmatch("[a-f0-9]{64}", review[field]):
-                raise ValueError("Invalid review fingerprint")
-        for item in review["objects"]:
-            if set(item) != {"resource", "id", "name", "owners", "children", "referenced_by", "creation_proven"}:
-                raise ValueError("Invalid object projection")
-        for item in review["blockers"]:
-            if set(item) != {"code", "objects"} or not re.fullmatch("[A-Z_]{1,64}", item["code"]):
-                raise ValueError("Invalid blocker projection")
+        _validate_review(review)
         # A safe review artifact cannot be promoted by editing its serialized status.
         payload = {
             "format": 1,
