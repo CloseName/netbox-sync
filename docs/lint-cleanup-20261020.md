@@ -505,3 +505,13 @@ cases plus 28 existing preview/IPAM cases pass before/after. Full suite: 2395
 passed, 491 skipped, one existing warning. Pylint 9.37/10, zero Error/Fatal; no
 complexity/doc findings remain in pfsense_preview. Exact integer checks intentionally
 reject booleans. Black and whitespace pass.
+## Stage 43: per-source execution isolation
+
+Separate one source execution from input validation and deterministic iteration.
+Preserve audit start/finalization behavior, diagnostic context cleanup, SystemExit
+isolation and clock ordering. Two new generator/clock cases and 25 existing
+orchestration/scheduled cases pass before/after. Full suite: 2397 passed, 491 skipped,
+one existing warning. Pylint 9.37/10, zero Error/Fatal; control-flow/doc findings
+resolved in orchestrator. SourceRunResult retains its public execution/history
+fields consumed by entrypoint reporting and scheduler results. Black and whitespace
+pass.
