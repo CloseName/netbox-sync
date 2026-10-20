@@ -10,6 +10,8 @@ from .run_gates import blocking_runs
 
 
 def isolated(row):
+    """Recognize a UUID-backed isolation decision only while source and scheduling stay disabled."""
+
     decision = (row.get("settings") or {}).get("legacy_admission", {})
     try:
         UUID(decision["operation_id"])
@@ -23,6 +25,8 @@ def isolated(row):
 
 
 def resolved_for_admission(row):
+    """Accept explicit isolation or a recorded observed endpoint without enabling synchronization."""
+
     decision = (row.get("settings") or {}).get("legacy_admission", {})
     return isolated(row) or (
         isinstance(decision, dict)
@@ -34,6 +38,8 @@ def resolved_for_admission(row):
 
 
 def admission_lock(connection, schema, shared=False):
+    """Acquire a nonblocking transaction-wide admission lock or report a lifecycle conflict."""
+
     function = "pg_try_advisory_xact_lock_shared" if shared else "pg_try_advisory_xact_lock"
     row = connection.execute(
         "SELECT " + function + "(hashtextextended(%s,0)) AS locked", ("netbox-sync:" + schema + ":legacy-admission",)
@@ -43,10 +49,16 @@ def admission_lock(connection, schema, shared=False):
 
 
 class LegacyAdmission:
+    """Record explicit legacy ESXi admission decisions without claiming object ownership."""
+
     def __init__(self, store):
+        """Bind the lifecycle store used for admission decisions."""
+
         self.store = store
 
     def _row(self, connection, source):
+        """Load the source and tombstone context and require an ESXi source."""
+
         row = connection.execute(
             sql.SQL(
                 (
@@ -63,6 +75,8 @@ class LegacyAdmission:
         return row
 
     def describe(self, source):
+        """Project current endpoint, revision and admission evidence for review."""
+
         with self.store.connect() as connection:
             row = self._row(connection, source)
             removed = connection.execute(
@@ -87,6 +101,8 @@ class LegacyAdmission:
             }
 
     def status(self, source, actor, operation):
+        """Return only the matching actor-owned legacy admission proof."""
+
         with self.store.connect() as connection:
             previous = connection.execute(
                 sql.SQL(
@@ -97,6 +113,8 @@ class LegacyAdmission:
             return dict(previous) if previous and previous["proof"].get("purpose") == "LEGACY_ADMISSION" else {}
 
     def confirm(self, source, actor, operation, revision, decision, reason, anchor=None):
+        """Record an idempotent reviewed decision, quarantine the source and invalidate ready plans."""
+
         operation = UUID(str(operation))
         if (
             decision not in {"ISOLATE", "OBSERVE"}

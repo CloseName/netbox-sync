@@ -472,3 +472,10 @@ Full suite: 2380 passed, 491 skipped, one existing warning. Pylint 9.31/10, zero
 Error/Fatal. No control-flow or documentation findings remain in host_apply_writes;
 its existing public arguments remain for caller compatibility. Black and whitespace
 pass.
+## Stage 39: registration and recovery contracts
+
+Add 77 descriptions across eight modules: durable registration, legacy admission,
+identity verification, recovery, retirement, directory access and catalog creation.
+Executable AST unchanged for every file. Full suite: 2380 passed, 491 skipped,
+one existing warning. Pylint 9.34/10, zero Error/Fatal; Black checks all 227 modules.
+Remaining documentation: three classes and 42 functions. Whitespace passes.

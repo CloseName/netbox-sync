@@ -19,6 +19,8 @@ TOKEN = "durable-registration-reference-only"
 
 
 def references(actor, source, operation, provider):
+    """Derive deterministic actor/source/operation broker references without storing secret values."""
+
     operation = uuid5(
         UUID("59ecc401-7157-4694-9c10-58f30652e3ec"), actor + ":" + source + ":" + str(UUID(str(operation)))
     ).hex
@@ -27,19 +29,29 @@ def references(actor, source, operation, provider):
 
 
 class RegistrationJobs:
+    """Persist immutable approved registration metadata and continuation state."""
+
     def __init__(self, dsn, schema):
+        """Bind the registration writer DSN and schema."""
+
         self.dsn, self.schema = dsn, schema
 
     def connect(self):
+        """Open a bounded-time registration database connection."""
+
         return psycopg.connect(
             self.dsn, connect_timeout=3, row_factory=dict_row, options="-c statement_timeout=5000 -c lock_timeout=3000"
         )
 
     def table(self):
+        """Return the safely quoted registration job table identifier."""
+
         return sql.Identifier(self.schema, "registration_jobs")
 
     @contextmanager
     def guard(self, source):
+        """Hold an exclusive source registration-job lock for one continuation."""
+
         with self.connect() as connection:
             connection.autocommit = True
             key = "netbox-sync:" + self.schema + ":registration-job:" + source
@@ -54,6 +66,8 @@ class RegistrationJobs:
                 connection.execute("SELECT pg_advisory_unlock(hashtextextended(%s,0))", (key,))
 
     def get(self, source, operation=None, actor=None):
+        """Read a job and enforce any supplied operation and actor bindings."""
+
         with self.connect() as connection:
             row = connection.execute(
                 sql.SQL("SELECT * FROM {} WHERE source_instance=%s").format(self.table()), (source,)
@@ -68,6 +82,8 @@ class RegistrationJobs:
     def begin(self, request, actor, preview, username):
         # Called only after final POST authentication, binding/placement checks,
         # identity reservation and consumption of the connection receipt.
+        """Persist approved immutable registration metadata and reject changed replay payloads."""
+
         if not request.registration_id or not preview or not actor:
             raise HostRegistrationConflict("HOST_REGISTRATION_INVALID")
         payload = {
@@ -94,6 +110,8 @@ class RegistrationJobs:
         return row
 
     def mark(self, source, state, code=None):
+        """Update the durable job state and safe status code."""
+
         with self.connect() as connection:
             connection.execute(
                 sql.SQL(
@@ -103,6 +121,8 @@ class RegistrationJobs:
             )
 
     def pending(self, after=UUID(int=0)):
+        """Return the next staging or ready job after the fair operation cursor."""
+
         with self.connect() as connection:
             return connection.execute(
                 sql.SQL(
@@ -116,6 +136,8 @@ class RegistrationJobs:
             ).fetchall()
 
     def resume_staging(self, source, operation, actor, credentials, preview):
+        """Require refreshed credentials and preview to match the original unstaged intent."""
+
         row = self.get(source, operation, actor)
         if not row or row["state"] != "STAGING":
             raise HostRegistrationConflict("HOST_REGISTRATION_INVALID")
@@ -140,6 +162,8 @@ class RegistrationJobs:
         }
 
     def public_attempts(self, actor):
+        """Project at most 100 incomplete actor-owned attempts without secret values."""
+
         with self.connect() as connection:
             rows = connection.execute(
                 sql.SQL(
@@ -160,6 +184,8 @@ class RegistrationJobs:
         ]
 
     def stage(self, job, credentials, secrets):
+        """Persist deterministic credential references before marking ready and release temporary receipts."""
+
         refs = job["payload"]["references"]
         receipts = []
         try:
@@ -198,17 +224,23 @@ class StagedOnboarding:
     """Same registration pipeline, using attested references rather than secrets."""
 
     def __init__(self, base, job):
+        """Bind the original onboarding pipeline to one durable registration job."""
+
         self.base, self.job = base, job
 
     def __getattr__(self, name):
         return getattr(self.base, name)
 
     def preview(self, token):
+        """Return saved preview evidence only for the internal durable-reference token."""
+
         if token != TOKEN:
             raise OnboardingError(ErrorCode.ONBOARDING_TOKEN_INVALID)
         return self.job["payload"]["preview"]
 
     def check_registration(self, request):
+        """Validate the staged token and require the source to remain unregistered."""
+
         self.preview(request.onboarding_token)
         if self.base._registry.find(request.source_instance) is not None:
             raise OnboardingError(ErrorCode.SOURCE_ALREADY_EXISTS)
@@ -216,9 +248,13 @@ class StagedOnboarding:
     def reserve_provider_identity(self, request, operation, actor, **kwargs):
         # ESXi reservation + immutable intent were persisted before staging.
         # Recheck under the same provider lock in registration_guard below.
+        """Leave already-persisted identity reservation unchanged before the provider-lock recheck."""
+
         return None
 
     def registration_guard(self, request, operation, actor):
+        """Reuse the original provider registration lock for the saved preview."""
+
         from contextlib import nullcontext
 
         guard = getattr(self.base._registry, "registration_guard", None)
@@ -229,6 +265,8 @@ class StagedOnboarding:
         )
 
     def registration_intent(self, request, operation, actor, fingerprint, durable_request=None):
+        """Rebind the durable fingerprint through the original registry when supported."""
+
         bind = getattr(self.base._registry, "registration_intent", None)
         return (
             bind(
@@ -244,16 +282,24 @@ class StagedOnboarding:
         )
 
     def register(self, request, **kwargs):
+        """Register using attested broker references and the saved username."""
+
         refs = self.job["payload"]["references"]
         return self.base.register_staged(request, self.job["payload"]["username"], refs["token"], refs["secret"])
 
 
 class RegistrationContinuation:
+    """Continue only explicitly approved registration jobs with attested credential references."""
+
     def __init__(self, jobs, base, complete, attest):
+        """Bind job storage, onboarding, completion and attestation callbacks with a fresh cursor."""
+
         self.jobs, self.base, self.complete, self.attest = jobs, base, complete, attest
         self.after = UUID(int=0)
 
     def run(self, job):
+        """Attest staged references, reconcile an existing registration or complete the saved intent."""
+
         from .api.onboarding_dto import RegistrationRequest
 
         source = job["source_instance"]

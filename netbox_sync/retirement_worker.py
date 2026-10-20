@@ -49,6 +49,8 @@ CHILD_TIMEOUT = 70
 
 
 def child(payload):
+    """Dispatch one capability-checked guard request through pinned DNS and configured TLS."""
+
     import requests
     from urllib.parse import urlsplit
     from .retirement_transport import GuardClient
@@ -103,6 +105,8 @@ def child(payload):
 
 
 def handle(value):
+    """Validate the local request, isolate the HTTP child and verify any local-purge receipt."""
+
     from .source_config import SOURCE_INSTANCE_PATTERN
     from .bootstrap_state import runtime_netbox
     import re
@@ -211,10 +215,16 @@ def handle(value):
 
 
 class RetirementClient:
+    """Call the private retirement worker with bounded response size and timeout."""
+
     def __init__(self, path):
+        """Bind the private retirement socket path."""
+
         self.path = path
 
     def call(self, action, operation, **fields):
+        """Send an operation-bound request and return the worker result envelope."""
+
         return request(
             self.path,
             {"action": action, "operation_id": str(operation), **fields},
@@ -224,6 +234,8 @@ class RetirementClient:
 
 
 def main():
+    """Run one bounded child request or serve the root-only retirement socket."""
+
     if sys.argv[1:] == ["--child"]:
         try:
             result = child(json.loads(sys.stdin.buffer.read(32769)))

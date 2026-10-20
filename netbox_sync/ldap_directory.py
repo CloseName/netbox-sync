@@ -16,7 +16,11 @@ CODES = frozenset(
 
 
 class DirectoryError(RuntimeError):
+    """Expose only the closed set of directory failure codes."""
+
     def __init__(self, code):
+        """Normalize unknown directory failures to LDAP_UNAVAILABLE."""
+
         self.code = code if code in CODES else "LDAP_UNAVAILABLE"
         super().__init__(self.code)
 
@@ -40,6 +44,8 @@ DEFAULT = {
 
 
 def validate(value):
+    """Validate the exact bounded LDAPS configuration and certificate trust material."""
+
     if not isinstance(value, dict) or set(value) != set(DEFAULT):
         raise DirectoryError("LDAP_INVALID")
     if len(json.dumps(value).encode()) > 10000:
@@ -83,7 +89,11 @@ def validate(value):
 
 
 class DirectoryClient:
+    """Run directory operations in a bounded child with secrets supplied on stdin."""
+
     def call(self, config, secret, operation, **kwargs):
+        """Return a bounded child result or normalize transport and decoding failures."""
+
         payload = dict(config=config, secret=secret, operation=operation, **kwargs)
         try:
             child = subprocess.run(
@@ -107,6 +117,8 @@ class DirectoryClient:
 
 
 def execute(payload):
+    """Perform verified LDAPS test, direct-membership sync, login or identity refresh."""
+
     import ldap3
     from ldap3.utils.conv import escape_filter_chars
 

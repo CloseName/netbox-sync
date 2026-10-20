@@ -15,13 +15,19 @@ from .source_operations import source_gate
 
 
 class Recovery:
+    """Coordinate durable restoration of a removed source namespace using trusted evidence."""
+
     def __init__(self, store, remote=None):
+        """Bind the lifecycle store and optional retirement audit client."""
+
         self.store = store
         self.remote = remote
 
     def inventory(self, source, operation):
         # Narrow Admin view for retained/orphan ownership reconciliation. Native
         # NetBox view/guard permissions apply; absence is never deletion consent.
+        """Read retained ownership audit evidence without treating absence as deletion consent."""
+
         if self.remote is None:
             raise LifecycleError("RETIREMENT_UNAVAILABLE")
         operation = UUID(str(operation))
@@ -119,6 +125,8 @@ class Recovery:
             return {"sources": result, "comparison": "RECORDED_IDENTITY_ONLY", "history_retained": True}
 
     def describe(self, source, actor):
+        """Describe a removed ESXi source with valid recorded placement and any pending actor attempt."""
+
         with self.store.connect() as connection, source_gate(connection, self.store.schema, source):
             row = self._row(connection, source)
             removed = connection.execute(
@@ -153,6 +161,8 @@ class Recovery:
             }
 
     def _retired(self, connection, source):
+        """Find the latest finalized retirement not superseded by a completed recovery."""
+
         return connection.execute(
             sql.SQL(
                 (
@@ -218,6 +228,8 @@ class Recovery:
             return result
 
     def _row(self, connection, source):
+        """Require an existing source record for recovery operations."""
+
         row = connection.execute(
             sql.SQL("SELECT * FROM {} WHERE source_instance=%s").format(self.store.table("sources")), (source,)
         ).fetchone()
@@ -226,6 +238,8 @@ class Recovery:
         return row
 
     def _guard(self, connection, row, revision, proof):
+        """Recheck removal, revision, idle state and identity-bound recovery proof."""
+
         source = row["source_instance"]
         if self.store.revision(row) != revision:
             raise LifecycleError("SOURCE_LIFECYCLE_CONFLICT")
@@ -293,6 +307,8 @@ class Recovery:
         return removed
 
     def prepare(self, source, operation, actor, revision, proof):
+        """Persist an idempotent recovery plan and credential references after guarded review."""
+
         operation = UUID(str(operation))
         if not isinstance(actor, str) or not actor or len(actor) > 200:
             raise LifecycleError("REQUEST_INVALID")
@@ -344,6 +360,8 @@ class Recovery:
     @staticmethod
     def _result(record):
         # Internal worker RPC only. API must project a public DTO without keys.
+        """Return internal worker state including the plan; public APIs must project safe fields."""
+
         return {
             "operation_id": str(record["operation_id"]),
             "source_instance": record["source_instance"],
@@ -352,6 +370,8 @@ class Recovery:
         }
 
     def begin_credentials(self, source, operation, actor):
+        """Revalidate a prepared attempt before marking its credential stage pending."""
+
         with self.store.lock(self.store.lock_path):
             with self.store.connect() as connection, source_gate(connection, self.store.schema, source):
                 record = self._attempt(connection, source, operation, actor)
@@ -370,6 +390,8 @@ class Recovery:
                 return self._result(record)
 
     def _attempt(self, connection, source, operation, actor):
+        """Require a recovery attempt bound to the source, operation and actor."""
+
         record = connection.execute(
             sql.SQL("SELECT * FROM {} WHERE operation_id=%s AND source_instance=%s AND actor_id=%s").format(
                 self.store.table("source_recoveries")
@@ -470,6 +492,8 @@ class Recovery:
                 return self._result(record)
 
     def status(self, source, operation, actor):
+        """Report actor-bound recovery state and current source activation."""
+
         with self.store.connect() as connection, source_gate(connection, self.store.schema, source):
             record = self._attempt(connection, source, operation, actor)
             row = self._row(connection, source)

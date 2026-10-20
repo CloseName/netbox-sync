@@ -15,10 +15,16 @@ from .api.dto import DiscoveryHostDTO
 
 
 class IdentityVerification:
+    """Bind fresh ESXi discovery to existing ownership proof without activating the source."""
+
     def __init__(self, store):
+        """Bind the lifecycle store for identity verification."""
+
         self.store = store
 
     def _evidence(self, connection, source):
+        """Require successful discovery within ten minutes and derive its validated ESXi anchor."""
+
         operation = connection.execute(
             sql.SQL(
                 (
@@ -40,6 +46,8 @@ class IdentityVerification:
         return str(operation["operation_id"]), anchor, operation["finished_at"].isoformat()
 
     def _describe(self, connection, source):
+        """Compare fresh discovery identity with the recorded source anchor and placement."""
+
         row = active_row(self.store, connection, source)
         if row["source_type"] != "esxi":
             raise LifecycleError("SOURCE_IDENTITY_UNSUPPORTED")
@@ -57,10 +65,14 @@ class IdentityVerification:
         }
 
     def describe(self, source):
+        """Read identity review evidence under the source operation gate."""
+
         with self.store.connect() as connection, source_gate(connection, self.store.schema, source):
             return self._describe(connection, source)[1]
 
     def confirm(self, source, actor, revision, discovery_id, proof):
+        """Recheck proof and identity exclusivity before recording an idempotent verification."""
+
         operation = UUID(str(discovery_id))
         if not isinstance(actor, str) or not actor or len(actor) > 200:
             raise LifecycleError("REQUEST_INVALID")
