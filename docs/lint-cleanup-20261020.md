@@ -647,3 +647,14 @@ cases and existing contracts pass before/after (21 total). Full suite: 2487 pass
 491 skipped, one existing warning; Pylint 9.40/10, zero Error/Fatal. No complexity
 findings remain in pfsense_connect. Black and whitespace pass. All network operations
 in these tests are injected fakes; no appliance or production service was contacted.
+
+## Stage 57: broker ownership predicates
+
+Share the exact regular-file/root-owner/single-link/private-mode predicate across
+ownership verification, replay and deletion gates. Split key validation without
+changing short-circuit order. Fifty-one new fake-descriptor cases pass on original
+code; 63 focused tests pass after, 37 Linux/root checks skipped. Full suite: 2538
+passed, 491 skipped, one existing warning; Pylint 9.40/10, zero Error/Fatal. No
+complexity findings remain in secret_broker. Tests verify no premature secret reads,
+all-file validation before unlink, inode/capability checks and descriptor closure.
+Black and whitespace pass; real secret files and production remain untouched.

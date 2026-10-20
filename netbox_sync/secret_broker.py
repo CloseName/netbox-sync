@@ -41,6 +41,17 @@ class BrokerError(Exception):
         super().__init__(code)
 
 
+def _owned_regular_file(info):
+    """Require a single-link root-owned regular file with exact private permissions."""
+    return (
+        file_stat.S_ISREG(info.st_mode)
+        and info.st_uid == 0
+        and info.st_gid == 0
+        and info.st_nlink == 1
+        and file_stat.S_IMODE(info.st_mode) == 0o600
+    )
+
+
 class SecretBrokerStore:
     """Operate beneath one pre-opened, root-owned directory without following links."""
 
@@ -78,13 +89,7 @@ class SecretBrokerStore:
         race this check. Host administrators must not mutate the active directory.
         """
         info = os.fstat(descriptor)
-        if (
-            not file_stat.S_ISREG(info.st_mode)
-            or info.st_uid != 0
-            or info.st_gid != 0
-            or info.st_nlink != 1
-            or file_stat.S_IMODE(info.st_mode) != 0o600
-        ):
+        if not _owned_regular_file(info):
             raise BrokerError("ROLLBACK_NOT_AUTHORIZED")
         for name, value in attributes.items():
             if os.getxattr(descriptor, name) != value:
@@ -113,14 +118,9 @@ class SecretBrokerStore:
 
     @staticmethod
     def _key(key):
-        if (
-            not isinstance(key, str)
-            or not KEY_PATTERN.fullmatch(key)
-            or key in (".", "..")
-            or "%" in key
-            or "/" in key
-            or "\\" in key
-        ):
+        if not isinstance(key, str) or not KEY_PATTERN.fullmatch(key) or key in (".", ".."):
+            raise BrokerError("SECRET_KEY_INVALID")
+        if "%" in key or "/" in key or "\\" in key:
             raise BrokerError("SECRET_KEY_INVALID")
         return key
 
@@ -185,11 +185,7 @@ class SecretBrokerStore:
             info = os.fstat(descriptor)
             stored, _ = self._stored_attributes(descriptor)
             return (
-                file_stat.S_ISREG(info.st_mode)
-                and info.st_uid == 0
-                and info.st_gid == 0
-                and info.st_nlink == 1
-                and file_stat.S_IMODE(info.st_mode) == 0o600
+                _owned_regular_file(info)
                 and stored["operation"] == operation_id.encode()
                 and stored["complete"] == b"1"
             )
@@ -207,11 +203,7 @@ class SecretBrokerStore:
             info = os.fstat(descriptor)
             stored, _attributes = self._stored_attributes(descriptor)
             if (
-                not file_stat.S_ISREG(info.st_mode)
-                or info.st_uid != 0
-                or info.st_gid != 0
-                or info.st_nlink != 1
-                or file_stat.S_IMODE(info.st_mode) != 0o600
+                not _owned_regular_file(info)
                 or stored["operation"] != operation_id.encode()
                 or stored["complete"] != b"1"
                 or os.read(descriptor, MAX_SECRET_BYTES + 1) != value
@@ -237,11 +229,7 @@ class SecretBrokerStore:
             current = os.stat(key, dir_fd=self._directory, follow_symlinks=False)
             stored, attributes = self._stored_attributes(descriptor)
             if (
-                not file_stat.S_ISREG(info.st_mode)
-                or info.st_uid != 0
-                or info.st_gid != 0
-                or info.st_nlink != 1
-                or file_stat.S_IMODE(info.st_mode) != 0o600
+                not _owned_regular_file(info)
                 or (info.st_dev, info.st_ino) != (current.st_dev, current.st_ino)
                 or stored["operation"] != operation_id.encode()
                 or stored["complete"] != b"1"
@@ -279,11 +267,7 @@ class SecretBrokerStore:
                 info = os.fstat(descriptor)
                 stored, attributes = self._stored_attributes(descriptor)
                 if (
-                    not file_stat.S_ISREG(info.st_mode)
-                    or info.st_uid != 0
-                    or info.st_gid != 0
-                    or info.st_nlink != 1
-                    or file_stat.S_IMODE(info.st_mode) != 0o600
+                    not _owned_regular_file(info)
                     or stored["complete"] != b"1"
                     or not set(XATTR_NAMES.values()).issubset(set(attributes))
                 ):
