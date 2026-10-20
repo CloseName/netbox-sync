@@ -138,3 +138,20 @@ complexity findings, without suppressing those checks.
 
 Full suite: 2075 passed, 485 skipped, one existing Starlette warning. Full Pylint
 passes at 9.03/10 with zero Error/Fatal; Black and whitespace checks pass.
+
+## Stage 8: guest placement
+
+Separate VM/LXC identity resolution and placement ownership/cluster validation
+from batch preparation and confirmed writes. Document unmanaged-host skipping,
+VM-before-LXC order, the already-assigned fast path and partial write failures.
+Preserve the existing architecture-attribute dispatch and source-instance ownership
+check rather than inventing a common guest identity policy.
+
+Eighteen characterization cases pass before and after extraction. They cover
+preview, confirmed payload/order, replay, ambiguous or missing identities,
+ownership-before-cluster failures, whole-batch validation, and write failure
+propagation without rollback. The placement module no longer has complexity or
+missing-function-docstring findings; compatibility arguments and lazy imports remain.
+
+Full suite: 2093 passed, 485 skipped, one existing Starlette warning. Full Pylint
+passes at 9.03/10 with zero Error/Fatal; Black and whitespace checks pass.
