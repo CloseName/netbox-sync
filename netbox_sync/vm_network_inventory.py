@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import ipaddress
 
 from .netbox_record_values import object_id as _object_id
+from .network_inventory_index import index_mac_records
 from .network_scopes import scope_key, object_id as scope_object_id
 
 
@@ -19,16 +20,8 @@ class VMNetworkInventory:
     ips_by_id: dict
 
 
-def prepare_vm_network_inventory(nb_api, cluster, *, _canonical_mac):
-    """Preserve read order and propagate failures before any mutation can begin."""
-    target_vms = list(nb_api.virtualization.virtual_machines.filter(cluster_id=cluster.id))
-
-    all_interfaces = list(nb_api.virtualization.interfaces.all())
-
-    all_macs = list(nb_api.dcim.mac_addresses.all())
-
-    all_ips = list(nb_api.ipam.ip_addresses.all())
-
+def _index_interfaces(all_interfaces):
+    """Index original interfaces by record ID and parent VM without collapsing duplicates."""
     interfaces_by_vm = {}
     interfaces_by_id = {}
 
@@ -42,17 +35,11 @@ def prepare_vm_network_inventory(nb_api, cluster, *, _canonical_mac):
                 [],
             ).append(interface)
 
-    macs_by_address = {}
+    return interfaces_by_vm, interfaces_by_id
 
-    for mac in all_macs:
-        value = _canonical_mac(mac.serialize().get("mac_address"))
 
-        if value:
-            macs_by_address.setdefault(
-                value,
-                [],
-            ).append(mac)
-
+def _index_ips(all_ips):
+    """Index original IPs by ID and canonical address plus VRF, retaining scoped duplicates."""
     ips_by_address = {}
     ips_by_id = {}
 
@@ -72,6 +59,23 @@ def prepare_vm_network_inventory(nb_api, cluster, *, _canonical_mac):
             scope_key(canonical, scope_object_id(ip.serialize().get("vrf"))),
             [],
         ).append(ip)
+
+    return ips_by_address, ips_by_id
+
+
+def prepare_vm_network_inventory(nb_api, cluster, *, _canonical_mac):
+    """Preserve read order and propagate failures before any mutation can begin."""
+    target_vms = list(nb_api.virtualization.virtual_machines.filter(cluster_id=cluster.id))
+
+    all_interfaces = list(nb_api.virtualization.interfaces.all())
+
+    all_macs = list(nb_api.dcim.mac_addresses.all())
+
+    all_ips = list(nb_api.ipam.ip_addresses.all())
+
+    interfaces_by_vm, interfaces_by_id = _index_interfaces(all_interfaces)
+    macs_by_address = index_mac_records(all_macs, _canonical_mac)
+    ips_by_address, ips_by_id = _index_ips(all_ips)
 
     return VMNetworkInventory(
         target_vms=target_vms,
