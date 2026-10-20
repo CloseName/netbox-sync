@@ -371,3 +371,11 @@ Eleven fake-socket/process cases pass on main and after extraction. Full suite:
 2336 passed, 491 skipped, one existing warning. Pylint 9.16/10, zero Error/Fatal;
 control-flow and missing-doc findings resolved in local_control. Retain the public
 serve argument list for caller compatibility. Black and whitespace pass.
+
+## Stage 28: hardware identity and host mapping documentation
+
+Add 14 descriptions covering normalized system identifiers, observation freshness,
+provider coverage, conflict classification and reviewed-versus-legacy mappings.
+Executable AST unchanged. The same focused suite passes before and after:
+90 passed, 52 skipped, one existing warning. Pylint 9.17/10, zero Error/Fatal;
+Black and whitespace pass. Previous full runtime baseline remains 2336 passed.
