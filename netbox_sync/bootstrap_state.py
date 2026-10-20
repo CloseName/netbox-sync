@@ -18,15 +18,14 @@ STATES = frozenset({"FRESH", "CONFIGURED", "VALIDATING", "VALIDATED", "READY", "
 
 
 def checked_read(path):
+    """Read bounded bootstrap JSON only from an acceptable file, always closing its descriptor."""
+
     descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     try:
         info = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(info.st_mode)
-            or info.st_nlink != 1
-            or info.st_size > 32768
-            or (os.name == "posix" and (info.st_uid != 0 or stat.S_IMODE(info.st_mode) != 0o600))
-        ):
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > 32768:
+            raise ControlError("BOOTSTRAP_INVALID")
+        if os.name == "posix" and (info.st_uid != 0 or stat.S_IMODE(info.st_mode) != 0o600):
             raise ControlError("BOOTSTRAP_INVALID")
         raw = os.read(descriptor, 32769)
         value = json.loads(raw)
@@ -38,13 +37,19 @@ def checked_read(path):
 
 
 class BootstrapStore:
+    """Protected bootstrap state with atomic persistence and credential-free public projection."""
+
     def __init__(self, root, clock=time.time):
+        """Bind the protected state directory and injectable clock."""
+
         self.root = Path(root)
         self.path = self.root / "bootstrap.json"
         self.clock = clock
 
     @contextmanager
     def locked(self):
+        """Hold a nonblocking exclusive lock only inside a root-owned private directory."""
+
         import fcntl
 
         info = self.root.lstat()
@@ -67,6 +72,8 @@ class BootstrapStore:
             os.close(descriptor)
 
     def read(self):
+        """Read checked state or return a fresh default only when the file is absent."""
+
         try:
             return checked_read(self.path)
         except FileNotFoundError:
@@ -84,6 +91,8 @@ class BootstrapStore:
             }
 
     def write(self, value):
+        """Atomically replace state, synchronize file and directory, and remove a leftover temporary."""
+
         temporary = self.root / ("bootstrap-" + uuid4().hex + ".tmp")
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         try:
@@ -104,6 +113,8 @@ class BootstrapStore:
 
     @staticmethod
     def public(value):
+        """Project readiness and credential presence without returning credential values."""
+
         return {
             key: value[key] for key in ("revision", "status", "url", "completed", "safe_code", "checks", "validated_at")
         } | {
@@ -114,6 +125,8 @@ class BootstrapStore:
         }
 
     def status(self):
+        """Mark expired validation/preparation attempts interrupted or uncertain before projection."""
+
         with self.locked():
             value = self.read()
             if value["status"] == "VALIDATING" and self.clock() - value["validation_started"] > 60:
@@ -126,6 +139,8 @@ class BootstrapStore:
             return self.public(value)
 
     def configure(self, payload):
+        """Update endpoint and distinct credentials under revision, readiness and busy-state guards."""
+
         if set(payload) != {"action", "revision", "url", "read_token", "apply_token", "replace_credentials"}:
             raise ControlError("BOOTSTRAP_INVALID")
         url = payload["url"]
@@ -186,6 +201,8 @@ class BootstrapStore:
             return self.public(value)
 
     def validate(self, revision, probe):
+        """Probe outside the state lock and publish only a matching attempt with allowlisted evidence."""
+
         with self.locked():
             value = self.read()
             if type(revision) is not int or value["revision"] != revision:
@@ -275,6 +292,8 @@ class BootstrapStore:
             return self.public(current)
 
     def finish(self, revision):
+        """Mark a fresh successful validation ready at the expected revision."""
+
         with self.locked():
             value = self.read()
             if type(revision) is not int or value["revision"] != revision:
