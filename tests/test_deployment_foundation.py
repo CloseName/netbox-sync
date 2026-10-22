@@ -17,6 +17,12 @@ ROOT = Path(__file__).parents[1]
 COMPOSE = ROOT / 'compose.production.yml'
 
 
+@pytest.fixture(autouse=True)
+def isolated_runtime(tmp_path, monkeypatch):
+    """Offline installer tests must never create the host's real runtime directory."""
+    monkeypatch.setattr(install, 'GLOBAL_RUNTIME', tmp_path / 'runtime')
+
+
 def _release_tree(root, marker='one'):
     for relative in install.REQUIRED_RELEASE_FILES:
         path = root / relative

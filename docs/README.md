@@ -6,6 +6,10 @@ not proof that today's checkout or deployment passes those checks.
 
 ## Maintained entry points
 
+- [Agent working agreement](../AGENTS.md) and [chat project instructions](operations/chat-project.md).
+- [Known test operations](operations/test.md) and [production discovery requirements](operations/production.md):
+  environment-specific entry points before any deployment commands.
+
 - [Development](development.md): local setup and verification commands.
 - [Frontend](frontend.md): current routes and browser behavior, followed by older
   implementation notes. [Verification baseline](verification-baseline.md) records

@@ -19,6 +19,20 @@ The repository consolidation is separate from any production deployment.
 
 ## Existing execution boundaries
 
+### Rules for future implementation
+
+Keep collection, normalization, identity evidence, planning/policy and Guard writes
+in their existing layers. Extend the maintained integration rather than installing
+the old reconnaissance prototype beside it. Do not match resources by display name
+alone or promote weak port/NIC evidence to authoritative ownership. Test ambiguous
+identity, pagination, duplicate observations, partial writes and lost responses.
+Changes to shared policy must retain ESXi, Proxmox VM/LXC and pfSense contracts.
+Use the [development workflow](development.md); do not enable native reconciliation
+or account schedules in migrations, fixtures or deployment scripts. Acceptance
+requires an explicitly authorized test run and reconciliation of its result.
+
+### Runtime safeguards
+
 - Collection needs explicit account credentials and a configured importer token.
 - A missing schedule defaults to off. Account disable blocks new collection;
   it does not cancel an already running write.
