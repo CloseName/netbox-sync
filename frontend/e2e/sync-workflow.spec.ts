@@ -34,7 +34,7 @@ const retention = row("RETAIN_ONLY", {
   after: [],
 });
 
-test('observation-only plan has separate counts and still submits the canonical sync', async ({page})=>{
+test('observation-only plan cannot open confirmation or submit sync', async ({page})=>{
   const hardware={version:1,source:'esxi',status:'collected',identifiers:[],conflicts:[],observed_at:'2026-10-22T10:00:00Z'};
   const value=plan([row('UPDATE', {object_kind:'dcim.devices',name:'HOST',
     before:[['custom_fields',{hardware_identity:hardware}]],
@@ -49,16 +49,29 @@ test('observation-only plan has separate counts and still submits the canonical 
   await expect(page.locator('.plan-row')).toHaveCount(0);
   await page.getByRole('button',{name:'Show observation time updates',exact:true}).click();
   await expect(page.locator('.plan-row')).toHaveCount(1);
-  await expect(page.getByText('Only the hardware observation time will be refreshed; hardware content is unchanged.',{exact:true})).toBeVisible();
-  await page.getByRole('button',{name:'Review and confirm sync',exact:true}).click();
-  const dialog=page.getByRole('dialog');
-  await expect(dialog.getByText('Observation time updates',{exact:true})).toBeVisible();
-  await page.screenshot({path:'test-results/observation-time-confirmation.png',fullPage:true});
-  await dialog.getByRole('button',{name:'Sync to NetBox',exact:true}).click();
+  await expect(page.getByText('Only hardware observation time differs; hardware content is unchanged.',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Review and confirm sync',exact:true})).toBeDisabled();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(writes.filter(w=>w.path.endsWith('/sync')||w.path.endsWith('/sync-confirmations'))).toEqual([]);
+  expect(value.items[0].action).toBe('UPDATE');
+
+});
+
+test('content changes still permit sync with observation refreshes in the same plan', async ({page})=>{
+  const hardware={version:1,source:'proxmox',status:'unsupported_api',observed_at:'2026-10-22T10:00:00Z'};
+  const refresh=row('UPDATE',{object_kind:'dcim.devices',name:'HOST',
+    before:[['custom_fields',{hardware_identity:hardware}]],
+    after:[['custom_fields',{hardware_identity:{...hardware,observed_at:'<fresh-collection-time>'}}]],
+  });
+  const value=plan([row('UPDATE'),refresh,retention]);
+  const canonical=JSON.stringify(value);
+  const writes=await fixture(page,value);
+  await build(page);
+  await confirm(page);
   await expect.poll(()=>writes.filter(w=>w.path.endsWith('/sync')).length).toBe(1);
   expect(writes.find(w=>w.path.endsWith('/sync-confirmations')).body.plan_digest).toBe(digest);
   expect(writes.find(w=>w.path.endsWith('/sync')).body.confirmation_token).toBe('b'.repeat(64));
-  expect(value.items[0].action).toBe('UPDATE');
+  expect(JSON.stringify(value)).toBe(canonical);
 });
 
 test('recreated VM shows retained record link and leaves other changes applicable', async ({page})=>{

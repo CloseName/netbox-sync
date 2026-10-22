@@ -6,13 +6,13 @@ function item(source='esxi') {
  const fields={hardware_identity:{version:1,source,status:'collected',observed_at:'2026-10-22T10:00:00Z',identifiers:[],conflicts:[]},operator:'keep'};
  return {action:'UPDATE',object_kind:'dcim.devices',external_id:'1',matched_object_id:1,name:'HOST',reason:'',reason_code:'MANAGED_FIELD_UPDATE',before:[['custom_fields',fields]],after:[['custom_fields',{...fields,hardware_identity:{...fields.hardware_identity,observed_at:'<fresh-collection-time>'}}]]};
 }
-test('clock-only rows stay executable and canonical but leave substantive counts and Changes',()=>{
+test('clock-only rows cannot enable manual sync but stay in the canonical plan',()=>{
  for(const source of ['esxi','proxmox']) {
   const row=item(source), original=JSON.stringify(row);
   assert.equal(observationRefreshOnly(row),true);
   assert.equal(changedObjectCount([row]),0);
   assert.equal(planCounts([row]).UPDATE,1);
-  assert.equal(hasChanges([row]),true);
+  assert.equal(hasChanges([row]),false);
   assert.deepEqual(filterPlan([row],'Changes','','',''),[]);
   assert.deepEqual(filterPlan([row],'Observation time','','',''),[row]);
   assert.deepEqual(filterPlan([row],'All','UPDATE','',''),[row]);
@@ -37,5 +37,7 @@ test('real changes, incomplete evidence and other timestamps are never hidden',(
 test('mixed operations on the same device still count the substantive change',()=>{
  const refresh=item(), real=structuredClone(refresh);real.after.push(['name','NEW']);
  assert.equal(changedObjectCount([refresh,real]),1);
+ assert.equal(hasChanges([refresh,real]),true);
+ assert.equal(hasChanges([]),false);
  assert.deepEqual(filterPlan([refresh,real],'Changes','','',''),[real]);
 });
