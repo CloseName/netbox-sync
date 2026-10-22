@@ -158,58 +158,50 @@ class _NetworkIndex:
         self.ips_by_id = {item.id: item for item in self.ips}
         self.macs_by_id = {item.id: item for item in self.macs}
 
+        self.interfaces_by_owner = {}
+        for kind, relation in (("host", "device"), ("vm", "virtual_machine")):
+            for interface in self.interfaces[kind]:
+                data = _serialized(interface)
+                key = (kind, _object_id(data.get(relation)))
+                self.interfaces_by_owner.setdefault(key, []).append(data)
+        self.ips_by_interface = self._assigned(self.ips, "address", _canonical_ip)
+        self.macs_by_interface = self._assigned(self.macs, "mac_address", _canonical_mac)
+        self.object_networks = {}
+
+    @staticmethod
+    def _assigned(records, field, canonicalize):
+        """Index assignments by both content type and interface ID."""
+        result = {}
+        for record in records:
+            data = _serialized(record)
+            value = canonicalize(data.get(field))
+            if value:
+                key = (data.get("assigned_object_type"), _object_id(data.get("assigned_object_id")))
+                result.setdefault(key, set()).add(value)
+        return result
+
     def for_object(self, kind, record):
-        """Return usable addresses assigned to one target object."""
-
-        relation = "device" if kind == "host" else "virtual_machine"
+        """Reuse immutable evidence within this read snapshot, never across plans."""
+        key = (kind, record.id)
+        if key in self.object_networks:
+            return self.object_networks[key]
         assigned_type = "dcim.interface" if kind == "host" else "virtualization.vminterface"
-        interfaces = [
-            item for item in self.interfaces[kind] if _object_id(_serialized(item).get(relation)) == record.id
-        ]
-        interface_ids = {item.id for item in interfaces}
-        ips = set()
-        macs = set()
-
-        primary_ip = _relationship_value(
-            _serialized(record).get("primary_ip4"),
-            self.ips_by_id,
-            "address",
-        )
+        ips, macs = set(), set()
+        primary_ip = _relationship_value(_serialized(record).get("primary_ip4"), self.ips_by_id, "address")
         canonical = _canonical_ip(primary_ip)
         if canonical:
             ips.add(canonical)
-
-        for interface in interfaces:
-            primary_mac = _relationship_value(
-                _serialized(interface).get("primary_mac_address"),
-                self.macs_by_id,
-                "mac_address",
-            )
+        for interface in self.interfaces_by_owner.get(key, ()):
+            primary_mac = _relationship_value(interface.get("primary_mac_address"), self.macs_by_id, "mac_address")
             canonical = _canonical_mac(primary_mac)
             if canonical:
                 macs.add(canonical)
-
-        for address in self.ips:
-            data = _serialized(address)
-            if (
-                data.get("assigned_object_type") == assigned_type
-                and _object_id(data.get("assigned_object_id")) in interface_ids
-            ):
-                canonical = _canonical_ip(data.get("address"))
-                if canonical:
-                    ips.add(canonical)
-
-        for address in self.macs:
-            data = _serialized(address)
-            if (
-                data.get("assigned_object_type") == assigned_type
-                and _object_id(data.get("assigned_object_id")) in interface_ids
-            ):
-                canonical = _canonical_mac(data.get("mac_address"))
-                if canonical:
-                    macs.add(canonical)
-
-        return frozenset(ips), frozenset(macs)
+            assignment = (assigned_type, interface["id"])
+            ips.update(self.ips_by_interface.get(assignment, ()))
+            macs.update(self.macs_by_interface.get(assignment, ()))
+        result = (frozenset(ips), frozenset(macs))
+        self.object_networks[key] = result
+        return result
 
 
 def _discovered_network(kind, discovered):
