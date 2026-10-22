@@ -34,6 +34,33 @@ const retention = row("RETAIN_ONLY", {
   after: [],
 });
 
+test('observation-only plan has separate counts and still submits the canonical sync', async ({page})=>{
+  const hardware={version:1,source:'esxi',status:'collected',identifiers:[],conflicts:[],observed_at:'2026-10-22T10:00:00Z'};
+  const value=plan([row('UPDATE', {object_kind:'dcim.devices',name:'HOST',
+    before:[['custom_fields',{hardware_identity:hardware}]],
+    after:[['custom_fields',{hardware_identity:{...hardware,observed_at:'<fresh-collection-time>'}}]],
+  }),retention]);
+  const writes=await fixture(page,value);
+  await build(page);
+  const summary=page.locator('.plan-review .sync-summary');
+  await expect(summary.locator('div').filter({has:page.locator('dt',{hasText:'Unique changed objects'})}).locator('dd')).toHaveText('0');
+  await expect(summary.locator('div').filter({has:page.locator('dt',{hasText:'Update operations'})}).locator('dd')).toHaveText('0');
+  await expect(summary.locator('div').filter({has:page.locator('dt',{hasText:'Observation time updates'})}).locator('dd')).toHaveText('1');
+  await expect(page.locator('.plan-row')).toHaveCount(0);
+  await page.getByRole('button',{name:'Show observation time updates',exact:true}).click();
+  await expect(page.locator('.plan-row')).toHaveCount(1);
+  await expect(page.getByText('Only the hardware observation time will be refreshed; hardware content is unchanged.',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Review and confirm sync',exact:true}).click();
+  const dialog=page.getByRole('dialog');
+  await expect(dialog.getByText('Observation time updates',{exact:true})).toBeVisible();
+  await page.screenshot({path:'test-results/observation-time-confirmation.png',fullPage:true});
+  await dialog.getByRole('button',{name:'Sync to NetBox',exact:true}).click();
+  await expect.poll(()=>writes.filter(w=>w.path.endsWith('/sync')).length).toBe(1);
+  expect(writes.find(w=>w.path.endsWith('/sync-confirmations')).body.plan_digest).toBe(digest);
+  expect(writes.find(w=>w.path.endsWith('/sync')).body.confirmation_token).toBe('b'.repeat(64));
+  expect(value.items[0].action).toBe('UPDATE');
+});
+
 test('recreated VM shows retained record link and leaves other changes applicable', async ({page})=>{
   await fixture(page, plan([row('UPDATE'), row('REVIEW_REQUIRED', {
     object_kind:'vm', name:'Replacement VM', external_id:'new-uuid',

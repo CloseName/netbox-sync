@@ -1,5 +1,5 @@
 import {useLanguage} from '../ui/language';
-import {readablePlanItem,planReason,planParent,changedObjectCount} from '../ui/plan';
+import {readablePlanItem,planReason,planParent,changedObjectCount,observationRefreshOnly} from '../ui/plan';
 import {hasChanges,emptyPlanLabel} from '../ui/plan';
 import {tr} from "../ui/i18n";
 import { useState, Fragment, type ReactNode } from "react";
@@ -20,7 +20,8 @@ import { Badge, Timestamp } from "../ui/primitives";
 export function PlanSummary({ plan }: { plan: SyncPlan }) {
   const [language]=useLanguage();
   if(plan.conflicts?.length)return <p role="status">{language==='ru'?'Подсчёт изменений не завершён: план заблокирован.':'Change calculation is incomplete: the plan is blocked.'}</p>;
-  const counts = planCounts(plan.items);
+  const refreshes = plan.items.filter(observationRefreshOnly).length;
+  const counts = planCounts(plan.items.filter(item=>!observationRefreshOnly(item)));
   return (
     <dl className="sync-summary"><div><dt>{tr("Unique changed objects")}</dt><dd>{changedObjectCount(plan.items)}</dd></div>
       {Object.entries(counts)
@@ -35,6 +36,7 @@ export function PlanSummary({ plan }: { plan: SyncPlan }) {
             <dd>{count}</dd>
           </div>
         ))}
+      {!!refreshes && <div><dt>{tr("Observation time updates")}</dt><dd>{refreshes}</dd></div>}
     </dl>
   );
 }
@@ -86,6 +88,7 @@ export function PlanReview({
       <p className="muted">
         {tr("Plan received")}{" "}<Timestamp value={received} />{tr(". The plan is checked again before sync.")}{" "}</p>
       <PlanSummary plan={plan} />
+      {plan.items.some(observationRefreshOnly) && <p className="muted">{tr('Observation time updates are shown separately from content changes. Sync still saves the new observation time.')} <button onClick={()=>{setView('Observation time');setAction('');setKind('');setSearch('');setLimit(50);}}>{tr('Show observation time updates')}</button></p>}
       {plan.items.some(item=>['IP_OBSERVATION_ONLY','MAC_OBSERVATION_ONLY'].includes(item.reason_code))&&<section className="sync-attention" aria-label={t('Incomplete network assignments','Неполные сетевые назначения')}>
         <h4>{t('Some network assignments require review','Часть сетевых назначений требует проверки')}</h4>
         <p>{t('The plan saves disputed addresses, masks and MACs on NetBox interfaces as observations. It does not assign them. Existing assignments are retained.','План сохраняет спорные адреса, маски и MAC на интерфейсах NetBox как наблюдения, без назначения. Существующие назначения сохраняются.')}</p>
@@ -122,7 +125,7 @@ export function PlanReview({
       {(!plan.conflicts?.length||plan.items.some(item=>item.action!=='BLOCKED'&&!policyRow(item)))&&<>
       <div className="sync-filters">
         <div className="view-options" role="group" aria-label={tr("Plan view")}>
-          {(["Changes", "Attention", "All"] as PlanView[]).map((value) => (
+          {(["Changes", "Attention", "Observation time", "All"] as PlanView[]).map((value) => (
             <button
               key={value}
               aria-pressed={view === value}
@@ -233,7 +236,8 @@ function PlanRow({ item,raw }: { item: SyncPlanItem;raw:SyncPlanItem }) {
   const evidence=raw.before.find(([key])=>key==='matching_candidates')?.[1];
   const candidates=Array.isArray(evidence)?evidence.filter((c):c is {id:number;name:string;url:string;external_ids:string[]}=>
     c && Number.isInteger(c.id) && c.id>0 && typeof c.name==='string' && typeof c.url==='string' && Array.isArray(c.external_ids) && c.external_ids.every((v:unknown)=>typeof v==='string')):[];
-  const reason=replacing?(language==='ru'?'VM пересоздана. Обновим существующую карточку, сохранив её ID.':'VM recreated. Update its existing card and retain its ID.'):
+  const refreshOnly=observationRefreshOnly(raw);
+  const reason=refreshOnly?tr('Only the hardware observation time will be refreshed; hardware content is unchanged.'):replacing?(language==='ru'?'VM пересоздана. Обновим существующую карточку, сохранив её ID.':'VM recreated. Update its existing card and retain its ID.'):
     recreated?(language==='ru'?'Имя занято сохранённой VM. Только эта машина пропущена; остальные могут синхронизироваться.':'Name belongs to a retained VM. Only this VM is skipped; other objects can synchronize.'):planReason(item);
   const fields = managedFields(item);
   return (
@@ -243,7 +247,7 @@ function PlanRow({ item,raw }: { item: SyncPlanItem;raw:SyncPlanItem }) {
           <strong>{item.name}</strong>
           <span className="muted">{tr(kindLabel(item.object_kind))}</span>
         </span>
-        <Badge value={actionStatus(item.action)} />
+        <Badge value={refreshOnly ? {label:"Observation time update",tone:"neutral",icon:"◷"} : actionStatus(item.action)} />
         <span className="plan-reason">{reason}</span>
         <span className="muted">{tr("Details")}{" "}</span>
       </summary>
