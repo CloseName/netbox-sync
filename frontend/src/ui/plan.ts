@@ -58,7 +58,30 @@ export const countLabels: Record<SyncAction, string> = {
   IGNORED: "Ignored rows",
   UNSUPPORTED: "Unsupported rows",
 };
-export type PlanView = "Changes" | "Attention" | "All";
+/** Presentation only: never change actions, payloads, digests or apply eligibility. */
+export function observationRefreshOnly(item: SyncPlanItem): boolean {
+  if (item.action !== 'UPDATE' || item.object_kind !== 'dcim.devices') return false;
+  const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+  const before = Object.fromEntries(item.before), after = Object.fromEntries(item.after);
+  if (Object.keys(before).length !== item.before.length || Object.keys(after).length !== item.after.length) return false;
+  const hardware = (v: Record<string, unknown>) => object(v.custom_fields) && object(v.custom_fields.hardware_identity) ? v.custom_fields.hardware_identity : null;
+  const old = hardware(before), next = hardware(after);
+  if (!old || !next || old.version !== 1 || next.version !== 1 ||
+      !['esxi','proxmox'].includes(String(old.source)) || old.source !== next.source ||
+      typeof old.observed_at !== 'string' || !old.observed_at ||
+      typeof next.observed_at !== 'string' || !next.observed_at || old.observed_at === next.observed_at) return false;
+  const stable = (v: unknown): string => {
+    if (Array.isArray(v)) return '[' + v.map(stable).join(',') + ']';
+    if (object(v)) return '{' + Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+stable(v[k])).join(',') + '}';
+    return JSON.stringify(v) ?? 'undefined';
+  };
+  const withoutClock = (v: Record<string,unknown>, doc: Record<string,unknown>) => {
+    const {observed_at: _clock, ...content} = doc;
+    return {...v, custom_fields: {...v.custom_fields as Record<string,unknown>, hardware_identity: content}};
+  };
+  return stable(withoutClock(before, old)) === stable(withoutClock(after, next));
+}
+export type PlanView = "Changes" | "Attention" | "All" | "Observation time";
 export function filterPlan(
   items: SyncPlanItem[],
   view: PlanView,
@@ -71,10 +94,9 @@ export function filterPlan(
     (item) =>
       !policyRow(item) &&
       (view === "All" ||
-        (view === "Changes"
-          ? ["CREATE", "UPDATE"]
-          : ["REVIEW_REQUIRED", "BLOCKED", "UNSUPPORTED"]
-        ).includes(item.action)) &&
+        (view === "Observation time" ? observationRefreshOnly(item) : view === "Changes"
+          ? ["CREATE", "UPDATE"].includes(item.action) && !observationRefreshOnly(item)
+          : ["REVIEW_REQUIRED", "BLOCKED", "UNSUPPORTED"].includes(item.action))) &&
       (!action || item.action === action) &&
       (!kind || item.object_kind === kind) &&
       (!query ||
@@ -222,7 +244,7 @@ export function planParent(item:SyncPlanItem,items:SyncPlanItem[],seen=new Set<S
 /** Count mutation targets, not operations. Endpoint + canonical target ID keeps
  * create/update pairs together without conflating same-named objects. */
 export function changedObjectCount(items:SyncPlanItem[]):number {
- const keys=items.filter(i=>i.action==='CREATE'||i.action==='UPDATE').map(i=>{
+ const keys=items.filter(i=>(i.action==='CREATE'||i.action==='UPDATE')&&!observationRefreshOnly(i)).map(i=>{
   const id=i.matched_object_id??new Map(i.after).get('id')??i.external_id;
   return JSON.stringify([i.object_kind,id]);
  });
