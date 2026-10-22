@@ -150,7 +150,8 @@ export function kindLabel(kind: string) {
   return labels[kind] ?? kind;
 }
 
-export const hasChanges = (items:SyncPlanItem[]) => items.some(i=>i.action==='CREATE'||i.action==='UPDATE');
+/** Manual sync needs substantive work; clock refreshes stay in the submitted plan. */
+export const hasChanges = (items:SyncPlanItem[]) => items.some(i=>(i.action==='CREATE'||i.action==='UPDATE')&&!observationRefreshOnly(i));
 export function emptyPlanLabel(items:SyncPlanItem[]) {
   const objects=items.filter(i=>!policyRow(i));
 

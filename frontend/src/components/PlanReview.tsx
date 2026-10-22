@@ -88,7 +88,7 @@ export function PlanReview({
       <p className="muted">
         {tr("Plan received")}{" "}<Timestamp value={received} />{tr(". The plan is checked again before sync.")}{" "}</p>
       <PlanSummary plan={plan} />
-      {plan.items.some(observationRefreshOnly) && <p className="muted">{tr('Observation time updates are shown separately from content changes. Sync still saves the new observation time.')} <button onClick={()=>{setView('Observation time');setAction('');setKind('');setSearch('');setLimit(50);}}>{tr('Show observation time updates')}</button></p>}
+      {plan.items.some(observationRefreshOnly) && <p className="muted">{tr('Observation time alone does not enable manual sync. The date is saved when synchronizing content changes.')} <button onClick={()=>{setView('Observation time');setAction('');setKind('');setSearch('');setLimit(50);}}>{tr('Show observation time updates')}</button></p>}
       {plan.items.some(item=>['IP_OBSERVATION_ONLY','MAC_OBSERVATION_ONLY'].includes(item.reason_code))&&<section className="sync-attention" aria-label={t('Incomplete network assignments','Неполные сетевые назначения')}>
         <h4>{t('Some network assignments require review','Часть сетевых назначений требует проверки')}</h4>
         <p>{t('The plan saves disputed addresses, masks and MACs on NetBox interfaces as observations. It does not assign them. Existing assignments are retained.','План сохраняет спорные адреса, маски и MAC на интерфейсах NetBox как наблюдения, без назначения. Существующие назначения сохраняются.')}</p>
@@ -237,7 +237,7 @@ function PlanRow({ item,raw }: { item: SyncPlanItem;raw:SyncPlanItem }) {
   const candidates=Array.isArray(evidence)?evidence.filter((c):c is {id:number;name:string;url:string;external_ids:string[]}=>
     c && Number.isInteger(c.id) && c.id>0 && typeof c.name==='string' && typeof c.url==='string' && Array.isArray(c.external_ids) && c.external_ids.every((v:unknown)=>typeof v==='string')):[];
   const refreshOnly=observationRefreshOnly(raw);
-  const reason=refreshOnly?tr('Only the hardware observation time will be refreshed; hardware content is unchanged.'):replacing?(language==='ru'?'VM пересоздана. Обновим существующую карточку, сохранив её ID.':'VM recreated. Update its existing card and retain its ID.'):
+  const reason=refreshOnly?tr('Only hardware observation time differs; hardware content is unchanged.'):replacing?(language==='ru'?'VM пересоздана. Обновим существующую карточку, сохранив её ID.':'VM recreated. Update its existing card and retain its ID.'):
     recreated?(language==='ru'?'Имя занято сохранённой VM. Только эта машина пропущена; остальные могут синхронизироваться.':'Name belongs to a retained VM. Only this VM is skipped; other objects can synchronize.'):planReason(item);
   const fields = managedFields(item);
   return (

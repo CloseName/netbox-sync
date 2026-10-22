@@ -3,8 +3,8 @@ export const ru: Record<string,string> = {
   "Observation time updates": "Обновления времени наблюдения",
   "Observation time update": "Обновление времени наблюдения",
   "Show observation time updates": "Показать обновления времени наблюдения",
-  "Observation time updates are shown separately from content changes. Sync still saves the new observation time.": "Обновления времени наблюдения показаны отдельно от изменений данных. Синхронизация по-прежнему сохраняет новую дату наблюдения.",
-  "Only the hardware observation time will be refreshed; hardware content is unchanged.": "Обновится только время наблюдения за оборудованием; сведения об оборудовании не изменились.",
+  "Observation time alone does not enable manual sync. The date is saved when synchronizing content changes.": "Изменение только времени наблюдения не разрешает ручную синхронизацию. Дата сохраняется при синхронизации изменений данных.",
+  "Only hardware observation time differs; hardware content is unchanged.": "Отличается только время наблюдения; сведения об оборудовании не изменились.",
 
   "What needs your attention and what to do next.": "Что требует внимания и что делать дальше.",
   "Check system health": "Проверить состояние системы",
