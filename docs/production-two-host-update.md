@@ -1,5 +1,10 @@
 # Two-host production update
 
+Before using this topology-specific procedure, follow
+[production discovery requirements](operations/production.md). The paths below are
+not a verified current inventory; `resume` activates schedules and requires explicit
+authorization. This procedure must not be used for the paused-schedule test workflow.
+
 Use the same clean pinned release on both machines.
 
 1. On netbox-sync: bash deploy/update-production-sync.sh pause
