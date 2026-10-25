@@ -78,15 +78,19 @@ class GuardUpdate:
     def preflight(self):
         if ROOT.resolve() != ROOT:
             raise GuardUpdateError('GUARD_ROOT_SYMLINK_OUTSIDE_TEST')
-        containers = json.loads(self.run('docker', 'inspect', 'netbox', 'netbox-worker'))
-        identities = [compose_identity(c) for c in containers]
-        if len(containers) != 2 or identities[0] != identities[1]:
-            raise GuardUpdateError('GUARD_PROJECT_MISMATCH')
-        project, files = identities[0]
+        main = json.loads(self.run('docker', 'inspect', 'netbox'))[0]
+        identity = compose_identity(main)
+        project, files = identity
         if any(Path(p).resolve().parent != ROOT and ROOT not in Path(p).resolve().parents for p in files):
             raise GuardUpdateError('GUARD_COMPOSE_SYMLINK_OUTSIDE_TEST')
         self.command = ('docker', 'compose', '--project-directory', str(ROOT), '-p', project,
                         *(item for p in files for item in ('-f', p)))
+        worker = self.compose('ps', '-q', 'netbox-worker').split()
+        if len(worker) != 1:
+            raise GuardUpdateError('GUARD_WORKER_AMBIGUOUS')
+        containers = [main, json.loads(self.run('docker', 'inspect', worker[0]))[0]]
+        if compose_identity(containers[1]) != identity:
+            raise GuardUpdateError('GUARD_PROJECT_MISMATCH')
         config = json.loads(self.compose('config', '--no-env-resolution', '--format', 'json'))
         services = config['services']
         self.tag = services['netbox']['image']
@@ -134,7 +138,7 @@ class GuardUpdate:
             raise GuardUpdateError('GUARD_DATABASE_AMBIGUOUS')
         self.database = ids[0]
         database = json.loads(self.run('docker', 'inspect', self.database))[0]
-        if compose_identity(database) != identities[0]:
+        if compose_identity(database) != identity:
             raise GuardUpdateError('GUARD_DATABASE_PROJECT_MISMATCH')
         self.db = db
         self.run('docker', 'exec', self.database, 'pg_dump', '--version')
@@ -194,7 +198,10 @@ class GuardUpdate:
                      '--wait-timeout', '180', 'netbox', 'netbox-worker')
 
     def verify(self):
-        for container in json.loads(self.run('docker', 'inspect', 'netbox', 'netbox-worker')):
+        ids = self.compose('ps', '-q', 'netbox', 'netbox-worker').split()
+        if len(ids) != 2:
+            raise GuardUpdateError('GUARD_RUNTIME_MISSING')
+        for container in json.loads(self.run('docker', 'inspect', *ids)):
             if container['Image'] != self.new_image or not container['State']['Running'] or \
                     container['State'].get('Health', {}).get('Status', 'healthy') != 'healthy':
                 raise GuardUpdateError('GUARD_RUNTIME_MISMATCH')

@@ -52,6 +52,14 @@ def test_namespace_change_never_confirms():
     assert result["error"] == "IMPORT_UNCONFIRMED"
 
 
+def test_confirmation_does_not_resume_a_due_schedule():
+    current = state()
+    current.update(schedule={"kind": "daily"}, next_run=1)
+    result = recovery.reconciled_state(current, receipt(), INSTANCE, now=123)
+    assert result["next_run"] is None
+    assert result["schedule"] == {"kind": "daily"}
+
+
 def test_exact_receipt_confirms_without_changing_schedule_or_finished_at():
     original = state()
     original["finished_at"] = 100

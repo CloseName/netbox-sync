@@ -23,8 +23,9 @@ or live acceptance is implied by this implementation.
   [outstanding work](selectel-backlog.md).
 - The GitHub integration run for 11a48eb failed in the native Selectel scenario:
   `provider_placement.ensure` raised `DependencyGuardBlocked: PERMISSION_DENIED`
-  while creating a Region. This is an open native-import acceptance failure,
-  not evidence of successful end-to-end integration.
+  while creating a Region. PR #113 subsequently fixed creation permission checks
+  against saved rows with transactional rollback. The historical failure is not
+  current CI evidence, and the code fix is not acceptance of the test installation.
 
 ## Existing execution boundaries
 

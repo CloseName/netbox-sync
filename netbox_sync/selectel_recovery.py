@@ -43,7 +43,9 @@ def reconciled_state(state, evidence, instance, *, now):
                 outcome = "conflict"
             else:
                 # A retained summary can belong to an older run; do not attach its coverage.
-                updated.update(status="completed", error=None, summary={**evidence["result"], "products": []})
+                updated.update(
+                    status="completed", error=None, next_run=None, summary={**evidence["result"], "products": []}
+                )
     updated["reconciliation"] = {"outcome": outcome, "checked_at": now, "run_id": state.get("run_id")}
     return updated
 

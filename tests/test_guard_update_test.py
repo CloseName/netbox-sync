@@ -66,7 +66,9 @@ def installation(monkeypatch):
         if args[0] == 'curl':
             return '200'
         if args[:3] == ('docker', 'inspect', 'netbox'):
-            return json.dumps(containers)
+            return json.dumps(containers[:1])
+        if args[:3] == ('docker', 'inspect', 'worker-id'):
+            return json.dumps(containers[1:])
         if args[:3] == ('docker', 'inspect', 'database-id'):
             return json.dumps([container])
         if 'config' in args and '--format' in args:
@@ -75,6 +77,8 @@ def installation(monkeypatch):
             return 'GUARD_DB:' + json.dumps(dict(HOST='postgres', NAME='netbox', USER='netbox', NATIVE=False))
         if args[-3:] == ('ps', '-q', 'postgres'):
             return 'database-id'
+        if args[-3:] == ('ps', '-q', 'netbox-worker'):
+            return 'worker-id'
         return ''
     update = guard.GuardUpdate(run, Path(__file__).parents[1], 'b'*40)
     return update, containers, services, calls

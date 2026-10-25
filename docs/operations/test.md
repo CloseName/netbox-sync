@@ -19,7 +19,7 @@ Operator-confirmed on 22 October 2026; revalidate before each update:
 | Public Sync URL | `https://netbox-sync-test.indeed-id.hq` |
 | Target NetBox | `https://netbox-test.indeed-id.hq`, previously resolved to `10.24.0.6` |
 | Ingress | external; host nginx forwards to the Sync proxy |
-| NetBox Compose root | `/netbox-test`; not updated by this procedure |
+| NetBox Compose root | `/netbox-test`; Guard updated only with explicit `--with-guard` |
 | Scheduling | `netbox-sync.timer` inactive, schedule worker stopped; Selectel schedules off |
 
 The operator confirmed PR #111 deployed and the UI recovered after the explicit

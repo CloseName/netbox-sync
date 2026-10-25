@@ -3,7 +3,7 @@
 This is an optional stage of the reviewed `deploy/update_test.py`, not a new
 installer, GitHub deployment credential, production path or import authorization.
 The operator approves a merged full SHA and deployment separately. No manual
-server diagnostic commands are part of this workflow. The existing release
+server diagnostic commands are part of this workflow. The release
 executor loads the approved version and runs its saved updater. Transport/start
 of the release executor remains the installation's deployment mechanism; this PR
 does not install a privileged web updater or a GitHub runner on the server.
@@ -49,6 +49,10 @@ All generic child commands have a 30-minute ceiling; dump/list and HTTPS checks
 have shorter bounds. The known test stack must fit the discovered contract;
 unknown installation layouts fail closed and need a code change.
 
+Compose must support JSON configuration and `--no-env-resolution` so the updater
+can include referenced env files in the private backup without exposing their
+contents. See the [Compose config reference](https://docs.docker.com/reference/cli/docker/compose/config/).
+
 ## Compatibility and receipt semantics
 
 The authenticated account-import preflight now advertises `selectel_protocol: 1`
@@ -74,7 +78,8 @@ a write. A receipt must belong to the same account and actor. Outcomes:
 
 New runs atomically persist their canonical payload digest and Guard instance
 **before** sending import. A later confirmed receipt changes only completion and
-the receipt summary; it does not schedule another run. Recovered receipts cannot
+the receipt summary; it clears any pending due time and does not resume schedules.
+Recovered receipts cannot
 reuse an older run's product coverage. Original UUID and finish timestamp remain,
 with a separate reconciliation timestamp. These intent fields remain private.
 

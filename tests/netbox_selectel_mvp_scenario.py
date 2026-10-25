@@ -182,3 +182,14 @@ with transaction.atomic():
     transaction.set_rollback(True)
 assert VirtualMachine.objects.count() == before_count
 print('Account receipt lookup: exact receipt, absent/partial evidence, account isolation; no import replay OK')
+
+from io import StringIO
+from django.core.management.base import CommandError
+from netbox_guard.release_manifest import manifest, fingerprint
+import netbox_guard
+release = fingerprint(manifest(Path(netbox_guard.__file__).parent))
+report = StringIO()
+call_command('sync_guard_release_check', expected=release, stdout=report)
+assert 'GUARD_CHECK:' in report.getvalue() and release in report.getvalue()
+rejected(lambda: call_command('sync_guard_release_check', expected='0'*64, stdout=StringIO()), (CommandError,))
+print('Loaded Guard content and importer compatibility checks OK')
