@@ -33,6 +33,14 @@ requires an explicitly authorized test run and reconciliation of its result.
 
 ### Runtime safeguards
 
+- A completed account import requires a structured Guard result for the requested
+  account, with nonnegative integer counts, boolean write/replay flags, placement
+  results and a recognized native mode (including native counts in automatic mode).
+  Empty, malformed or wrong-account responses remain `IMPORT_UNCONFIRMED`; no
+  automatic retry or state reset follows. This validates the existing response
+  contract; it does not implement historical receipt reconciliation or certify
+  provider coverage/native matching.
+
 - Collection needs explicit account credentials and a configured importer token.
 - A missing schedule defaults to off. Account disable blocks new collection;
   it does not cancel an already running write.
