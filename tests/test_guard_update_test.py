@@ -146,3 +146,42 @@ def test_activation_starts_only_netbox_services_after_migration(installation):
     assert 'migrate' in calls[3]
     assert calls[4][-2:] == ('netbox', 'netbox-worker')
     assert '--no-deps' in calls[4] and '--no-build' in calls[4] and '--pull' in calls[4]
+
+
+@pytest.mark.parametrize('failure', [None, 'pg_dump', 'pg_restore', 'tar'])
+def test_backup_failure_never_reports_verified_or_changes_configured_image(monkeypatch, tmp_path, capsys, failure):
+    import subprocess
+    monkeypatch.setattr(guard, 'BACKUPS', tmp_path)
+    calls = []
+    def run(*args):
+        calls.append(args)
+        if args[0] == failure:
+            raise subprocess.CalledProcessError(1, args)
+        return ''
+    def process(args, **kwargs):
+        calls.append(tuple(args))
+        if failure in args:
+            raise subprocess.CalledProcessError(1, args)
+        if 'pg_dump' in args:
+            assert kwargs['stdin'] == subprocess.DEVNULL
+            kwargs['stdout'].write(b'PGDMP-fixture')
+        else:
+            assert kwargs['stdin'].read() == b'PGDMP-fixture'
+        return None
+    monkeypatch.setattr(subprocess, 'run', process)
+    update = guard.GuardUpdate(run, tmp_path, 'a'*40)
+    update.command = ('docker', 'compose')
+    update.database, update.db = 'db-id', dict(USER='netbox', NAME='netbox')
+    update.old_image, update.tag = 'sha256:' + 'b'*64, 'netbox-with-sync-guard:test'
+    update.fingerprint, update.backup_paths = 'c'*64, {'/netbox-test/config'}
+    if failure:
+        with pytest.raises(subprocess.CalledProcessError):
+            update.backup()
+    else:
+        update.backup()
+        assert (update.bundle / 'database.dump').read_bytes() == b'PGDMP-fixture'
+        assert json.loads((update.bundle / 'release.json').read_text())['previous_image'] == update.old_image
+    output = capsys.readouterr().out
+    assert ('GUARD_BACKUP_VERIFIED:' in output) == (failure is None)
+    assert calls[0] == ('docker', 'compose', 'stop', 'netbox-worker', 'netbox')
+    assert not any('migrate' in call or 'up' in call or update.tag in call for call in calls)

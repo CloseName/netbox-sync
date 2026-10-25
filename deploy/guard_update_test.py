@@ -10,6 +10,7 @@ import time
 from contextlib import contextmanager
 
 ROOT = Path('/netbox-test')
+BACKUPS = Path('/netbox-sync-test/backups')
 PYTHON = '/opt/netbox/venv/bin/python'
 MANAGE = '/opt/netbox/netbox/manage.py'
 
@@ -82,7 +83,8 @@ class GuardUpdate:
             if not re.fullmatch(r'[0-9a-f]{64}', expected) or actual != [service, expected]:
                 raise GuardUpdateError('GUARD_CONFIG_DRIFT')
 
-    def preflight(self):
+    def _compose_installation(self):
+        """Identify the running services and reject configuration/image drift."""
         if ROOT.resolve() != ROOT:
             raise GuardUpdateError('GUARD_ROOT_SYMLINK_OUTSIDE_TEST')
         main = json.loads(self.run('docker', 'inspect', 'netbox'))[0]
@@ -110,10 +112,14 @@ class GuardUpdate:
         if any(c['Image'] != self.old_image or c['Config']['Image'] != self.tag or
                not c['State']['Running'] for c in containers) or services['netbox-worker']['image'] != self.tag:
             raise GuardUpdateError('GUARD_RUNNING_IMAGE_MISMATCH')
+        return identity, files, containers, config
+
+    def _backup_configuration(self, files, containers, config):
+        """Select only discovered configuration files and test-local bind sources."""
         self.backup_paths = set(files)
         if (ROOT / '.env').exists():
             self.backup_paths.add(str(ROOT / '.env'))
-        for service in services.values():
+        for service in config["services"].values():
             for env in service.get('env_file', []):
                 self.backup_paths.add(env['path'] if isinstance(env, dict) else env)
         for kind in ('configs', 'secrets'):
@@ -135,6 +141,9 @@ class GuardUpdate:
                     if ROOT not in path.parents:
                         raise GuardUpdateError('GUARD_MOUNT_OUTSIDE_TEST')
                     self.backup_paths.add(str(path))
+
+    def _database_preflight(self, identity, services):
+        """Verify local database identity and tools without dumping or migrating."""
         # Derive database identity from Django; never print passwords or environment.
         db = marked(self.manage('shell', '-c',
             "import json; from django.conf import settings; d=settings.DATABASES['default']; "
@@ -155,6 +164,9 @@ class GuardUpdate:
         self.run('docker', 'exec', self.database, 'pg_restore', '--version')
         self.manage('migrate', '--check')
         self.https()
+
+    def _source_fingerprint(self):
+        """Identify all Guard content including the two Dockerfile overlays."""
         spec = importlib.util.spec_from_file_location('guard_manifest', self.source / 'deploy/netbox_guard/release_manifest.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -162,6 +174,13 @@ class GuardUpdate:
             'hardware_identity.py': self.source / 'netbox_sync/hardware_identity.py',
             'pfsense_preview.py': self.source / 'netbox_sync/pfsense_preview.py',
         }))
+
+    def preflight(self):
+        """Validate target, backup inputs and release content before any mutation."""
+        identity, files, containers, config = self._compose_installation()
+        self._backup_configuration(files, containers, config)
+        self._database_preflight(identity, config['services'])
+        self._source_fingerprint()
 
     def build(self):
         # Reuse the exact installed NetBox base, not a moving upstream tag.
@@ -176,7 +195,7 @@ class GuardUpdate:
     def backup(self):
         # Sync is already paused and backed up by update_test before this stage.
         self.compose('stop', 'netbox-worker', 'netbox')
-        self.bundle = Path('/netbox-sync-test/backups') / ('guard-' + time.strftime('%Y%m%d-%H%M%S') + '-' + self.commit[:12])
+        self.bundle = BACKUPS / ('guard-' + time.strftime('%Y%m%d-%H%M%S') + '-' + self.commit[:12])
         self.bundle.mkdir(mode=0o700)
         print('GUARD_BACKUP_PATH:', self.bundle, flush=True)
         archive = self.bundle / 'database.dump'

@@ -94,3 +94,19 @@ The two historical accounts 29916 and 435835 have no receipts in the supplied
 them blocked if that remains true. It does not turn them green or invent a safe
 retry. Live acceptance, full resource coverage, matching and idempotency still
 require separately authorized testing; Selectel remains experimental.
+
+## Local implementation evidence, 25 October 2026
+
+Full Python suite: 2841 passed, 491 skipped, one existing Starlette/httpx warning.
+After separating the preflight helpers, the 61 updater checks passed again.
+Formatting passed; Python lint remained 9.41/10. Frontend: 96 unit tests, build
+and four Selectel browser scenarios passed (existing bundle-size warning).
+Windows restricted execution initially failed on temporary-directory/esbuild
+access; local reruns with the necessary filesystem access passed.
+
+The PR additionally runs the actual Guard model/API checks in disposable
+NetBox/PostgreSQL, including receipt isolation and loaded-content verification.
+Its final CI results are recorded in the PR. These checks do not establish that
+the known test server has been updated, that the complete host updater has been
+rehearsed there, or that historical imports are resolved. No live update/import
+was performed while preparing this change.
