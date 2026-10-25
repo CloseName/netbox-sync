@@ -13,6 +13,7 @@ def receipt():
 
 
 @pytest.mark.parametrize("response", [{}, {"ready": True}, {"account": "29916"},
+    {"error": None}, {"error": ""}, {"error": "unknown"}, {"error": []},
     {**receipt(), "account": "435835"}, {**receipt(), "servers": True},
     {**receipt(), "matched": -1}, {**receipt(), "writes_performed": "yes"},
     {**receipt(), "native_mode": "automatic"}])

@@ -164,8 +164,8 @@ def _execute_run(run, progress):
                 },
                 90,
             )
-        if "error" in imported:
-            result = imported
+        if imported.get("error") in ("IMPORT_UNCONFIRMED", "NETBOX_IMPORT_REFUSED", "SELECTEL_RESULT_TOO_LARGE"):
+            result = {"error": imported["error"]}
         elif not confirmed_import(imported, run.account):
             result = {"error": "IMPORT_UNCONFIRMED"}
         else:
