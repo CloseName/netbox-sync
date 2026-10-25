@@ -75,6 +75,13 @@ class GuardUpdate:
         if status != '200':
             raise GuardUpdateError('GUARD_HTTPS_FAILED')
 
+    def check_config_hashes(self):
+        """Do not apply unrelated pending Compose/env changes during a Guard update."""
+        for service, expected in self.config_hashes.items():
+            actual = self.compose('config', '--hash', service).split()
+            if not re.fullmatch(r'[0-9a-f]{64}', expected) or actual != [service, expected]:
+                raise GuardUpdateError('GUARD_CONFIG_DRIFT')
+
     def preflight(self):
         if ROOT.resolve() != ROOT:
             raise GuardUpdateError('GUARD_ROOT_SYMLINK_OUTSIDE_TEST')
@@ -91,6 +98,9 @@ class GuardUpdate:
         containers = [main, json.loads(self.run('docker', 'inspect', worker[0]))[0]]
         if compose_identity(containers[1]) != identity:
             raise GuardUpdateError('GUARD_PROJECT_MISMATCH')
+        self.config_hashes = {service: container['Config']['Labels'].get('com.docker.compose.config-hash', '')
+                              for service, container in zip(('netbox', 'netbox-worker'), containers)}
+        self.check_config_hashes()
         config = json.loads(self.compose('config', '--no-env-resolution', '--format', 'json'))
         services = config['services']
         self.tag = services['netbox']['image']
@@ -191,6 +201,7 @@ class GuardUpdate:
 
     def activate(self):
         # Preserve the operator's existing Compose image reference; both services use it.
+        self.check_config_hashes()
         self.run('docker', 'image', 'tag', self.new_image, self.tag)
         self.compose('run', '--rm', '--no-deps', '-T', '--pull', 'never', '--entrypoint', PYTHON,
                      'netbox', MANAGE, 'migrate', '--no-input')

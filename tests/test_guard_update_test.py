@@ -53,6 +53,7 @@ def installation(monkeypatch):
     # Exercise the complete preflight without Docker or a server.
     monkeypatch.setattr(Path, 'resolve', lambda path: path)
     labels = {'com.docker.compose.project.working_dir': '/netbox-test',
+              'com.docker.compose.config-hash': 'a'*64,
               'com.docker.compose.project': 'netbox-test',
               'com.docker.compose.project.config_files': '/netbox-test/docker-compose.yml'}
     container = dict(Image='sha256:' + 'a'*64, Config=dict(Image='netbox-with-sync-guard:test', Labels=labels),
@@ -65,6 +66,8 @@ def installation(monkeypatch):
         calls.append(args)
         if args[0] == 'curl':
             return '200'
+        if '--hash' in args:
+            return args[-1] + ' ' + 'a'*64
         if args[:3] == ('docker', 'inspect', 'netbox'):
             return json.dumps(containers[:1])
         if args[:3] == ('docker', 'inspect', 'worker-id'):
@@ -90,6 +93,14 @@ def test_preflight_is_read_only_and_checks_source_fingerprint(installation):
     assert len(update.fingerprint) == 64
     assert not any(word in call for call in calls for word in ('up', 'stop', 'build', 'tag', 'run'))
     assert all('--check' in call for call in calls if 'migrate' in call)
+
+
+def test_changed_compose_definition_is_rejected_before_any_stop(installation):
+    update, containers, _, calls = installation
+    containers[0]['Config']['Labels']['com.docker.compose.config-hash'] = 'f'*64
+    with pytest.raises(guard.GuardUpdateError, match='CONFIG_DRIFT'):
+        update.preflight()
+    assert not any('stop' in call for call in calls)
 
 
 @pytest.mark.parametrize('problem', ['worker-image', 'stopped', 'foreign-image', 'source-mount', 'external-mount'])
@@ -131,7 +142,7 @@ def test_activation_starts_only_netbox_services_after_migration(installation):
     update.new_image = 'sha256:' + 'd'*64
     calls.clear()
     update.activate()
-    assert len(calls) == 3
-    assert 'migrate' in calls[1]
-    assert calls[2][-2:] == ('netbox', 'netbox-worker')
-    assert '--no-deps' in calls[2] and '--no-build' in calls[2] and '--pull' in calls[2]
+    assert len(calls) == 5
+    assert 'migrate' in calls[3]
+    assert calls[4][-2:] == ('netbox', 'netbox-worker')
+    assert '--no-deps' in calls[4] and '--no-build' in calls[4] and '--pull' in calls[4]

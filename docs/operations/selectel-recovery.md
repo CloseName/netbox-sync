@@ -18,7 +18,7 @@ script refuses scheduled/running Selectel work rather than changing schedules.
 
 1. Validate canonical Sync host, root, commit, URLs, bootstrap and schedules.
    Discover NetBox/worker Compose identity from running container labels. Reject
-   foreign roots, different images, external bind mounts, plugin source mounts,
+   foreign roots, different images, pending Compose/env changes (config hash), external bind mounts, plugin source mounts,
    ambiguous/nonlocal database services and missing backup tools. No secrets or
    complete Compose configuration are printed.
 2. Pause only the allowlisted Sync services and verify the existing Sync backup.
