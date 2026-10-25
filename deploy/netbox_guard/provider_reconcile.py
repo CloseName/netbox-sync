@@ -12,7 +12,8 @@ from .provider_policy import digest, identity
 from .provider_service import review_binding, apply_binding
 from .provider_schema import check_schema
 from .resource_presentation import obj, items
-from .service import _permission, _add_permission
+from .service import _permission
+from .provider_creation import create_native
 from .hardware_identity import canonical, tokens, selectel_observation, compare
 from .provider_guest_evidence import guest_wans
 
@@ -231,8 +232,7 @@ def _create(user, record, plan):
         result = model.objects.filter(slug=slug).first()
         if result is None:
             result = model(slug=slug, **values)
-            _add_permission(user, result)
-            result.full_clean(); result.save()
+            create_native(user, result)
             ProviderCreatedObject.objects.create(account=ident['account'], model_label=result._meta.label_lower,
                 object_id=result.pk, object_created=result.created)
         elif any(getattr(result, k) != v for k, v in values.items()):
@@ -253,8 +253,7 @@ def _create(user, record, plan):
         target = VirtualMachine(name=plan['native_name'], site=site,
             status=VM_STATES[status],
             vcpus=hardware.get('vcpus'), memory=hardware.get('ram'))
-    _add_permission(user, target)
-    target.full_clean(); target.save()
+    create_native(user, target)
     ProviderCreatedObject.objects.create(account=ident['account'], model_label=target._meta.label_lower,
         object_id=target.pk, object_created=target.created, provider_key=record.provider_key)
     return target

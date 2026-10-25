@@ -2,7 +2,7 @@
 from dcim.models import Site, Region
 from .models import ProviderCreatedObject
 from .provider_policy import digest
-from .service import _add_permission
+from .provider_creation import create_native
 from .dependencies import DependencyGuardBlocked
 
 
@@ -33,7 +33,7 @@ def resolve(user, snapshot, previous=None):
                 result=legacy; proof.provider_key=marker; proof.save(update_fields=['provider_key'])
             else:
                 result=model(slug='selectel-'+digest(key)[:24], **values)
-                _add_permission(user,result); result.full_clean(); result.save()
+                create_native(user, result)
                 ProviderCreatedObject.objects.create(account=account,model_label=model._meta.label_lower,
                     object_id=result.pk,object_created=result.created,provider_key=marker)
         changed = [field for field,value in values.items() if getattr(result,field) != value]
