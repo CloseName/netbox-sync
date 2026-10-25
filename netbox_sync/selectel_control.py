@@ -27,6 +27,7 @@ PUBLIC = (
     "trigger",
     "lifecycle_pending",
     "deleted",
+    "reconciliation",
 )
 
 
@@ -108,6 +109,8 @@ def launch(store, lock_path, path, state, trigger="manual"):
 
     now = time.time()
     state.update(status="running", started_at=now, error=None, run_id=str(uuid4()), trigger=trigger)
+    for key in ("import_digest", "import_instance", "reconciliation"):
+        state.pop(key, None)
     state["next_run"] = next_run(state.get("schedule", {"kind": "off"}), now)
     write(path, state)
     try:
@@ -283,12 +286,19 @@ def handle(store, lock_path, payload):
         "enabled",
         "lifecycle-review",
         "lifecycle-execute",
+        "reconcile",
     ):
         raise ControlError("CONTROL_REQUEST_INVALID")
     AuthClient("/run/netbox-sync-auth/worker.sock").call(
         "authorize", session=payload["session"], permission="bootstrap.manage", audit=payload["operation"] != "list"
     )
     operation, data = payload["operation"], payload["data"]
+    if operation == "reconcile":
+        from .selectel_recovery import reconcile
+
+        if not isinstance(data, dict) or set(data) != {"account"}:
+            raise ControlError("CONTROL_REQUEST_INVALID")
+        return reconcile(store, lock_path, data["account"])
     if operation.startswith("lifecycle-"):
         from .selectel_lifecycle_control import handle as lifecycle
 

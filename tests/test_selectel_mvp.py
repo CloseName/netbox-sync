@@ -15,6 +15,7 @@ import os
 def test_admin_boundary_and_secret_projection():
     for method, path in [('GET', '/api/v1/selectel'), ('POST', '/api/v1/selectel'),
                          ('POST', '/api/v1/selectel/29916/collect'),
+                         ('POST', '/api/v1/selectel/29916/reconcile'),
                          ('POST', '/api/v1/selectel/29916/schedule'),
                          ('POST', '/api/v1/selectel/29916/lifecycle-review'),
                          ('POST', '/api/v1/selectel/29916/lifecycle-execute'),

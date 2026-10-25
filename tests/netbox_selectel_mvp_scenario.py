@@ -54,7 +54,7 @@ with tempfile.TemporaryDirectory() as temp:
     headers = {'HTTP_X_NETBOX_SYNC_GUARD_INSTANCE': str(GuardIdentity.objects.get(pk=1).identifier)}
     request = factory.get('/providers/account-import/', **headers)
     force_authenticate(request, user=service_user, token=token)
-    assert ProviderAccountImport.as_view()(request).data == {'ready': True}
+    assert ProviderAccountImport.as_view()(request).data == {'ready': True, 'selectel_protocol': 1, 'receipt_lookup': True}
     payload['nonce'] = str(uuid4())
     request = factory.post('/providers/account-import/', payload, format='json', **headers)
     force_authenticate(request, user=service_user, token=token)
@@ -160,3 +160,36 @@ with tempfile.TemporaryDirectory() as temp:
         assert first_site.pk == renamed_site.pk and renamed_site.name.endswith('/ Renamed')
         assert renamed_site.region_id is None
 print('Opt-in automatic native import: dedicated permission, creation provenance, atomic rollback and replay OK')
+
+# Receipt lookup is read-only, actor-scoped and never invokes import_account.
+from netbox_guard.account_receipt import lookup
+from netbox_guard.provider_policy import digest
+from netbox_guard.models import ProviderInventoryImport
+from uuid import uuid5
+before_count = VirtualMachine.objects.count()
+proof = lookup(service_user, '67891', native_payload['nonce'])
+assert proof['outcome'] == 'committed' and proof['result'] == native_result
+assert proof['digest'] == digest(native_payload)
+rejected(lambda: lookup(unprivileged, '67891', native_payload['nonce']), (DependencyGuardBlocked,))
+assert lookup(admin, '67891', native_payload['nonce'])['outcome'] == 'conflict'
+assert lookup(service_user, '29916', native_payload['nonce'])['outcome'] == 'conflict'
+missing = uuid4()
+assert lookup(service_user, '67891', missing)['outcome'] == 'not_found'
+with transaction.atomic():
+    ProviderInventoryImport.objects.create(nonce=uuid5(missing, 'servers'), account='67891',
+        actor='fixture', digest='f'*64, result={})
+    assert lookup(service_user, '67891', missing)['outcome'] == 'partial_evidence'
+    transaction.set_rollback(True)
+assert VirtualMachine.objects.count() == before_count
+print('Account receipt lookup: exact receipt, absent/partial evidence, account isolation; no import replay OK')
+
+from io import StringIO
+from django.core.management.base import CommandError
+from netbox_guard.release_manifest import manifest, fingerprint
+import netbox_guard
+release = fingerprint(manifest(Path(netbox_guard.__file__).parent))
+report = StringIO()
+call_command('sync_guard_release_check', expected=release, stdout=report)
+assert 'GUARD_CHECK:' in report.getvalue() and release in report.getvalue()
+rejected(lambda: call_command('sync_guard_release_check', expected='0'*64, stdout=StringIO()), (CommandError,))
+print('Loaded Guard content and importer compatibility checks OK')

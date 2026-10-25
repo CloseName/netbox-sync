@@ -11,6 +11,12 @@ class ProviderAccountImport(GuardView):
         from ..service import _permission
         _permission(request.user, 'manage_providerbinding')
         _permission(request.user, 'manage_resourceregistry')
+        from django.db import connection
+        from ..models import ProviderAccountRun, ProviderInventoryImport, ProviderResourceRegistryChange
+        tables = set(connection.introspection.table_names())
+        if any(model._meta.db_table not in tables for model in
+               (ProviderAccountRun, ProviderInventoryImport, ProviderResourceRegistryChange)):
+            raise DependencyGuardBlocked('PROVIDER_IMPORT_REFUSED')
         from django.conf import settings
         if settings.PLUGINS_CONFIG.get('netbox_guard', {}).get('selectel_native_reconcile') is True:
             from django.db import connection
@@ -29,7 +35,7 @@ class ProviderAccountImport(GuardView):
                         raise ValueError('PROVIDER_NATIVE_PERMISSIONS_REQUIRED')
             except ValueError:
                 raise DependencyGuardBlocked('PROVIDER_IMPORT_REFUSED') from None
-        return Response({'ready': True})
+        return Response({'ready': True, 'selectel_protocol': 1, 'receipt_lookup': True})
 
     def post(self, request):
         import json
@@ -42,6 +48,15 @@ class ProviderAccountImport(GuardView):
             return Response(import_account(request.user, json.loads(raw)))
         except (ValueError, TypeError, KeyError, AttributeError, IntegrityError, ValidationError):
             raise DependencyGuardBlocked('PROVIDER_IMPORT_REFUSED') from None
+
+
+class ProviderAccountReceipt(GuardView):
+    def get(self, request, account, nonce):
+        from ..account_receipt import lookup
+        try:
+            return Response(lookup(request.user, account, nonce))
+        except (ValueError, TypeError):
+            raise DependencyGuardBlocked('REQUEST_INVALID') from None
 
 
 class ProviderReview(GuardView):

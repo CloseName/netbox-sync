@@ -1,6 +1,7 @@
 """Durable bounded account job. Provider reads run without root privileges."""
 
 import json
+import hashlib
 import os
 import subprocess
 import sys
@@ -17,6 +18,7 @@ from .discovery_worker import _drop_privileges, _safe_environment
 from .child_process import child_process, stop_child
 from .selectel_payload import MAX_BYTES
 from .selectel_result import confirmed_import
+from .selectel_recovery import compatible
 
 
 def child_result(output, returncode, operation):
@@ -123,7 +125,7 @@ def _execute_run(run, progress):
     token = read(run.base / "netbox-token.json")["token"]
     access = {"url": url, "token": token, "guard_instance": os.environ.get("NETBOX_SYNC_GUARD_INSTANCE", "")}
     result = child(dict(operation="preflight", **access), 90)
-    if result.get("ready") is True:
+    if compatible(result):
         result = child(
             {
                 "operation": "collect",
@@ -134,7 +136,7 @@ def _execute_run(run, progress):
             2800,
         )
     elif "error" not in result:
-        result = {"error": "SETUP_REQUIRED"}
+        result = {"error": "SELECTEL_GUARD_INCOMPATIBLE"}
     if "error" not in result:
         with apply_lock(run.lock):
             # Disabling an account during collection also prevents its import.
@@ -148,6 +150,23 @@ def _execute_run(run, progress):
                     return None
             url, _ = runtime_netbox(run.store.path, "read")
             token = read(run.base / "netbox-token.json")["token"]
+            payload = {
+                "account": run.account,
+                "nonce": run.run_id,
+                "document": result["document"],
+                "registry": result["registry"],
+            }
+            with locked_store(run.store):
+                current = read(run.path)
+                if current.get("run_id") != run.run_id or not current.get("enabled", True):
+                    return None
+                current["import_digest"] = hashlib.sha256(
+                    json.dumps(
+                        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+                    ).encode()
+                ).hexdigest()
+                current["import_instance"] = access["guard_instance"]
+                write(run.path, current)
             progress.import_started = True
             imported = child(
                 {
@@ -155,12 +174,7 @@ def _execute_run(run, progress):
                     "url": url,
                     "token": token,
                     "guard_instance": os.environ.get("NETBOX_SYNC_GUARD_INSTANCE", ""),
-                    "payload": {
-                        "account": run.account,
-                        "nonce": run.run_id,
-                        "document": result["document"],
-                        "registry": result["registry"],
-                    },
+                    "payload": payload,
                 },
                 90,
             )

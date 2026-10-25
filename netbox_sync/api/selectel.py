@@ -55,11 +55,15 @@ def routes(settings):
         result = control(
             settings.bootstrap_socket,
             {"action": "selectel", "operation": operation, "session": request.cookies.get(COOKIE), "data": data},
-            timeout=100 if operation.startswith("lifecycle-") else 10,
+            timeout=200 if operation == "reconcile" else 100 if operation.startswith("lifecycle-") else 10,
             response_limit=2 * 1024 * 1024,
         )["result"]
         return JSONResponse(
-            result, status_code=409 if result.get("error") else 200, headers={"Cache-Control": "no-store"}
+            result,
+            status_code=(
+                409 if result.get("error") and not (operation == "reconcile" and result.get("reconciliation")) else 200
+            ),
+            headers={"Cache-Control": "no-store"},
         )
 
     @router.get("")
@@ -75,6 +79,10 @@ def routes(settings):
     @router.post("/{account}/collect")
     def collect(request: Request, account: str):
         return call(request, "collect", {"account": account})
+
+    @router.post("/{account}/reconcile")
+    def reconcile(request: Request, account: str):
+        return call(request, "reconcile", {"account": account})
 
     @router.post("/{account}/schedule")
     def schedule(request: Request, account: str, payload: Schedule):

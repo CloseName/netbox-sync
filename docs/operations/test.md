@@ -1,4 +1,10 @@
-# Known test installation: Sync-only updates
+# Known test installation: reviewed release updates
+
+The current operator contract forbids manual shell diagnostics on the server.
+Release checks run inside the reviewed updater or through the application UI.
+For the optional Guard stage and receipt reconciliation, see
+[automated Selectel recovery](selectel-recovery.md). Deployment still requires
+separate approval of an exact merged SHA; a PR or CI pass is not deployment approval.
 
 ## Recorded environment and scope
 
@@ -13,7 +19,7 @@ Operator-confirmed on 22 October 2026; revalidate before each update:
 | Public Sync URL | `https://netbox-sync-test.indeed-id.hq` |
 | Target NetBox | `https://netbox-test.indeed-id.hq`, previously resolved to `10.24.0.6` |
 | Ingress | external; host nginx forwards to the Sync proxy |
-| NetBox Compose root | `/netbox-test`; not updated by this procedure |
+| NetBox Compose root | `/netbox-test`; Guard updated only with explicit `--with-guard` |
 | Scheduling | `netbox-sync.timer` inactive, schedule worker stopped; Selectel schedules off |
 
 The operator confirmed PR #111 deployed and the UI recovered after the explicit
@@ -27,7 +33,8 @@ On 25 October 2026 the operator confirmed the updater's full real Linux cycle fo
 `/netbox-sync-test/backups/netbox-sync-backup-20261025-084202`, and subsequent UI
 behavior. This is dated evidence, not acceptance of Selectel or a future update.
 The updater is not a general installer or production tool.
-It never updates NetBox/Guard, changes account schedules, invokes synchronization,
+By default it updates Sync only. The explicit `--with-guard` mode described below
+also backs up and updates the installed test Guard. Neither mode changes account schedules, invokes synchronization,
 prunes Docker, or restores data. Existing `update-*-test*.sh` scripts are historical
 special-purpose procedures: some skip backups, change Guard and/or enable schedules.
 Do not substitute them for this procedure.
@@ -46,28 +53,18 @@ idle acknowledgement is required because this script does not infer queue idlene
 from container health. Do not reboot during maintenance; this procedure does not
 change persistent timer enablement. Check scheduling again after any reboot.
 
-Use individual commands from the terminal (replace `REVIEWED_FULL_SHA` with the
-actual 40-character merge SHA supplied with the release):
+The release executor fetches the repository, preserves local changes and selects the
+approved full commit. It runs the saved `deploy/update_test.py --commit <SHA>`
+entrypoint first without `--apply`; this is read-only preflight. For a combined
+release it includes `--with-guard` in both preflight and apply. The executor then
+uses `--apply --idle-confirmed` only after the UI idle acknowledgement and deployment
+approval. Do not substitute individually pasted diagnostic commands.
 
-```sh
-git -C /netbox-sync-test/repo status --short
-git -C /netbox-sync-test/repo fetch origin main
-git -C /netbox-sync-test/repo checkout --detach REVIEWED_FULL_SHA
-python3 /netbox-sync-test/repo/deploy/update_test.py --commit REVIEWED_FULL_SHA
-```
-
-Default mode is read-only preflight. It checks host/root, clean checkout, ancestry
-in the fetched origin/main, expected origin, free space (minimum 3 GiB, not a size
-guarantee), target URLs/bootstrap, external ingress, scheduler state and backup
-prerequisites. It rejects mismatches rather than rewriting configuration or printing
-secrets. If DNS/routing/Guard configuration changed, repeat the read-only connection,
-TLS, token and Guard checks before authorizing an update.
-
-After `PREFLIGHT_OK` and the idle check:
-
-```sh
-python3 /netbox-sync-test/repo/deploy/update_test.py --commit REVIEWED_FULL_SHA --apply --idle-confirmed
-```
+Preflight checks host/root, clean checkout, ancestry in fetched origin/main,
+expected origin, free space, target URLs/bootstrap, external ingress, scheduler
+state and backup prerequisites. It rejects mismatches instead of rewriting
+configuration or printing secrets. `--with-guard` also discovers and validates the
+existing test NetBox Compose installation and checks its local database backup tools.
 
 Run this as a saved Python file, not `bash <<...`, `curl | bash`, or a pasted script
 fed through stdin. Children receive `/dev/null` stdin. This prevents nested tools
@@ -90,25 +87,13 @@ Do not rerun the entire updater blindly. No automatic rollback is performed.
 Before install, the old release is still selected; after install it may be the new
 release and migrations may have completed. Keep schedules off in either case.
 
-Inspect locally (redact secrets before sharing logs):
-
-```sh
-readlink -f /netbox-sync-test/current
-systemctl show netbox-sync.timer -p ActiveState
-python3 /netbox-sync-test/current/deploy/compose.py --root /netbox-sync-test ps -a
-docker logs --tail 100 netbox-sync-api
-docker logs --tail 100 netbox-sync-proxy
-```
-
-A 502 can mean stopped services or an upstream/ingress fault; it does not prove a
-failed migration. If install completed, verify current SHA, private configuration
-and pending work before reissuing just the allowlisted start below. Never start all
-services or use a historical resume script. If startup itself failed, diagnose
-its logs first. Host nginx may serve other applications; do not restart it blindly.
-
-```sh
-python3 /netbox-sync-test/current/deploy/compose.py --root /netbox-sync-test up -d --no-deps --wait --wait-timeout 120 netbox-sync-secret-broker netbox-sync-auth-worker netbox-sync-probe-worker netbox-sync-bootstrap-worker netbox-sync-lifecycle-worker netbox-sync-apply-worker netbox-sync-api netbox-sync-proxy
-```
+Do not perform manual server-side diagnostic commands or blindly rerun a failed
+update. Preserve the updater's stage report. Diagnose its evidence and prepare a
+reviewed release change for any missing automated check or recovery step. The
+updater already checks actual running images, health, public HTTPS, timers and
+Selectel scheduling. A failed Guard stage may leave NetBox stopped; a failed Sync
+stage may leave Sync stopped. No automatic database rollback or schedule restart
+is attempted.
 
 After recovery repeat image, scheduler and public HTTPS checks; a recovery start
 alone does not verify them. Use [backup/restore](../backup-restore.md) for a reviewed
