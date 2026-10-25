@@ -71,6 +71,33 @@ from django.test import override_settings
 from django.conf import settings
 from django.utils import timezone
 from netbox_guard.models import ProviderCreatedObject
+from netbox_guard.provider_creation import create_native
+from dcim.models import Region
+from django.contrib.contenttypes.models import ContentType
+from users.models import ObjectPermission
+
+# Real NetBox permission backend: model permission is not sufficient, and a
+# rejected provisional row must not survive the helper's savepoint.
+with transaction.atomic():
+    suffix = uuid4().hex
+    limited_creator = get_user_model().objects.create(username='selectel-create-' + suffix)
+    allowed_name = 'Allowed ' + suffix
+    scoped = ObjectPermission.objects.create(name='selectel-create-' + suffix,
+        actions=['add'], constraints={'name': allowed_name})
+    scoped.object_types.add(ContentType.objects.get_for_model(Region))
+    scoped.users.add(limited_creator)
+    limited_creator = get_user_model().objects.get(pk=limited_creator.pk)
+    assert limited_creator.has_perm('dcim.add_region')
+    assert not limited_creator.has_perm('dcim.add_region', Region(name=allowed_name))
+    allowed_region = create_native(limited_creator, Region(name=allowed_name, slug='allowed-' + suffix))
+    assert Region.objects.filter(pk=allowed_region.pk).exists()
+    count = Region.objects.count()
+    rejected(lambda: create_native(limited_creator, Region(name='Denied ' + suffix, slug='denied-' + suffix)),
+             (DependencyGuardBlocked,))
+    assert Region.objects.count() == count
+    assert not Region.objects.filter(slug='denied-' + suffix).exists()
+    transaction.set_rollback(True)
+
 with tempfile.TemporaryDirectory() as temp:
     call_command('configure_selectel_mvp', output=str(Path(temp)/'native-token.json'), native_resources=True)
     service_user = get_user_model().objects.get(username='netbox-sync-selectel')

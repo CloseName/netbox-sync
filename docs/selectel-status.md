@@ -19,6 +19,23 @@ The repository consolidation is separate from any production deployment.
 
 ## Existing execution boundaries
 
+### Native creation permission correction (25 October 2026)
+
+Read-only operator diagnostics reproduced a model/object permission mismatch:
+the dedicated non-superuser importer has `dcim.add_region` and `dcim.add_site`,
+but NetBox denies these permissions against unsaved Region/Site instances.
+The Selectel writer previously checked only the unsaved object, blocking creation.
+Selectel now checks the model grant, validates and provisionally saves the object,
+then checks the full object permission inside an atomic savepoint. Constraint
+denial rolls back the row; the enclosing account transaction still owns inventory,
+bindings, provenance and the final receipt. The shared Guard helper and other
+providers are unchanged. A model grant alone never authorizes committed creation.
+
+This is a reproduced current blocker, not a proven explanation of every historical
+`IMPORT_UNCONFIRMED`. No account state is cleared by the correction. Native import
+acceptance still requires disposable NetBox constraint/rollback tests and a separately
+authorized test deployment/run.
+
 ### Rules for future implementation
 
 Keep collection, normalization, identity evidence, planning/policy and Guard writes
