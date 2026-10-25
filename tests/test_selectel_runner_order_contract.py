@@ -54,7 +54,9 @@ def runner(monkeypatch):
             if control.change == "run":
                 state["run_id"] = "another-run"
             return {"document": {}, "registry": {}, "summary": {"collected": 1}}
-        return {"imported": 2}
+        return dict(account="29916", servers=2, matched=1, unmatched=1,
+                    registry_resources=2, retained=0, placement_pending=[],
+                    replayed=False, writes_performed=True, native_mode="registry_only")
 
     monkeypatch.setattr(module, "read", read)
     monkeypatch.setattr(module, "write", write)
@@ -66,7 +68,9 @@ def test_success_combines_summary_after_guarded_import(runner):
     state, control, events, writes = runner
     module.main()
     assert events == [("preflight", 90), ("collect", 2800), ("import", 90)]
-    assert state["summary"] == {"collected": 1, "imported": 2}
+    assert state["summary"] == dict(collected=1, account="29916", servers=2, matched=1, unmatched=1,
+                                  registry_resources=2, retained=0, placement_pending=[],
+                                  replayed=False, writes_performed=True, native_mode="registry_only")
     assert state["status"] == "completed" and state["error"] is None
     assert state["next_run"] == 123 and state["finished_at"] == 456
     assert len(writes) == 1

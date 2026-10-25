@@ -3,6 +3,9 @@
 Status recorded 19 October 2026. This integration is not accepted for production.
 The repository consolidation is separate from any production deployment.
 
+For the refreshed code trace, read-only test evidence and remaining acceptance
+boundaries see [25 October diagnosis](selectel-diagnosis-20261025.md).
+
 ## Known limitations
 
 - The test installation reported an unconfirmed import for two accounts. Some
@@ -49,6 +52,20 @@ or account schedules in migrations, fixtures or deployment scripts. Acceptance
 requires an explicitly authorized test run and reconciliation of its result.
 
 ### Runtime safeguards
+
+- A completed account import requires a structured Guard result for the requested
+  account, with nonnegative integer counts, boolean write/replay flags, placement
+  results and a recognized native mode (including native counts in automatic mode).
+  Empty, malformed or wrong-account responses remain `IMPORT_UNCONFIRMED`; no
+  automatic retry or state reset follows. This validates the existing response
+  contract; it does not implement historical receipt reconciliation or certify
+  provider coverage/native matching.
+- A typed, definitive Guard transport refusal is reported as
+  `NETBOX_IMPORT_REFUSED`; possible writes still produce `IMPORT_UNCONFIRMED`.
+  Existing uncertain account states are not reclassified or cleared retroactively.
+  The UI distinguishes saved/unverified access from acknowledged import, shows the
+  run UUID and disables collection for unresolved outcomes. It explicitly explains
+  that collection currently includes import and does not offer a separate plan.
 
 - Collection needs explicit account credentials and a configured importer token.
 - A missing schedule defaults to off. Account disable blocks new collection;

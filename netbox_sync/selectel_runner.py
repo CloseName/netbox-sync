@@ -16,6 +16,7 @@ from .source_lifecycle import apply_lock
 from .discovery_worker import _drop_privileges, _safe_environment
 from .child_process import child_process, stop_child
 from .selectel_payload import MAX_BYTES
+from .selectel_result import confirmed_import
 
 
 def child_result(output, returncode, operation):
@@ -163,8 +164,10 @@ def _execute_run(run, progress):
                 },
                 90,
             )
-        if "error" in imported:
-            result = imported
+        if imported.get("error") in ("IMPORT_UNCONFIRMED", "NETBOX_IMPORT_REFUSED", "SELECTEL_RESULT_TOO_LARGE"):
+            result = {"error": imported["error"]}
+        elif not confirmed_import(imported, run.account):
+            result = {"error": "IMPORT_UNCONFIRMED"}
         else:
             result = {"summary": {**result["summary"], **imported}}
     return result

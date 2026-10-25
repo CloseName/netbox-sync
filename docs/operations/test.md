@@ -22,8 +22,11 @@ Do not pin future updates to that old commit. ESXi and pfSense synchronization a
 observation timestamp saving were previously confirmed; repeat affected scenarios
 after new changes. Proxmox and ESXi clock-only plans must disable manual sync.
 
-The new updater has isolated orchestration tests; its first real Linux deployment
-still requires operator observation. It is not a general installer or production tool.
+On 25 October 2026 the operator confirmed the updater's full real Linux cycle for
+`99676f7351940b598c02ae9530274d74f9a3315f`, backup
+`/netbox-sync-test/backups/netbox-sync-backup-20261025-084202`, and subsequent UI
+behavior. This is dated evidence, not acceptance of Selectel or a future update.
+The updater is not a general installer or production tool.
 It never updates NetBox/Guard, changes account schedules, invokes synchronization,
 prunes Docker, or restores data. Existing `update-*-test*.sh` scripts are historical
 special-purpose procedures: some skip backups, change Guard and/or enable schedules.
