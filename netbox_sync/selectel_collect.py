@@ -4,6 +4,7 @@ import json
 import sys
 from contextlib import redirect_stdout
 from .selectel_payload import bounded_json, inventory_document, import_payload
+from .retirement_transport import GuardTransportError
 from tools.selectel_audit.collector import Collector, Credentials
 from tools.selectel_audit.account import account_overview
 from tools.selectel_audit.resource_registry import registry
@@ -82,6 +83,13 @@ def main():
                 else "COLLECTION_FAILED"
             )
         }
+    except GuardTransportError as exc:
+        if operation == "import":
+            result = {"error": "IMPORT_UNCONFIRMED" if exc.uncertain else "NETBOX_IMPORT_REFUSED"}
+        else:
+            result = {
+                "error": "IMPORT_UNCONFIRMED" if operation == "lifecycle-execute" else "NETBOX_IMPORT_SETUP_FAILED"
+            }
     except ValueError as exc:
         result = {
             "error": (
