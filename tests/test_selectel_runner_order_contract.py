@@ -47,7 +47,7 @@ def runner(monkeypatch):
         if control.failure == operation:
             raise RuntimeError("private")
         if operation == "preflight":
-            return {"ready": control.ready}
+            return {"ready": control.ready, "selectel_protocol": 1, "receipt_lookup": True}
         if operation == "collect":
             if control.change == "disabled":
                 state["enabled"] = False
@@ -73,7 +73,8 @@ def test_success_combines_summary_after_guarded_import(runner):
                                   replayed=False, writes_performed=True, native_mode="registry_only")
     assert state["status"] == "completed" and state["error"] is None
     assert state["next_run"] == 123 and state["finished_at"] == 456
-    assert len(writes) == 1
+    assert len(writes) == 2
+    assert len(writes[0]["import_digest"]) == 64
 
 
 @pytest.mark.parametrize(
@@ -90,7 +91,7 @@ def test_failure_classification_changes_only_after_import_started(runner, failur
     module.main()
     assert state["error"] == error and state["next_run"] == due
     assert state["status"] == "attention" and state["finished_at"] == 456
-    assert len(writes) == 1
+    assert len(writes) == (2 if failure == "import" else 1)
 
 
 def test_unready_preflight_never_collects(runner):
@@ -98,7 +99,7 @@ def test_unready_preflight_never_collects(runner):
     control.ready = False
     module.main()
     assert events == [("preflight", 90)]
-    assert state["error"] == "SETUP_REQUIRED"
+    assert state["error"] == "SELECTEL_GUARD_INCOMPATIBLE"
 
 
 def test_disable_during_collection_blocks_import_and_finishes_once(runner):
@@ -123,3 +124,26 @@ def test_initial_run_mismatch_never_starts_child(runner):
     state["run_id"] = "another-run"
     module.main()
     assert events == writes == []
+
+
+def test_legacy_guard_never_starts_collection(runner, monkeypatch):
+    state, _, events, _ = runner
+    monkeypatch.setattr(module, "child", lambda *args: {"ready": True})
+    module.main()
+    assert state["error"] == "SELECTEL_GUARD_INCOMPATIBLE"
+    assert events == []
+
+
+def test_intent_is_durable_before_import_and_not_public(runner, monkeypatch):
+    state, _, _, writes = runner
+    original = module.child
+    def child(value, timeout):
+        if value["operation"] == "import":
+            import hashlib
+            import json
+            assert writes[-1]["import_digest"] == hashlib.sha256(json.dumps(value["payload"],
+                sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()).hexdigest()
+        return original(value, timeout)
+    monkeypatch.setattr(module, "child", child)
+    module.main()
+    assert state["status"] == "completed"

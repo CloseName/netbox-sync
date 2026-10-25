@@ -156,6 +156,32 @@ def test_update_orders_backup_install_start_and_never_enables_schedules(workflow
     assert calls[-1] == ("verified",)
 
 
+def test_combined_update_backs_up_sync_before_guard_and_only_reads_receipts(workflow, monkeypatch):
+    root, calls, _ = workflow
+    class Guard:
+        def __init__(self, *args):
+            pass
+        def preflight(self):
+            calls.append(("guard-preflight",))
+        def apply(self):
+            calls.append(("guard-apply",))
+    monkeypatch.setattr(updater, "GuardUpdate", Guard)
+    original = updater.run
+    def run(*args):
+        if args[-1] == "netbox_sync.selectel_recovery":
+            calls.append(args)
+            return json.dumps({"compatible": True, "accounts": [{"account": "29916", "error": "IMPORT_UNCONFIRMED"}]})
+        return original(*args)
+    monkeypatch.setattr(updater, "run", run)
+    updater.update(root, root / "repo", SHA, with_guard=True)
+    backup = next(i for i, call in enumerate(calls) if "verify" in call)
+    guard = calls.index(("guard-apply",))
+    install = next(i for i, call in enumerate(calls) if "--no-start" in call)
+    reconcile = next(i for i, call in enumerate(calls) if "netbox_sync.selectel_recovery" in call)
+    assert backup < guard < install < calls.index(("verified",)) < reconcile
+    assert not any("netbox_sync.selectel_runner" in call for call in calls)
+
+
 @pytest.mark.parametrize("failure", ["create", "verify", "--no-start", "up"])
 def test_failure_stops_without_retry_or_rollback(workflow, capsys, failure):
     root, calls, fail = workflow

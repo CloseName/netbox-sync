@@ -19,7 +19,7 @@ ROUTES = (
     ("GET", r"/api/v1/selectel", "bootstrap.manage"),
     (
         "POST",
-        r"/api/v1/selectel(?:/[0-9]{1,20}/(?:collect|schedule|enabled|lifecycle-review|lifecycle-execute))?",
+        r"/api/v1/selectel(?:/[0-9]{1,20}/(?:collect|schedule|enabled|reconcile|lifecycle-review|lifecycle-execute))?",
         "bootstrap.manage",
     ),
     ("GET", r"/api/v1/pfsense", "source.read"),

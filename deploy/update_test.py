@@ -11,6 +11,11 @@ import socket
 import subprocess
 import sys
 
+try:
+    from .guard_update_test import GuardUpdate, GuardUpdateError
+except ImportError:  # Saved on-disk entrypoint, not an installed package.
+    from guard_update_test import GuardUpdate, GuardUpdateError
+
 ROOT = Path("/netbox-sync-test")
 PUBLIC_URL = "https://netbox-sync-test.indeed-id.hq"
 NETBOX_URL = "https://netbox-test.indeed-id.hq"
@@ -37,7 +42,8 @@ class UpdateError(RuntimeError):
 def run(*command):
     """Disconnect child stdin, including grandchildren, from the operator terminal."""
     return subprocess.run(
-        command, check=True, text=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        command, check=True, text=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        timeout=1800,
     ).stdout.strip()
 
 
@@ -129,12 +135,16 @@ def preflight(root, source, commit):
     return current
 
 
-def update(root, source, commit):
+def update(root, source, commit, *, with_guard=False):
     """Back up before installation; fail closed and never roll back databases implicitly."""
     stage = "preflight"
     bundle = None
     try:
         previous = preflight(root, source, commit)
+        guard = GuardUpdate(run, source, commit) if with_guard else None
+        if guard:
+            stage = "guard-preflight"
+            guard.preflight()
         print("PREVIOUS_RELEASE:", previous, flush=True)
         stage = "pause"
         print("STAGE:", stage, flush=True)
@@ -155,6 +165,9 @@ def update(root, source, commit):
             raise UpdateError("Unexpected backup location.")
         run(sys.executable, str(previous / "deploy/backup.py"), "--root", str(root), "verify", str(bundle))
         print("BACKUP_VERIFIED:", bundle, flush=True)
+        if guard:
+            stage = "guard"
+            guard.apply()
         stage = "install"
         print("STAGE:", stage, flush=True)
         run(
@@ -180,8 +193,17 @@ def update(root, source, commit):
         stage = "verify"
         print("STAGE:", stage, flush=True)
         verify_runtime(root, commit)
+        if guard:
+            stage = "selectel-reconciliation"
+            report = json.loads(run("docker", "exec", "netbox-sync-bootstrap-worker", "python", "-B", "-m",
+                                    "netbox_sync.selectel_recovery"))
+            if report.get("compatible") is not True:
+                raise UpdateError("SELECTEL_GUARD_INCOMPATIBLE")
+            print("SELECTEL_RECONCILIATION:", json.dumps(report), flush=True)
+            check_configuration(root)
+            check_schedulers(root)
         print("UPDATE_OK:", commit, flush=True)
-    except (UpdateError, OSError, ValueError, subprocess.SubprocessError):
+    except (UpdateError, GuardUpdateError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
         print("UPDATE_FAILED_STAGE:", stage, file=sys.stderr)
         if bundle:
             print("BACKUP_PATH:", bundle, file=sys.stderr)
@@ -227,6 +249,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--with-guard", action="store_true", help="Back up and update the known test Guard, then reconcile receipts")
     parser.add_argument(
         "--idle-confirmed",
         action="store_true",
@@ -239,16 +262,21 @@ def main(argv=None):
         parser.error("--apply requires --idle-confirmed")
     try:
         if args.apply:
-            update(ROOT, ROOT / "repo", args.commit)
+            if args.with_guard:
+                update(ROOT, ROOT / "repo", args.commit, with_guard=True)
+            else:
+                update(ROOT, ROOT / "repo", args.commit)
         else:
             preflight(ROOT, ROOT / "repo", args.commit)
+            if args.with_guard:
+                GuardUpdate(run, ROOT / "repo", args.commit).preflight()
             print("PREFLIGHT_OK: no services or configuration changed")
-    except (UpdateError, OSError, ValueError, subprocess.SubprocessError) as error:
+    except (UpdateError, GuardUpdateError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(
             (
                 str(error)
-                if isinstance(error, UpdateError)
-                else "Command/configuration check failed; inspect locally without sharing secrets."
+                if isinstance(error, (UpdateError, GuardUpdateError))
+                else "Command/configuration check failed. Preserve the stage report for release review."
             ),
             file=sys.stderr,
         )

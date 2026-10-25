@@ -49,9 +49,20 @@ def run(value):
         client = GuardClient(session, value["url"], authorization(value["token"]), value["guard_instance"])
         if value["operation"] == "preflight":
             return client._request("GET", "providers/account-import/")
+        if value["operation"] == "receipt":
+            import re
+            from uuid import UUID
+
+            account = value["account"]
+            if not isinstance(account, str) or not re.fullmatch(r"[0-9]{1,20}", account):
+                raise ValueError("INVALID_ACCOUNT")
+            nonce = str(UUID(value["run_id"]))
+            return client._request("GET", f"providers/accounts/{account}/runs/{nonce}/")
         if value["operation"] in ("lifecycle-review", "lifecycle-execute"):
             suffix = "review" if value["operation"] == "lifecycle-review" else "execute"
             return client._request("POST", "providers/lifecycle/" + suffix + "/", value["payload"])
+        if value["operation"] != "import":
+            raise ValueError("INVALID_OPERATION")
         bounded_json(value["payload"])
         return client._request("POST", "providers/account-import/", value["payload"])
 

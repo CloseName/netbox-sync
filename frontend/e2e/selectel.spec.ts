@@ -55,3 +55,24 @@ for(const error of ['IMPORT_UNCONFIRMED','RUN_INTERRUPTED']){
   await expect(page.getByText('f5f3efcc-436a-4caf-8d21-d5492ba94f4c',{exact:false})).toBeVisible();
  });
 }
+
+test('Selectel receipt lookup displays absent evidence without enabling import',async({page})=>{
+ let checks=0;
+ const row:any={account:'29916',name:'Uncertain account',username:'reader',status:'attention',error:'IMPORT_UNCONFIRMED',
+  run_id:'f5f3efcc-436a-4caf-8d21-d5492ba94f4c',url:'https://netbox.test/'};
+ await page.route('**/api/v1/**',async route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(path.endsWith('/collect'))throw new Error('Receipt lookup must not import');
+  if(path.endsWith('/reconcile')){checks++;row.reconciliation={outcome:'not_found',checked_at:1792053432,run_id:row.run_id};return route.fulfill({json:row});}
+  if(path==='/api/v1/selectel')return route.fulfill({json:{import_ready:true,items:[row]}});
+  if(path==='/api/v1/sources')return route.fulfill({json:{sources:[]}});
+  if(path==='/api/v1/pfsense')return route.fulfill({json:{items:[],count:0}});
+  if(path==='/api/v1/bootstrap')return route.fulfill({json:{revision:1,status:'READY',url:'https://netbox.test',completed:true,read_token_present:true,apply_token_present:true,checks:[]}});
+  return route.fulfill({json:{}});
+ });
+ await page.goto('/sources/selectel');
+ await page.getByRole('button',{name:'Проверить результат импорта',exact:true}).click();
+ await expect(page.getByText('Квитанция запуска и следы его этапов не найдены.',{exact:false})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Собрать и обновить'})).toBeDisabled();
+ expect(checks).toBe(1);
+});

@@ -8,6 +8,12 @@ boundaries see [25 October diagnosis](selectel-diagnosis-20261025.md).
 
 ## Known limitations
 
+The coordinated test update and read-only receipt lookup are documented in
+[automated recovery](operations/selectel-recovery.md). This adds evidence-based
+confirmation for new runs; historical runs without an intent digest are not
+automatically cleared, and missing receipts never authorize retry. No deployment
+or live acceptance is implied by this implementation.
+
 - The test installation reported an unconfirmed import for two accounts. Some
   writes may have committed. The screenshot does not identify the underlying
   exception or prove a matching failure; reconcile the original run in NetBox
@@ -58,8 +64,8 @@ requires an explicitly authorized test run and reconciliation of its result.
   results and a recognized native mode (including native counts in automatic mode).
   Empty, malformed or wrong-account responses remain `IMPORT_UNCONFIRMED`; no
   automatic retry or state reset follows. This validates the existing response
-  contract; it does not implement historical receipt reconciliation or certify
-  provider coverage/native matching.
+  contract; receipt reconciliation is a separate read-only operation and does not
+  certify provider coverage/native matching.
 - A typed, definitive Guard transport refusal is reported as
   `NETBOX_IMPORT_REFUSED`; possible writes still produce `IMPORT_UNCONFIRMED`.
   Existing uncertain account states are not reclassified or cleared retroactively.
