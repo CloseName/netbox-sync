@@ -3,6 +3,7 @@ import json
 import re
 import ssl
 import time
+from email.utils import parsedate_to_datetime
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl, urljoin
 from urllib.request import Request, build_opener, HTTPSHandler, HTTPRedirectHandler, ProxyHandler
@@ -18,6 +19,40 @@ PAGE_SIZE = 200
 
 class AuditError(Exception):
     """Only fixed diagnostic codes; never response bodies or credentials."""
+
+
+def retry_delay(header, attempt):
+    """Honor provider backoff without an early retry or an unbounded sleep."""
+    if header is None:
+        return 2 ** attempt
+    try:
+        delay = int(header) if re.fullmatch(r'[0-9]+', header) else max(
+            0, parsedate_to_datetime(header).timestamp() - time.time())
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return delay if 0 <= delay <= 30 else None
+
+
+def pagination_link(data, key):
+    """Reject malformed or conflicting next-page evidence, retaining prior items."""
+    if not isinstance(data, dict):
+        return None
+    links = data.get(f'{key}_links', data.get('links', []))
+    candidates = [data.get('next')]
+    if isinstance(links, dict):
+        candidates.append(links.get('next'))
+    elif isinstance(links, list) and all(isinstance(link, dict) for link in links):
+        if any(not link.get('href') for link in links if link.get('rel') == 'next'):
+            raise AuditError('INVALID_PAGINATION_METADATA')
+        candidates.extend(link.get('href') for link in links if link.get('rel') == 'next')
+    else:
+        raise AuditError('INVALID_PAGINATION_METADATA')
+    if any(value is not None and not isinstance(value, str) for value in candidates):
+        raise AuditError('INVALID_PAGINATION_METADATA')
+    values = {value for value in candidates if value}
+    if len(values) > 1:
+        raise AuditError('INVALID_PAGINATION_METADATA')
+    return next(iter(values), None)
 
 
 def validate_url(url, netbox_origin=None):
@@ -50,7 +85,10 @@ def query_url(url, **values):
 def next_url(current, href, collection, mode='links'):
     # Glance behind Selectel's /image proxy returns a service-root relative link.
     # Rewrite ONLY this exact known collection, never an arbitrary host or path.
-    h, base = urlsplit(href), urlsplit(collection)
+    try:
+        h, base = urlsplit(href), urlsplit(collection)
+    except ValueError:
+        raise AuditError('INVALID_PAGINATION_METADATA') from None
     if (mode == 'glance' and not h.scheme and not h.netloc and not h.fragment
             and h.path == '/v2/images' and base.path == '/image/v2/images'):
         href = urlunsplit(h._replace(path=base.path))
@@ -101,9 +139,12 @@ class Client:
                     return data, response.headers.get('X-Subject-Token', '')
             except HTTPError as exc:
                 code = exc.code
+                delay = retry_delay(exc.headers.get('Retry-After') if exc.headers else None, attempt)
                 exc.close()
-                if code in (429, 502, 503, 504) and attempt < 2:
-                    time.sleep(2 ** attempt)
+                if code in (429, 502, 503, 504) and attempt < 2 and delay is not None:
+                    if time.monotonic() - self.started + delay > 2700:
+                        raise AuditError('REQUEST_BUDGET_EXCEEDED') from None
+                    time.sleep(delay)
                     continue
                 raise AuditError(f'HTTP_{code}') from None
             except ssl.SSLCertVerificationError:
@@ -152,14 +193,7 @@ def read_collection(client, url, token, key, mode='links', max_pages=500):
             items.extend(batch)
             if len(items) > 100000:
                 raise AuditError('ITEM_LIMIT_EXCEEDED')
-            href = None
-            if isinstance(data, dict):
-                href = data.get('next')
-                links = data.get(f'{key}_links', data.get('links', []))
-                if isinstance(links, dict):
-                    href = href or links.get('next')
-                elif isinstance(links, list):
-                    href = href or next((x.get('href') for x in links if x.get('rel') == 'next'), None)
+            href = pagination_link(data, key)
             if href:
                 current = next_url(current, href, url, mode)
                 continue
@@ -177,8 +211,8 @@ def read_collection(client, url, token, key, mode='links', max_pages=500):
                     raise AuditError('PAGINATION_UNRESOLVED')
                 return items, pages, 'collected'
             if mode == 'page':
-                effective = (data.get('limit') if isinstance(data, dict) else None) or PAGE_SIZE
-                if not isinstance(effective, int) or effective < 1:
+                effective = data.get('limit', PAGE_SIZE) if isinstance(data, dict) else PAGE_SIZE
+                if type(effective) is not int or effective < 1:
                     raise AuditError('INVALID_PAGE_LIMIT')
                 if len(batch) < effective:
                     return items, pages, 'collected'

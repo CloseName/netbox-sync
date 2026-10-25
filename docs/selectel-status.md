@@ -87,3 +87,15 @@ its probe files and tests are preserved in the original local working directory;
 they are not installed alongside the newer collector in `tools/selectel_audit`.
 The local production inventory remains local because it contains deployment details;
 its 11 October records are historical evidence, not a fresh version check.
+
+## Collection response boundaries
+
+Collection retains already-read pages with an explicit diagnostic when next-page
+metadata is malformed/conflicting or an explicit page limit is invalid. These
+responses never become an empty successful collection. Existing same-collection
+URL restrictions, page/request budgets and retained-missing policies remain.
+
+Retriable API responses honor numeric or HTTP-date `Retry-After` up to 30 seconds
+within the overall request budget. Longer or malformed values stop the attempt
+with the HTTP diagnostic instead of retrying early or waiting without a bound.
+Absent headers retain the existing bounded backoff; Guard writes are not retried.
