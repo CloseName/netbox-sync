@@ -129,3 +129,16 @@ configuration file or backup is written. `resolved_hash_matches` must be true
 for both services; the unresolved CLI hash is diagnostic only. A changed env
 file still blocks even when the unresolved hash happens to match.
 Send a remaining mismatch report for diagnosis; do not use `--apply` while blocked.
+
+### Existing Selectel run evidence
+
+The saved updater accepts `--diagnose-selectel ACCOUNT RUN_UUID` with its pinned
+`--commit` and normal test-host preflight. This cannot be combined with `--apply`
+or `--with-guard`. It reads the current uncertain run and existing container logs;
+it does not start collection, call import, accept a baseline, or change state.
+No runtime deployment is needed to use this diagnostic from the reviewed checkout.
+The report includes duration, presence of saved import intent, and fixed HTTP/error
+categories from up to 500 log lines per container over the run time window.
+Raw logs remain private and transient. Logs are time-correlated, not proven to belong
+to that run; missing/truncated/rotated logs do not establish that no writes occurred.
+Keep the uncertainty gate and schedules off regardless of the diagnostic outcome.
