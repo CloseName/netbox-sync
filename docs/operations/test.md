@@ -142,3 +142,25 @@ categories from up to 500 log lines per container over the run time window.
 Raw logs remain private and transient. Logs are time-correlated, not proven to belong
 to that run; missing/truncated/rotated logs do not establish that no writes occurred.
 Keep the uncertainty gate and schedules off regardless of the diagnostic outcome.
+
+### Dedicated Selectel matching evidence
+
+Use the reviewed checkout's `deploy/update_test.py --commit <SHA>
+--diagnose-selectel-matching <ACCOUNT>` for a read-only explanation of pending
+dedicated resources. It cannot be combined with apply, Guard update or run-log
+diagnostics. Both Sync and Guard test preflights must pass. No image build,
+restart, backup, collector, binding or IP write occurs; runtime deployment is
+not required when the installed Guard already has `provider_hardware_check`.
+
+The installed command runs as `netbox-sync-selectel` in a repeatable-read,
+read-only database transaction and computes the existing reconciliation policy.
+The report shows pending resource names/keys, proposed actions/reasons, candidate
+IDs/names and evidence flags/counts, plus host hardware coverage. It omits raw
+hardware identifiers, IP values, command banners and exception text. An absent
+command, incompatible output or permission failure stops without changing state.
+
+These are decisions from saved inventory, not a fresh provider observation or
+permission to apply. Existing correctly bound resources are excluded; manual
+bindings do not establish successful automatic matching. `fresh_inventory_required`
+can identify retained/stale observations. Counts need not equal the latest import
+summary. Diagnose each reason before authorizing changes; schedules stay off.
