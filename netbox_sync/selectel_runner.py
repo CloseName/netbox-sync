@@ -19,6 +19,7 @@ from .child_process import child_process, stop_child
 from .selectel_payload import MAX_BYTES
 from .selectel_result import confirmed_import
 from .selectel_recovery import compatible
+from .selectel_diagnostic import diagnostic
 
 
 def child_result(output, returncode, operation):
@@ -180,6 +181,8 @@ def _execute_run(run, progress):
             )
         if imported.get("error") in ("IMPORT_UNCONFIRMED", "NETBOX_IMPORT_REFUSED", "SELECTEL_RESULT_TOO_LARGE"):
             result = {"error": imported["error"]}
+            if diagnostic(imported.get("import_diagnostic")):
+                result["import_diagnostic"] = diagnostic(imported["import_diagnostic"])
         elif not confirmed_import(imported, run.account):
             result = {"error": "IMPORT_UNCONFIRMED"}
         else:
@@ -196,6 +199,7 @@ def _finish_run(run, result):
             return
         if "error" in result:
             state.update(status="attention", error=result["error"])
+            state["import_diagnostic"] = diagnostic(result.get("import_diagnostic"))
             if result["error"] == "IMPORT_UNCONFIRMED":
                 state["next_run"] = None
         else:

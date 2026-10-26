@@ -35,7 +35,12 @@ PUBLIC = (
 def public(state):
     """Project the explicit public account fields while omitting stored credentials."""
 
-    return {k: state[k] for k in PUBLIC if k in state}
+    from .selectel_diagnostic import diagnostic
+
+    value = {k: state[k] for k in PUBLIC if k in state}
+    if diagnostic(state.get("import_diagnostic")):
+        value["import_diagnostic"] = diagnostic(state["import_diagnostic"])
+    return value
 
 
 def running(state):
@@ -110,7 +115,7 @@ def launch(store, lock_path, path, state, trigger="manual"):
 
     now = time.time()
     state.update(status="running", started_at=now, error=None, run_id=str(uuid4()), trigger=trigger)
-    for key in ("import_digest", "import_instance", "reconciliation"):
+    for key in ("import_digest", "import_instance", "reconciliation", "import_diagnostic"):
         state.pop(key, None)
     state["next_run"] = next_run(state.get("schedule", {"kind": "off"}), now)
     write(path, state)

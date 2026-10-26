@@ -10,6 +10,7 @@ import re
 from urllib.parse import urlsplit
 from uuid import UUID
 import requests
+from .selectel_diagnostic import atomic_refusal, diagnostic
 
 MAX_RESPONSE = 2 * 1024 * 1024
 
@@ -82,6 +83,7 @@ class GuardTransportError(RuntimeError):
         self.code = code
         self.uncertain = uncertain
         self.guard_detail = safe_guard_detail(detail)
+        self.guard_detail.update(diagnostic(detail))
         super().__init__(code)
 
 
@@ -146,7 +148,8 @@ class GuardClient:
                     # refusals prove no mutation; 5xx/redirects/connection loss do not.
                     code = value.get("code")
 
-                    refused = (
+                    account_refused = atomic_refusal(method, path, response.status_code, value, body)
+                    refused = account_refused or (
                         response.status_code in (400, 401, 403, 404, 409)
                         and isinstance(code, str)
                         and code in GUARD_CODES
@@ -154,7 +157,7 @@ class GuardClient:
                     raise GuardTransportError(
                         code if refused else "GUARD_RESPONSE_UNCONFIRMED",
                         uncertain=mutation and not refused,
-                        detail=dict(context, code=code),
+                        detail={**context, "code": code, **(diagnostic(value) if account_refused else {})},
                     )
                 return value
         except requests.exceptions.SSLError:

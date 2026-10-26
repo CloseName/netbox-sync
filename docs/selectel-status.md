@@ -106,3 +106,19 @@ Retriable API responses honor numeric or HTTP-date `Retry-After` up to 30 second
 within the overall request budget. Longer or malformed values stop the attempt
 with the HTTP diagnostic instead of retrying early or waiting without a bound.
 Absent headers retain the existing bounded backoff; Guard writes are not retried.
+
+### Atomic import refusal diagnostics (26 October 2026)
+
+New Guard responses distinguish confirmed rollback from post-commit response failure.
+The view catches import exceptions inside an outer atomic boundary and marks rollback;
+commit failures and response construction remain outside that catch. Only a 409 with
+PROVIDER_IMPORT_ROLLED_BACK, boolean rolled_back=true and the exact requested account
+and nonce is recognized by Sync as NETBOX_IMPORT_REFUSED. Legacy generic 409 responses,
+wrong-run responses, lost responses and 5xx retain uncertainty. Historical errors are
+not reclassified from access logs or missing receipts.
+
+Only closed reason categories, HTTP status and event UUID are retained through the
+child, account state and public UI. No remote exception messages, SQL or invalid field
+values are exposed. Coordinated test Sync/Guard deployment is required. This improves
+future evidence; it does not establish the cause of the old 08cd3347 run or authorize
+another import/baseline acceptance.
