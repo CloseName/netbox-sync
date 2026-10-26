@@ -111,3 +111,14 @@ before a separately authorized sync. Confirm `observed_at` saving with actual
 content changes. Check ESXi, Proxmox (preserve VM/LXC differences) and pfSense as
 affected. Keep Selectel experimental and paused. Record commit, checks and outcome
 in the PR/release evidence without replacing this runbook with a chat transcript.
+
+### Guard configuration mismatch
+
+`GUARD_CONFIG_DRIFT` during read-only preflight stops before service mutation.
+The updater emits `GUARD_CONFIG_REPORT` with service names, hash validity/match,
+Compose versions, declared environment equality and counts, and image-reference
+comparison. It never prints environment names/values, paths, hashes or raw errors.
+The environment comparison covers declared settings only; matching values do not
+prove the complete container configuration equivalent or authorize recreation.
+Send this report for diagnosis. Keep using preflight without `--apply` until the
+cause is understood. Diagnostic collection does not bypass the hash check.

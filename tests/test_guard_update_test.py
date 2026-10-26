@@ -156,3 +156,39 @@ def test_pause_only_stops_test_services_without_archives(monkeypatch, tmp_path):
     update.pause()
     assert calls == [('docker', 'compose', 'stop', 'netbox-worker', 'netbox')]
     assert list(tmp_path.iterdir()) == []
+
+
+def test_drift_report_has_service_and_comparison_without_secrets(installation, capsys):
+    update, containers, services, calls = installation
+    containers[0]['Config']['Labels']['com.docker.compose.config-hash'] = 'f'*64
+    containers[0]['Config']['Env'] = ['PRIVATE=hidden-value']
+    services['netbox']['environment'] = {'PRIVATE': 'different-secret'}
+    services['netbox']['env_file'] = [{'path': '/netbox-test/private.env'}]
+    with pytest.raises(guard.GuardUpdateError, match='CONFIG_DRIFT'):
+        update.preflight()
+    out = capsys.readouterr().out
+    report = json.loads(next(line.split(': ', 1)[1] for line in out.splitlines() if line.startswith('GUARD_CONFIG_REPORT: ')))
+    row = report['services'][0]
+    assert row['service'] == 'netbox' and row['hash_matches'] is False
+    assert row['configured_environment_matches_runtime'] is False
+    assert row['env_file_count'] == 1
+    assert not any(secret in out for secret in ('PRIVATE', 'hidden-value', 'different-secret', 'private.env'))
+    assert not any(word in call for call in calls for word in ('stop','up','build','tag','pg_dump'))
+
+
+def test_drift_diagnostic_failure_does_not_hide_block_or_expose_output(installation, capsys):
+    import subprocess
+    update, containers, _, calls = installation
+    containers[0]['Config']['Labels']['com.docker.compose.config-hash'] = 'f'*64
+    original = update.run
+    def run(*args):
+        if args[-2:] == ('version', '--short'):
+            raise subprocess.CalledProcessError(1, args, output='private-output', stderr='secret-error')
+        return original(*args)
+    update.run = run
+    with pytest.raises(guard.GuardUpdateError, match='CONFIG_DRIFT'):
+        update.preflight()
+    out = capsys.readouterr().out
+    assert '"details_available": false' in out
+    assert 'private-output' not in out and 'secret-error' not in out
+    assert not any('stop' in call or 'up' in call for call in calls)

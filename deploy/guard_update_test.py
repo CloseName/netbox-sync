@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import subprocess
 from contextlib import contextmanager
 
 ROOT = Path('/netbox-test')
@@ -72,12 +73,47 @@ class GuardUpdate:
         if status != '200':
             raise GuardUpdateError('GUARD_HTTPS_FAILED')
 
+    def _config_report(self, comparisons):
+        """Only closed comparisons, never values, variable names, paths or raw output."""
+        report = {'services': comparisons, 'details_available': False}
+        try:
+            version = self.run('docker', 'compose', 'version', '--short').strip()
+            report['compose_version'] = version if re.fullmatch(r'v?[0-9]+(?:[.][0-9]+){1,2}', version) else 'unknown'
+            resolved = json.loads(self.compose('config', '--format', 'json'))['services']
+            unresolved = json.loads(self.compose('config', '--no-env-resolution', '--format', 'json'))['services']
+            for row in comparisons:
+                service = row['service']
+                container = self.config_containers[service]['Config']
+                created_version = container.get('Labels', {}).get('com.docker.compose.version', '')
+                row['container_compose_version'] = (created_version if re.fullmatch(
+                    r'v?[0-9]+(?:[.][0-9]+){1,2}', created_version) else 'unknown')
+                runtime_env = dict(item.split('=', 1) for item in container.get('Env', []) if '=' in item)
+                configured = resolved[service].get('environment', {})
+                if not isinstance(configured, dict):
+                    raise ValueError('Unsupported environment shape')
+                row['env_file_count'] = len(unresolved[service].get('env_file', []))
+                row['configured_environment_count'] = len(configured)
+                row['configured_environment_matches_runtime'] = all(
+                    runtime_env.get(key) == value if value is not None else key not in runtime_env
+                    for key, value in configured.items())
+                row['image_reference_matches'] = resolved[service].get('image') == container.get('Image')
+            report['details_available'] = True
+        except (OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.SubprocessError):
+            pass
+        print('GUARD_CONFIG_REPORT: ' + json.dumps(report), flush=True)
+
     def check_config_hashes(self):
         """Do not apply unrelated pending Compose/env changes during a Guard update."""
+        comparisons = []
         for service, expected in self.config_hashes.items():
             actual = self.compose('config', '--hash', service).split()
-            if not re.fullmatch(r'[0-9a-f]{64}', expected) or actual != [service, expected]:
-                raise GuardUpdateError('GUARD_CONFIG_DRIFT')
+            label_valid = isinstance(expected, str) and bool(re.fullmatch(r'[0-9a-f]{64}', expected))
+            output_valid = len(actual) == 2 and actual[0] == service and bool(re.fullmatch(r'[0-9a-f]{64}', actual[1]))
+            comparisons.append(dict(service=service, stored_hash_valid=label_valid,
+                                    hash_output_valid=output_valid, hash_matches=label_valid and actual == [service, expected]))
+        if not all(row['hash_matches'] for row in comparisons):
+            self._config_report(comparisons)
+            raise GuardUpdateError('GUARD_CONFIG_DRIFT')
 
     def _compose_installation(self):
         """Identify the running services and reject configuration/image drift."""
@@ -96,6 +132,7 @@ class GuardUpdate:
         containers = [main, json.loads(self.run('docker', 'inspect', worker[0]))[0]]
         if compose_identity(containers[1]) != identity:
             raise GuardUpdateError('GUARD_PROJECT_MISMATCH')
+        self.config_containers = dict(zip(('netbox', 'netbox-worker'), containers))
         self.config_hashes = {service: container['Config']['Labels'].get('com.docker.compose.config-hash', '')
                               for service, container in zip(('netbox', 'netbox-worker'), containers)}
         self.check_config_hashes()
