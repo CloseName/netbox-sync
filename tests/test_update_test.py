@@ -289,3 +289,98 @@ def test_runtime_success_checks_public_tls_without_following_redirects(monkeypat
     assert "--insecure" not in calls[-1] and "-k" not in calls[-1]
     assert "--location" not in calls[-1]
     assert ("schedulers",) in calls
+
+
+def test_matching_evidence_preserves_decisions_without_raw_identifiers():
+    from deploy.selectel_matching_evidence import report
+    commands = []
+    document = dict(account='29916', writes_performed=False, hosts=[
+        dict(id=28, name='Existing host', status='collected', identifiers=[
+            dict(kind='system_serial', value='PRIVATE-SERIAL')])], pending_dedicated=[
+        dict(key='provider-key', name='Unlinked server', action='blocked',
+             reason='identity_needs_confirmation', hardware=dict(status='collected',
+             identifiers=[dict(kind='system_serial', value='PRIVATE-SERIAL')]), candidates=[
+             dict(resource='device', id=28, name='Existing host', host_device_id=28,
+                  evidence=dict(stable_identity=False, same_name=True, hardware_conflict=False,
+                                public_ips=['PRIVATE-IP'], observed_guest_wans=[]))])])
+    def manage(*args):
+        commands.append(args)
+        return "loaded config '/private/path'\n" + json.dumps(document)
+    result = report(manage, '29916')
+    assert commands == [('provider_hardware_check', '--account', '29916', '--actor', 'netbox-sync-selectel')]
+    assert result['pending_dedicated'][0]['reason'] == 'identity_needs_confirmation'
+    assert result['pending_dedicated'][0]['candidates'][0]['public_ip_match_count'] == 1
+    assert result['decisions'] == {'blocked': 1}
+    assert result['host_coverage'] == {'collected': 1}
+    assert result['writes_performed'] is False
+    assert 'PRIVATE' not in json.dumps(result) and '/private/path' not in json.dumps(result)
+
+
+@pytest.mark.parametrize('payload', [
+    'not json PRIVATE', '{}',
+    json.dumps(dict(account='other', writes_performed=False)),
+    json.dumps(dict(account='29916', writes_performed=True)),
+])
+def test_matching_evidence_rejects_bad_or_wrong_account_document(payload):
+    from deploy.selectel_matching_evidence import report
+    with pytest.raises(ValueError):
+        report(lambda *args: payload, '29916')
+
+
+@pytest.mark.parametrize('extra', [
+    ['--apply', '--idle-confirmed'], ['--with-guard'],
+    ['--diagnose-selectel', '29916', 'old-run'],
+])
+def test_matching_diagnostic_cannot_mutate_or_mix_modes(monkeypatch, extra):
+    monkeypatch.setattr(updater, 'preflight', lambda *args: pytest.fail('Must reject before commands'))
+    with pytest.raises(SystemExit):
+        updater.main(['--commit', SHA, '--diagnose-selectel-matching', '29916', *extra])
+
+
+def test_matching_diagnostic_uses_both_test_preflights_only(monkeypatch, capsys):
+    from deploy import selectel_matching_evidence
+    calls = []
+    monkeypatch.setattr(updater, 'preflight', lambda *args: calls.append('sync-preflight'))
+    class Guard:
+        def __init__(self, *args):
+            pass
+        def preflight(self):
+            calls.append('guard-preflight')
+        def manage(self, *args):
+            return 'unused'
+    monkeypatch.setattr(updater, 'GuardUpdate', Guard)
+    monkeypatch.setattr(selectel_matching_evidence, 'report',
+                        lambda manage, account: calls.append(account) or dict(writes_performed=False))
+    monkeypatch.setattr(updater, 'update', lambda *args, **kwargs: pytest.fail('No deployment'))
+    assert updater.main(['--commit', SHA, '--diagnose-selectel-matching', '29916']) == 0
+    assert calls == ['sync-preflight', 'guard-preflight', '29916']
+    assert 'SELECTEL_MATCHING_EVIDENCE:' in capsys.readouterr().out
+
+
+def test_matching_evidence_bounds_and_closed_labels():
+    from deploy.selectel_matching_evidence import report
+    document = dict(account='29916', writes_performed=False, hosts=[], pending_dedicated=[
+        dict(key='key', name='server', action='PRIVATE-ACTION', reason='PRIVATE-REASON',
+             hardware=dict(status='PRIVATE-STATUS', identifiers=[
+                 dict(kind='PRIVATE-KIND', value='PRIVATE-VALUE')]), candidates=[])])
+    result = report(lambda *args: json.dumps(document), '29916')
+    assert 'PRIVATE' not in json.dumps(result)
+    assert result['pending_dedicated'][0]['reason'] == 'unknown'
+    document['pending_dedicated'] *= 2001
+    with pytest.raises(ValueError):
+        report(lambda *args: json.dumps(document), '29916')
+    with pytest.raises(ValueError):
+        report(lambda *args: pytest.fail('Invalid account must not run a command'), '--apply')
+
+
+def test_matching_guard_preflight_failure_never_reads_inventory(monkeypatch):
+    monkeypatch.setattr(updater, 'preflight', lambda *args: None)
+    class Guard:
+        def __init__(self, *args):
+            pass
+        def preflight(self):
+            raise updater.GuardUpdateError('GUARD_CONFIG_DRIFT')
+        def manage(self, *args):
+            pytest.fail('Wrong installation must not be read')
+    monkeypatch.setattr(updater, 'GuardUpdate', Guard)
+    assert updater.main(['--commit', SHA, '--diagnose-selectel-matching', '29916']) == 1
