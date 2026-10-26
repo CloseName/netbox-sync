@@ -32,6 +32,17 @@ def resolve(user, snapshot, previous=None):
                 object_id=legacy.pk, object_created=legacy.created, provider_key='').first() if legacy else None
             if proof:
                 result=legacy; proof.provider_key=marker; proof.save(update_fields=['provider_key'])
+            elif legacy is not None:
+                # V1 created these deterministic slugs before provenance existed.
+                # Reuse an exact reference, never infer ownership or rename it.
+                if (ProviderCreatedObject.objects.filter(model_label=model._meta.label_lower,
+                        object_id=legacy.pk).exists()
+                        or any(getattr(legacy, field) != value for field, value in values.items())
+                        or (model is Region and legacy.parent_id is not None)):
+                    raise ValueError('PROVIDER_NATIVE_SCOPE_CONFLICT')
+                if not user.has_perm(f'{model._meta.app_label}.view_{model._meta.model_name}', legacy):
+                    raise DependencyGuardBlocked('PERMISSION_DENIED')
+                return legacy
             else:
                 result=model(slug='selectel-'+digest(key)[:24], **values)
                 create_native(user, result)

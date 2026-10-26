@@ -148,6 +148,16 @@ with tempfile.TemporaryDirectory() as temp:
             dataset['items'][0].update(name='Automatic native import fixture', status='ACTIVE')
     native_payload = import_payload('67891', str(uuid4()), dict(
         document=inventory_document(native_document), registry=registry(native_document)))
+    # V1 placed resources before ProviderCreatedObject existed. Do not create a
+    # second Region/Site, modify the originals, or infer deletion ownership.
+    from netbox_guard.provider_policy import digest
+    from dcim.models import Site
+    old_scope = digest(['67891', 'r'])[:16]
+    legacy_region = Region.objects.create(name='Selectel / 67891 / r', slug='selectel-'+old_scope)
+    legacy_site = Site.objects.create(name='Selectel / 67891 / ru-7a', region=legacy_region,
+        slug='selectel-'+digest([old_scope, 'ru-7a'])[:16])
+    legacy_region_before = Region.objects.filter(pk=legacy_region.pk).values().get()
+    legacy_site_before = Site.objects.filter(pk=legacy_site.pk).values().get()
     config = copy.deepcopy(settings.PLUGINS_CONFIG)
     config.setdefault('netbox_guard', {})['selectel_native_reconcile'] = True
     with override_settings(PLUGINS_CONFIG=config):
@@ -183,6 +193,15 @@ with tempfile.TemporaryDirectory() as temp:
         assert created.name == 'Renamed by Selectel fixture'
         assert created.vcpus == 6 and created.memory == 12288
         assert created.primary_ip4_id is None and changed['native_created'] == 0
+        assert created.site_id == legacy_site.pk
+        assert Region.objects.filter(pk=legacy_region.pk).values().get() == legacy_region_before
+        assert Site.objects.filter(pk=legacy_site.pk).values().get() == legacy_site_before
+        for model, native_id in [('dcim.region', legacy_region.pk), ('dcim.site', legacy_site.pk)]:
+            assert not ProviderCreatedObject.objects.filter(model_label=model, object_id=native_id).exists()
+        from netbox_guard.provider_lifecycle import review
+        deletion = review(service_user, '67891', 'delete')
+        assert not any((row['model'], row['id']) in {('dcim.region', legacy_region.pk), ('dcim.site', legacy_site.pk)}
+                       for row in deletion['delete'])
         assert set(created.custom_field_data['selectel_inventory']['native_fields']) >= {'name','vcpus','memory','site_id'}
         from django.db import IntegrityError
         rejected(lambda: VirtualMachine.objects.filter(pk=created.pk).update(memory=2048), (IntegrityError,))
