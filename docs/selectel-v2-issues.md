@@ -135,3 +135,15 @@ Black 25.1.0: 231 files unchanged. Pylint: 9.41/10 (existing style/cycle warning
 Docker engine unavailable locally: the independent PostgreSQL/NetBox lifecycle
 scenario is included in Guard CI and remains required before rollout.
 No test-server or production state was changed by this implementation work.
+
+## Test Guard preflight CONFIG_DRIFT — 2026-10-26
+
+Operator selected 672fc1446c9402287b0b94dda8a113e8a99483ec; read-only preflight
+returned GUARD_CONFIG_DRIFT before apply. No stopped services or deployment are
+established by this output. Root cause is not established: the original check
+provided no service/format/version/environment comparison.
+Added a closed, read-only report to the saved updater; drift still blocks apply.
+Docker Compose v5.3.1 runHash loads with WithoutEnvironmentResolution:
+https://github.com/docker/compose/blob/v5.3.1/cmd/compose/config.go#L408
+This is a possible explanation for env-file installations, not proof of the
+operator's current cause. Test-host report remains required. No server changed.
