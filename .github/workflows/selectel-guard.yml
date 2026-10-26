@@ -2,7 +2,7 @@ name: Selectel Guard integration
 on:
   pull_request:
     branches: [main]
-    paths: ['deploy/netbox_guard/**', 'tests/*selectel*', '.github/workflows/selectel-guard.yml']
+    paths: ['deploy/netbox_guard/**', 'netbox_sync/selectel*.py', 'tests/*selectel*', '.github/workflows/selectel-guard.yml']
   push:
     branches: [feat/selectel-guard-bindings]
   workflow_dispatch:
@@ -61,6 +61,17 @@ jobs:
             -e NETBOX_SYNC_MODEL_DB=netbox_sync_guard_test \
             --entrypoint /opt/netbox/venv/bin/python provider-guard:test \
             /app/tests/netbox_provider_binding_scenario.py
+      - name: Test Selectel detach and deletion in independent transactions
+        # Lifecycle must run outside the binding scenario's rollback transaction.
+        # Same isolated database; the harness refuses external database targets.
+        run: |
+          docker run --rm --network container:provider-test-pg \
+            --mount type=bind,src="$PWD",dst=/app,readonly \
+            --mount type=bind,src="$PWD/tests/netbox_guard_plugins.py",dst=/etc/netbox/config/plugins.py,readonly \
+            -e NETBOX_SYNC_ISOLATED_MODEL_TEST=1 \
+            -e NETBOX_SYNC_MODEL_DB=netbox_sync_guard_test \
+            --entrypoint /opt/netbox/venv/bin/python provider-guard:test \
+            /app/tests/netbox_selectel_lifecycle_scenario.py
       - name: Remove disposable database container
         if: always()
         run: docker rm -f -v provider-test-redis provider-test-pg
