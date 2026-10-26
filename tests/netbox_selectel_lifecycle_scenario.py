@@ -10,6 +10,7 @@ from django.test import override_settings
 from django.contrib.auth import get_user_model
 from virtualization.models import VirtualMachine, VMInterface
 from ipam.models import IPAddress
+from dcim.models import Site
 from netbox_guard.provider_service import review_binding, apply_binding
 from netbox_guard.provider_schema import configure_provider_fields
 from netbox_guard.provider_lifecycle import review, execute
@@ -35,9 +36,10 @@ def bind(vm,native,created=False):
     return identity(ident,'vm')
 
 with override_settings(PLUGINS_CONFIG=config):
-    adopted=VirtualMachine.objects.create(name='adopted-'+account)
-    owned=VirtualMachine.objects.create(name='owned-'+account)
-    detached=VirtualMachine.objects.create(name='detached-'+account)
+    site=Site.objects.create(name='lifecycle-'+account, slug='lifecycle-'+account)
+    adopted=VirtualMachine.objects.create(name='adopted-'+account, site=site)
+    owned=VirtualMachine.objects.create(name='owned-'+account, site=site)
+    detached=VirtualMachine.objects.create(name='detached-'+account, site=site)
     bind(adopted,'adopted'); bind(owned,'owned',True); key=bind(detached,'detached',True)
     nic=VMInterface.objects.create(virtual_machine=detached,name='external-interface')
     plan=review(admin,account,'delete')
