@@ -73,6 +73,28 @@ with override_settings(PLUGINS_CONFIG=config):
     assert list(IPAddress.objects.order_by('pk').values())==addresses
 print('Selectel lifecycle: dependencies, detach, stale review, deletion, replay, late-write fence, activation and unchanged IPs OK')
 
+# Unowned V1 placement can be referenced, but account removal cannot own/delete it.
+from dcim.models import Region
+from netbox_guard.provider_policy import digest
+from netbox_guard.provider_placement import resolve
+legacy_account = str(uuid4().int)[:20]
+scope = digest([legacy_account, 'r'])[:16]
+legacy_region = Region.objects.create(name=f'Selectel / {legacy_account} / r', slug='selectel-'+scope)
+legacy_site = Site.objects.create(name=f'Selectel / {legacy_account} / Zone', region=legacy_region,
+    slug='selectel-'+digest([scope, 'Zone'])[:16])
+legacy_snapshot = dict(identity=dict(account=legacy_account,region='r'), sections={
+    'placement':dict(status='collected',data=dict(uuid='zone',name='Zone'))})
+with override_settings(PLUGINS_CONFIG=config):
+    assert resolve(admin, legacy_snapshot).pk == legacy_site.pk
+    assert not ProviderCreatedObject.objects.filter(account=legacy_account).exists()
+    deletion = review(admin, legacy_account, 'delete')
+    assert deletion['delete'] == [] and not deletion['blockers']
+    execute(admin, legacy_account, 'delete', uuid4(), deletion['fingerprint'])
+    assert Region.objects.filter(pk=legacy_region.pk).exists()
+    assert Site.objects.filter(pk=legacy_site.pk, region_id=legacy_region.pk).exists()
+    assert list(IPAddress.objects.order_by('pk').values()) == addresses
+print('Legacy placement: reuse never grants deletion ownership; IDs and IPs retained OK')
+
 # Historical baseline changes only an audit/fence receipt, never native rows.
 from netbox_guard.account_import import import_account
 from netbox_guard.models import ProviderLifecycleReceipt

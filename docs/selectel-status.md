@@ -137,3 +137,22 @@ Validation, transaction boundaries, existing bindings and retry policy are uncha
 Deploy both test Guard and Sync, then inspect a new manual collection's diagnostic.
 Do not accept a historical baseline for this confirmed refusal. Production is out
 of scope. Native rollback and browser-rendering regressions cover this contract.
+
+### Legacy placement compatibility (26 October 2026)
+
+Test run `1e23bb4a-eb98-457a-bf6b-81d8ea7df503` failed validation of an unsaved
+Region (`__all__`, no detailed code). The operator confirmed existing account
+29916 regions kz-1, ru-1, ru-3, ru-7, ru-8 and ru-9 (IDs 1, 5, 2, 3, 6, 4).
+Source history exposes a reproducible upgrade defect: V1 created deterministic
+placement slugs without creation provenance; V2 recognized only proven legacy
+objects and otherwise attempted a duplicate with the same name. The exact live
+conflicting slug has not been read; these observations support that diagnosis.
+
+Resolve now reuses an unowned V1 Region/Site only at its exact account-scoped
+legacy slug, with all expected values equal, a root Region and object view
+permission. Any existing ownership proof outside the legacy migration path or
+value mismatch refuses the operation. Reuse does not save the placement object
+or add a creation proof: it does not authorize renaming or automatic deletion.
+New objects and previously proven objects retain their existing policy. Tests
+cover repeated reuse, mismatches, foreign ownership, permissions and native
+imports retaining IDs/fields while excluding legacy placement from deletion.
