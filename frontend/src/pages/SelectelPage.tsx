@@ -5,11 +5,13 @@ import {exactTime} from '../ui/format';
 import {ProviderIcon} from '../ui/ProviderIcon';
 import {SelectelSchedule, type ProviderSchedule} from './SelectelSchedule';
 import {SelectelLifecycle} from './SelectelLifecycle';
+import {SelectelBaseline} from './SelectelBaseline';
 
 type Product = {product:string;title:string;state_label:string;observations_by_collection:Record<string,number>};
 type Account = {account:string;name:string;username:string;status:string;error?:string;
  enabled?:boolean;schedule?:ProviderSchedule;next_run?:number;deleted?:boolean;
  lifecycle_pending?:{operation:string;key?:string|null;fingerprint:string};
+ baseline_history?:{run_id:string;historical_outcome:string;accepted_at:number}[];
  reconciliation?:{outcome:string;checked_at:number;run_id:string};
  url:string;run_id?:string;finished_at?:number;summary?:{projects:number;servers:number;matched:number;unmatched:number;products:Product[];
  placement_pending?:{resource:string;id:number;site_id:number;reason:string}[];
@@ -18,9 +20,10 @@ type Accounts = {items:Account[];import_ready:boolean};
 const messages:Record<string,string> = {
  SELECTEL_GUARD_INCOMPATIBLE:'Версия Guard не поддерживает безопасную сверку импорта. Требуется согласованное обновление Sync и Guard. Сбор и импорт не запускались.',
  LIFECYCLE_BUSY:'Сейчас выполняется запись или сбор. Дождитесь завершения и повторите проверку; останавливать планировщик не требуется.',
+ BASELINE_RUN_MISMATCH:'Состояние запуска изменилось. Обновите страницу и повторите сверку для актуального запуска.',
  DISABLE_ACCOUNT_FIRST:'Сначала отключите аккаунт, затем проверьте список ресурсов.',
  LIFECYCLE_UNCONFIRMED:'Ответ операции не получен. Аккаунт отключён. В разделе отсоединения и удаления нажмите «Проверить результат операции».',
- PROVIDER_REVIEW_STALE:'Данные изменились после просмотра. Постройте новый план удаления или отсоединения.',
+ PROVIDER_REVIEW_STALE:'Данные изменились после просмотра. Повторите проверку текущего состояния перед подтверждением.',
  PROVIDER_DEPENDENCIES_BLOCKED:'Обнаружены зависимые объекты. Обновите план и проверьте список препятствий.',
  PROVIDER_UNOWNED_CASCADE_BLOCKED:'Удаление затронуло бы другие объекты. Изменения отменены; отсоедините ресурс, чтобы сохранить карточку.',
  PROVIDER_APPLY_REFUSED:'NetBox отклонил операцию; изменения отменены. Проверьте права импортёра и зависимости ресурсов.',
@@ -91,17 +94,19 @@ export function SelectelPage(){
  <div className="account-cards selectel-table" aria-label="Аккаунты Selectel">
  {resource.data?.items.map(a=><section className="panel account-card" key={a.account} data-selected={a.account===selected}>
  <h2><ProviderIcon provider="selectel"/> <button className="account-name" aria-expanded={a.account===selected} onClick={()=>setSelected(a.account)}>{a.name}</button></h2><small>№ {a.account} · {a.username}</small>
- <p><span className={'badge badge-'+(a.status==='attention'||a.error?'danger':a.status==='running'?'info':'neutral')}>{({configured:'Доступ сохранён; ещё не проверен',running:'Сбор и импорт выполняются',completed:'Импорт подтверждён',attention:'Требует внимания',deleted:'Аккаунт удалён; доступ и расписание очищены'} as Record<string,string>)[a.status]||a.status}</span></p>
+ <p><span className={'badge badge-'+(a.status==='attention'||a.error?'danger':a.status==='running'?'info':'neutral')}>{({baseline_accepted:'Текущее состояние принято; старый результат неизвестен',configured:'Доступ сохранён; ещё не проверен',running:'Сбор и импорт выполняются',completed:'Импорт подтверждён',attention:'Требует внимания',deleted:'Аккаунт удалён; доступ и расписание очищены'} as Record<string,string>)[a.status]||a.status}</span></p>
  {a.error&&<p className="account-error">{messages[a.error]||'Сбор не завершён. Проверьте результат аккаунта.'}</p>}
  {a.run_id&&<small>Идентификатор запуска: {a.run_id}</small>}
  {a.reconciliation&&<p role="status">Сверка: {reconciliationMessages[a.reconciliation.outcome]||reconciliationMessages.unavailable} Проверено: {exactTime(new Date(a.reconciliation.checked_at*1000).toISOString())}</p>}
  {(a.error==='IMPORT_UNCONFIRMED'||a.error==='RUN_INTERRUPTED')&&<button disabled={busy||!!a.lifecycle_pending||a.deleted} onClick={()=>void configure(a.account,'reconcile',{})}>Проверить результат импорта</button>}
+ {!!a.baseline_history?.length&&<details><summary>История принятия текущего состояния</summary>{a.baseline_history.map((h,i)=><p key={i}>Запуск {h.run_id}: результат остаётся неизвестным. Текущее состояние принято {exactTime(new Date(h.accepted_at*1000).toISOString())}.</p>)}</details>}
  {a.finished_at&&<small>Последняя попытка: <time dateTime={new Date(a.finished_at*1000).toISOString()}>{exactTime(new Date(a.finished_at*1000).toISOString())}</time></small>}
  <div className="actions"><button disabled={busy||a.enabled===false||a.deleted||!!a.lifecycle_pending||a.error==='IMPORT_UNCONFIRMED'||a.error==='RUN_INTERRUPTED'||a.status==='running'||!resource.data?.import_ready} onClick={()=>{setSelected(a.account);void collect(a.account);}}>{a.status==='running'?'Сбор выполняется…':'Собрать и обновить'}</button><a href={a.url} target="_blank" rel="noreferrer">Ресурсы в NetBox ↗</a></div>
  <p>{a.deleted?'Сохранён только маркер удаления для защиты от повторной записи.':a.enabled===false?'Аккаунт отключён. Ресурсы сохранены.':a.next_run?'Следующий запуск: '+exactTime(new Date(a.next_run*1000).toISOString()):'Автоматический запуск не назначен.'}</p>
  <button disabled={busy||a.deleted||!!a.lifecycle_pending} onClick={()=>void configure(a.account,'enabled',{enabled:a.enabled===false})}>{a.enabled===false?'Включить аккаунт':'Отключить аккаунт'}</button>
  <p className="muted">Отключение запрещает новые запуски. Уже начатая запись в NetBox завершается.</p>
  {!a.deleted&&<SelectelSchedule key={a.account+JSON.stringify(a.schedule)} value={a.schedule} disabled={busy||!!a.lifecycle_pending} save={schedule=>configure(a.account,'schedule',{schedule})}/>}
+ {(a.error==='IMPORT_UNCONFIRMED'||a.error==='RUN_INTERRUPTED')&&a.run_id&&<SelectelBaseline account={a.account} runId={a.run_id} disabled={a.enabled===false} pending={!!a.lifecycle_pending} busy={busy} request={request} refresh={resource.refresh}/>}
  <SelectelLifecycle account={a.account} disabled={a.enabled===false} deleted={a.deleted} pending={a.lifecycle_pending} busy={busy} request={request} refresh={resource.refresh}/>
  <details><summary>Доступ</summary><p>Сервисный пользователь: {a.username}</p><button disabled={busy} onClick={()=>{setDraft({account:a.account,name:a.name,username:a.username,password:''});setForm(true);}}>Изменить доступ</button></details>
  </section>)}

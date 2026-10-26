@@ -110,3 +110,35 @@ Its final CI results are recorded in the PR. These checks do not establish that
 the known test server has been updated, that the complete host updater has been
 rehearsed there, or that historical imports are resolved. No live update/import
 was performed while preparing this change.
+
+
+## Explicit historical baseline acceptance
+
+For unresolved historical runs with `not_found` or `partial_evidence`, an administrator
+may review the current baseline through the existing lifecycle API (`operation=baseline`,
+`key=original run UUID`). This is a decision about the present, never an import-success
+receipt. The account must be disabled and local collection/apply locks must be free.
+The UI requires checking current resources and confirming old writers are stopped.
+Install the coordinated Guard/Sync release before considering this action; an old
+worker running old Guard code must not be allowed to resume.
+
+Guard holds the independent database fence, verifies the account receipt, hashes the
+current native Device/VM/site/region/interface/IP rows and account inventory/registry/
+bindings, and returns the bound-card list and counts. Complete read visibility is
+required; unmanaged historical writes are not magically attributed by the preview.
+The operator also inspects the account resources in NetBox. Intervening changes reject
+acceptance as stale. Acceptance writes only a deterministic lifecycle audit receipt.
+No card, IP assignment, binding or original account import receipt is changed.
+
+The audit receipt fences the original account/run nonce in account_import. A delayed
+old request entering the updated importer is rejected. A lost acceptance response
+keeps the existing pending lifecycle nonce; retry acknowledges the same decision.
+Sync only releases its uncertainty gate for an exact account/run/fingerprint response
+with baseline_accepted=true and historical_outcome=unknown. The original result is
+retained in baseline_history; status becomes baseline_accepted, the account stays
+disabled and schedule becomes off. Enabling and manually collecting is a separate
+operator action. This does not prove completeness, matching correctness or historical
+success. Receipts with committed/conflicting outcomes are not accepted through this
+path; use receipt reconciliation instead.
+
+Validation on the live test installation remains pending. No production use approved.

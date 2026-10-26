@@ -27,6 +27,9 @@ def import_account(user, payload):
     with connection.cursor() as cursor:
         for prefix in ('selectel-account:', 'selectel-inventory:', 'provider-resource-registry:'):
             cursor.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))', [prefix + account])
+    from .account_baseline import retired
+    if retired(account, nonce):
+        raise ValueError('PROVIDER_HISTORICAL_RUN_RETIRED')
     receipt = ProviderAccountRun.objects.filter(pk=nonce).first()
     if receipt:
         if receipt.actor != actor or receipt.digest != evidence:

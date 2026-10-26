@@ -10,6 +10,7 @@ from django.test import override_settings
 from django.contrib.auth import get_user_model
 from virtualization.models import VirtualMachine, VMInterface
 from ipam.models import IPAddress
+from dcim.models import Site
 from netbox_guard.provider_service import review_binding, apply_binding
 from netbox_guard.provider_schema import configure_provider_fields
 from netbox_guard.provider_lifecycle import review, execute
@@ -35,9 +36,10 @@ def bind(vm,native,created=False):
     return identity(ident,'vm')
 
 with override_settings(PLUGINS_CONFIG=config):
-    adopted=VirtualMachine.objects.create(name='adopted-'+account)
-    owned=VirtualMachine.objects.create(name='owned-'+account)
-    detached=VirtualMachine.objects.create(name='detached-'+account)
+    site=Site.objects.create(name='lifecycle-'+account, slug='lifecycle-'+account)
+    adopted=VirtualMachine.objects.create(name='adopted-'+account, site=site)
+    owned=VirtualMachine.objects.create(name='owned-'+account, site=site)
+    detached=VirtualMachine.objects.create(name='detached-'+account, site=site)
     bind(adopted,'adopted'); bind(owned,'owned',True); key=bind(detached,'detached',True)
     nic=VMInterface.objects.create(virtual_machine=detached,name='external-interface')
     plan=review(admin,account,'delete')
@@ -50,7 +52,7 @@ with override_settings(PLUGINS_CONFIG=config):
     assert VMInterface.objects.get(pk=nic.pk).virtual_machine_id==detached.pk
     plan=review(admin,account,'delete')
     assert not plan['blockers'] and [r['id'] for r in plan['delete']]==[owned.pk]
-    owned.description='changed after review'; owned.save()
+    owned.description='changed after review'; owned.save(update_fields=['description'])
     try: execute(admin,account,'delete',uuid4(),plan['fingerprint'])
     except ValueError as exc: assert str(exc)=='PROVIDER_REVIEW_STALE'
     else: raise AssertionError('Stale removal accepted')
@@ -70,3 +72,30 @@ with override_settings(PLUGINS_CONFIG=config):
     assert not ProviderAccountFence.objects.get(pk=account).deleted
     assert list(IPAddress.objects.order_by('pk').values())==addresses
 print('Selectel lifecycle: dependencies, detach, stale review, deletion, replay, late-write fence, activation and unchanged IPs OK')
+
+# Historical baseline changes only an audit/fence receipt, never native rows.
+from netbox_guard.account_import import import_account
+from netbox_guard.models import ProviderLifecycleReceipt
+run = str(uuid4())
+with override_settings(PLUGINS_CONFIG=config):
+    before = list(VirtualMachine.objects.order_by('pk').values())
+    baseline = review(admin, account, 'baseline', run)
+    adopted.description = 'concurrent baseline edit'
+    adopted.save(update_fields=['description'])
+    try: execute(admin, account, 'baseline', uuid4(), baseline['fingerprint'], run)
+    except ValueError as exc: assert str(exc) == 'PROVIDER_REVIEW_STALE'
+    else: raise AssertionError('Stale baseline accepted')
+    baseline = review(admin, account, 'baseline', run)
+    before = list(VirtualMachine.objects.order_by('pk').values())
+    result = execute(admin, account, 'baseline', uuid4(), baseline['fingerprint'], run)
+    assert result['baseline_accepted'] and result['historical_outcome'] == 'unknown'
+    assert execute(admin, account, 'baseline', uuid4(), baseline['fingerprint'], run)['replayed']
+    assert list(VirtualMachine.objects.order_by('pk').values()) == before
+    assert list(IPAddress.objects.order_by('pk').values()) == addresses
+    old_payload = dict(account=account, nonce=run,
+                       document=dict(account=account,account_verified=True,finished_at='2026-10-26T00:00:00Z'),
+                       registry=dict(account=account,observed_at='2026-10-26T00:00:00Z'))
+    try: import_account(admin,old_payload)
+    except ValueError as exc: assert str(exc) == 'PROVIDER_HISTORICAL_RUN_RETIRED'
+    else: raise AssertionError('Historical write passed baseline fence')
+print('Selectel historical baseline: stale review, audit, replay, late import fence and native/IP preservation OK')

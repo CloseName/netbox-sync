@@ -28,6 +28,7 @@ PUBLIC = (
     "lifecycle_pending",
     "deleted",
     "reconciliation",
+    "baseline_history",
 )
 
 
