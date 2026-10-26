@@ -147,3 +147,14 @@ Docker Compose v5.3.1 runHash loads with WithoutEnvironmentResolution:
 https://github.com/docker/compose/blob/v5.3.1/cmd/compose/config.go#L408
 This is a possible explanation for env-file installations, not proof of the
 operator's current cause. Test-host report remains required. No server changed.
+
+## Test Guard resolved configuration hashes — 2026-10-26
+
+23efd3df preflight: both services use Compose 5.3.1, valid but mismatching
+hashes, one env file each, 35 declared environment keys and matching image refs.
+The old equality diagnostic did not undo Compose dollar escaping. The hash gate
+now hashes the fully resolved model through Compose itself and compares the exact
+stored label, including env-file contents. Real drift remains blocked. No server,
+account, IP, resource binding or scheduling state changed during development.
+Disposable Compose 5.3.1 CI checks label equality and env/command drift. Live
+test-host preflight and Selectel acceptance remain pending.

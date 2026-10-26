@@ -4,6 +4,7 @@ on:
     paths:
       - 'deploy/**'
       - 'tests/test_update_test.py'
+      - 'tests/test_guard*.py'
       - 'tests/test_deployment_foundation.py'
       - 'tests/test_backup_restore.py'
       - '.github/workflows/test-updater.yml'
@@ -20,4 +21,19 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements-dev.txt
-      - run: python -m pytest tests/test_update_test.py tests/test_deployment_foundation.py tests/test_backup_restore.py -q
+      - run: python -m pytest tests/test_update_test.py tests/test_guard_update_test.py tests/test_guard_config_hash.py tests/test_deployment_foundation.py tests/test_backup_restore.py -q
+  compose-hash:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: docker/setup-compose-action@v1
+        with:
+          version: v5.3.1
+      - run: python -m pip install pytest
+      - run: python -m pytest tests/test_guard_compose_integration.py -q
+        env:
+          GUARD_COMPOSE_TEST: '1'

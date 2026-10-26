@@ -52,6 +52,8 @@ def test_failure_never_retries_or_rolls_back(monkeypatch, failure):
 def installation(monkeypatch):
     # Exercise the complete preflight without Docker or a server.
     monkeypatch.setattr(Path, 'resolve', lambda path: path)
+    monkeypatch.setattr(guard, 'resolved_hashes', lambda *args: {
+        'netbox': 'a'*64, 'netbox-worker': 'a'*64})
     labels = {'com.docker.compose.project.working_dir': '/netbox-test',
               'com.docker.compose.config-hash': 'a'*64,
               'com.docker.compose.project': 'netbox-test',
@@ -143,10 +145,9 @@ def test_activation_starts_only_netbox_services_after_migration(installation):
     update.new_image = 'sha256:' + 'd'*64
     calls.clear()
     update.activate()
-    assert len(calls) == 5
-    assert 'migrate' in calls[3]
-    assert calls[4][-2:] == ('netbox', 'netbox-worker')
-    assert '--no-deps' in calls[4] and '--no-build' in calls[4] and '--pull' in calls[4]
+    assert 'migrate' in calls[-2]
+    assert calls[-1][-2:] == ('netbox', 'netbox-worker')
+    assert '--no-deps' in calls[-1] and '--no-build' in calls[-1] and '--pull' in calls[-1]
 
 
 def test_pause_only_stops_test_services_without_archives(monkeypatch, tmp_path):
@@ -192,3 +193,31 @@ def test_drift_diagnostic_failure_does_not_hide_block_or_expose_output(installat
     assert '"details_available": false' in out
     assert 'private-output' not in out and 'secret-error' not in out
     assert not any('stop' in call or 'up' in call for call in calls)
+
+
+def test_unresolved_hash_mismatch_accepts_only_exact_resolved_hash(installation):
+    update, _, _, _ = installation
+    original = update.run
+    def run(*args):
+        return args[-1] + ' ' + 'b'*64 if '--hash' in args else original(*args)
+    update.run = run
+    update.preflight()
+
+
+def test_env_drift_blocks_even_if_unresolved_hash_matches(installation, monkeypatch):
+    update, _, _, calls = installation
+    monkeypatch.setattr(guard, 'resolved_hashes', lambda *args: {'netbox': 'b'*64, 'netbox-worker': 'a'*64})
+    with pytest.raises(guard.GuardUpdateError, match='CONFIG_DRIFT'):
+        update.preflight()
+    assert not any('stop' in call for call in calls)
+
+
+def test_dollar_escaping_does_not_report_environment_drift(installation, capsys):
+    update, containers, services, _ = installation
+    containers[0]['Config']['Labels']['com.docker.compose.config-hash'] = 'f'*64
+    containers[0]['Config']['Env'] = ['PRIVATE=literal$a$$b']
+    services['netbox']['environment'] = {'PRIVATE': 'literal$$a$$$$b'}
+    with pytest.raises(guard.GuardUpdateError, match='CONFIG_DRIFT'):
+        update.preflight()
+    report = json.loads(capsys.readouterr().out.split('GUARD_CONFIG_REPORT: ')[1])
+    assert report['services'][0]['configured_environment_matches_runtime'] is True
