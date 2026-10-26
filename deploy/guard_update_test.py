@@ -8,6 +8,11 @@ import re
 import subprocess
 from contextlib import contextmanager
 
+try:
+    from .guard_config_hash import resolved_hashes
+except ImportError:
+    from guard_config_hash import resolved_hashes
+
 ROOT = Path('/netbox-test')
 PYTHON = '/opt/netbox/venv/bin/python'
 MANAGE = '/opt/netbox/netbox/manage.py'
@@ -94,7 +99,8 @@ class GuardUpdate:
                 row['env_file_count'] = len(unresolved[service].get('env_file', []))
                 row['configured_environment_count'] = len(configured)
                 row['configured_environment_matches_runtime'] = all(
-                    runtime_env.get(key) == value if value is not None else key not in runtime_env
+                    runtime_env.get(key) == value.replace('$$', '$') if isinstance(value, str)
+                    else value is None and key not in runtime_env
                     for key, value in configured.items())
                 row['image_reference_matches'] = resolved[service].get('image') == container.get('Image')
             report['details_available'] = True
@@ -105,13 +111,20 @@ class GuardUpdate:
     def check_config_hashes(self):
         """Do not apply unrelated pending Compose/env changes during a Guard update."""
         comparisons = []
+        try:
+            document = self.compose('config', '--format', 'json')
+            project, _ = compose_identity(self.config_containers['netbox'])
+            resolved = resolved_hashes(ROOT, project, document)
+        except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+            raise GuardUpdateError('GUARD_CONFIG_HASH_CHECK_FAILED') from None
         for service, expected in self.config_hashes.items():
             actual = self.compose('config', '--hash', service).split()
             label_valid = isinstance(expected, str) and bool(re.fullmatch(r'[0-9a-f]{64}', expected))
             output_valid = len(actual) == 2 and actual[0] == service and bool(re.fullmatch(r'[0-9a-f]{64}', actual[1]))
             comparisons.append(dict(service=service, stored_hash_valid=label_valid,
-                                    hash_output_valid=output_valid, hash_matches=label_valid and actual == [service, expected]))
-        if not all(row['hash_matches'] for row in comparisons):
+                                    hash_output_valid=output_valid, hash_matches=label_valid and actual == [service, expected],
+                                    resolved_hash_matches=label_valid and resolved.get(service) == expected))
+        if not all(row['resolved_hash_matches'] for row in comparisons):
             self._config_report(comparisons)
             raise GuardUpdateError('GUARD_CONFIG_DRIFT')
 

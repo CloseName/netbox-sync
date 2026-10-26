@@ -70,7 +70,9 @@ configuration or printing secrets. `--with-guard` also discovers and validates t
 existing test NetBox Compose installation and database identity.
 
 Run this as a saved Python file, not `bash <<...`, `curl | bash`, or a pasted script
-fed through stdin. Children receive `/dev/null` stdin. This prevents nested tools
+fed through stdin. Children receive `/dev/null` stdin, except the read-only Compose
+hash subprocess which receives only its explicit in-memory configuration document.
+No child inherits terminal/script input. This prevents nested tools
 from consuming later commands, the suspected cause of the 22 October update stopping
 after installation while the UI returned 502.
 
@@ -120,5 +122,10 @@ Compose versions, declared environment equality and counts, and image-reference
 comparison. It never prints environment names/values, paths, hashes or raw errors.
 The environment comparison covers declared settings only; matching values do not
 prove the complete container configuration equivalent or authorize recreation.
-Send this report for diagnosis. Keep using preflight without `--apply` until the
-cause is understood. Diagnostic collection does not bypass the hash check.
+The gate compares the container label with a hash of the fully resolved model,
+including service env files. The rendered model is passed privately to Compose
+via explicit stdin, allowing Compose to decode its own dollar escaping. No
+configuration file or backup is written. `resolved_hash_matches` must be true
+for both services; the unresolved CLI hash is diagnostic only. A changed env
+file still blocks even when the unresolved hash happens to match.
+Send a remaining mismatch report for diagnosis; do not use `--apply` while blocked.
