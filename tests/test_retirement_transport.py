@@ -26,6 +26,38 @@ def client(response):
     session = Session(response)
     return GuardClient(session, 'https://netbox.example', 'Token fixture-only', str(uuid4())), session
 
+
+@pytest.mark.parametrize('valid', [True, False])
+def test_selectel_atomic_refusal_requires_exact_run_and_rollback_marker(valid):
+    nonce = str(uuid4())
+    body = {'code': 'PROVIDER_IMPORT_ROLLED_BACK', 'rolled_back': True,
+            'account': '29916', 'nonce': nonce if valid else str(uuid4()),
+            'reason': 'DATABASE_CONSTRAINT'}
+    guard, _ = client(Response(409, body))
+    with pytest.raises(GuardTransportError) as error:
+        guard._request('POST', 'providers/account-import/', {'account': '29916', 'nonce': nonce})
+    assert error.value.uncertain is not valid
+    if valid:
+        assert error.value.guard_detail['reason'] == 'DATABASE_CONSTRAINT'
+
+
+@pytest.mark.parametrize('patch,path,status', [
+    ({'rolled_back': False}, 'providers/account-import/', 409),
+    ({'rolled_back': 'true'}, 'providers/account-import/', 409),
+    ({'account': '435835'}, 'providers/account-import/', 409),
+    ({'code': 'PROVIDER_IMPORT_REFUSED'}, 'providers/account-import/', 409),
+    ({}, 'providers/lifecycle/execute/', 409),
+    ({}, 'providers/account-import/', 503),
+])
+def test_unproven_refusal_keeps_uncertainty(patch, path, status):
+    nonce = str(uuid4())
+    value = {'code': 'PROVIDER_IMPORT_ROLLED_BACK', 'rolled_back': True,
+             'account': '29916', 'nonce': nonce, **patch}
+    guard, _ = client(Response(status, value))
+    with pytest.raises(GuardTransportError) as error:
+        guard._request('POST', path, {'account': '29916', 'nonce': nonce})
+    assert error.value.uncertain is True
+
 @pytest.mark.parametrize('status,body,uncertain,code', [
     (409, {'code':'RETIREMENT_DEADLINE'}, False, 'RETIREMENT_DEADLINE'),
     (409, {'code':'DEPENDENCY_DATABASE_REFUSAL'}, False, 'DEPENDENCY_DATABASE_REFUSAL'),

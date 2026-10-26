@@ -6,9 +6,11 @@ import {ProviderIcon} from '../ui/ProviderIcon';
 import {SelectelSchedule, type ProviderSchedule} from './SelectelSchedule';
 import {SelectelLifecycle} from './SelectelLifecycle';
 import {SelectelBaseline} from './SelectelBaseline';
+import {selectelImportReason} from './selectelImportReason';
 
 type Product = {product:string;title:string;state_label:string;observations_by_collection:Record<string,number>};
 type Account = {account:string;name:string;username:string;status:string;error?:string;
+ import_diagnostic?:{reason?:string;http_status?:number;event_id?:string};
  enabled?:boolean;schedule?:ProviderSchedule;next_run?:number;deleted?:boolean;
  lifecycle_pending?:{operation:string;key?:string|null;fingerprint:string};
  baseline_history?:{run_id:string;historical_outcome:string;accepted_at:number}[];
@@ -96,6 +98,7 @@ export function SelectelPage(){
  <h2><ProviderIcon provider="selectel"/> <button className="account-name" aria-expanded={a.account===selected} onClick={()=>setSelected(a.account)}>{a.name}</button></h2><small>№ {a.account} · {a.username}</small>
  <p><span className={'badge badge-'+(a.status==='attention'||a.error?'danger':a.status==='running'?'info':'neutral')}>{({baseline_accepted:'Текущее состояние принято; старый результат неизвестен',configured:'Доступ сохранён; ещё не проверен',running:'Сбор и импорт выполняются',completed:'Импорт подтверждён',attention:'Требует внимания',deleted:'Аккаунт удалён; доступ и расписание очищены'} as Record<string,string>)[a.status]||a.status}</span></p>
  {a.error&&<p className="account-error">{messages[a.error]||'Сбор не завершён. Проверьте результат аккаунта.'}</p>}
+ {a.error&&a.import_diagnostic&&<p role="status">{selectelImportReason(a.import_diagnostic.reason)}{a.import_diagnostic.http_status?` HTTP ${a.import_diagnostic.http_status}.`:''}{a.import_diagnostic.event_id?` Событие ${a.import_diagnostic.event_id}.`:''} Передайте эти сведения администратору; сначала устраните причину отказа.</p>}
  {a.run_id&&<small>Идентификатор запуска: {a.run_id}</small>}
  {a.reconciliation&&<p role="status">Сверка: {reconciliationMessages[a.reconciliation.outcome]||reconciliationMessages.unavailable} Проверено: {exactTime(new Date(a.reconciliation.checked_at*1000).toISOString())}</p>}
  {(a.error==='IMPORT_UNCONFIRMED'||a.error==='RUN_INTERRUPTED')&&<button disabled={busy||!!a.lifecycle_pending||a.deleted} onClick={()=>void configure(a.account,'reconcile',{})}>Проверить результат импорта</button>}

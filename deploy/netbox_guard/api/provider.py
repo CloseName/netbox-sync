@@ -44,10 +44,34 @@ class ProviderAccountImport(GuardView):
         raw = request.read(16 * 1024 * 1024 + 1)
         if len(raw) > 16 * 1024 * 1024:
             raise DependencyGuardBlocked('REQUEST_TOO_LARGE')
-        try:
-            return Response(import_account(request.user, json.loads(raw)))
-        except (ValueError, TypeError, KeyError, AttributeError, IntegrityError, ValidationError):
-            raise DependencyGuardBlocked('PROVIDER_IMPORT_REFUSED') from None
+        from django.db import transaction
+        from ..import_refusal import reason
+        payload, refused_reason = None, None
+        # Catch inside the outer boundary: commit/on_commit failures must escape
+        # as uncertain, never be mistaken for a confirmed rollback.
+        with transaction.atomic():
+            try:
+                payload = json.loads(raw)
+                result = import_account(request.user, payload)
+            except (ValueError, TypeError, KeyError, AttributeError, IntegrityError, ValidationError,
+                    DependencyGuardBlocked) as exc:
+                refused_reason = reason(exc)
+                transaction.set_rollback(True)
+        if refused_reason is not None:
+            from uuid import UUID, uuid4
+            import logging
+            import re
+            event = str(uuid4())
+            data = dict(code='PROVIDER_IMPORT_ROLLED_BACK', rolled_back=True,
+                        reason=refused_reason, event_id=event)
+            if isinstance(payload, dict) and isinstance(payload.get('account'), str) and re.fullmatch(r'[0-9]{1,20}', payload['account']):
+                try:
+                    data.update(account=payload['account'], nonce=str(UUID(str(payload.get('nonce')))))
+                except ValueError:
+                    pass
+            logging.getLogger(__name__).warning('selectel_import_refused %s', json.dumps(data, sort_keys=True))
+            return Response(data, status=409)
+        return Response(result)
 
 
 class ProviderAccountReceipt(GuardView):

@@ -61,6 +61,27 @@ with tempfile.TemporaryDirectory() as temp:
     response = ProviderAccountImport.as_view()(request)
     assert response.status_code == 200, response.data
     assert response.data['servers'] == 2
+    # A failure after server writes is reported only after rollback; secrets stay private.
+    payload['nonce'] = str(uuid4())
+    previous_receipts = ProviderInventoryImport.objects.count()
+    request = factory.post('/providers/account-import/', payload, format='json', **headers)
+    force_authenticate(request, user=service_user, token=token)
+    with patch('netbox_guard.account_import.apply', side_effect=ValueError('PRIVATE-registry-failure')):
+        response = ProviderAccountImport.as_view()(request)
+    assert response.status_code == 409 and response.data['rolled_back'] is True
+    assert response.data['code'] == 'PROVIDER_IMPORT_ROLLED_BACK'
+    assert response.data['nonce'] == payload['nonce']
+    assert response.data['reason'] == 'INPUT_OR_POLICY_REJECTED'
+    assert 'PRIVATE' not in json.dumps(response.data)
+    assert ProviderInventoryImport.objects.count() == previous_receipts
+    assert not ProviderAccountRun.objects.filter(pk=payload['nonce']).exists()
+    # Response construction failure after a successful import remains uncertain.
+    request = factory.post('/providers/account-import/', payload, format='json', **headers)
+    force_authenticate(request, user=service_user, token=token)
+    with patch('netbox_guard.api.provider.Response', side_effect=ValueError('PRIVATE-response-failure')):
+        response = ProviderAccountImport.as_view()(request)
+    assert response.status_code == 503
+    assert ProviderAccountRun.objects.filter(pk=payload['nonce']).exists()
     request = factory.get('/providers/account-import/', **headers)
     force_authenticate(request, user=unprivileged)
     assert ProviderAccountImport.as_view()(request).status_code == 403

@@ -12,6 +12,20 @@ def receipt():
                 replayed=False, writes_performed=True, native_mode="registry_only")
 
 
+def test_safe_refusal_diagnostic_survives_to_public_account(runner, monkeypatch):
+    from netbox_sync.selectel_control import public
+    state, _, _, _ = runner
+    original = module.child
+    response = {'error': 'NETBOX_IMPORT_REFUSED', 'import_diagnostic': {
+        'reason': 'OBJECT_VALIDATION', 'http_status': 409, 'password': 'PRIVATE'}}
+    monkeypatch.setattr(module, 'child', lambda value, timeout:
+                        deepcopy(response) if value['operation'] == 'import' else original(value, timeout))
+    module.main()
+    assert state['error'] == 'NETBOX_IMPORT_REFUSED'
+    assert public(state)['import_diagnostic'] == {'reason': 'OBJECT_VALIDATION', 'http_status': 409}
+    assert 'PRIVATE' not in str(public(state))
+
+
 @pytest.mark.parametrize("response", [{}, {"ready": True}, {"account": "29916"},
     {"error": None}, {"error": ""}, {"error": "unknown"}, {"error": []},
     {**receipt(), "account": "435835"}, {**receipt(), "servers": True},

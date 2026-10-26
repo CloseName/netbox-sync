@@ -171,3 +171,13 @@ Added a read-only updater evidence option for existing logs before any new impor
 Its time-window categories are leads, not write-outcome proof. Test/prod untouched.
 Also observed: old reconciliation wording still says import blocked after baseline
 acceptance; label this historical in a later UI correction.
+
+## S17 — distinguish atomic refusal and uncertain response
+
+Read-only evidence for 08cd3347 showed one HTTP 409 in the time window. Source review
+confirmed PROVIDER_IMPORT_REFUSED was not recognized by transport and the underlying
+exception was discarded. Added an explicit exact-run rollback contract and sanitized
+reason propagation to UI, plus disposable NetBox rollback and post-commit response
+failure tests. Do not reinterpret the old run: its actual response body is unavailable.
+No server has been changed by this implementation. Old baseline acceptance is not
+repeated; schedules stay off. Root cause investigation remains open.
