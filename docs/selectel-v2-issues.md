@@ -107,3 +107,12 @@ T01–T17 остаются NOT RUN до получения вывода поль
 ### S13 — шумная проверка готовности во время запуска
 
 При первом health probe API напечатан FileNotFoundError для Unix socket из web_runtime.py. install.py проверяет готовность в цикле до 30 попыток с интервалом 2 секунды; успешное завершение установки означает последующее прохождение health/proxy/auth проверок. Зафиксировать UX-дефект: ожидаемое ожидание сокета выводится как traceback. Исправление пока не выполнялось.
+
+## Test updater without automatic backups — 2026-10-26
+
+Operator requested removing backups from test updates, including Guard. Removed
+Sync backup preflight/create/verify and Guard database/configuration archives.
+Kept host/target checks, pause before migrations, runtime/HTTPS verification and
+schedules-off contract. Standalone backup/restore and production are unchanged.
+Validation: 114 passed, 1 platform skip in updater/Guard/backup-restore tests.
+No server update was executed.

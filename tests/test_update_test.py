@@ -114,7 +114,6 @@ def test_cli_rejects_unpinned_release(value):
 def workflow(monkeypatch, tmp_path):
     calls = []
     previous = tmp_path / "releases/old"
-    bundle = tmp_path / "backups/netbox-sync-backup-example"
     stage_failure = {"value": None}
     real_resolve = Path.resolve
 
@@ -133,22 +132,19 @@ def workflow(monkeypatch, tmp_path):
         calls.append(args)
         if stage_failure["value"] in args:
             raise subprocess.CalledProcessError(1, args)
-        if "create" in args:
-            return "backup complete: " + str(bundle)
         return ""
 
     monkeypatch.setattr(updater, "run", command)
     return tmp_path, calls, stage_failure
 
 
-def test_update_orders_backup_install_start_and_never_enables_schedules(workflow):
+def test_update_without_backups_orders_install_start_and_keeps_schedules_off(workflow):
     root, calls, _ = workflow
     updater.update(root, root / "repo", SHA)
-    creation = next(i for i, call in enumerate(calls) if "create" in call)
-    verification = next(i for i, call in enumerate(calls) if "verify" in call)
     install = next(i for i, call in enumerate(calls) if "--no-start" in call)
     start = next(i for i, call in enumerate(calls) if "up" in call)
-    assert creation < verification < install < start
+    assert install < start
+    assert not any("backup.py" in str(call) or "pg_dump" in call or "tar" in call for call in calls)
     assert "--ingress-mode" in calls[install] and "external" in calls[install]
     assert calls[start][-len(updater.SERVICES) :] == updater.SERVICES
     assert updater.SCHEDULER not in calls[start]
@@ -156,7 +152,7 @@ def test_update_orders_backup_install_start_and_never_enables_schedules(workflow
     assert calls[-1] == ("verified",)
 
 
-def test_combined_update_backs_up_sync_before_guard_and_only_reads_receipts(workflow, monkeypatch):
+def test_combined_update_without_backup_updates_guard_then_reads_receipts(workflow, monkeypatch):
     root, calls, _ = workflow
     class Guard:
         def __init__(self, *args):
@@ -174,15 +170,14 @@ def test_combined_update_backs_up_sync_before_guard_and_only_reads_receipts(work
         return original(*args)
     monkeypatch.setattr(updater, "run", run)
     updater.update(root, root / "repo", SHA, with_guard=True)
-    backup = next(i for i, call in enumerate(calls) if "verify" in call)
     guard = calls.index(("guard-apply",))
     install = next(i for i, call in enumerate(calls) if "--no-start" in call)
     reconcile = next(i for i, call in enumerate(calls) if "netbox_sync.selectel_recovery" in call)
-    assert backup < guard < install < calls.index(("verified",)) < reconcile
+    assert guard < install < calls.index(("verified",)) < reconcile
     assert not any("netbox_sync.selectel_runner" in call for call in calls)
 
 
-@pytest.mark.parametrize("failure", ["create", "verify", "--no-start", "up"])
+@pytest.mark.parametrize("failure", ["stop", "--no-start", "up"])
 def test_failure_stops_without_retry_or_rollback(workflow, capsys, failure):
     root, calls, fail = workflow
     fail["value"] = failure

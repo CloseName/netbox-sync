@@ -1,4 +1,4 @@
-"""Guard release automation must reject unknown targets and preserve backup ordering."""
+"""Guard release automation must reject unknown targets and preserve pause ordering without backups."""
 import pytest
 from contextlib import nullcontext
 from deploy import guard_update_test as guard
@@ -22,17 +22,17 @@ def test_compose_files_cannot_escape_test_root(files):
             "com.docker.compose.project.config_files": files}}})
 
 
-def test_apply_does_not_start_before_backup_and_migrations(monkeypatch):
+def test_apply_pauses_before_activation_without_backups(monkeypatch):
     monkeypatch.setattr(guard, 'apply_lock', nullcontext)
     calls = []
     update = guard.GuardUpdate(lambda *args: calls.append(args) or "", None, "a" * 40)
-    for name in ("preflight", "build", "backup", "activate", "verify"):
+    for name in ("preflight", "build", "pause", "activate", "verify"):
         monkeypatch.setattr(update, name, lambda name=name: calls.append(name))
     update.apply()
-    assert calls == ["preflight", "build", "backup", "activate", "verify"]
+    assert calls == ["preflight", "build", "pause", "activate", "verify"]
 
 
-@pytest.mark.parametrize("failure", ["preflight", "build", "backup", "activate", "verify"])
+@pytest.mark.parametrize("failure", ["preflight", "build", "pause", "activate", "verify"])
 def test_failure_never_retries_or_rolls_back(monkeypatch, failure):
     monkeypatch.setattr(guard, 'apply_lock', nullcontext)
     calls = []
@@ -41,7 +41,7 @@ def test_failure_never_retries_or_rolls_back(monkeypatch, failure):
         calls.append(name)
         if name == failure:
             raise guard.GuardUpdateError("failed")
-    for name in ("preflight", "build", "backup", "activate", "verify"):
+    for name in ("preflight", "build", "pause", "activate", "verify"):
         monkeypatch.setattr(update, name, lambda name=name: stage(name))
     with pytest.raises(guard.GuardUpdateError):
         update.apply()
@@ -91,6 +91,7 @@ def test_preflight_is_read_only_and_checks_source_fingerprint(installation):
     update, _, _, calls = installation
     update.preflight()
     assert len(update.fingerprint) == 64
+    assert not any(word in call for call in calls for word in ('pg_dump', 'pg_restore', 'tar'))
     assert not any(word in call for call in calls for word in ('up', 'stop', 'build', 'tag', 'run'))
     assert all('--check' in call for call in calls if 'migrate' in call)
 
@@ -148,40 +149,10 @@ def test_activation_starts_only_netbox_services_after_migration(installation):
     assert '--no-deps' in calls[4] and '--no-build' in calls[4] and '--pull' in calls[4]
 
 
-@pytest.mark.parametrize('failure', [None, 'pg_dump', 'pg_restore', 'tar'])
-def test_backup_failure_never_reports_verified_or_changes_configured_image(monkeypatch, tmp_path, capsys, failure):
-    import subprocess
-    monkeypatch.setattr(guard, 'BACKUPS', tmp_path)
+def test_pause_only_stops_test_services_without_archives(monkeypatch, tmp_path):
     calls = []
-    def run(*args):
-        calls.append(args)
-        if args[0] == failure:
-            raise subprocess.CalledProcessError(1, args)
-        return ''
-    def process(args, **kwargs):
-        calls.append(tuple(args))
-        if failure in args:
-            raise subprocess.CalledProcessError(1, args)
-        if 'pg_dump' in args:
-            assert kwargs['stdin'] == subprocess.DEVNULL
-            kwargs['stdout'].write(b'PGDMP-fixture')
-        else:
-            assert kwargs['stdin'].read() == b'PGDMP-fixture'
-        return None
-    monkeypatch.setattr(subprocess, 'run', process)
-    update = guard.GuardUpdate(run, tmp_path, 'a'*40)
+    update = guard.GuardUpdate(lambda *args: calls.append(args), tmp_path, 'a'*40)
     update.command = ('docker', 'compose')
-    update.database, update.db = 'db-id', dict(USER='netbox', NAME='netbox')
-    update.old_image, update.tag = 'sha256:' + 'b'*64, 'netbox-with-sync-guard:test'
-    update.fingerprint, update.backup_paths = 'c'*64, {'/netbox-test/config'}
-    if failure:
-        with pytest.raises(subprocess.CalledProcessError):
-            update.backup()
-    else:
-        update.backup()
-        assert (update.bundle / 'database.dump').read_bytes() == b'PGDMP-fixture'
-        assert json.loads((update.bundle / 'release.json').read_text())['previous_image'] == update.old_image
-    output = capsys.readouterr().out
-    assert ('GUARD_BACKUP_VERIFIED:' in output) == (failure is None)
-    assert calls[0] == ('docker', 'compose', 'stop', 'netbox-worker', 'netbox')
-    assert not any('migrate' in call or 'up' in call or update.tag in call for call in calls)
+    update.pause()
+    assert calls == [('docker', 'compose', 'stop', 'netbox-worker', 'netbox')]
+    assert list(tmp_path.iterdir()) == []

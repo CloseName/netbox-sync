@@ -15,7 +15,6 @@ Operator-confirmed on 22 October 2026; revalidate before each update:
 | SSH shell / server | root on `netbox-test` |
 | Sync root / checkout | `/netbox-sync-test` / `/netbox-sync-test/repo` |
 | Releases / current | `/netbox-sync-test/releases/<SHA>` / `current` symlink |
-| Backup directory | `/netbox-sync-test/backups` |
 | Public Sync URL | `https://netbox-sync-test.indeed-id.hq` |
 | Target NetBox | `https://netbox-test.indeed-id.hq`, previously resolved to `10.24.0.6` |
 | Ingress | external; host nginx forwards to the Sync proxy |
@@ -34,10 +33,14 @@ On 25 October 2026 the operator confirmed the updater's full real Linux cycle fo
 behavior. This is dated evidence, not acceptance of Selectel or a future update.
 The updater is not a general installer or production tool.
 By default it updates Sync only. The explicit `--with-guard` mode described below
-also backs up and updates the installed test Guard. Neither mode changes account schedules, invokes synchronization,
+also updates the installed test Guard without backups. Neither mode changes account schedules, invokes synchronization,
 prunes Docker, or restores data. Existing `update-*-test*.sh` scripts are historical
 special-purpose procedures: some skip backups, change Guard and/or enable schedules.
 Do not substitute them for this procedure.
+
+The test updater creates no Sync or NetBox database/configuration backups, including
+with `--with-guard`. Existing backups are not deleted. Production backup tools and
+the standalone backup/restore utility are unchanged.
 
 ## Before starting
 
@@ -62,17 +65,16 @@ approval. Do not substitute individually pasted diagnostic commands.
 
 Preflight checks host/root, clean checkout, ancestry in fetched origin/main,
 expected origin, free space, target URLs/bootstrap, external ingress, scheduler
-state and backup prerequisites. It rejects mismatches instead of rewriting
+state. It rejects mismatches instead of rewriting
 configuration or printing secrets. `--with-guard` also discovers and validates the
-existing test NetBox Compose installation and checks its local database backup tools.
+existing test NetBox Compose installation and database identity.
 
 Run this as a saved Python file, not `bash <<...`, `curl | bash`, or a pasted script
 fed through stdin. Children receive `/dev/null` stdin. This prevents nested tools
 from consuming later commands, the suspected cause of the 22 October update stopping
 after installation while the UI returned 502.
 
-The script stops selected Sync services, creates and verifies a backup using the
-installed release, installs with `--no-start --ingress-mode external`, then starts
+The script stops selected Sync services and installs with `--no-start --ingress-mode external`, then starts
 only the explicit allowlist (API, proxy, auth, broker, probe, bootstrap, lifecycle,
 apply). The schedule worker is excluded. Selectel state is checked again before
 bootstrap starts because it contains its own scheduler. Successful completion
@@ -82,7 +84,7 @@ Only `UPDATE_OK` establishes script completion, not `Built` or `migrate complete
 
 ## Failure and recovery
 
-Record `UPDATE_FAILED_STAGE`, `PREVIOUS_RELEASE` and `BACKUP_VERIFIED`/`BACKUP_PATH`.
+Record `UPDATE_FAILED_STAGE` and `PREVIOUS_RELEASE`. No backup is created by this test updater.
 Do not rerun the entire updater blindly. No automatic rollback is performed.
 Before install, the old release is still selected; after install it may be the new
 release and migrations may have completed. Keep schedules off in either case.

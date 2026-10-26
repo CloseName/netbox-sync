@@ -5,12 +5,9 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
-import subprocess
-import time
 from contextlib import contextmanager
 
 ROOT = Path('/netbox-test')
-BACKUPS = Path('/netbox-sync-test/backups')
 PYTHON = '/opt/netbox/venv/bin/python'
 MANAGE = '/opt/netbox/netbox/manage.py'
 
@@ -57,12 +54,11 @@ def apply_lock():
 
 
 class GuardUpdate:
-    """Discover, back up, replace and verify only the two known NetBox services."""
+    """Discover, replace and verify only the two known NetBox services."""
 
     def __init__(self, run, source, commit):
         self.run, self.source, self.commit = run, source, commit
         self.command = ()
-        self.bundle = None
 
     def compose(self, *args):
         return self.run(*self.command, *args)
@@ -114,21 +110,21 @@ class GuardUpdate:
             raise GuardUpdateError('GUARD_RUNNING_IMAGE_MISMATCH')
         return identity, files, containers, config
 
-    def _backup_configuration(self, files, containers, config):
+    def _validate_configuration(self, files, containers, config):
         """Select only discovered configuration files and test-local bind sources."""
-        self.backup_paths = set(files)
+        self.config_paths = set(files)
         if (ROOT / '.env').exists():
-            self.backup_paths.add(str(ROOT / '.env'))
+            self.config_paths.add(str(ROOT / '.env'))
         for service in config["services"].values():
             for env in service.get('env_file', []):
-                self.backup_paths.add(env['path'] if isinstance(env, dict) else env)
+                self.config_paths.add(env['path'] if isinstance(env, dict) else env)
         for kind in ('configs', 'secrets'):
             for value in config.get(kind, {}).values():
                 if value.get('file'):
-                    self.backup_paths.add(value['file'])
+                    self.config_paths.add(value['file'])
                 else:
                     raise GuardUpdateError('GUARD_EXTERNAL_CONFIG_UNSUPPORTED')
-        if any(ROOT not in Path(p).resolve().parents for p in self.backup_paths):
+        if any(ROOT not in Path(p).resolve().parents for p in self.config_paths):
             raise GuardUpdateError('GUARD_CONFIG_OUTSIDE_TEST')
         for container in containers:
             for mount in container.get('Mounts', []):
@@ -140,7 +136,7 @@ class GuardUpdate:
                     path = Path(mount['Source']).resolve()
                     if ROOT not in path.parents:
                         raise GuardUpdateError('GUARD_MOUNT_OUTSIDE_TEST')
-                    self.backup_paths.add(str(path))
+                    self.config_paths.add(str(path))
 
     def _database_preflight(self, identity, services):
         """Verify local database identity and tools without dumping or migrating."""
@@ -160,8 +156,6 @@ class GuardUpdate:
         if compose_identity(database) != identity:
             raise GuardUpdateError('GUARD_DATABASE_PROJECT_MISMATCH')
         self.db = db
-        self.run('docker', 'exec', self.database, 'pg_dump', '--version')
-        self.run('docker', 'exec', self.database, 'pg_restore', '--version')
         self.manage('migrate', '--check')
         self.https()
 
@@ -176,9 +170,9 @@ class GuardUpdate:
         }))
 
     def preflight(self):
-        """Validate target, backup inputs and release content before any mutation."""
+        """Validate target, configuration and release content before any mutation."""
         identity, files, containers, config = self._compose_installation()
-        self._backup_configuration(files, containers, config)
+        self._validate_configuration(files, containers, config)
         self._database_preflight(identity, config['services'])
         self._source_fingerprint()
 
@@ -192,31 +186,9 @@ class GuardUpdate:
                  '-f', str(self.source / 'deploy/Dockerfile.netbox-guard'), '-t', self.image, str(self.source))
         self.new_image = json.loads(self.run('docker', 'image', 'inspect', self.image))[0]['Id']
 
-    def backup(self):
-        # Sync is already paused and backed up by update_test before this stage.
+    def pause(self):
+        """Stop test writers before migrations; no database/configuration backup."""
         self.compose('stop', 'netbox-worker', 'netbox')
-        self.bundle = BACKUPS / ('guard-' + time.strftime('%Y%m%d-%H%M%S') + '-' + self.commit[:12])
-        self.bundle.mkdir(mode=0o700)
-        print('GUARD_BACKUP_PATH:', self.bundle, flush=True)
-        archive = self.bundle / 'database.dump'
-        fd = os.open(archive, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, 'wb') as stream:
-            subprocess.run(['docker', 'exec', self.database, 'pg_dump', '-Fc', '-U', self.db['USER'], self.db['NAME']],
-                           stdin=subprocess.DEVNULL, stdout=stream, stderr=subprocess.PIPE, check=True, timeout=900)
-            stream.flush()
-            os.fsync(stream.fileno())
-        if archive.stat().st_size == 0:
-            raise GuardUpdateError('GUARD_BACKUP_EMPTY')
-        with archive.open('rb') as stream:
-            subprocess.run(['docker', 'exec', '-i', self.database, 'pg_restore', '--list'], stdin=stream,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True, timeout=120)
-        self.run('tar', '--create', '--gzip', '--file', str(self.bundle / 'configuration.tar.gz'),
-                 '--', *sorted(self.backup_paths))
-        self.run('tar', '--list', '--gzip', '--file', str(self.bundle / 'configuration.tar.gz'))
-        self.run('docker', 'image', 'tag', self.old_image, 'netbox-with-sync-guard:before-' + self.commit)
-        (self.bundle / 'release.json').write_text(json.dumps(dict(previous_image=self.old_image,
-            configured_image=self.tag, target_commit=self.commit, fingerprint=self.fingerprint)))
-        print('GUARD_BACKUP_VERIFIED:', self.bundle, flush=True)
 
     def activate(self):
         # Preserve the operator's existing Compose image reference; both services use it.
@@ -245,6 +217,6 @@ class GuardUpdate:
 
     def apply(self):
         with apply_lock():
-            for name in ('preflight', 'build', 'backup', 'activate', 'verify'):
+            for name in ('preflight', 'build', 'pause', 'activate', 'verify'):
                 print('GUARD_STAGE:', name, flush=True)
                 getattr(self, name)()
