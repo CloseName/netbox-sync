@@ -19,18 +19,15 @@ script refuses scheduled/running Selectel work rather than changing schedules.
 1. Validate canonical Sync host, root, commit, URLs, bootstrap and schedules.
    Discover NetBox/worker Compose identity from running container labels. Reject
    foreign roots, different images, pending Compose/env changes (config hash), external bind mounts, plugin source mounts,
-   ambiguous/nonlocal database services and missing backup tools. No secrets or
+   ambiguous/nonlocal database services. No secrets or
    complete Compose configuration are printed.
-2. Pause only the allowlisted Sync services and verify the existing Sync backup.
+2. Pause only the allowlisted Sync services.
 3. Hold the shared Sync apply lock. Build Guard from the pinned checkout on the
    **exact currently installed NetBox image** with pulling disabled. This is not
    an upgrade of the NetBox base version. No Guard permissions, tokens, native
    flags or account schedules are provisioned or changed.
-4. Stop only NetBox and its worker. Save a PostgreSQL custom-format dump and
-   validate it with `pg_restore --list`; archive discovered configuration/bind
-   sources and validate the archive listing. Retain the old image by a recovery
-   tag. The private bundle lives in `/netbox-sync-test/backups/guard-<stamp>-<SHA>`.
-   `GUARD_BACKUP_VERIFIED` means an archive/dump can be read, not a rehearsed restore.
+4. Stop only NetBox and its worker. No database dump, configuration archive or
+   backup verification is performed in this test-only updater.
 5. Replace the existing configured `netbox-with-sync-guard:*` image reference,
    preserving the existing Compose configuration. Run migrations, recreate only
    NetBox/worker with no dependencies, pulling or rebuilding, then verify image
@@ -41,17 +38,16 @@ script refuses scheduled/running Selectel work rather than changing schedules.
    unresolved account by GET. Print only compatibility and per-account evidence
    codes; save the evidence on the account for display in the UI. Recheck schedules.
 
-Any failed stage stops the sequence. It may leave services stopped; backups and
-the stage report are retained. There is no automatic rollback, database restore,
+Any failed stage stops the sequence. It may leave services stopped; the stage report is retained. Existing backups
+are untouched, and this updater creates none. There is no automatic rollback, database restore,
 image pruning, schedule enablement or blind retry. Recovery needs a reviewed
 release action based on the failed stage, not manual server investigation.
-All generic child commands have a 30-minute ceiling; dump/list and HTTPS checks
+All generic child commands have a 30-minute ceiling; HTTPS checks
 have shorter bounds. The known test stack must fit the discovered contract;
 unknown installation layouts fail closed and need a code change.
 
 Compose must support JSON configuration and `--no-env-resolution` so the updater
-can include referenced env files in the private backup without exposing their
-contents. See the [Compose config reference](https://docs.docker.com/reference/cli/docker/compose/config/).
+can validate referenced configuration paths without exposing their contents. See the [Compose config reference](https://docs.docker.com/reference/cli/docker/compose/config/).
 
 ## Compatibility and receipt semantics
 

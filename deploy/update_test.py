@@ -131,14 +131,12 @@ def preflight(root, source, commit):
     check_configuration(root)
     check_schedulers(root)
     run(sys.executable, str(source / "deploy/install.py"), "--root", str(root), "--ingress-mode", "external", "--check")
-    run(sys.executable, str(root / "current/deploy/backup.py"), "--root", str(root), "preflight")
     return current
 
 
 def update(root, source, commit, *, with_guard=False):
-    """Back up before installation; fail closed and never roll back databases implicitly."""
+    """Update test services without backups; never roll back databases implicitly."""
     stage = "preflight"
-    bundle = None
     try:
         previous = preflight(root, source, commit)
         guard = GuardUpdate(run, source, commit) if with_guard else None
@@ -150,21 +148,6 @@ def update(root, source, commit, *, with_guard=False):
         print("STAGE:", stage, flush=True)
         run("systemctl", "stop", "netbox-sync.timer")
         compose(root, "stop", SCHEDULER, *SERVICES)
-        stage = "backup"
-        print("STAGE:", stage, flush=True)
-        output = run(sys.executable, str(previous / "deploy/backup.py"), "--root", str(root), "create")
-        paths = [
-            line.removeprefix("backup complete: ")
-            for line in output.splitlines()
-            if line.startswith("backup complete: ")
-        ]
-        if len(paths) != 1:
-            raise UpdateError("Backup did not return exactly one bundle path.")
-        bundle = Path(paths[0])
-        if bundle.resolve().parent != root / "backups":
-            raise UpdateError("Unexpected backup location.")
-        run(sys.executable, str(previous / "deploy/backup.py"), "--root", str(root), "verify", str(bundle))
-        print("BACKUP_VERIFIED:", bundle, flush=True)
         if guard:
             stage = "guard"
             guard.apply()
@@ -205,8 +188,6 @@ def update(root, source, commit, *, with_guard=False):
         print("UPDATE_OK:", commit, flush=True)
     except (UpdateError, GuardUpdateError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
         print("UPDATE_FAILED_STAGE:", stage, file=sys.stderr)
-        if bundle:
-            print("BACKUP_PATH:", bundle, file=sys.stderr)
         print(
             "Do not rerun blindly or enable schedules. See docs/operations/test.md. "
             "No automatic rollback; services may remain stopped.",
@@ -249,7 +230,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--apply", action="store_true")
-    parser.add_argument("--with-guard", action="store_true", help="Back up and update the known test Guard, then reconcile receipts")
+    parser.add_argument("--with-guard", action="store_true", help="Update the known test Guard without backups, then reconcile receipts")
     parser.add_argument(
         "--idle-confirmed",
         action="store_true",
