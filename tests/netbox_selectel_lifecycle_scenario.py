@@ -52,7 +52,7 @@ with override_settings(PLUGINS_CONFIG=config):
     assert VMInterface.objects.get(pk=nic.pk).virtual_machine_id==detached.pk
     plan=review(admin,account,'delete')
     assert not plan['blockers'] and [r['id'] for r in plan['delete']]==[owned.pk]
-    owned.description='changed after review'; owned.save()
+    owned.description='changed after review'; owned.save(update_fields=['description'])
     try: execute(admin,account,'delete',uuid4(),plan['fingerprint'])
     except ValueError as exc: assert str(exc)=='PROVIDER_REVIEW_STALE'
     else: raise AssertionError('Stale removal accepted')
@@ -81,7 +81,7 @@ with override_settings(PLUGINS_CONFIG=config):
     before = list(VirtualMachine.objects.order_by('pk').values())
     baseline = review(admin, account, 'baseline', run)
     adopted.description = 'concurrent baseline edit'
-    adopted.save()
+    adopted.save(update_fields=['description'])
     try: execute(admin, account, 'baseline', uuid4(), baseline['fingerprint'], run)
     except ValueError as exc: assert str(exc) == 'PROVIDER_REVIEW_STALE'
     else: raise AssertionError('Stale baseline accepted')
