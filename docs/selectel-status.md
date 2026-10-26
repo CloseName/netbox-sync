@@ -122,3 +122,18 @@ child, account state and public UI. No remote exception messages, SQL or invalid
 values are exposed. Coordinated test Sync/Guard deployment is required. This improves
 future evidence; it does not establish the cause of the old 08cd3347 run or authorize
 another import/baseline acceptance.
+
+### Structural validation evidence (26 October 2026)
+
+Test run `72ce8742-5935-4ce9-99b1-29aa7dee2347` received a confirmed atomic
+OBJECT_VALIDATION refusal (event `fe88dd03-cd60-413a-ae8f-533ce23fdd9c`).
+Its failing field is not yet known. Future refusals include allowlisted model,
+positive object ID when available, validation phase, and up to 12 field/code pairs.
+Exception messages, parameters and field values are never included. Unknown labels
+are generalized; Sync revalidates the projection at process and public boundaries.
+An ID identifies the object being validated, not proof that it was saved.
+
+Validation, transaction boundaries, existing bindings and retry policy are unchanged.
+Deploy both test Guard and Sync, then inspect a new manual collection's diagnostic.
+Do not accept a historical baseline for this confirmed refusal. Production is out
+of scope. Native rollback and browser-rendering regressions cover this contract.

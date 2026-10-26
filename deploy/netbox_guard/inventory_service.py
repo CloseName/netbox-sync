@@ -1,4 +1,5 @@
 """Reviewed, atomic server inventory import; never creates native infrastructure."""
+from .validation_detail import checked
 from uuid import UUID, uuid5
 from django.db import connection, transaction
 from django.conf import settings
@@ -149,8 +150,8 @@ def apply_inventory(user, nonce, document, evidence_digest, fingerprint):
         binding.revision += 1
         binding.save(update_fields=['revision'])
         obj.custom_field_data = cf
-        obj.full_clean()
-        obj.save(update_fields=sorted(native_updates | {'custom_field_data', 'last_updated'}))
+        checked(obj, 'full_clean')
+        checked(obj, 'save', update_fields=sorted(native_updates | {'custom_field_data', 'last_updated'}))
         ProviderBindingChange.objects.create(nonce=uuid5(nonce, key), binding=binding, actor=actor,
             digest=request_digest, before={'revision': previous_revision, 'claims': before['claims']},
             after={'revision': binding.revision, 'claims': claims, 'evidence_digest': evidence_digest},

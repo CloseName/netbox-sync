@@ -1,4 +1,5 @@
 """Versioned, idempotent provider projection schema. No inventory writes."""
+from .validation_detail import checked
 from django.db import transaction
 from extras.models import CustomField
 
@@ -34,8 +35,8 @@ def _configure(using):
             field = CustomField(name=name, label=LABELS[name],
                                 type=kind, group_name='Selectel', required=False, unique=False,
                                 ui_visible=visible, ui_editable='no')
-            field.full_clean()
-            field.save(using=using)
+            checked(field, 'full_clean')
+            checked(field, 'save', using=using)
             for app, model in sorted(SCOPES):
                 field.object_types.add(field.object_types.model.objects.using(using).get(app_label=app, model=model))
     check_schema(using)

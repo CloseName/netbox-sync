@@ -1,4 +1,5 @@
 """Account-scoped placement keyed by provider identifiers, not display labels."""
+from .validation_detail import checked
 from dcim.models import Site, Region
 from .models import ProviderCreatedObject
 from .provider_policy import digest
@@ -41,7 +42,7 @@ def resolve(user, snapshot, previous=None):
             if not user.has_perm(f'{model._meta.app_label}.change_{model._meta.model_name}',result):
                 raise DependencyGuardBlocked('PERMISSION_DENIED')
             for field in changed: setattr(result,field,values[field])
-            result.full_clean(); result.save(update_fields=changed+['last_updated'])
+            checked(result, 'full_clean'); checked(result, 'save', update_fields=changed+['last_updated'])
         return result
     legacy_label = label
     if isinstance(previous, dict) and previous.get('identity', {}).get('region', '') == region_id:
