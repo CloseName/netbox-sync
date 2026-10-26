@@ -126,6 +126,7 @@ print('Selectel historical baseline: stale review, audit, replay, late import fe
 import io
 import json
 import tempfile
+from contextlib import redirect_stdout
 from unittest.mock import patch
 from django.core.management import call_command
 from django.db import DatabaseError
@@ -146,7 +147,8 @@ shapes = runpy.run_path(str(shape_path))
 before_shapes = {model: list(model.objects.order_by('pk').values())
                 for model in (ProviderInventory, ProviderBinding, Device, VirtualMachine, IPAddress)}
 out = io.StringIO()
-call_command('shell', command=shape_path.read_text() + '\nprint(MARKER + json.dumps(read_account(' + repr(shape_account) + ')))', stdout=out)
+with redirect_stdout(out):
+    call_command('shell', command=shape_path.read_text() + '\nprint(MARKER + json.dumps(read_account(' + repr(shape_account) + ')))', stdout=out)
 shape_report = json.loads(out.getvalue().split('SELECTEL_HARDWARE_SHAPE:')[-1])
 assert shape_report['resource_count'] == 1 and shape_report['writes_performed'] is False
 assert shape_report['resources'][0]['sections']['hardware']['component_serial_counts']['disk']['nonempty_scalar'] == 1
