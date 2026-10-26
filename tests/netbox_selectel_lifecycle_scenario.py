@@ -70,3 +70,30 @@ with override_settings(PLUGINS_CONFIG=config):
     assert not ProviderAccountFence.objects.get(pk=account).deleted
     assert list(IPAddress.objects.order_by('pk').values())==addresses
 print('Selectel lifecycle: dependencies, detach, stale review, deletion, replay, late-write fence, activation and unchanged IPs OK')
+
+# Historical baseline changes only an audit/fence receipt, never native rows.
+from netbox_guard.account_import import import_account
+from netbox_guard.models import ProviderLifecycleReceipt
+run = str(uuid4())
+with override_settings(PLUGINS_CONFIG=config):
+    before = list(VirtualMachine.objects.order_by('pk').values())
+    baseline = review(admin, account, 'baseline', run)
+    adopted.description = 'concurrent baseline edit'
+    adopted.save()
+    try: execute(admin, account, 'baseline', uuid4(), baseline['fingerprint'], run)
+    except ValueError as exc: assert str(exc) == 'PROVIDER_REVIEW_STALE'
+    else: raise AssertionError('Stale baseline accepted')
+    baseline = review(admin, account, 'baseline', run)
+    before = list(VirtualMachine.objects.order_by('pk').values())
+    result = execute(admin, account, 'baseline', uuid4(), baseline['fingerprint'], run)
+    assert result['baseline_accepted'] and result['historical_outcome'] == 'unknown'
+    assert execute(admin, account, 'baseline', uuid4(), baseline['fingerprint'], run)['replayed']
+    assert list(VirtualMachine.objects.order_by('pk').values()) == before
+    assert list(IPAddress.objects.order_by('pk').values()) == addresses
+    old_payload = dict(account=account, nonce=run,
+                       document=dict(account=account,account_verified=True,finished_at='2026-10-26T00:00:00Z'),
+                       registry=dict(account=account,observed_at='2026-10-26T00:00:00Z'))
+    try: import_account(admin,old_payload)
+    except ValueError as exc: assert str(exc) == 'PROVIDER_HISTORICAL_RUN_RETIRED'
+    else: raise AssertionError('Historical write passed baseline fence')
+print('Selectel historical baseline: stale review, audit, replay, late import fence and native/IP preservation OK')

@@ -79,3 +79,52 @@ def test_busy_returns_actionable_result_without_stopping_scheduler(env,monkeypat
     monkeypatch.setattr(lifecycle,'apply_lock',busy)
     assert lifecycle.handle(store,'lock','lifecycle-execute',data())=={'error':'LIFECYCLE_BUSY'}
     assert 'lifecycle_pending' not in saved[path] and not calls
+
+
+def test_baseline_keeps_unknown_history_and_schedules_off(env):
+    store,path,saved,calls,answers=env
+    run='f5f3efcc-436a-4caf-8d21-d5492ba94f4c'
+    saved[path].update(status='attention',error='IMPORT_UNCONFIRMED',run_id=run)
+    value=dict(account='29916',operation='baseline',key=run,fingerprint='a'*64,confirmed=True)
+    answers.append(dict(account='29916',operation='baseline',key=run,fingerprint='a'*64,
+                        writes_performed=True,baseline_accepted=True,historical_outcome='unknown'))
+    result=lifecycle.handle(store,'lock','lifecycle-execute',value)
+    assert result['baseline_accepted']
+    assert saved[path]['status']=='baseline_accepted' and saved[path]['error'] is None
+    assert saved[path]['schedule']=={'kind':'off'} and saved[path]['next_run'] is None
+    assert saved[path]['enabled'] is False and saved[path]['password']=='secret'
+    assert saved[path]['baseline_history'][-1]['run_id']==run
+    assert saved[path]['baseline_history'][-1]['error']=='IMPORT_UNCONFIRMED'
+
+
+def test_baseline_does_not_accept_wrong_run_or_unconfirmed_response(env):
+    store,path,saved,calls,answers=env
+    run='f5f3efcc-436a-4caf-8d21-d5492ba94f4c'
+    saved[path].update(status='attention',error='IMPORT_UNCONFIRMED',run_id=run)
+    value=dict(account='29916',operation='baseline',key=run,fingerprint='a'*64,confirmed=True)
+    answers.append({'writes_performed':True})
+    assert lifecycle.handle(store,'lock','lifecycle-execute',value)['error']=='LIFECYCLE_UNCONFIRMED'
+    assert saved[path]['error']=='IMPORT_UNCONFIRMED'
+    assert saved[path]['lifecycle_pending']
+
+
+def test_baseline_wrong_run_never_reaches_guard(env):
+    store,path,saved,calls,answers=env
+    saved[path].update(status='attention',error='IMPORT_UNCONFIRMED',run_id='f5f3efcc-436a-4caf-8d21-d5492ba94f4c')
+    value=dict(account='29916',operation='baseline',key='85c0013b-6464-4d8a-aa66-2604623ffbcf',fingerprint='a'*64,confirmed=True)
+    assert lifecycle.handle(store,'lock','lifecycle-execute',value)['error']=='BASELINE_RUN_MISMATCH'
+    assert not calls and 'lifecycle_pending' not in saved[path]
+
+
+def test_baseline_lost_response_reuses_pending_decision(env):
+    store,path,saved,calls,answers=env
+    run='f5f3efcc-436a-4caf-8d21-d5492ba94f4c'
+    saved[path].update(status='attention',error='IMPORT_UNCONFIRMED',run_id=run)
+    value=dict(account='29916',operation='baseline',key=run,fingerprint='a'*64,confirmed=True)
+    answers.append({'error':'IMPORT_UNCONFIRMED'})
+    assert lifecycle.handle(store,'lock','lifecycle-execute',value)['error']=='LIFECYCLE_UNCONFIRMED'
+    answers.append(dict(account='29916',operation='baseline',key=run,fingerprint='a'*64,
+                        writes_performed=True,baseline_accepted=True,historical_outcome='unknown',replayed=True))
+    assert lifecycle.handle(store,'lock','lifecycle-execute',value)['replayed']
+    assert calls[0]['payload']==calls[1]['payload']
+    assert len(saved[path]['baseline_history'])==1 and not saved[path]['enabled']

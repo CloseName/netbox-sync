@@ -35,7 +35,7 @@ class Lifecycle(BaseModel):
     """Experimental Selectel lifecycle operation and optional resource key."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
-    operation: str = Field(pattern=r"^(delete|detach|activate)$")
+    operation: str = Field(pattern=r"^(delete|detach|activate|baseline)$")
     key: str | None = None
 
 

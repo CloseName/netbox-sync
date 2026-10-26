@@ -2,7 +2,7 @@
 
 import os
 import re
-from uuid import uuid4
+from uuid import UUID, uuid4
 from .bootstrap_state import runtime_netbox
 from .source_lifecycle import apply_lock, LifecycleError
 
@@ -15,7 +15,7 @@ def _request_error(operation, data):
     allowed = {"account", "operation", "key"}
     if operation == "lifecycle-execute":
         allowed |= {"fingerprint", "confirmed"}
-    if set(data) - allowed or data.get("operation") not in ("delete", "detach", "activate"):
+    if set(data) - allowed or data.get("operation") not in ("delete", "detach", "activate", "baseline"):
         return {"error": "CONTROL_REQUEST_INVALID"}
     if operation == "lifecycle-execute" and data.get("confirmed") is not True:
         return {"error": "LIFECYCLE_CONFIRMATION_REQUIRED"}
@@ -46,6 +46,10 @@ def _finish_lifecycle(path, state, data, payload, result):
     if result.get("writes_performed") is not True:
         # Even a timeout may follow a committed transaction. Keep the nonce.
         return {"error": "LIFECYCLE_UNCONFIRMED", "pending": payload}
+    if data["operation"] == "baseline":
+        from .selectel_baseline import finish
+
+        return finish(path, state, payload, result)
     state.pop("lifecycle_pending", None)
     if data["operation"] == "delete":
         state = {
@@ -105,6 +109,15 @@ def _handle_account(store, base, operation, data):
     if not path.exists():
         return {"error": "SETUP_REQUIRED"}
     state = read(path)
+    if data.get("operation") == "baseline":
+        if state.get("error") not in ("IMPORT_UNCONFIRMED", "RUN_INTERRUPTED") or data.get("key") != state.get(
+            "run_id"
+        ):
+            return {"error": "BASELINE_RUN_MISMATCH"}
+        try:
+            UUID(str(data["key"]))
+        except (ValueError, TypeError):
+            return {"error": "CONTROL_REQUEST_INVALID"}
     error = _account_error(base, state)
     if error is not None:
         return error
