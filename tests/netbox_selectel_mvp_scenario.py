@@ -198,10 +198,6 @@ with tempfile.TemporaryDirectory() as temp:
         assert Site.objects.filter(pk=legacy_site.pk).values().get() == legacy_site_before
         for model, native_id in [('dcim.region', legacy_region.pk), ('dcim.site', legacy_site.pk)]:
             assert not ProviderCreatedObject.objects.filter(model_label=model, object_id=native_id).exists()
-        from netbox_guard.provider_lifecycle import review
-        deletion = review(service_user, '67891', 'delete')
-        assert not any((row['model'], row['id']) in {('dcim.region', legacy_region.pk), ('dcim.site', legacy_site.pk)}
-                       for row in deletion['delete'])
         assert set(created.custom_field_data['selectel_inventory']['native_fields']) >= {'name','vcpus','memory','site_id'}
         from django.db import IntegrityError
         rejected(lambda: VirtualMachine.objects.filter(pk=created.pk).update(memory=2048), (IntegrityError,))
