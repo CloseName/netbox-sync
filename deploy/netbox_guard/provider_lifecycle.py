@@ -24,7 +24,7 @@ def _access(user, obj, action):
 def _spec(account, operation, key):
     if not isinstance(account, str) or not re.fullmatch('[0-9]{1,20}', account):
         raise ValueError('PROVIDER_ACCOUNT_INVALID')
-    if operation not in ('detach', 'delete', 'activate') or (operation == 'detach' and not isinstance(key, str)):
+    if operation not in ('detach', 'delete', 'activate', 'baseline') or (operation in ('detach', 'baseline') and not isinstance(key, str)):
         raise ValueError('PROVIDER_REQUEST_INVALID')
     if operation in ('delete', 'activate') and key is not None:
         raise ValueError('PROVIDER_REQUEST_INVALID')
@@ -36,6 +36,9 @@ def _prepare(user, account, operation, key):
         raise ValueError('PROVIDER_NATIVE_SETUP_REQUIRED')
     _spec(account, operation, key)
     _permission(user, 'manage_providerbinding')
+    if operation == 'baseline':
+        from .account_baseline import prepare
+        return prepare(user, account, key), []
     if operation == 'activate':
         deleted = ProviderAccountFence.objects.filter(account=account,deleted=True).exists()
         return {'fingerprint':_digest([account,'activate',deleted]),'account':account,'operation':operation,
@@ -135,6 +138,10 @@ def execute(user, account, operation, nonce, fingerprint, key=None):
     actor=_permission(user,'manage_providerbinding')
     request_digest=_digest([account,operation,key,fingerprint])
     with _database_fence():
+        if operation == 'baseline':
+            _spec(account, operation, key)
+            from .account_baseline import accept
+            return accept(user, account, key, fingerprint)
         receipt=ProviderLifecycleReceipt.objects.filter(pk=nonce).first()
         if receipt:
             if receipt.actor != actor or receipt.digest != request_digest:

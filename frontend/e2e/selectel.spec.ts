@@ -76,3 +76,36 @@ test('Selectel receipt lookup displays absent evidence without enabling import',
  await expect(page.getByRole('button',{name:'Собрать и обновить'})).toBeDisabled();
  expect(checks).toBe(1);
 });
+
+
+test('Historical baseline requires three confirmations and never starts collection',async({page})=>{
+ let accepted=0;
+ const run='f5f3efcc-436a-4caf-8d21-d5492ba94f4c';
+ const row:any={account:'29916',name:'Old run',username:'reader',enabled:false,status:'attention',error:'IMPORT_UNCONFIRMED',run_id:run,url:'https://netbox.test/'};
+ await page.route('**/api/v1/**',async route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(path.endsWith('/collect'))throw new Error('Baseline must not collect');
+  if(path.endsWith('/lifecycle-review'))return route.fulfill({json:{operation:'baseline',key:run,fingerprint:'a'.repeat(64),retain:[],inventory_count:0,native_counts:{}}});
+  if(path.endsWith('/lifecycle-execute')){
+   expect(route.request().postDataJSON()).toEqual({operation:'baseline',key:run,fingerprint:'a'.repeat(64),confirmed:true});
+   accepted++;row.status='baseline_accepted';row.error=null;
+   return route.fulfill({json:{baseline_accepted:true}});
+  }
+  if(path==='/api/v1/selectel')return route.fulfill({json:{import_ready:true,items:[row]}});
+  if(path==='/api/v1/sources')return route.fulfill({json:{sources:[]}});
+  if(path==='/api/v1/pfsense')return route.fulfill({json:{items:[],count:0}});
+  if(path==='/api/v1/bootstrap')return route.fulfill({json:{revision:1,status:'READY',url:'https://netbox.test',completed:true,read_token_present:true,apply_token_present:true,checks:[]}});
+  return route.fulfill({json:{}});
+ });
+ await page.goto('/sources/selectel');
+ await page.getByText('Принять текущее состояние после сверки',{exact:true}).click();
+ await page.getByRole('button',{name:'Проверить текущее состояние NetBox'}).click();
+ const accept=page.getByRole('button',{name:'Принять состояние и разрешить новый ручной сбор'});
+ await expect(accept).toBeDisabled();
+ const area=page.getByRole('region',{name:'Сверка исторического импорта'});
+ for(const box of await area.getByRole('checkbox').all())await box.check();
+ await accept.click();
+ await expect(page.getByText('Текущее состояние принято; старый результат неизвестен',{exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Собрать и обновить'})).toBeDisabled();
+ expect(accepted).toBe(1);
+});

@@ -116,3 +116,22 @@ Kept host/target checks, pause before migrations, runtime/HTTPS verification and
 schedules-off contract. Standalone backup/restore and production are unchanged.
 Validation: 114 passed, 1 platform skip in updater/Guard/backup-restore tests.
 No server update was executed.
+
+## S15 — historical baseline recovery, 2026-10-26
+
+User confirmed both old test runs remain uncertain with missing receipts: account
+29916 / f5f3efcc-436a-4caf-8d21-d5492ba94f4c and account 435835 /
+85c0013b-6464-4d8a-aa66-2604623ffbcf. Added explicit disabled-account baseline review
+and acceptance, persistent unknown-outcome history and old-run import fence.
+No live state has been cleared. Pending acceptance retains the lifecycle gate.
+Schedules stay off and old resources/IP/bindings remain untouched. Test deployment
+and actual historical decisions remain NOT RUN. See operations/selectel-recovery.md.
+
+Local verification (2026-10-26): Windows/Python 3.14: 2741 passed,
+491 skipped (platform/opt-in dependencies), 2 dependency deprecation warnings.
+Two additional lifecycle regressions were then included in a focused 9/9 pass.
+Frontend: 96 unit tests and 5 Playwright Selectel scenarios passed; build passed.
+Black 25.1.0: 231 files unchanged. Pylint: 9.41/10 (existing style/cycle warnings).
+Docker engine unavailable locally: the independent PostgreSQL/NetBox lifecycle
+scenario is included in Guard CI and remains required before rollout.
+No test-server or production state was changed by this implementation work.
