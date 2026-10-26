@@ -158,3 +158,16 @@ stored label, including env-file contents. Real drift remains blocked. No server
 account, IP, resource binding or scheduling state changed during development.
 Disposable Compose 5.3.1 CI checks label equality and env/command drift. Live
 test-host preflight and Selectel acceptance remain pending.
+
+## S16 — new test import unconfirmed, 2026-10-26
+
+Operator confirmed UPDATE_OK for a46fa57e and historical baseline acceptance for
+29916. New manual run 08cd3347-a976-4dd9-a043-f4d591796e30 ended IMPORT_UNCONFIRMED
+(displayed 19:41:04 MSK); receipt lookup at 19:50:16 MSK returned not_found.
+No fresh baseline acceptance/replay is justified. Root cause is still unknown.
+Collector/runner currently collapse transport/child/validation failures into one
+saved error; the historical detail cannot be reconstructed from account state.
+Added a read-only updater evidence option for existing logs before any new import.
+Its time-window categories are leads, not write-outcome proof. Test/prod untouched.
+Also observed: old reconciliation wording still says import blocked after baseline
+acceptance; label this historical in a later UI correction.

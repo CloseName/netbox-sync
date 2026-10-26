@@ -231,6 +231,8 @@ def main(argv=None):
     parser.add_argument("--commit", required=True)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--with-guard", action="store_true", help="Update the known test Guard without backups, then reconcile receipts")
+    parser.add_argument("--diagnose-selectel", nargs=2, metavar=('ACCOUNT', 'RUN_UUID'),
+                        help="Read existing test run evidence without importing or changing state")
     parser.add_argument(
         "--idle-confirmed",
         action="store_true",
@@ -241,6 +243,8 @@ def main(argv=None):
         parser.error("--commit must be the reviewed full 40-character SHA")
     if args.apply and not args.idle_confirmed:
         parser.error("--apply requires --idle-confirmed")
+    if args.diagnose_selectel and (args.apply or args.with_guard):
+        parser.error("--diagnose-selectel cannot be combined with apply or Guard update")
     try:
         if args.apply:
             if args.with_guard:
@@ -249,6 +253,12 @@ def main(argv=None):
                 update(ROOT, ROOT / "repo", args.commit)
         else:
             preflight(ROOT, ROOT / "repo", args.commit)
+            if args.diagnose_selectel:
+                try:
+                    from .selectel_run_evidence import report
+                except ImportError:
+                    from selectel_run_evidence import report
+                print('SELECTEL_RUN_EVIDENCE:', json.dumps(report(ROOT, *args.diagnose_selectel)))
             if args.with_guard:
                 GuardUpdate(run, ROOT / "repo", args.commit).preflight()
             print("PREFLIGHT_OK: no services or configuration changed")
