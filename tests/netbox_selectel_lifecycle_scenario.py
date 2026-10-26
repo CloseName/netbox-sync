@@ -121,3 +121,44 @@ with override_settings(PLUGINS_CONFIG=config):
     except ValueError as exc: assert str(exc) == 'PROVIDER_HISTORICAL_RUN_RETIRED'
     else: raise AssertionError('Historical write passed baseline fence')
 print('Selectel historical baseline: stale review, audit, replay, late import fence and native/IP preservation OK')
+
+# Saved hardware evidence executes the reviewed source against PostgreSQL in read-only mode.
+import io
+import json
+import tempfile
+from unittest.mock import patch
+from django.core.management import call_command
+from django.db import DatabaseError
+from django.utils import timezone
+from dcim.models import Device
+from netbox_guard.models import ProviderInventory
+with tempfile.TemporaryDirectory() as temp:
+    call_command('configure_selectel_mvp', output=str(Path(temp) / 'hardware-token.json'), native_resources=True)
+shape_account = str(uuid4().int)[:20]
+shape_ident = dict(account=shape_account, kind='dedicated', native_id=str(uuid4()), project='', region='')
+shape_key = identity(shape_ident, 'device')
+ProviderInventory.objects.create(provider_key=shape_key, account=shape_account,
+    observed_at=timezone.now(), evidence_digest='a'*64, snapshot=dict(identity=shape_ident, sections={
+        'resource': dict(status='collected', data=dict(user_desc='shape test', hw_uuid='PRIVATE-RESOURCE')),
+        'hardware': dict(status='collected', data=dict(disk=[dict(serial='PRIVATE-DISK')]))}))
+shape_path = Path(__file__).resolve().parents[1] / 'deploy/selectel_hardware_evidence.py'
+shapes = runpy.run_path(str(shape_path))
+before_shapes = {model: list(model.objects.order_by('pk').values())
+                for model in (ProviderInventory, ProviderBinding, Device, VirtualMachine, IPAddress)}
+out = io.StringIO()
+call_command('shell', command=shape_path.read_text() + '\nprint(MARKER + json.dumps(read_account(' + repr(shape_account) + ')))', stdout=out)
+shape_report = json.loads(out.getvalue().split('SELECTEL_HARDWARE_SHAPE:')[-1])
+assert shape_report['resource_count'] == 1 and shape_report['writes_performed'] is False
+assert shape_report['resources'][0]['sections']['hardware']['component_serial_counts']['disk']['nonempty_scalar'] == 1
+assert 'PRIVATE-' not in out.getvalue()
+def try_write(*args):
+    ProviderInventory.objects.filter(provider_key=shape_key).update(evidence_digest='b'*64)
+    raise AssertionError('Database accepted a write during read-only evidence')
+with patch.dict(shapes['read_account'].__globals__, section_shape=try_write):
+    try: shapes['read_account'](shape_account)
+    except DatabaseError as exc:
+        assert 'read-only' in str(exc).lower()
+    else: raise AssertionError('Expected read-only transaction refusal')
+for model, values in before_shapes.items():
+    assert list(model.objects.order_by('pk').values()) == values
+print('Selectel stored hardware evidence: actual command, sanitized output, DB-enforced read-only and retained IDs/IPs OK')

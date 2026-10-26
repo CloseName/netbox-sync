@@ -164,3 +164,27 @@ permission to apply. Existing correctly bound resources are excluded; manual
 bindings do not establish successful automatic matching. `fresh_inventory_required`
 can identify retained/stale observations. Counts need not equal the latest import
 summary. Diagnose each reason before authorizing changes; schedules stay off.
+
+### Stored hardware field coverage
+
+The separate `--diagnose-selectel-hardware <ACCOUNT>` mode uses both test
+preflights and runs the reviewed `deploy/selectel_hardware_evidence.py` source
+through the installed NetBox shell as an explicit argument, with disconnected
+stdin. No container copy/build/restart or runtime deployment is needed. It cannot
+be combined with apply, Guard update or other diagnostics. The dedicated importer
+must retain full visibility and reconciliation permissions; PostgreSQL enforces
+a repeatable-read, read-only transaction before the first query.
+
+For all saved dedicated resources (including bound/retained ones), it reports
+inventory age, resource/details/hardware section availability, retention and data
+shape; missing/null/empty/invalid/valid-format states of the three recognized
+root identity fields; and counts of component serials. Hardware/IP values,
+credentials, arbitrary field names and raw errors are not printed. A valid-format
+identifier alone does not prove freshness, uniqueness or matching ownership.
+
+The normalized inventory has already discarded non-allowlisted API fields.
+`raw_api_fields_not_preserved=true` is a limitation, not a discovered API failure.
+This report cannot prove that Selectel omitted other identifiers or that a field
+was lost before normalization. Component serials and provider hw_uuid remain
+separate namespaces, never substitutes for system identity. Resolve coverage
+before considering a separate authorized provider read or matching change.

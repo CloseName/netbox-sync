@@ -235,6 +235,8 @@ def main(argv=None):
                         help="Read existing test run evidence without importing or changing state")
     parser.add_argument("--diagnose-selectel-matching", metavar='ACCOUNT',
                         help="Explain pending dedicated matches from stored test inventory; no writes or collection")
+    parser.add_argument("--diagnose-selectel-hardware", metavar='ACCOUNT',
+                        help="Read stored dedicated hardware field states without exposing their values")
     parser.add_argument(
         "--idle-confirmed",
         action="store_true",
@@ -249,6 +251,8 @@ def main(argv=None):
         parser.error("--diagnose-selectel cannot be combined with apply or Guard update")
     if args.diagnose_selectel_matching and (args.apply or args.with_guard or args.diagnose_selectel):
         parser.error("--diagnose-selectel-matching must be a separate read-only check")
+    if args.diagnose_selectel_hardware and (args.apply or args.with_guard or args.diagnose_selectel or args.diagnose_selectel_matching):
+        parser.error("--diagnose-selectel-hardware must be a separate read-only check")
     try:
         if args.apply:
             if args.with_guard:
@@ -257,6 +261,15 @@ def main(argv=None):
                 update(ROOT, ROOT / "repo", args.commit)
         else:
             preflight(ROOT, ROOT / "repo", args.commit)
+            if args.diagnose_selectel_hardware:
+                try:
+                    from .selectel_hardware_evidence import report as hardware_report
+                except ImportError:
+                    from selectel_hardware_evidence import report as hardware_report
+                guard = GuardUpdate(run, ROOT / "repo", args.commit)
+                guard.preflight()
+                print('SELECTEL_HARDWARE_EVIDENCE:', json.dumps(
+                    hardware_report(guard.manage, args.diagnose_selectel_hardware), ensure_ascii=False, indent=2))
             if args.diagnose_selectel_matching:
                 try:
                     from .selectel_matching_evidence import report as matching_report
