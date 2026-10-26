@@ -188,3 +188,25 @@ This report cannot prove that Selectel omitted other identifiers or that a field
 was lost before normalization. Component serials and provider hw_uuid remain
 separate namespaces, never substitutes for system identity. Resolve coverage
 before considering a separate authorized provider read or matching change.
+
+### One-server live hardware metadata probe
+
+`--probe-selectel-hardware ACCOUNT RESOURCE_UUID` is a separate, explicitly live
+provider-read mode. Both test preflights must pass. It cannot be combined with
+apply, Guard update or other diagnostic modes. The reviewed source is passed to
+the existing bootstrap worker as an explicit Python argument; no runtime update,
+backup, service restart or file copy is needed.
+
+The probe privately reads existing account credentials and drops root privileges
+before authenticating. IAM domain scope must match the selected account. Only
+token issuance uses POST. Resource reads use the existing dedicated API: a bounded
+resource list to verify the UUID and service type, then that resource's detail and
+info endpoints. At most two listing pages and eight HTTP attempts are allowed.
+It never invokes full collection, import, binding, IP writes or account-state writes.
+
+Output contains fixed field paths and rejection categories, never raw values,
+arbitrary API keys, credentials or exception text. Root serial/service_tag/system_uuid
+are compared before/after the existing sanitizer; these are the normalizer's root
+identity inputs. Other allowlisted aliases/component paths are diagnostic only.
+The bounded path scan is not exhaustive API schema discovery and valid syntax does
+not prove hardware identity or ownership. Schedules remain off.

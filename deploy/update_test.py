@@ -237,6 +237,8 @@ def main(argv=None):
                         help="Explain pending dedicated matches from stored test inventory; no writes or collection")
     parser.add_argument("--diagnose-selectel-hardware", metavar='ACCOUNT',
                         help="Read stored dedicated hardware field states without exposing their values")
+    parser.add_argument("--probe-selectel-hardware", nargs=2, metavar=('ACCOUNT', 'RESOURCE_UUID'),
+                        help="Read one Selectel server's live metadata; no import or state changes")
     parser.add_argument(
         "--idle-confirmed",
         action="store_true",
@@ -253,6 +255,9 @@ def main(argv=None):
         parser.error("--diagnose-selectel-matching must be a separate read-only check")
     if args.diagnose_selectel_hardware and (args.apply or args.with_guard or args.diagnose_selectel or args.diagnose_selectel_matching):
         parser.error("--diagnose-selectel-hardware must be a separate read-only check")
+    if args.probe_selectel_hardware and (args.apply or args.with_guard or args.diagnose_selectel
+                                       or args.diagnose_selectel_matching or args.diagnose_selectel_hardware):
+        parser.error("--probe-selectel-hardware must be a separate provider read")
     try:
         if args.apply:
             if args.with_guard:
@@ -261,6 +266,14 @@ def main(argv=None):
                 update(ROOT, ROOT / "repo", args.commit)
         else:
             preflight(ROOT, ROOT / "repo", args.commit)
+            if args.probe_selectel_hardware:
+                try:
+                    from .selectel_hardware_probe import report as probe_report
+                except ImportError:
+                    from selectel_hardware_probe import report as probe_report
+                GuardUpdate(run, ROOT / "repo", args.commit).preflight()
+                print('SELECTEL_POINT_PROBE:', json.dumps(
+                    probe_report(run, *args.probe_selectel_hardware), ensure_ascii=False, indent=2))
             if args.diagnose_selectel_hardware:
                 try:
                     from .selectel_hardware_evidence import report as hardware_report

@@ -414,3 +414,34 @@ def test_hardware_diagnostic_runs_both_preflights_before_read(monkeypatch, capsy
     assert updater.main(['--commit', SHA, '--diagnose-selectel-hardware', '29916']) == 0
     assert calls == ['sync', 'guard', '29916']
     assert 'SELECTEL_HARDWARE_EVIDENCE:' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('extra', [
+    ['--apply', '--idle-confirmed'], ['--with-guard'],
+    ['--diagnose-selectel', '29916', 'old-run'], ['--diagnose-selectel-matching', '29916'],
+    ['--diagnose-selectel-hardware', '29916'],
+])
+def test_point_probe_rejects_mixed_modes(monkeypatch, extra):
+    monkeypatch.setattr(updater, 'preflight', lambda *args: pytest.fail('No commands'))
+    with pytest.raises(SystemExit):
+        updater.main(['--commit', SHA, '--probe-selectel-hardware', '29916',
+                      'b35f4e5e-9f52-4377-8ed9-79c35979169f', *extra])
+
+
+def test_point_probe_requires_both_test_preflights(monkeypatch, capsys):
+    from deploy import selectel_hardware_probe
+    calls = []
+    monkeypatch.setattr(updater, 'preflight', lambda *args: calls.append('sync'))
+    class Guard:
+        def __init__(self, *args):
+            pass
+        def preflight(self):
+            calls.append('guard')
+    monkeypatch.setattr(updater, 'GuardUpdate', Guard)
+    monkeypatch.setattr(selectel_hardware_probe, 'report',
+                        lambda *args: calls.append('probe') or {'writes_performed': False})
+    monkeypatch.setattr(updater, 'update', lambda *args, **kwargs: pytest.fail('No update'))
+    assert updater.main(['--commit', SHA, '--probe-selectel-hardware', '29916',
+                         'b35f4e5e-9f52-4377-8ed9-79c35979169f']) == 0
+    assert calls == ['sync', 'guard', 'probe']
+    assert 'SELECTEL_POINT_PROBE:' in capsys.readouterr().out
