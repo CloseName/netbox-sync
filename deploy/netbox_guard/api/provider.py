@@ -46,7 +46,7 @@ class ProviderAccountImport(GuardView):
             raise DependencyGuardBlocked('REQUEST_TOO_LARGE')
         from django.db import transaction
         from ..import_refusal import reason
-        payload, refused_reason = None, None
+        payload, refused_reason, validation = None, None, None
         # Catch inside the outer boundary: commit/on_commit failures must escape
         # as uncertain, never be mistaken for a confirmed rollback.
         with transaction.atomic():
@@ -56,6 +56,9 @@ class ProviderAccountImport(GuardView):
             except (ValueError, TypeError, KeyError, AttributeError, IntegrityError, ValidationError,
                     DependencyGuardBlocked) as exc:
                 refused_reason = reason(exc)
+                if isinstance(exc, ValidationError):
+                    from ..validation_detail import details
+                    validation = getattr(exc, 'selectel_validation_detail', None) or details(exc)
                 transaction.set_rollback(True)
         if refused_reason is not None:
             from uuid import UUID, uuid4
@@ -64,6 +67,8 @@ class ProviderAccountImport(GuardView):
             event = str(uuid4())
             data = dict(code='PROVIDER_IMPORT_ROLLED_BACK', rolled_back=True,
                         reason=refused_reason, event_id=event)
+            if validation is not None:
+                data['validation'] = validation
             if isinstance(payload, dict) and isinstance(payload.get('account'), str) and re.fullmatch(r'[0-9]{1,20}', payload['account']):
                 try:
                     data.update(account=payload['account'], nonce=str(UUID(str(payload.get('nonce')))))

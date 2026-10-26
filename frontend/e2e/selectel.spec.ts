@@ -1,5 +1,27 @@
 import {test,expect} from './auth-fixture';
 
+test('Confirmed Selectel refusal displays structural validation evidence without collecting',async({page})=>{
+ await page.route('**/api/v1/**',async route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(path.endsWith('/collect'))throw new Error('Displaying a refusal must not collect');
+  if(path==='/api/v1/selectel')return route.fulfill({json:{import_ready:true,items:[{
+   account:'29916',name:'Validation account',username:'reader',status:'attention',error:'NETBOX_IMPORT_REFUSED',
+   import_diagnostic:{reason:'OBJECT_VALIDATION',http_status:409,event_id:'fe88dd03-cd60-413a-ae8f-533ce23fdd9c',
+    validation:{model:'dcim.device',object_id:28,phase:'full_clean',issues:[{field:'serial',code:'max_length'}]}}
+  }]}});
+  if(path==='/api/v1/sources')return route.fulfill({json:{sources:[]}});
+  if(path==='/api/v1/pfsense')return route.fulfill({json:{items:[],count:0}});
+  if(path==='/api/v1/bootstrap')return route.fulfill({json:{revision:1,status:'READY',url:'https://netbox.test',completed:true,read_token_present:true,apply_token_present:true,checks:[]}});
+  return route.fulfill({json:{}});
+ });
+ await page.goto('/sources/selectel');
+ await expect(page.getByText('Поля, не прошедшие проверку',{exact:true})).toBeVisible();
+ await expect(page.locator('body')).toContainText('dcim.device');
+ await expect(page.locator('body')).toContainText('max_length');
+ await expect(page.locator('body')).toContainText('serial');
+ await expect(page.getByRole('button',{name:'Собрать и обновить',exact:true})).toBeEnabled();
+});
+
 test('Selectel account onboarding, run and NetBox navigation do not expose saved password',async({page})=>{
  let rows:any[]=[], collections=0;
  await page.route('**/api/v1/**',async route=>{

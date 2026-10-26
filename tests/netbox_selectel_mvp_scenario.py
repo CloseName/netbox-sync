@@ -75,6 +75,22 @@ with tempfile.TemporaryDirectory() as temp:
     assert 'PRIVATE' not in json.dumps(response.data)
     assert ProviderInventoryImport.objects.count() == previous_receipts
     assert not ProviderAccountRun.objects.filter(pk=payload['nonce']).exists()
+    # Real model ValidationError retains structure across the API, never values.
+    from netbox_guard.validation_detail import checked
+    from dcim.models import Region
+    def invalid_region(*args, **kwargs):
+        checked(Region(name='PRIVATE-' + 'x'*200, slug='validation-fixture'), 'full_clean')
+    request = factory.post('/providers/account-import/', payload, format='json', **headers)
+    force_authenticate(request, user=service_user, token=token)
+    with patch('netbox_guard.account_import.apply', side_effect=invalid_region):
+        response = ProviderAccountImport.as_view()(request)
+    assert response.status_code == 409 and response.data['rolled_back'] is True
+    detail = response.data['validation']
+    assert detail['model'] == 'dcim.region' and detail['phase'] == 'full_clean'
+    assert {'field': 'name', 'code': 'max_length'} in detail['issues'], detail
+    assert 'PRIVATE' not in json.dumps(response.data)
+    assert ProviderInventoryImport.objects.count() == previous_receipts
+    assert not ProviderAccountRun.objects.filter(pk=payload['nonce']).exists()
     # Response construction failure after a successful import remains uncertain.
     request = factory.post('/providers/account-import/', payload, format='json', **headers)
     force_authenticate(request, user=service_user, token=token)

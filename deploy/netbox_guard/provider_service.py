@@ -4,6 +4,7 @@ Ordinary Sync credentials have no manage_providerbinding permission. Possession
 of a Selectel token or a matching IP never authorizes this administrative action.
 """
 from uuid import UUID
+from .validation_detail import checked
 from django.apps import apps
 from django.db import transaction
 from .dependencies import DependencyGuardBlocked
@@ -117,8 +118,8 @@ def apply_binding(user, nonce, spec, fingerprint):
             raise ValueError('PROVIDER_FIELD_UNSUPPORTED')
     if update:
         obj.custom_field_data = cf
-        obj.full_clean()
-        obj.save(update_fields=sorted(update | {'last_updated'}))
+        checked(obj, 'full_clean')
+        checked(obj, 'save', update_fields=sorted(update | {'last_updated'}))
     # No raw API payload, token or password belongs in this journal.
     ProviderBindingChange.objects.create(nonce=nonce, binding=binding, actor=actor,
         digest=payload_digest, before={'revision': before['binding_revision'], 'claims': before['claims']},

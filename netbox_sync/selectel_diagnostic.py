@@ -1,5 +1,7 @@
 """Closed import diagnostic vocabulary; never publish remote exception text."""
 
+from .selectel_validation import validation_detail
+
 REASONS = frozenset(
     {
         "PROVIDER_COMPLETE_NETBOX_VISIBILITY_REQUIRED",
@@ -31,6 +33,9 @@ def diagnostic(value):
     if not isinstance(value, dict):
         return {}
     result = {}
+    validation = validation_detail(value.get("validation"))
+    if validation is not None:
+        result["validation"] = validation
     if isinstance(value.get("reason"), str) and value["reason"] in REASONS:
         result["reason"] = value["reason"]
     if type(value.get("http_status")) is int and 100 <= value["http_status"] <= 599:

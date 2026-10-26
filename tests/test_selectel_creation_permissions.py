@@ -52,7 +52,8 @@ def placement():
         def save(self):
             self.pk = len(rows) + 1
             rows.append(self)
-    namespace = dict(Site=Model, Region=Model, _add_permission=permission,
+    checked = lambda obj, method, **kwargs: getattr(obj, method)(**kwargs)
+    namespace = dict(Site=Model, Region=Model, _add_permission=permission, checked=checked,
                      DependencyGuardBlocked=Denied, digest=lambda key: "stable-hash",
                      ProviderCreatedObject=NS(objects=NS(filter=lambda **kw: [],
                                                         create=lambda **kw: proofs.append(kw))))
@@ -60,7 +61,7 @@ def placement():
     if helper.exists():
         namespace["create_native"] = function("provider_creation.py", "create_native", {
             "transaction": NS(atomic=atomic), "DependencyGuardBlocked": Denied,
-            "_add_permission": permission})
+            "_add_permission": permission, "checked": checked})
     resolve = function("provider_placement.py", "resolve", namespace)
     snapshot = dict(identity=dict(account="123", region=""), sections={
         "placement": dict(status="collected", data=dict(uuid="site-id", name="Site"))})
