@@ -36,11 +36,13 @@ test('Selectel delete and reconnect can be repeated with automatic first collect
   await expect(lifecycle.getByRole('checkbox')).toHaveCount(1);
   await lifecycle.getByRole('checkbox').check();
   await page.getByRole('button',{name:'Подтвердить удаление аккаунта'}).click();
-  await expect(page.getByText('Аккаунт удалён; доступ и расписание очищены',{exact:true})).toBeVisible();
-  await page.getByRole('button',{name:'Подготовить повторное подключение'}).click();
-  await lifecycle.getByRole('checkbox').check();
-  await page.getByRole('button',{name:'Применить проверенный план'}).click();
-  await page.getByRole('button',{name:'Указать доступ и запустить сбор'}).click();
+  await expect(page.locator('.account-card')).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Подготовить повторное подключение'})).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator('.account-card')).toHaveCount(0);
+  await page.getByRole('button',{name:'Подключить аккаунт'}).click();
+  await page.getByLabel('Название подключения').fill('Cycle account');
+  await page.getByLabel('Номер аккаунта').fill('29916');
   await page.getByLabel('Сервисный пользователь',{exact:true}).fill('reader');
   await page.getByLabel('Пароль',{exact:true}).fill('cycle-secret');
   await page.getByRole('button',{name:'Подключить и собрать'}).click();
@@ -190,4 +192,41 @@ test('Historical baseline requires three confirmations and never starts collecti
  await expect(page.getByText('Текущее состояние принято; старый результат неизвестен',{exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'Собрать и обновить'})).toBeDisabled();
  expect(accepted).toBe(1);
+});
+
+
+test('Uncertain account deletion has one confirmation and disappears after receipt',async({page})=>{
+ const run='85c0013b-6464-4d8a-aa66-2604623ffbcf';let deletes=0;
+ let row:any={account:'435835',name:'435835',username:'reader',status:'attention',error:'IMPORT_UNCONFIRMED',enabled:false,run_id:run};
+ await page.route('**/api/v1/**',async route=>{
+  const req=route.request(),path=new URL(req.url()).pathname;
+  if(path==='/api/v1/selectel')return route.fulfill({json:{items:[row],import_ready:true}});
+  if(path.endsWith('/lifecycle-review')){
+   expect(req.postDataJSON()).toEqual({operation:'delete',key:run});
+   return route.fulfill({json:{account:'435835',operation:'delete',key:run,fingerprint:'b'.repeat(64),delete:[],retain:[],blockers:[]}});
+  }
+  if(path.endsWith('/lifecycle-execute')){
+   expect(req.postDataJSON()).toEqual({operation:'delete',key:run,fingerprint:'b'.repeat(64),confirmed:true});
+   deletes++;row={account:'435835',name:'435835',status:'deleted',deleted:true,enabled:false};
+   return route.fulfill({json:{writes_performed:true}});
+  }
+  if(path.endsWith('/collect')||path.endsWith('/connect'))throw new Error('Deletion must never collect');
+  if(path==='/api/v1/sources')return route.fulfill({json:{sources:[]}});
+  if(path==='/api/v1/pfsense')return route.fulfill({json:{items:[],count:0}});
+  if(path==='/api/v1/bootstrap')return route.fulfill({json:{revision:1,status:'READY',url:'https://netbox.test',completed:true,read_token_present:true,apply_token_present:true,checks:[]}});
+  return route.fulfill({json:{}});
+ });
+ await page.goto('/sources/selectel');
+ await expect(page.getByRole('button',{name:'Собрать и обновить'})).toBeDisabled();
+ const lifecycle=page.locator('details').filter({has:page.locator('summary', {hasText:'Отсоединение и удаление'})});
+ await lifecycle.locator('summary').first().click();
+ await page.getByRole('button',{name:'Удалить аккаунт',exact:true}).click();
+ await expect(lifecycle).toContainText('Результат старого импорта останется неизвестным');
+ await expect(lifecycle.getByRole('checkbox')).toHaveCount(1);
+ await lifecycle.getByRole('checkbox').check();
+ await page.getByRole('button',{name:'Подтвердить удаление аккаунта'}).click();
+ await expect(page.locator('.account-card')).toHaveCount(0);
+ expect(deletes).toBe(1);
+ await page.reload();
+ await expect(page.locator('body')).not.toContainText('435835');
 });

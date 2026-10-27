@@ -50,8 +50,10 @@ Only on test, with schedules off and no active writes:
 
 1. For a settled account, record the provider UUID and NetBox ID of an adopted
    physical server, a proven account-created cloud VM, and their current IPs.
-   An uncertain account must complete receipt reconciliation or a reviewed
-   historical baseline first; deletion cannot bypass that state.
+   For an uncertain account, record its old run ID. Deletion review checks current
+   objects and the receipt under the account lock; a missing/incomplete receipt
+   permits retiring that exact run together with cleanup, without recording success.
+   Conflicting receipts or active writes must still refuse deletion.
 2. Open **Отсоединение и удаление** and click **Удалить аккаунт**. Preparation
    disables new collections automatically. Review the compact counts and
    consequences, then use the single account-level checkbox and confirmation.
@@ -64,8 +66,9 @@ Only on test, with schedules off and no active writes:
    record the grouped reason and object details rather than bypassing it.
    No scheduler stop is needed; busy writes produce a retry message. Lost responses
    require checking the same operation, not a new deletion.
-3. In the deleted account, prepare and confirm reconnection. Under **Доступ**, choose
-   **Указать доступ и запустить сбор**, enter credentials, then **Подключить и собрать**.
+3. Confirm that the deleted account card disappears, including after reload.
+   Use the ordinary **Подключить аккаунт** form, enter the same account number and
+   fresh credentials, then **Подключить и собрать**. No reconnect card is shown.
    First collection/import starts automatically; schedules remain off. Editing
    credentials of an existing connection does not launch collection.
 4. Wait for confirmed import, record its run ID and counts, then manually collect
@@ -77,6 +80,12 @@ Only on test, with schedules off and no active writes:
    new IDs after deliberate deletion; pre-existing adopted cards must retain theirs.
    Record delete/retain counts, import run IDs, candidate reasons and screenshots
    in the test journal. Do not treat counts alone as proof of matching correctness.
+
+For an uncertain account, verify that deletion requires only the account-level
+confirmation and that its old run remains unknown and cannot write after a fresh
+connection. If the deletion response is lost, check the same pending operation;
+do not start another delete or collection. An injected cleanup failure must roll
+back both object deletion and old-run retirement.
 
 Deletion does not restore historical native names/status/placement on adopted
 cards. Unowned legacy placement and audit/deletion fences remain deliberately.

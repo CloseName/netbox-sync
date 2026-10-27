@@ -128,3 +128,41 @@ def test_baseline_lost_response_reuses_pending_decision(env):
     assert lifecycle.handle(store,'lock','lifecycle-execute',value)['replayed']
     assert calls[0]['payload']==calls[1]['payload']
     assert len(saved[path]['baseline_history'])==1 and not saved[path]['enabled']
+
+
+def test_uncertain_delete_reviews_exact_run_without_clearing_it(env):
+    store,path,saved,calls,answers=env
+    run='85c0013b-6464-4d8a-aa66-2604623ffbcf'
+    saved[path].update(status='attention',error='IMPORT_UNCONFIRMED',run_id=run)
+    before=deepcopy(saved)
+    value=dict(account='29916',operation='delete',key=run)
+    answers.append(dict(value,fingerprint='a'*64,delete=[],retain=[],blockers=[]))
+    assert lifecycle.handle(store,'lock','lifecycle-review',value)['key']==run
+    assert saved==before and calls[0]['payload']['key']==run
+    answers.append({'error':'IMPORT_UNCONFIRMED'})
+    value.update(fingerprint='a'*64,confirmed=True)
+    assert lifecycle.handle(store,'lock','lifecycle-execute',value)['error']=='LIFECYCLE_UNCONFIRMED'
+    assert saved[path]['error']=='IMPORT_UNCONFIRMED'
+    answers.append(dict(value,writes_performed=True,replayed=True))
+    assert lifecycle.handle(store,'lock','lifecycle-execute',value)['replayed']
+    assert saved[path]['deleted'] and 'password' not in saved[path]
+    assert calls[1]['payload']==calls[2]['payload']
+
+
+def test_uncertain_delete_rejects_wrong_run(env):
+    store,path,saved,calls,_=env
+    saved[path].update(error='IMPORT_UNCONFIRMED',run_id='85c0013b-6464-4d8a-aa66-2604623ffbcf')
+    value={**data(),'key':'f5f3efcc-436a-4caf-8d21-d5492ba94f4c'}
+    assert lifecycle.handle(store,'lock','lifecycle-execute',value)['error']=='BASELINE_RUN_MISMATCH'
+    assert not calls
+
+
+def test_uncertain_delete_requires_exact_receipt(env):
+    store,path,saved,calls,answers=env
+    run='85c0013b-6464-4d8a-aa66-2604623ffbcf'
+    saved[path].update(error='IMPORT_UNCONFIRMED',run_id=run)
+    value={**data(),'key':run}
+    answers.append({'writes_performed':True})
+    assert lifecycle.handle(store,'lock','lifecycle-execute',value)['error']=='LIFECYCLE_UNCONFIRMED'
+    assert saved[path]['error']=='IMPORT_UNCONFIRMED' and not saved[path].get('deleted')
+    assert saved[path]['lifecycle_pending']['key']==run
