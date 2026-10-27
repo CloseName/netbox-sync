@@ -39,9 +39,14 @@ def _prepare(user, account, operation, key):
     if operation == 'baseline':
         from .account_baseline import prepare
         return prepare(user, account, key), []
+    # Even an empty account must not accept a review from an earlier cycle.
+    previous = ProviderLifecycleReceipt.objects.filter(account=account).order_by('-created_at', '-pk').first()
+    epoch = str(previous.pk) if previous else None
     if operation == 'activate':
         deleted = ProviderAccountFence.objects.filter(account=account,deleted=True).exists()
-        return {'fingerprint':_digest([account,'activate',deleted]),'account':account,'operation':operation,
+        if not deleted:
+            raise ValueError('PROVIDER_ACCOUNT_NOT_DELETED')
+        return {'fingerprint':_digest([account,'activate',deleted,epoch]),'account':account,'operation':operation,
                 'key':None,'delete':[],'retain':[],'blockers':[],'writes_performed':False}, []
     bindings = list(ProviderBinding.objects.filter(account=account).order_by('pk'))
     if operation == 'detach':
@@ -106,7 +111,7 @@ def _prepare(user, account, operation, key):
     removed_keys={(r['model'],r['id']) for r in removed}
     binding_rows = list(retained)
     retained=[r for r in retained if (r['model'],r['id']) not in removed_keys]
-    state = dict(account=account,operation=operation,key=key,evidence=evidence,
+    state = dict(account=account,operation=operation,key=key,evidence=evidence,epoch=epoch,
         registry=list(ProviderResourceRegistry.objects.filter(account=account).values_list('revision','evidence_digest')),
         inventory=list(ProviderInventory.objects.filter(account=account).order_by('pk').values_list('pk','evidence_digest')),
         removed=removed,retained=retained,blockers=blockers)

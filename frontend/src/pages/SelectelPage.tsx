@@ -11,7 +11,7 @@ import {selectelImportReason} from './selectelImportReason';
 type Product = {product:string;title:string;state_label:string;observations_by_collection:Record<string,number>};
 type Account = {account:string;name:string;username:string;status:string;error?:string;
  import_diagnostic?:{reason?:string;http_status?:number;event_id?:string;validation?:{model:string;object_id?:number;phase:string;issues:{field:string;code:string}[]}};
- enabled?:boolean;schedule?:ProviderSchedule;next_run?:number;deleted?:boolean;
+ enabled?:boolean;schedule?:ProviderSchedule;next_run?:number;deleted?:boolean;needs_credentials?:boolean;connection_generation?:string;
  lifecycle_pending?:{operation:string;key?:string|null;fingerprint:string};
  baseline_history?:{run_id:string;historical_outcome:string;accepted_at:number}[];
  reconciliation?:{outcome:string;checked_at:number;run_id:string};
@@ -20,6 +20,9 @@ type Account = {account:string;name:string;username:string;status:string;error?:
  native_mode?:string;native_created?:number;native_adopted?:number;native_blocked?:number}};
 type Accounts = {items:Account[];import_ready:boolean};
 const messages:Record<string,string> = {
+ ACCOUNT_ALREADY_CONNECTED:'Аккаунт уже подключён. Обновите страницу; для замены пароля используйте «Изменить доступ», для нового сбора — «Собрать и обновить».',
+ CONNECTION_REVIEW_STALE:'Аккаунт был удалён или подключён повторно. Обновите страницу и заново откройте форму подключения.',
+ ACCOUNT_NOT_DELETED:'Аккаунт не удалён. Обновите страницу и проверьте его состояние.',
  SELECTEL_GUARD_INCOMPATIBLE:'Версия Guard не поддерживает безопасную сверку импорта. Требуется согласованное обновление Sync и Guard. Сбор и импорт не запускались.',
  LIFECYCLE_BUSY:'Сейчас выполняется запись или сбор. Дождитесь завершения и повторите проверку; останавливать планировщик не требуется.',
  BASELINE_RUN_MISMATCH:'Состояние запуска изменилось. Обновите страницу и повторите сверку для актуального запуска.',
@@ -70,28 +73,33 @@ export function SelectelPage(){
  const resource=useResource(fetchAccounts);
  const [selected,setSelected]=useState(''),[form,setForm]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const [draft,setDraft]=useState({account:'',name:'',username:'',password:''});
+ const [connectId,setConnectId]=useState(()=>crypto.randomUUID());
+ const [connectionGeneration,setConnectionGeneration]=useState<string|null>(null);
+ const draftAccount=resource.data?.items.find(x=>x.account===draft.account);
+ const firstConnection=!draftAccount||draftAccount.needs_credentials===true;
  const account=resource.data?.items.find(x=>x.account===selected);
  const running=resource.data?.items.some(x=>x.status==='running');
  useEffect(()=>{if(!running)return;const timer=setInterval(resource.refresh,5000);return()=>clearInterval(timer);},[running,resource.refresh]);
  async function save(event:FormEvent){event.preventDefault();setBusy(true);setError('');
-  try{await request('',draft);setSelected(draft.account);setDraft({account:'',name:'',username:'',password:''});setForm(false);resource.refresh();}
+  try{await request(firstConnection?'/connect':'',firstConnection?{...draft,request_id:connectId,connection_generation:connectionGeneration}:draft);setSelected(draft.account);setDraft({account:'',name:'',username:'',password:''});setForm(false);resource.refresh();}
   catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  async function collect(id:string){setBusy(true);setError('');try{await request('/'+id+'/collect',{});resource.refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  async function configure(id:string,operation:string,value:unknown){setBusy(true);setError('');try{await request('/'+id+'/'+operation,value);resource.refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  return <main className="selectel-workspace"><div className="page-heading"><div><h1><ProviderIcon provider="selectel"/> Selectel</h1><p className="muted">Серверы, DNS и объектное хранилище ваших аккаунтов.</p></div></div>
  <p role="note">Экспериментальная интеграция. Сопоставление ресурсов и подтверждение импорта ещё проходят проверку. При неопределённом результате повторный запуск заблокирован до сверки операции.</p>
- <div className="sources-actions"><button className="primary" onClick={()=>{setDraft({account:'',name:'',username:'',password:''});setForm(true);}}>Подключить аккаунт</button>
+ <div className="sources-actions"><button className="primary" onClick={()=>{setConnectId(crypto.randomUUID());setConnectionGeneration(null);setDraft({account:'',name:'',username:'',password:''});setForm(true);}}>Подключить аккаунт</button>
  <RefreshControl loading={resource.loading} error={resource.error} received={resource.received} refresh={resource.refresh}/></div>
  {(error||resource.error)&&<p role="alert">{error||'Не удалось загрузить аккаунты.'}</p>}
  {resource.data&&!resource.data.import_ready&&<p role="alert">Не настроен импорт в NetBox. Администратору нужно проверить токен импортёра, права и версию Guard.</p>}
  {form&&<section className="panel selectel-form"><h2>Подключение Selectel</h2><ol className="flow-steps"><li aria-current="step">Доступ</li><li>Первый сбор</li><li>Результат</li></ol><p>Используйте сервисного пользователя с правами чтения нужных проектов и продуктов. Пароль не возвращается в интерфейс.</p>
  <form onSubmit={save}>
  <label>Название подключения<input required maxLength={128} value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})}/></label>
- <label>Номер аккаунта<input required inputMode="numeric" pattern="[0-9]{1,20}" value={draft.account} onChange={e=>setDraft({...draft,account:e.target.value})}/></label>
+ <label>Номер аккаунта<input required inputMode="numeric" pattern="[0-9]{1,20}" value={draft.account} onChange={e=>{setDraft({...draft,account:e.target.value});setConnectionGeneration(resource.data?.items.find(a=>a.account===e.target.value)?.connection_generation??null);}}/></label>
  <label>Сервисный пользователь<input required autoComplete="off" maxLength={128} value={draft.username} onChange={e=>setDraft({...draft,username:e.target.value})}/></label>
  <label>Пароль<input type="password" required autoComplete="new-password" maxLength={1024} value={draft.password} onChange={e=>setDraft({...draft,password:e.target.value})}/></label>
- <p>Сохранение не проверяет доступ и не запускает сбор. Доступ к аккаунту и продуктам проверяется при сборе. «Собрать и обновить» также запускает импорт в NetBox. Для замены пароля укажите тот же номер аккаунта.</p>
- <div className="actions"><button className="primary" disabled={busy} type="submit">{busy?'Сохраняем…':'Сохранить подключение'}</button> <button disabled={busy} type="button" onClick={()=>{setDraft({...draft,password:''});setForm(false);}}>Отмена</button></div>
+ <p>{firstConnection?'Подключение сразу запускает первый сбор и импорт в NetBox. Подтверждённые совпадения связываются автоматически. Неоднозначные совпадения и создание выделенного сервера без аппаратного ID требуют проверки. Расписание останется выключенным.':'Замена доступа сохраняет пароль без запуска сбора и не снимает блокировку неподтверждённого импорта.'}</p>
+ {draftAccount?.deleted&&<p role="alert">Сначала подготовьте повторное подключение в разделе «Отсоединение и удаление».</p>}
+ <div className="actions"><button className="primary" disabled={busy||draftAccount?.deleted||!!draftAccount?.lifecycle_pending||(firstConnection&&!resource.data?.import_ready)} type="submit">{busy?'Сохраняем…':firstConnection?'Подключить и собрать':'Сохранить доступ'}</button> <button disabled={busy} type="button" onClick={()=>{setDraft({...draft,password:''});setForm(false);}}>Отмена</button></div>
  </form></section>}
  <div className="account-cards selectel-table" aria-label="Аккаунты Selectel">
  {resource.data?.items.map(a=><section className="panel account-card" key={a.account} data-selected={a.account===selected}>
@@ -112,10 +120,10 @@ export function SelectelPage(){
  {!a.deleted&&<SelectelSchedule key={a.account+JSON.stringify(a.schedule)} value={a.schedule} disabled={busy||!!a.lifecycle_pending} save={schedule=>configure(a.account,'schedule',{schedule})}/>}
  {(a.error==='IMPORT_UNCONFIRMED'||a.error==='RUN_INTERRUPTED')&&a.run_id&&<SelectelBaseline account={a.account} runId={a.run_id} disabled={a.enabled===false} pending={!!a.lifecycle_pending} busy={busy} request={request} refresh={resource.refresh}/>}
  <SelectelLifecycle account={a.account} disabled={a.enabled===false} deleted={a.deleted} pending={a.lifecycle_pending} busy={busy} request={request} refresh={resource.refresh}/>
- <details><summary>Доступ</summary><p>Сервисный пользователь: {a.username}</p><button disabled={busy} onClick={()=>{setDraft({account:a.account,name:a.name,username:a.username,password:''});setForm(true);}}>Изменить доступ</button></details>
+ <details open={a.needs_credentials&&!a.deleted?true:undefined}><summary>Доступ</summary><p>Сервисный пользователь: {a.username||'Не указан'}</p><button disabled={busy||a.deleted||!!a.lifecycle_pending} onClick={()=>{setConnectId(crypto.randomUUID());setConnectionGeneration(a.connection_generation??null);setDraft({account:a.account,name:a.name,username:a.username||'',password:''});setForm(true);}}>{a.needs_credentials?'Указать доступ и запустить сбор':'Изменить доступ'}</button></details>
  </section>)}
  </div>
- {resource.data?.items.length===0&&<p>Подключите аккаунт, затем нажмите «Собрать и обновить».</p>}
+ {resource.data?.items.length===0&&<p>Подключите аккаунт: первый сбор и импорт начнутся после сохранения доступа.</p>}
  {account&&<section className="panel" id="selectel-account-detail"><h2>{account.name} · {account.account}</h2>
  {account.error&&<p role="alert">{messages[account.error]||'Сбор не завершён. Последние успешные данные сохранены.'}</p>}
  {account.summary?<><dl className="selectel-summary"><div><dt>Проектов</dt><dd>{account.summary.projects??'—'}</dd></div><div><dt>Серверов</dt><dd>{account.summary.servers}</dd></div><div><dt>Связано с NetBox</dt><dd>{account.summary.matched}</dd></div><div><dt>Без подтверждённой связи</dt><dd>{account.summary.unmatched}</dd></div></dl>

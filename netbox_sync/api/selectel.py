@@ -1,5 +1,6 @@
 """Account inventory operations; credentials never enter response DTOs."""
 
+from uuid import UUID
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
@@ -15,6 +16,13 @@ class Account(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     username: str = Field(min_length=1, max_length=128)
     password: SecretStr = Field(min_length=1, max_length=1024)
+
+
+class Connection(Account):
+    """First connection authorizes one collection, scoped to a fresh activation."""
+
+    request_id: UUID
+    connection_generation: UUID | None = None
 
 
 class Schedule(BaseModel):
@@ -79,6 +87,12 @@ def routes(settings):
     @router.post("/{account}/collect")
     def collect(request: Request, account: str):
         return call(request, "collect", {"account": account})
+
+    @router.post("/connect")
+    def connect(request: Request, payload: Connection):
+        data = payload.model_dump(mode="json")
+        data["password"] = payload.password.get_secret_value()
+        return call(request, "connect", data)
 
     @router.post("/{account}/reconcile")
     def reconcile(request: Request, account: str):
