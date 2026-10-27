@@ -100,16 +100,18 @@ print('Legacy placement: reuse never grants deletion ownership; IDs and IPs reta
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from django.utils import timezone
-from dcim.models import Device
+from dcim.models import Device, DeviceRole, DeviceType, Manufacturer
 from netbox_guard.account_import import import_account
 from netbox_guard.models import ProviderInventory, ProviderResourceRegistry
 from tools.selectel_audit.resource_registry import registry
 fixture = runpy.run_path(str(Path(__file__).with_name('selectel_inventory_fixture.py')))['fixture']
 cycle_account = str(uuid4().int)[:20]
-existing = Device.objects.first()
-assert existing is not None
+manufacturer = Manufacturer.objects.create(name='cycle-'+cycle_account, slug='cycle-'+cycle_account)
+device_type = DeviceType.objects.create(manufacturer=manufacturer, model='cycle-'+cycle_account,
+    slug='cycle-'+cycle_account)
+device_role = DeviceRole.objects.create(name='cycle-'+cycle_account, slug='cycle-'+cycle_account)
 chassis = Device.objects.create(name='existing-'+cycle_account, serial='CYCLE-'+cycle_account,
-    site=existing.site, device_type=existing.device_type, role=existing.role)
+    site=site, device_type=device_type, role=device_role)
 original_device_id = chassis.pk
 old_delete = old_activate = None
 with override_settings(PLUGINS_CONFIG=config):
