@@ -101,11 +101,20 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from django.utils import timezone
 from dcim.models import Device, DeviceRole, DeviceType, Manufacturer
+from django.db.models.deletion import Collector
 from netbox_guard.account_import import import_account
 from netbox_guard.models import ProviderInventory, ProviderResourceRegistry
 from tools.selectel_audit.resource_registry import registry
 fixture = runpy.run_path(str(Path(__file__).with_name('selectel_inventory_fixture.py')))['fixture']
 cycle_account = str(uuid4().int)[:20]
+# NetBox queues nullable relation updates even for a completely empty Site.
+# These empty querysets must not be mistaken for writes to foreign objects.
+empty_site = Site.objects.create(name='empty-'+cycle_account, slug='empty-'+cycle_account)
+empty_collector = Collector(using=connection.alias)
+empty_collector.collect([empty_site])
+assert empty_collector.field_updates
+assert not any(bool(group) for groups in empty_collector.field_updates.values() for group in groups)
+print('Empty Site deletion has queued field updates but no affected rows OK')
 manufacturer = Manufacturer.objects.create(name='cycle-'+cycle_account, slug='cycle-'+cycle_account)
 device_type = DeviceType.objects.create(manufacturer=manufacturer, model='cycle-'+cycle_account,
     slug='cycle-'+cycle_account)

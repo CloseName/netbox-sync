@@ -3,6 +3,7 @@ import re
 from uuid import UUID
 from django.apps import apps
 from django.db import connection
+from django.db.models import QuerySet
 from django.db.models.deletion import Collector
 from .dependencies import _database_fence, _digest, DependencyGuardBlocked
 from .service import _permission
@@ -171,7 +172,11 @@ def execute(user, account, operation, nonce, fingerprint, key=None):
                 collector=Collector(using=connection.alias)
                 collector.collect([obj])
                 actual={(o._meta.label_lower,o.pk) for group in collector.data.values() for o in group}
-                if actual != {(item['model'],item['id'])} or collector.field_updates or any(q.exists() for q in collector.fast_deletes):
+                # Django may queue SET_NULL querysets with no affected rows.
+                # Only actual external writes block deletion, not empty query plans.
+                updates = any(group.exists() if isinstance(group, QuerySet) else bool(group)
+                              for groups in collector.field_updates.values() for group in groups)
+                if actual != {(item['model'],item['id'])} or updates or any(q.exists() for q in collector.fast_deletes):
                     raise ValueError('PROVIDER_UNOWNED_CASCADE_BLOCKED')
                 collector.delete()
             ProviderCreatedObject.objects.filter(account=account).delete()
