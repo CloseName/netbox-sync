@@ -188,3 +188,32 @@ or add a creation proof: it does not authorize renaming or automatic deletion.
 New objects and previously proven objects retain their existing policy. Tests
 cover repeated reuse, mismatches, foreign ownership, permissions and native
 imports retaining IDs/fields while excluding legacy placement from deletion.
+
+
+## Account cleanup under validation
+
+Account deletion uses one account-level confirmation and a compact count summary.
+Preparing deletion disables new collections; it does not stop a running writer.
+The existing lifecycle lock and uncertain-outcome checks still apply. No per-object
+confirmation is required. Blockers are grouped, with object details collapsed.
+
+Created native resources are removed using `ProviderCreatedObject` or original
+successful create receipts tied to the same native row creation timestamp.
+Network projection receipts distinguish creation from adoption. Account-owned
+IP addresses, prefixes, VLANs and VLAN groups can be removed in the same transaction
+as cards, provider registry, network links and provider claims. An adopted prefix's
+VLAN introduced by that projection is restored when the current value still matches
+the claim. Independently created objects and their IP assignments are preserved;
+removal releases Selectel claims, not their independently owned data. Previously
+overwritten native fields are not reconstructed without recorded prior values.
+
+Missing legacy provenance, later conflicting edits and foreign dependencies remain
+explicit blockers, not permission to guess ownership from names or IP addresses.
+Lifecycle audit receipts and replay fences remain after account removal. IPAM
+receipts stay immutable; only network mappings/links whose account is fenced deleted
+can be released. Reconnection does not replay an old IPAM operation.
+
+The test Guard updater extends network removal permissions only for the dedicated
+service user already explicitly enabled for lifecycle removal; it never rotates its
+token or grants permissions to an unrelated account. No production deployment is
+part of this change. Native PostgreSQL and repeated-cycle acceptance are required.

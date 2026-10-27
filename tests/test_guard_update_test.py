@@ -145,7 +145,8 @@ def test_activation_starts_only_netbox_services_after_migration(installation):
     update.new_image = 'sha256:' + 'd'*64
     calls.clear()
     update.activate()
-    assert 'migrate' in calls[-2]
+    assert 'migrate' in calls[-3]
+    assert 'configure_selectel_cleanup' in calls[-2]
     assert calls[-1][-2:] == ('netbox', 'netbox-worker')
     assert '--no-deps' in calls[-1] and '--no-build' in calls[-1] and '--pull' in calls[-1]
 

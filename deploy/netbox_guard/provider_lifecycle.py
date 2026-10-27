@@ -8,12 +8,13 @@ from django.db.models.deletion import Collector
 from .dependencies import _database_fence, _digest, DependencyGuardBlocked
 from .service import _permission
 from .models import (ProviderBinding, ProviderFieldClaim, ProviderBindingChange,
-    ProviderCreatedObject, ProviderNetworkLink, ProviderIPAMObject, ProviderInventory, ProviderInventoryImport,
+    ProviderCreatedObject, ProviderNetworkLink, ProviderInventory, ProviderInventoryImport,
     ProviderResourceRegistry, ProviderResourceRegistryChange, ProviderDetachedResource,
     ProviderAccountFence, ProviderLifecycleReceipt)
 
 TARGETS = {'device': 'dcim.device', 'vm': 'virtualization.virtualmachine'}
 ORDER = {'virtualization.virtualmachine': 0, 'dcim.device': 1, 'dcim.site': 2,
+         'ipam.ipaddress': -4, 'ipam.prefix': -3, 'ipam.vlan': -2, 'ipam.vlangroup': -1,
          'dcim.devicerole': 2, 'dcim.devicetype': 2, 'dcim.manufacturer': 3, 'dcim.region': 4}
 
 
@@ -55,18 +56,18 @@ def _prepare(user, account, operation, key):
         if len(bindings) != 1:
             raise ValueError('PROVIDER_BINDING_REQUIRED')
     owned = list(ProviderCreatedObject.objects.filter(account=account)) if operation == 'delete' else []
-    owned_keys = {(o.model_label, o.object_id) for o in owned}
+    from .provider_cleanup import network_plan, legacy_cards
     removed, retained, blockers, evidence = [], [], [], []
+    cleanup = None
     if operation == 'delete':
-        import json
-        # Legacy IPAM projections lack creation/adoption provenance. They cannot
-        # silently survive an apparently complete account deletion.
-        for native in ProviderIPAMObject.objects.order_by('pk'):
-            try: scope = json.loads(native.key)
-            except (ValueError, TypeError): continue
-            if isinstance(scope, list) and len(scope) > 1 and scope[:2] == ['selectel', account]:
-                blockers.append({'reason':'legacy_ipam_provenance_required','id':native.object_id,'model':native.kind})
-                evidence.append(('legacy-ipam',native.pk,native.key,native.claims))
+        recovered, history = legacy_cards(account, bindings, owned)
+        owned.extend(recovered); evidence.extend(history)
+        cleanup, network_owned = network_plan(user, account, _access)
+        known = {(o.model_label, o.object_id) for o in owned}
+        owned.extend(o for o in network_owned if (o.model_label, o.object_id) not in known)
+        evidence.extend(cleanup['evidence']); blockers.extend(cleanup['blockers'])
+        retained.extend(cleanup['retain'])
+    owned_keys = {(o.model_label, o.object_id) for o in owned}
     for binding in bindings:
         model = apps.get_model(TARGETS[binding.resource])
         obj = model.objects.filter(pk=binding.object_id).first()
@@ -76,7 +77,7 @@ def _prepare(user, account, operation, key):
         _access(user, obj, 'view'); _access(user, obj, 'change')
         evidence.append((binding.pk, binding.revision, _digest({f.attname:getattr(obj,f.attname) for f in obj._meta.concrete_fields}),
                          list(ProviderFieldClaim.objects.filter(binding=binding).order_by('field').values_list('field','value'))))
-        if ProviderNetworkLink.objects.filter(binding=binding).exists():
+        if operation != 'delete' and ProviderNetworkLink.objects.filter(binding=binding).exists():
             blockers.append({'reason':'provider_network_links_present', 'binding':binding.pk})
         retained.append({'model':model._meta.label_lower, 'id':obj.pk, 'name':str(obj), 'url':obj.get_absolute_url(),
                          'provider_key':binding.provider_key})
@@ -98,11 +99,14 @@ def _prepare(user, account, operation, key):
             for dependent in dependents:
                 _access(user,dependent,'view')
                 evidence.append(('dependency',proof.pk,dependent._meta.label_lower,dependent.pk))
+                if cleanup and any(r['model'] == dependent._meta.label_lower and r['id'] == dependent.pk
+                                   and r['field'] == rel.field.attname and r['value'] is None for r in cleanup['restore']):
+                    continue
                 if ((dependent._meta.label_lower,dependent.pk) not in owned_keys
                         or (dependent._meta.label_lower,dependent.pk) in retained_catalog):
                     foreign = True
         if foreign:
-            if proof.model_label in TARGETS.values():
+            if proof.model_label in TARGETS.values() or proof.model_label.startswith('ipam.'):
                 blockers.append({**item,'reason':'foreign_dependencies_or_sync_source'})
             else:
                 retained.append({**item,'reason':'shared_catalog_object'})
@@ -118,7 +122,7 @@ def _prepare(user, account, operation, key):
         removed=removed,retained=retained,blockers=blockers)
     return {'fingerprint':_digest(state),'account':account,'operation':operation,'key':key,
             'delete':removed,'retain':retained,'bindings':binding_rows,'blockers':blockers,
-            'remove_registry':operation == 'delete', 'writes_performed':False}, bindings
+            'cleanup':{k:v for k,v in cleanup.items() if k != 'evidence'} if cleanup else None, 'remove_registry':operation == 'delete', 'writes_performed':False}, bindings
 
 
 def review(user, account, operation, key=None):
@@ -158,6 +162,10 @@ def execute(user, account, operation, nonce, fingerprint, key=None):
             raise ValueError('PROVIDER_REVIEW_STALE')
         if plan['blockers']:
             raise ValueError('PROVIDER_DEPENDENCIES_BLOCKED')
+        if operation == 'delete':
+            from .provider_cleanup import release_network
+            ProviderAccountFence.objects.update_or_create(account=account,defaults={'deleted':True})
+            release_network(plan['cleanup'])
         for binding in bindings:
             if operation == 'detach':
                 ProviderDetachedResource.objects.update_or_create(provider_key=binding.provider_key,defaults={'account':account})

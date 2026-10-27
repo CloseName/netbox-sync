@@ -7,7 +7,7 @@ test('Selectel delete and reconnect can be repeated with automatic first collect
   const req=route.request(),path=new URL(req.url()).pathname;
   if(path==='/api/v1/selectel')return route.fulfill({json:{items:[row],import_ready:true}});
   if(path.endsWith('/enabled')){row.enabled=req.postDataJSON().enabled;return route.fulfill({json:row});}
-  if(path.endsWith('/lifecycle-review'))return route.fulfill({json:{...req.postDataJSON(),fingerprint:'a'.repeat(64),delete:[],retain:[],blockers:[]}});
+  if(path.endsWith('/lifecycle-review'))return route.fulfill({json:{...req.postDataJSON(),fingerprint:'a'.repeat(64),delete:[{model:'dcim.device',id:31,name:'owned-card',url:'/device/31/'}],retain:Array.from({length:45},(_,id)=>({model:'virtualization.virtualmachine',id,name:'existing-card-'+id,url:'/vm/'+id+'/'})),blockers:[]}});
   if(path.endsWith('/lifecycle-execute')){
    const operation=req.postDataJSON().operation;
    row=operation==='delete'?{account:'29916',name:'Cycle account',status:'deleted',deleted:true,enabled:false,needs_credentials:true}:
@@ -28,12 +28,14 @@ test('Selectel delete and reconnect can be repeated with automatic first collect
  });
  await page.goto('/sources/selectel');
  for(let cycle=1;cycle<=3;cycle++){
-  await page.getByRole('button',{name:'Отключить аккаунт',exact:true}).click();
   const lifecycle=page.locator('details').filter({has:page.locator('summary', {hasText:'Отсоединение и удаление'})});
   await lifecycle.locator('summary').first().click();
-  await page.getByRole('button',{name:'Проверить ресурсы перед удалением'}).click();
+  await page.getByRole('button',{name:'Удалить аккаунт',exact:true}).click();
+  await expect(lifecycle).not.toContainText('existing-card-');
+  await expect(lifecycle).not.toContainText('owned-card');
+  await expect(lifecycle.getByRole('checkbox')).toHaveCount(1);
   await lifecycle.getByRole('checkbox').check();
-  await page.getByRole('button',{name:'Применить проверенный план'}).click();
+  await page.getByRole('button',{name:'Подтвердить удаление аккаунта'}).click();
   await expect(page.getByText('Аккаунт удалён; доступ и расписание очищены',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Подготовить повторное подключение'}).click();
   await lifecycle.getByRole('checkbox').check();
