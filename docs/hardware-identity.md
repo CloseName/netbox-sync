@@ -48,7 +48,32 @@ The normal Guard reconciliation plan consumes this evidence automatically. Apply
 that plan still uses the existing fingerprint, transaction and nonce contract; the
 collector update itself does not apply new bindings or create server cards. A
 dedicated server with no existing candidate still needs a valid system serial and
-placement for card creation. Missing evidence never justifies a guessed binding.
+placement for automatic card creation. Missing evidence never justifies a guessed binding.
+
+## Reviewed first creation without a chassis serial
+
+For a dedicated resource blocked only by `hardware_identity_missing`, a binding
+administrator can open **Resources → resource details → Check card creation**.
+This is a separate, explicit first-creation decision, not automatic adoption.
+The page lists any possible existing cards and refuses creation when they exist.
+No-candidate status does not prove absence: the operator must check the inventory
+and affirm that the server has no existing card before submitting.
+
+The path requires the existing native-reconciliation opt-in, full Device/VM/IP
+visibility, a canonical Selectel resource UUID, a fresh non-retained resource and
+placement, no binding/detach/deletion fence, and the normal native add/change
+permissions. Account plus resource UUID becomes the binding identity; the chassis
+serial stays empty. Provider metadata and placement are projected onto the new
+card without assigning or changing IPs. Future imports reuse the same binding.
+
+GET is read-only. POST requires CSRF, a ten-minute signed review tied to the actor,
+account and resource, and an explicit checkbox. The writer serializes with account
+imports, rechecks the current plan fingerprint and candidates, then creates the
+card, provenance, claims, binding and receipt in one transaction. A repeated
+submission of the same review returns its receipt; a different submission after
+creation cannot create a second card. This does not clear uncertain Sync runs,
+enable schedules, adopt weak candidates, or solve later hypervisor matching without
+shared hardware identity. Existing legacy cards still need explicit matching review.
 
 ## Coverage and rollout
 

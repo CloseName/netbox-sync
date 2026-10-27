@@ -1,0 +1,21 @@
+{% extends 'base/layout.html' %}
+{% block title %}Selectel — проверка создания карточки{% endblock %}
+{% block content %}
+<p><a href="{{ back_url }}">Ресурсы Selectel / {{ account }}</a></p>
+<h1>Проверка создания карточки</h1>
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+{% if result %}
+<div class="alert alert-success">Карточка <a href="{{ result.object_url }}">{{ result.name }}</a> создана и связана с ресурсом Selectel.{% if result.replayed %} Показан результат уже выполненной операции; новая карточка не создавалась.{% endif %}</div>
+<p>Сохранены сведения Selectel и площадка. IP и существующие карточки не изменены. Следующий сбор обновит эту карточку по UUID ресурса.</p>
+{% elif preview %}
+<dl><dt>Ресурс Selectel</dt><dd>{{ preview.name }}</dd><dt>UUID ресурса</dt><dd>{{ preview.native_id }}</dd><dt>Площадка / регион</dt><dd>{{ preview.location|default:'Не получена' }} / {{ preview.region|default:'Не указан' }}</dd></dl>
+<p>{{ reason }}</p>
+{% if preview.candidates %}<ul>{% for candidate in preview.candidates %}<li><a href="{{ candidate.url }}">{{ candidate.name }}</a> — {{ candidate.resource }} #{{ candidate.id }}</li>{% endfor %}</ul>{% endif %}
+{% if preview.eligible %}
+<p>Будет создана одна карточка «{{ preview.native_name }}» с привязкой к аккаунту {{ account }} и UUID Selectel. Серийный номер останется пустым. Сведения провайдера будут сохранены; IP, существующие карточки и их привязки останутся прежними.</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="review_token" value="{{ review_token }}">
+<div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="confirm-absent" name="confirm_absent" value="yes" required><label class="form-check-label" for="confirm-absent">Я проверил инвентарь NetBox: карточки этого сервера нет. Подтверждаю создание новой.</label></div>
+<button class="btn btn-primary" type="submit">Создать и связать карточку</button></form>
+{% endif %}
+{% endif %}
+{% endblock %}

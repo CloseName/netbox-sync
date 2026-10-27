@@ -44,6 +44,22 @@ the standalone backup/restore utility are unchanged.
 
 ## Before starting
 
+### Dedicated first-creation acceptance
+
+After a separately approved coordinated update, use a freshly and successfully
+collected Selectel account. In test NetBox open provider resources, an unmatched
+dedicated resource's **Сведения**, then **Проверить возможность создания карточки**.
+Check one resource with known candidates first: links must be shown and creation
+must be unavailable. For a no-candidate resource, independently verify that no
+card exists; absence of reported candidates is not proof. Confirm exactly one
+creation only after this check. Verify its provider UUID, configuration, placement,
+empty serial and absent primary IP; existing objects/IPs must remain unchanged.
+Repeat the submitted form: it must return the same result, not another card.
+Then run a fresh manual collection and verify the same Device ID is reused.
+Keep schedules off and record any failures before broadening the test. Do not use
+this action to bypass an uncertain import or to create another card for a known
+ESXi/Proxmox host. Production remains out of scope.
+
 Approve an exact merged commit. Fetch main, preserve any local modifications, and
 check out that full SHA in the test checkout. Do not use an unreviewed moving branch
 or `git reset --hard`. Confirm the checkout contains the reviewed updater itself.

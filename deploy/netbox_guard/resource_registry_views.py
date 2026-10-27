@@ -55,6 +55,8 @@ def registry(request, account=None):
         row['href'] = row['detail_href']
         binding = bindings.get(row['key'])
         row['binding_exists'] = binding is not None
+        if row['kind'] == 'dedicated' and not binding and request.user.has_perm('netbox_guard.manage_providerbinding'):
+            row['creation_href'] = reverse('plugins:netbox_guard:provider_first_creation', kwargs={'account': account, 'ref': row['ref']})
         if binding:
             target = targets.get(binding.resource, {}).get(binding.object_id)
             if target and target.created == binding.object_created:
