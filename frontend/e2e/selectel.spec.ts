@@ -23,7 +23,7 @@ test('Selectel delete and reconnect can be repeated with automatic first collect
   if(path.endsWith('/collect'))throw new Error('Reconnection already launches the first collection');
   if(path==='/api/v1/sources')return route.fulfill({json:{sources:[]}});
   if(path==='/api/v1/pfsense')return route.fulfill({json:{items:[],count:0}});
-  if(path==='/api/v1/bootstrap')return route.fulfill({json:{revision:1,status:'READY',completed:true}});
+  if(path==='/api/v1/bootstrap')return route.fulfill({json:{revision:1,status:'READY',url:'https://netbox.test',completed:true,read_token_present:true,apply_token_present:true,checks:[]}});
   return route.fulfill({json:{}});
  });
  await page.goto('/sources/selectel');
