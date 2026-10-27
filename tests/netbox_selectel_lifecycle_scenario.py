@@ -375,7 +375,7 @@ with override_settings(PLUGINS_CONFIG=config):
     deletion = review(admin, account, 'delete', old_run)
     assert not deletion['blockers'] and deletion['retirement']['historical_outcome']=='unknown'
     assert not retired(account, old_run)
-    historical.description='review must become stale'; historical.save()
+    historical.description='review must become stale'; historical.save(update_fields=['description'])
     try: execute(admin, account, 'delete', uuid4(), deletion['fingerprint'], old_run)
     except ValueError as exc: assert str(exc)=='PROVIDER_REVIEW_STALE'
     else: raise AssertionError('Uncertain deletion ignored a changed native object')
