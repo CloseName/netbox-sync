@@ -7,6 +7,7 @@ import {SelectelSchedule, type ProviderSchedule} from './SelectelSchedule';
 import {SelectelLifecycle} from './SelectelLifecycle';
 import {SelectelBaseline} from './SelectelBaseline';
 import {selectelImportReason} from './selectelImportReason';
+import {connectionGeneration as prepareConnectionGeneration} from '../lib/selectelConnection';
 
 type Product = {product:string;title:string;state_label:string;observations_by_collection:Record<string,number>};
 type Account = {account:string;name:string;username:string;status:string;error?:string;
@@ -77,12 +78,13 @@ export function SelectelPage(){
  const [connectionGeneration,setConnectionGeneration]=useState<string|null>(null);
  const draftAccount=resource.data?.items.find(x=>x.account===draft.account);
  const firstConnection=!draftAccount||draftAccount.needs_credentials===true;
- const account=resource.data?.items.find(x=>x.account===selected);
+ const visibleAccounts=resource.data?.items.filter(x=>!x.deleted)??[];
+ const account=visibleAccounts.find(x=>x.account===selected);
  const running=resource.data?.items.some(x=>x.status==='running');
  useEffect(()=>{if(!running)return;const timer=setInterval(resource.refresh,5000);return()=>clearInterval(timer);},[running,resource.refresh]);
  async function save(event:FormEvent){event.preventDefault();setBusy(true);setError('');
-  try{await request(firstConnection?'/connect':'',firstConnection?{...draft,request_id:connectId,connection_generation:connectionGeneration}:draft);setSelected(draft.account);setDraft({account:'',name:'',username:'',password:''});setForm(false);resource.refresh();}
-  catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+  try{const generation=firstConnection?await prepareConnectionGeneration(draftAccount,request):connectionGeneration;await request(firstConnection?'/connect':'',firstConnection?{...draft,request_id:connectId,connection_generation:generation}:draft);setSelected(draft.account);setDraft({account:'',name:'',username:'',password:''});setForm(false);resource.refresh();}
+  catch(e){setError((e as Error).message);resource.refresh();}finally{setBusy(false);}}
  async function collect(id:string){setBusy(true);setError('');try{await request('/'+id+'/collect',{});resource.refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  async function configure(id:string,operation:string,value:unknown){setBusy(true);setError('');try{await request('/'+id+'/'+operation,value);resource.refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  return <main className="selectel-workspace"><div className="page-heading"><div><h1><ProviderIcon provider="selectel"/> Selectel</h1><p className="muted">Серверы, DNS и объектное хранилище ваших аккаунтов.</p></div></div>
@@ -98,11 +100,10 @@ export function SelectelPage(){
  <label>Сервисный пользователь<input required autoComplete="off" maxLength={128} value={draft.username} onChange={e=>setDraft({...draft,username:e.target.value})}/></label>
  <label>Пароль<input type="password" required autoComplete="new-password" maxLength={1024} value={draft.password} onChange={e=>setDraft({...draft,password:e.target.value})}/></label>
  <p>{firstConnection?'Подключение сразу запускает первый сбор и импорт в NetBox. Подтверждённые совпадения связываются автоматически. Неоднозначные совпадения и создание выделенного сервера без аппаратного ID требуют проверки. Расписание останется выключенным.':'Замена доступа сохраняет пароль без запуска сбора и не снимает блокировку неподтверждённого импорта.'}</p>
- {draftAccount?.deleted&&<p role="alert">Сначала подготовьте повторное подключение в разделе «Отсоединение и удаление».</p>}
- <div className="actions"><button className="primary" disabled={busy||draftAccount?.deleted||!!draftAccount?.lifecycle_pending||(firstConnection&&!resource.data?.import_ready)} type="submit">{busy?'Сохраняем…':firstConnection?'Подключить и собрать':'Сохранить доступ'}</button> <button disabled={busy} type="button" onClick={()=>{setDraft({...draft,password:''});setForm(false);}}>Отмена</button></div>
+ <div className="actions"><button className="primary" disabled={busy||!!(draftAccount?.lifecycle_pending&&draftAccount.lifecycle_pending.operation!=='activate')||(firstConnection&&!resource.data?.import_ready)} type="submit">{busy?'Сохраняем…':firstConnection?'Подключить и собрать':'Сохранить доступ'}</button> <button disabled={busy} type="button" onClick={()=>{setDraft({...draft,password:''});setForm(false);}}>Отмена</button></div>
  </form></section>}
  <div className="account-cards selectel-table" aria-label="Аккаунты Selectel">
- {resource.data?.items.map(a=><section className="panel account-card" key={a.account} data-selected={a.account===selected}>
+ {visibleAccounts.map(a=><section className="panel account-card" key={a.account} data-selected={a.account===selected}>
  <h2><ProviderIcon provider="selectel"/> <button className="account-name" aria-expanded={a.account===selected} onClick={()=>setSelected(a.account)}>{a.name}</button></h2><small>№ {a.account} · {a.username}</small>
  <p><span className={'badge badge-'+(a.status==='attention'||a.error?'danger':a.status==='running'?'info':'neutral')}>{({baseline_accepted:'Текущее состояние принято; старый результат неизвестен',configured:'Доступ сохранён; ещё не проверен',running:'Сбор и импорт выполняются',completed:'Импорт подтверждён',attention:'Требует внимания',deleted:'Аккаунт удалён; доступ и расписание очищены'} as Record<string,string>)[a.status]||a.status}</span></p>
  {a.error&&<p className="account-error">{messages[a.error]||'Сбор не завершён. Проверьте результат аккаунта.'}</p>}
@@ -119,11 +120,11 @@ export function SelectelPage(){
  <p className="muted">Отключение запрещает новые запуски. Уже начатая запись в NetBox завершается.</p>
  {!a.deleted&&<SelectelSchedule key={a.account+JSON.stringify(a.schedule)} value={a.schedule} disabled={busy||!!a.lifecycle_pending} save={schedule=>configure(a.account,'schedule',{schedule})}/>}
  {(a.error==='IMPORT_UNCONFIRMED'||a.error==='RUN_INTERRUPTED')&&a.run_id&&<SelectelBaseline account={a.account} runId={a.run_id} disabled={a.enabled===false} pending={!!a.lifecycle_pending} busy={busy} request={request} refresh={resource.refresh}/>}
- <SelectelLifecycle account={a.account} disabled={a.enabled===false} deleted={a.deleted} pending={a.lifecycle_pending} busy={busy} request={request} refresh={resource.refresh}/>
+ <SelectelLifecycle account={a.account} disabled={a.enabled===false} uncertainRun={a.error==='IMPORT_UNCONFIRMED'||a.error==='RUN_INTERRUPTED'?a.run_id:undefined} pending={a.lifecycle_pending} busy={busy} request={request} refresh={resource.refresh}/>
  <details open={a.needs_credentials&&!a.deleted?true:undefined}><summary>Доступ</summary><p>Сервисный пользователь: {a.username||'Не указан'}</p><button disabled={busy||a.deleted||!!a.lifecycle_pending} onClick={()=>{setConnectId(crypto.randomUUID());setConnectionGeneration(a.connection_generation??null);setDraft({account:a.account,name:a.name,username:a.username||'',password:''});setForm(true);}}>{a.needs_credentials?'Указать доступ и запустить сбор':'Изменить доступ'}</button></details>
  </section>)}
  </div>
- {resource.data?.items.length===0&&<p>Подключите аккаунт: первый сбор и импорт начнутся после сохранения доступа.</p>}
+ {resource.data&&visibleAccounts.length===0&&<p>Подключите аккаунт: первый сбор и импорт начнутся после сохранения доступа.</p>}
  {account&&<section className="panel" id="selectel-account-detail"><h2>{account.name} · {account.account}</h2>
  {account.error&&<p role="alert">{messages[account.error]||'Сбор не завершён. Последние успешные данные сохранены.'}</p>}
  {account.summary?<><dl className="selectel-summary"><div><dt>Проектов</dt><dd>{account.summary.projects??'—'}</dd></div><div><dt>Серверов</dt><dd>{account.summary.servers}</dd></div><div><dt>Связано с NetBox</dt><dd>{account.summary.matched}</dd></div><div><dt>Без подтверждённой связи</dt><dd>{account.summary.unmatched}</dd></div></dl>

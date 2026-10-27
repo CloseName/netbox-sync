@@ -362,3 +362,43 @@ with override_settings(PLUGINS_CONFIG=config):
     else: raise AssertionError('Unknown-origin address deleted')
 assert IPAddress.objects.filter(pk=unknown_ip.pk).exists()
 print('Unknown legacy provenance remains an account-level refusal without writes OK')
+
+
+# Delete an uncertain historical run in one reviewed transaction, without
+# manufacturing a successful import or allowing the old write after reconnect.
+from netbox_guard.account_baseline import retired
+account = str(uuid4().int)[:20]
+old_run = str(uuid4())
+with override_settings(PLUGINS_CONFIG=config):
+    historical = VirtualMachine.objects.create(name='historical-'+account, site=site)
+    bind(historical, 'historical', True)
+    deletion = review(admin, account, 'delete', old_run)
+    assert not deletion['blockers'] and deletion['retirement']['historical_outcome']=='unknown'
+    assert not retired(account, old_run)
+    historical.description='review must become stale'; historical.save(update_fields=['description'])
+    try: execute(admin, account, 'delete', uuid4(), deletion['fingerprint'], old_run)
+    except ValueError as exc: assert str(exc)=='PROVIDER_REVIEW_STALE'
+    else: raise AssertionError('Uncertain deletion ignored a changed native object')
+    deletion = review(admin, account, 'delete', old_run)
+    with patch.object(provider_cleanup, 'release_network', side_effect=RuntimeError('deletion fault')):
+        try: execute(admin, account, 'delete', uuid4(), deletion['fingerprint'], old_run)
+        except RuntimeError: pass
+        else: raise AssertionError('Deletion fault did not roll back')
+    assert not retired(account, old_run)
+    assert not ProviderAccountFence.objects.filter(account=account, deleted=True).exists()
+    assert VirtualMachine.objects.filter(pk=historical.pk).exists()
+    nonce = uuid4()
+    execute(admin, account, 'delete', nonce, deletion['fingerprint'], old_run)
+    assert retired(account, old_run)
+    assert not VirtualMachine.objects.filter(pk=historical.pk).exists()
+    assert execute(admin, account, 'delete', nonce, deletion['fingerprint'], old_run)['replayed']
+    activation = review(admin, account, 'activate')
+    execute(admin, account, 'activate', uuid4(), activation['fingerprint'])
+    doc = fixture(account)
+    old_payload = dict(account=account, nonce=old_run, document=doc, registry=registry(doc))
+    try: import_account(admin, old_payload)
+    except ValueError as exc: assert str(exc)=='PROVIDER_HISTORICAL_RUN_RETIRED'
+    else: raise AssertionError('Historical import replayed after reconnection')
+    # A different run is not accidentally retired by this deletion.
+    assert not retired(account, str(uuid4()))
+print('Uncertain deletion: single review, stale refusal, atomic retirement/cleanup, replay and old-run fence after reconnect OK')

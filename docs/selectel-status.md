@@ -13,8 +13,17 @@ The account lifecycle now supports repeated reviewed deletion and reconnection.
 repeating that request returns its state instead of launching again. Credential
 editing remains save-only. A reactivated account requires fresh access, uses a new
 connection generation, and starts with scheduling off. Old connection forms and
-old lifecycle reviews cannot authorize a later cycle. An uncertain import must
-be reconciled before deletion; deleting an account is not a recovery shortcut.
+old lifecycle reviews cannot authorize a later cycle. Deleted accounts disappear
+from the list; the ordinary connection form performs fenced activation with fresh
+credentials before connecting again. Internal deletion markers remain for replay
+protection and are not reconnect cards.
+
+An uncertain import still blocks collection. Account deletion can review the
+current state and atomically retire the exact old run when its receipt is missing
+or incomplete. One account-level confirmation authorizes cleanup and retirement;
+it never records the old import as successful or retries it. Active writes,
+conflicting receipts, missing ownership evidence and foreign dependencies still
+block deletion. A lost deletion response resumes the same durable operation.
 
 Deletion removes proven account-created cards without foreign dependencies and
 the account's inventory/registry. Adopted cards, their IPs, and shared/unowned
@@ -194,7 +203,7 @@ imports retaining IDs/fields while excluding legacy placement from deletion.
 
 Account deletion uses one account-level confirmation and a compact count summary.
 Preparing deletion disables new collections; it does not stop a running writer.
-The existing lifecycle lock and uncertain-outcome checks still apply. No per-object
+The lifecycle lock and exact-run retirement checks still apply. No per-object
 confirmation is required. Blockers are grouped, with object details collapsed.
 
 Created native resources are removed using `ProviderCreatedObject` or original

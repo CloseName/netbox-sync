@@ -28,8 +28,10 @@ def _spec(account, operation, key):
         raise ValueError('PROVIDER_ACCOUNT_INVALID')
     if operation not in ('detach', 'delete', 'activate', 'baseline') or (operation in ('detach', 'baseline') and not isinstance(key, str)):
         raise ValueError('PROVIDER_REQUEST_INVALID')
-    if operation in ('delete', 'activate') and key is not None:
+    if operation == 'activate' and key is not None:
         raise ValueError('PROVIDER_REQUEST_INVALID')
+    if operation == 'delete' and key is not None:
+        UUID(str(key))
 
 
 def _prepare(user, account, operation, key):
@@ -41,6 +43,12 @@ def _prepare(user, account, operation, key):
     if operation == 'baseline':
         from .account_baseline import prepare
         return prepare(user, account, key), []
+    retirement = None
+    if operation == 'delete' and key is not None:
+        # Keep the account's import lock until the deletion transaction ends.
+        # Missing historical receipts never mean that no writes happened.
+        from .account_baseline import prepare
+        retirement = prepare(user, account, key)
     # Even an empty account must not accept a review from an earlier cycle.
     previous = ProviderLifecycleReceipt.objects.filter(account=account).order_by('-created_at', '-pk').first()
     epoch = str(previous.pk) if previous else None
@@ -122,12 +130,12 @@ def _prepare(user, account, operation, key):
     removed_keys={(r['model'],r['id']) for r in removed}
     binding_rows = list(retained)
     retained=[r for r in retained if (r['model'],r['id']) not in removed_keys]
-    state = dict(account=account,operation=operation,key=key,evidence=evidence,epoch=epoch,
+    state = dict(account=account,operation=operation,key=key,evidence=evidence,epoch=epoch,retirement=retirement,
         registry=list(ProviderResourceRegistry.objects.filter(account=account).values_list('revision','evidence_digest')),
         inventory=list(ProviderInventory.objects.filter(account=account).order_by('pk').values_list('pk','evidence_digest')),
         removed=removed,retained=retained,blockers=blockers)
     return {'fingerprint':_digest(state),'account':account,'operation':operation,'key':key,
-            'delete':removed,'retain':retained,'bindings':binding_rows,'blockers':blockers,
+            'delete':removed,'retain':retained,'bindings':binding_rows,'blockers':blockers,'retirement':retirement,
             'cleanup':{k:v for k,v in cleanup.items() if k != 'evidence'} if cleanup else None, 'remove_registry':operation == 'delete', 'writes_performed':False}, bindings
 
 
@@ -170,6 +178,9 @@ def execute(user, account, operation, nonce, fingerprint, key=None):
             raise ValueError('PROVIDER_DEPENDENCIES_BLOCKED')
         if operation == 'delete':
             from .provider_cleanup import release_network
+            if plan['retirement']:
+                from .account_baseline import accept
+                accept(user, account, key, plan['retirement']['fingerprint'])
             ProviderAccountFence.objects.update_or_create(account=account,defaults={'deleted':True})
             release_network(plan['cleanup'])
         for binding in bindings:

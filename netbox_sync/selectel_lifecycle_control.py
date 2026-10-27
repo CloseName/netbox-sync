@@ -48,6 +48,9 @@ def _finish_lifecycle(path, state, data, payload, result):
     if result.get("writes_performed") is not True:
         # Even a timeout may follow a committed transaction. Keep the nonce.
         return {"error": "LIFECYCLE_UNCONFIRMED", "pending": payload}
+    if data["operation"] == "delete" and payload.get("key"):
+        if any(result.get(k) != payload.get(k) for k in ("account", "operation", "key", "fingerprint")):
+            return {"error": "LIFECYCLE_UNCONFIRMED", "pending": payload}
     if data["operation"] == "baseline":
         from .selectel_baseline import finish
 
@@ -113,9 +116,14 @@ def _handle_account(store, base, operation, data):
     state = read(path)
     if data.get("operation") == "activate" and not state.get("deleted"):
         return {"error": "ACCOUNT_NOT_DELETED"}
-    if data.get("operation") != "baseline" and state.get("error") in ("IMPORT_UNCONFIRMED", "RUN_INTERRUPTED"):
+    retiring = data.get("operation") == "delete" and data.get("key") is not None
+    if (
+        data.get("operation") != "baseline"
+        and not retiring
+        and state.get("error") in ("IMPORT_UNCONFIRMED", "RUN_INTERRUPTED")
+    ):
         return {"error": "IMPORT_UNCONFIRMED"}
-    if data.get("operation") == "baseline":
+    if data.get("operation") == "baseline" or retiring:
         if state.get("error") not in ("IMPORT_UNCONFIRMED", "RUN_INTERRUPTED") or data.get("key") != state.get(
             "run_id"
         ):
