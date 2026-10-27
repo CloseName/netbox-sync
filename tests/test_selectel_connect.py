@@ -75,3 +75,12 @@ def test_first_collection_busy_does_not_save_credentials(env, monkeypatch):
     monkeypatch.setattr(control, 'running', lambda state: state.get('status') == 'running')
     assert connect(env, request())['error'] == 'COLLECTION_BUSY'
     assert saved[path] == {}
+
+
+def test_stopped_runner_without_terminal_result_cannot_be_deleted(env, monkeypatch):
+    store, path, saved, calls, _ = env
+    saved[path].update(status='running', error=None)
+    monkeypatch.setattr(control, 'running', lambda _: False)
+    before = deepcopy(saved)
+    assert lifecycle.handle(store, 'lock', 'lifecycle-execute', data())['error'] == 'RUN_INTERRUPTED'
+    assert saved == before and not calls

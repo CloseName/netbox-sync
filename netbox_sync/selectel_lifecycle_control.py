@@ -28,6 +28,8 @@ def _account_error(base, state):
 
     if running(state):
         return {"error": "RUN_ACTIVE"}
+    if state.get("status") == "running":
+        return {"error": "RUN_INTERRUPTED"}
     if state.get("enabled", True):
         return {"error": "DISABLE_ACCOUNT_FIRST"}
     if not (base / "netbox-token.json").is_file():
