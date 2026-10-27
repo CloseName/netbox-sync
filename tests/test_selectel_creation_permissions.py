@@ -61,7 +61,7 @@ def placement():
     if helper.exists():
         namespace["create_native"] = function("provider_creation.py", "create_native", {
             "transaction": NS(atomic=atomic), "DependencyGuardBlocked": Denied,
-            "_add_permission": permission, "checked": checked})
+            "_add_permission": permission, "checked": checked, "get_user_model": lambda: User})
     resolve = function("provider_placement.py", "resolve", namespace)
     snapshot = dict(identity=dict(account="123", region=""), sections={
         "placement": dict(status="collected", data=dict(uuid="site-id", name="Site"))})
@@ -89,3 +89,18 @@ def test_no_add_permission_never_saves(placement):
     with pytest.raises(denied):
         resolve(user, snapshot)
     assert rows == proofs == []
+
+
+def test_lazy_request_user_can_create_without_losing_object_constraints(placement):
+    resolve, user, snapshot, rows, proofs, denied = placement
+    class RequestUser:
+        def __getattr__(self, name):
+            return getattr(user, name)
+    proxy = RequestUser()
+    user.constrained = True
+    with pytest.raises(denied):
+        resolve(proxy, snapshot)
+    assert rows == proofs == []
+    user.constrained = False
+    result = resolve(proxy, snapshot)
+    assert rows == [result] and len(proofs) == 1

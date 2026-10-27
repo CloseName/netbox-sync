@@ -8,6 +8,7 @@ import ipaddress
 import json
 from uuid import UUID
 from django.apps import apps
+from django.contrib.auth import get_user_model
 from django.db import connection, transaction
 from .models import (ProviderBinding, ProviderInventory, ProviderIPAMObject,
                      ProviderNetworkLink, ProviderIPAMReceipt)
@@ -57,7 +58,7 @@ def assignment(user, ip, allowed_devices):
 
 def prepare(user, request):
     _permission(user, 'manage_providerbinding')
-    user = type(user).objects.get(pk=user.pk)
+    user = get_user_model().objects.get(pk=user.pk)
     require(isinstance(request, dict) and set(request) == {'account', 'targets', 'routing_context'}, 'REQUEST_INVALID')
     require(request['routing_context'] == 'public-global', 'ROUTING_CONTEXT_REQUIRED')
     require(isinstance(request['targets'], list) and 1 <= len(request['targets']) <= 20, 'TARGETS_REQUIRED')

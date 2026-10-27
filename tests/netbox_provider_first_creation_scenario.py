@@ -101,13 +101,15 @@ import html
 import re
 from django.core import signing
 from django.core.exceptions import PermissionDenied
+from django.utils.functional import SimpleLazyObject
 from netbox_guard.provider_first_creation_views import first_creation, SALT
 ProviderDetachedResource.objects.filter(pk=other.pk).delete()
 ref = hashlib.sha256(other.pk.encode()).hexdigest()
 factory = RequestFactory()
 def page(method='get', data=None, user=admin, csrf=False):
     req = getattr(factory, method)('/providers/' + account + '/first-creation/' + ref + '/', data or {})
-    req.user = user
+    # AuthenticationMiddleware exposes this wrapper, not a concrete User instance.
+    req.user = SimpleLazyObject(lambda: get_user_model().objects.get(pk=user.pk))
     if not csrf:
         req._dont_enforce_csrf_checks = True
     return first_creation(req, account, ref)
