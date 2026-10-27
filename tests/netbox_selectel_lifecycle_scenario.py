@@ -287,7 +287,7 @@ with override_settings(PLUGINS_CONFIG=config):
         foreign_host = Device.objects.create(name='foreign-'+str(cycle)+'-'+network_account, site=site,
             device_type=device_type, role=device_role, primary_ip4=created_ip)
         blocked = review(admin, network_account, 'delete')
-        assert any(b.get('id')==created_ip.pk and b['reason']=='foreign_dependencies_or_sync_source' for b in blocked['blockers'])
+        assert any(b.get('id')==created_ip.pk and b['reason']=='foreign_dependencies_or_sync_source' for b in blocked['blockers']), blocked['blockers']
         foreign_host.primary_ip4 = None; foreign_host.save()
         deletion = review(admin, network_account, 'delete')
         assert not deletion['blockers'], deletion['blockers']

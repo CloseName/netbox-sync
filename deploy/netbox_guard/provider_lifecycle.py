@@ -94,7 +94,13 @@ def _prepare(user, account, operation, key):
         item = {'model':proof.model_label,'id':obj.pk,'name':str(obj),'url':obj.get_absolute_url()}
         evidence.append((proof.pk,_digest({f.attname:getattr(obj,f.attname) for f in obj._meta.concrete_fields})))
         foreign = bool((getattr(obj,'custom_field_data',None) or {}).get('sync_identities'))
-        for rel in obj._meta.related_objects:
+        # NetBox primary-IP fields use hidden reverse relations (related_name='+').
+        # They still carry live references and must appear in the review, not only
+        # be caught later by Collector's final no-external-writes check.
+        for rel in obj._meta.get_fields(include_hidden=True):
+            if not (rel.auto_created and not rel.concrete and rel.is_relation
+                    and rel.related_model is not None):
+                continue
             dependents = rel.related_model.objects.filter(**{rel.field.name:obj})
             for dependent in dependents:
                 _access(user,dependent,'view')
