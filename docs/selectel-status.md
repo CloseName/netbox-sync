@@ -8,6 +8,13 @@ boundaries see [25 October diagnosis](selectel-diagnosis-20261025.md).
 
 ## Known limitations
 
+Dedicated resources without a usable chassis serial now have a separate
+[reviewed first-creation path](hardware-identity.md#reviewed-first-creation-without-a-chassis-serial).
+It requires administrator confirmation of absence and refuses known candidates;
+normal automatic matching/creation gates are unchanged. This addresses first
+creation only, not the outstanding weak-candidate adoption or reverse-matching
+acceptance scenarios. No test-server or production acceptance is implied.
+
 The coordinated test update and read-only receipt lookup are documented in
 [automated recovery](operations/selectel-recovery.md). This adds evidence-based
 confirmation for new runs; historical runs without an intent digest are not

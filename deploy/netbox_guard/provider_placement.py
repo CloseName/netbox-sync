@@ -7,7 +7,7 @@ from .provider_creation import create_native
 from .dependencies import DependencyGuardBlocked
 
 
-def resolve(user, snapshot, previous=None):
+def resolve(user, snapshot, previous=None, *, allow_updates=True):
     ident = snapshot['identity']
     section = snapshot['sections'].get('placement', {})
     data = section.get('data')
@@ -50,6 +50,8 @@ def resolve(user, snapshot, previous=None):
                     object_id=result.pk,object_created=result.created,provider_key=marker)
         changed = [field for field,value in values.items() if getattr(result,field) != value]
         if changed:
+            if not allow_updates:
+                raise ValueError('PROVIDER_PLACEMENT_REVIEW_REQUIRED')
             if not user.has_perm(f'{model._meta.app_label}.change_{model._meta.model_name}',result):
                 raise DependencyGuardBlocked('PERMISSION_DENIED')
             for field in changed: setattr(result,field,values[field])

@@ -223,7 +223,7 @@ def prepare(user, account):
     return {'account': account, 'fingerprint': digest(state), 'resources': plans, 'writes_performed': False}
 
 
-def _create(user, record, plan):
+def _create(user, record, plan, *, placement_updates=True):
     ident = record.snapshot['identity']
     info = plan['info']
     # Provider-scoped slugs avoid repurposing existing user Sites/Regions.
@@ -239,7 +239,7 @@ def _create(user, record, plan):
             raise ValueError('PROVIDER_NATIVE_SCOPE_CONFLICT')
         return result
     from .provider_placement import resolve
-    site = resolve(user, record.snapshot)
+    site = resolve(user, record.snapshot, allow_updates=placement_updates)
     if site is None:
         raise ValueError('PROVIDER_PLACEMENT_IDENTITY_REQUIRED')
     if plan['resource'] == 'device':

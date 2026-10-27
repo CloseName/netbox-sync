@@ -85,6 +85,31 @@ def review_inventory(user, document, evidence_digest):
     return _prepare(user, document, evidence_digest)[2]
 
 
+def _write_claims(obj, binding, before, claims, actor, nonce, request_digest, evidence_digest, reason):
+    """Write already prepared claims inside the caller's locked transaction."""
+    cf = dict(obj.custom_field_data or {})
+    native_updates = set()
+    for field, value in claims.items():
+        # Ownership claims precede native writes for the SQL guard.
+        if field.startswith('custom_fields.'):
+            cf[field.split('.', 1)[1]] = value
+        elif field in ('name', 'serial', 'status', 'vcpus', 'memory', 'site_id'):
+            setattr(obj, field, value)
+            native_updates.add('site' if field == 'site_id' else field)
+        else:
+            raise ValueError('PROVIDER_FIELD_UNSUPPORTED')
+        ProviderFieldClaim.objects.update_or_create(binding=binding, field=field, defaults={'value': value})
+    previous_revision = binding.revision
+    binding.revision += 1
+    binding.save(update_fields=['revision'])
+    obj.custom_field_data = cf
+    checked(obj, 'full_clean')
+    checked(obj, 'save', update_fields=sorted(native_updates | {'custom_field_data', 'last_updated'}))
+    ProviderBindingChange.objects.create(nonce=nonce, binding=binding, actor=actor,
+        digest=request_digest, before={'revision': previous_revision, 'claims': before['claims']},
+        after={'revision': binding.revision, 'claims': claims, 'evidence_digest': evidence_digest}, reason=reason)
+
+
 @transaction.atomic
 def apply_inventory(user, nonce, document, evidence_digest, fingerprint):
     actor = _permission(user, 'manage_providerbinding')
@@ -111,8 +136,6 @@ def apply_inventory(user, nonce, document, evidence_digest, fingerprint):
             registered += 1
         if not projection_changed:
             continue
-        cf = dict(obj.custom_field_data or {})
-        native_updates = set()
         if settings.PLUGINS_CONFIG.get('netbox_guard', {}).get('selectel_native_reconcile') is True:
             from .provider_placement import resolve
             site = resolve(user, snapshot, old.snapshot if old else None)
@@ -137,25 +160,8 @@ def apply_inventory(user, nonce, document, evidence_digest, fingerprint):
                 'native_fields': sorted(field for field in claims if not field.startswith('custom_fields.'))}
             if pending:
                 claims['custom_fields.selectel_inventory']['placement_pending'] = pending
-        for field, value in claims.items():
-            # Claims are saved before native fields, so the SQL ownership guard
-            # validates this provider write against the new authoritative value.
-            if field.startswith('custom_fields.'):
-                cf[field.split('.', 1)[1]] = value
-            elif field in ('name', 'serial', 'status', 'vcpus', 'memory', 'site_id'):
-                setattr(obj, field, value)
-                native_updates.add('site' if field == 'site_id' else field)
-            ProviderFieldClaim.objects.update_or_create(binding=binding, field=field, defaults={'value': value})
-        previous_revision = binding.revision
-        binding.revision += 1
-        binding.save(update_fields=['revision'])
-        obj.custom_field_data = cf
-        checked(obj, 'full_clean')
-        checked(obj, 'save', update_fields=sorted(native_updates | {'custom_field_data', 'last_updated'}))
-        ProviderBindingChange.objects.create(nonce=uuid5(nonce, key), binding=binding, actor=actor,
-            digest=request_digest, before={'revision': previous_revision, 'claims': before['claims']},
-            after={'revision': binding.revision, 'claims': claims, 'evidence_digest': evidence_digest},
-            reason='Selectel server inventory import')
+        _write_claims(obj, binding, before, claims, actor, uuid5(nonce, key), request_digest,
+                      evidence_digest, 'Selectel server inventory import')
         updated.append({'resource': binding.resource, 'id': obj.pk, 'name': obj.name, 'revision': binding.revision})
     result = {'account': inventory.account, 'server_count': len(plans), 'registry_updated': registered,
               'targets_updated': updated, 'unmatched_count': report['unmatched_count'],
