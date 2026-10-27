@@ -24,6 +24,13 @@ from django.conf import settings
 settings.CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
 from django.core.management import call_command
 call_command('migrate', verbosity=0, interactive=False)
+if settings.PLUGINS == ['netbox_guard']:
+    from django.db import connection as hook_connection
+    from netbox_guard.dependencies import _digest
+    with hook_connection.cursor() as cursor:
+        cursor.execute("SELECT c.relname,t.tgname,t.tgenabled,pg_get_triggerdef(t.oid),pg_get_functiondef(t.tgfoid) FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_class c ON c.oid=t.tgrelid JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=current_schema() AND NOT t.tgisinternal ORDER BY c.relname,t.tgname")
+        print('DISPOSABLE_HOOK_DIGEST:', _digest(cursor.fetchall()))
+
 faulthandler.cancel_dump_traceback_later()
 faulthandler.dump_traceback_later(300, exit=True)
 from django.db import transaction

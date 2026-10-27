@@ -148,6 +148,8 @@ with override_settings(PLUGINS_CONFIG=config):
         again = import_account(admin, dict(account=cycle_account,nonce=str(uuid4()),document=doc,registry=registry(doc)))
         assert again['native_created'] == again['native_adopted'] == 0
         assert set(ProviderBinding.objects.filter(account=cycle_account).values_list('resource','object_id')) == binding_ids
+        # Emulate pre-ledger cloud creation; the original successful receipt remains.
+        ProviderCreatedObject.objects.filter(account=cycle_account, model_label='virtualization.virtualmachine', object_id=cloud_id).delete()
         if old_delete:
             try: execute(admin, cycle_account, 'delete', uuid4(), old_delete['fingerprint'])
             except ValueError as exc: assert str(exc) == 'PROVIDER_REVIEW_STALE'
@@ -245,3 +247,118 @@ with patch.dict(shapes['read_account'].__globals__, section_shape=try_write):
 for model, values in before_shapes.items():
     assert list(model.objects.order_by('pk').values()) == values
 print('Selectel stored hardware evidence: actual command, sanitized output, DB-enforced read-only and retained IDs/IPs OK')
+
+# Network-heavy legacy account: one confirmation cleans owned rows, releases
+# adopted claims and restores the prefix VLAN introduced by the original import.
+from netbox_guard.selectel_ipam_service import prepare as ipam_review, apply as ipam_apply
+from netbox_guard.models import ProviderIPAMObject, ProviderNetworkLink, ProviderIPAMReceipt
+from ipam.models import Prefix, VLAN, VLANGroup
+from dcim.models import Interface
+from django.db import IntegrityError, transaction
+snap = runpy.run_path(str(Path(__file__).with_name('selectel_ipam_fixture.py')))['snapshot']
+network_account = str(uuid4().int)[:20]
+host = Device.objects.create(name='network-cycle-'+network_account, site=site, device_type=device_type, role=device_role)
+nic = Interface.objects.create(device=host, name='existing-wan', type='virtual')
+preserved_ip = IPAddress.objects.create(address='8.8.4.2/29', assigned_object=nic)
+host.primary_ip4 = preserved_ip; host.save()
+preserved_prefix = Prefix.objects.create(prefix='8.8.4.0/29')
+original_address = str(preserved_ip.address)
+with override_settings(PLUGINS_CONFIG=config):
+    for cycle in range(3):
+        ident = dict(account=network_account, kind='dedicated', native_id='server-a', project='', region='')
+        spec = dict(resource='device', object_id=host.pk, identity=ident, serial=None, reason='test network cycle', evidence_digest='a'*64)
+        apply_binding(admin, uuid4(), spec, review_binding(admin, spec)['fingerprint'])
+        binding = ProviderBinding.objects.get(account=network_account)
+        value = snap(); value['identity'] = ident
+        value['sections']['public_ips']['data'].append(dict(value['sections']['public_ips']['data'][0], uuid='second', ip='8.8.4.6'))
+        ProviderInventory.objects.update_or_create(provider_key=binding.provider_key, defaults=dict(account=network_account,
+            observed_at=timezone.now(), evidence_digest='b'*64, snapshot=value))
+        request = dict(account=network_account, routing_context='public-global', targets=[dict(device_id=host.pk, provider_key=binding.provider_key)])
+        before = ipam_review(admin, request); run_nonce = uuid4()
+        ipam_apply(admin, run_nonce, request, before['fingerprint'])
+        mapping_ids = list(ProviderNetworkLink.objects.filter(binding=binding).values_list('native_id', flat=True))
+        created_ip = IPAddress.objects.get(address='8.8.4.6/29')
+        # Unfenced ordinary SQL still cannot remove claims or receipts.
+        try:
+            with transaction.atomic(): ProviderNetworkLink.objects.filter(binding=binding).delete()
+        except IntegrityError: pass
+        else: raise AssertionError('Unfenced network removal accepted')
+        # A created address claimed by an independent Device cannot disappear.
+        foreign_host = Device.objects.create(name='foreign-'+str(cycle)+'-'+network_account, site=site,
+            device_type=device_type, role=device_role, primary_ip4=created_ip)
+        blocked = review(admin, network_account, 'delete')
+        assert any(b.get('id')==created_ip.pk and b['reason']=='foreign_dependencies_or_sync_source' for b in blocked['blockers']), blocked['blockers']
+        foreign_host.primary_ip4 = None; foreign_host.save()
+        deletion = review(admin, network_account, 'delete')
+        assert not deletion['blockers'], deletion['blockers']
+        assert any(r['model']=='ipam.ipaddress' and r['id']==created_ip.pk for r in deletion['delete'])
+        assert not any(r['model']=='ipam.ipaddress' and r['id']==preserved_ip.pk for r in deletion['delete'])
+        # Review is pinned even to an ordinary native edit after preview.
+        created_ip.description = 'changed'; created_ip.save()
+        try: execute(admin, network_account, 'delete', uuid4(), deletion['fingerprint'])
+        except ValueError as exc: assert str(exc)=='PROVIDER_REVIEW_STALE'
+        else: raise AssertionError('Stale network deletion accepted')
+        deletion = review(admin, network_account, 'delete')
+        # Failure after network cleanup must roll the whole operation back.
+        from netbox_guard import provider_cleanup
+        release = provider_cleanup.release_network
+        def fail_after_release(plan):
+            release(plan)
+            raise RuntimeError('fixture rollback')
+        with patch.object(provider_cleanup, 'release_network', fail_after_release):
+            try: execute(admin, network_account, 'delete', uuid4(), deletion['fingerprint'])
+            except RuntimeError as exc: assert str(exc)=='fixture rollback'
+            else: raise AssertionError('Cleanup fault was swallowed')
+        assert ProviderNetworkLink.objects.filter(binding=binding).exists()
+        assert ProviderIPAMObject.objects.filter(pk__in=mapping_ids).exists()
+        assert not ProviderAccountFence.objects.filter(account=network_account, deleted=True).exists()
+        assert IPAddress.objects.filter(pk=created_ip.pk).exists()
+        nonce = uuid4()
+        execute(admin, network_account, 'delete', nonce, deletion['fingerprint'])
+        assert execute(admin, network_account, 'delete', nonce, deletion['fingerprint'])['replayed']
+        assert not IPAddress.objects.filter(pk=created_ip.pk).exists()
+        assert not ProviderIPAMObject.objects.filter(pk__in=mapping_ids).exists()
+        assert not ProviderNetworkLink.objects.filter(binding__account=network_account).exists()
+        assert not ProviderBinding.objects.filter(account=network_account).exists()
+        preserved_ip.refresh_from_db(); preserved_prefix.refresh_from_db(); host.refresh_from_db()
+        assert str(preserved_ip.address)==original_address and preserved_ip.assigned_object_id==nic.pk
+        assert host.primary_ip4_id==preserved_ip.pk and preserved_prefix.vlan_id is None
+        try: ipam_apply(admin, run_nonce, request, before['fingerprint'])
+        except ValueError as exc: assert str(exc)=='SELECTEL_IPAM_ACCOUNT_DELETED'
+        else: raise AssertionError('Late IPAM write accepted')
+        # Receipts stay immutable even when the account is fenced deleted.
+        try:
+            with transaction.atomic(): ProviderIPAMReceipt.objects.filter(pk=run_nonce).delete()
+        except IntegrityError: pass
+        else: raise AssertionError('Audit receipt deletion accepted')
+        activation = review(admin, network_account, 'activate')
+        execute(admin, network_account, 'activate', uuid4(), activation['fingerprint'])
+        print('Selectel network cleanup cycle', cycle+1, 'OK')
+print('Account network cleanup: owned IP/VLAN/group removed, adopted IP/prefix and assignments preserved, original VLAN restored, receipts immutable, stale/replay/late-write gates OK')
+
+# Provision only the explicitly enabled lifecycle importer, without token rotation.
+from users.models import Token
+with tempfile.TemporaryDirectory() as temp:
+    call_command('configure_selectel_mvp', output=str(Path(temp) / 'lifecycle-token.json'), native_resources=True, lifecycle=True)
+tokens = list(Token.objects.order_by('pk').values())
+call_command('configure_selectel_cleanup')
+assert list(Token.objects.order_by('pk').values()) == tokens
+service_user = get_user_model().objects.get(username='netbox-sync-selectel')
+for model in ('ipaddress', 'prefix', 'vlan', 'vlangroup'):
+    for action in ('view', 'change', 'delete'):
+        assert service_user.has_perm('ipam.'+action+'_'+model)
+print('Cleanup permission upgrade: enabled dedicated importer only, idempotent, token preserved OK')
+
+# A bare legacy mapping does not prove who created its native address.
+unknown_account = str(uuid4().int)[:20]
+unknown_ip = IPAddress.objects.create(address='8.8.8.8/32')
+ProviderIPAMObject.objects.create(key=json.dumps(['selectel',unknown_account,'ipaddress','unknown']),
+    kind='ipaddress', object_id=unknown_ip.pk, object_created=unknown_ip.created, claims={})
+with override_settings(PLUGINS_CONFIG=config):
+    unknown_plan = review(admin, unknown_account, 'delete')
+    assert [b['reason'] for b in unknown_plan['blockers']] == ['legacy_ipam_provenance_required']
+    try: execute(admin, unknown_account, 'delete', uuid4(), unknown_plan['fingerprint'])
+    except ValueError as exc: assert str(exc)=='PROVIDER_DEPENDENCIES_BLOCKED'
+    else: raise AssertionError('Unknown-origin address deleted')
+assert IPAddress.objects.filter(pk=unknown_ip.pk).exists()
+print('Unknown legacy provenance remains an account-level refusal without writes OK')

@@ -72,6 +72,8 @@ class Command(BaseCommand):
                         or not dependency_view.enabled or set(dependency_view.object_types.values_list('pk',flat=True)) != dependency_types):
                     raise CommandError('Existing dependency read permission differs; no overwrite.')
                 dependency_view.object_types.set(dependency_types); dependency_view.users.add(user)
+                from django.core.management import call_command
+                call_command('configure_selectel_cleanup', stdout=self.stdout)
             ip_types = {ContentType.objects.get(app_label='ipam', model='ipaddress').pk}
             ip_view, new = ObjectPermission.objects.get_or_create(name='Selectel duplicate check IP read only',
                 defaults={'actions': ['view'], 'constraints': None})

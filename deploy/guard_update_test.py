@@ -246,6 +246,8 @@ class GuardUpdate:
         self.run('docker', 'image', 'tag', self.new_image, self.tag)
         self.compose('run', '--rm', '--no-deps', '-T', '--pull', 'never', '--entrypoint', PYTHON,
                      'netbox', MANAGE, 'migrate', '--no-input')
+        self.compose('run', '--rm', '--no-deps', '-T', '--pull', 'never', '--entrypoint', PYTHON,
+                     'netbox', MANAGE, 'configure_selectel_cleanup')
         self.compose('up', '-d', '--no-deps', '--no-build', '--force-recreate', '--pull', 'never', '--wait',
                      '--wait-timeout', '180', 'netbox', 'netbox-worker')
 

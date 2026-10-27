@@ -26,9 +26,10 @@ MAX_TABLES = 512
 # the isolated NetBox 4.7.0 Docker-5.1.1 migration schema. No name-only allowlist.
 NETBOX_470_HOOKS = '95123f20a0b2889191e5978c2f1cc81a6517dbae403bc63af3f08af8e19eab73'
 # Same 45 native hooks plus the nine protective Guard hooks from migrations
-# 0007-0009. Pinned against the disposable fully migrated NetBox 4.7 database;
+# 0007-0009, with the fenced cleanup function from 0015. Pinned against the
+# disposable fully migrated NetBox 4.7 database;
 # includes full trigger definitions, enabled state and complete function bodies.
-NETBOX_470_PROVIDER_HOOKS = 'ba75f5d3caad3963cf4225958ad5d287f61b9ee3b8cc08e61de4cb0c4fde1ac7'
+NETBOX_470_PROVIDER_HOOKS = '02bfb1b2c6b72eaa8263ba92eadadc45f54fce4e0c245678897d37f7a0170e5b'
 
 
 def _digest(value):

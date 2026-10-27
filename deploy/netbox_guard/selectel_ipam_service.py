@@ -11,7 +11,7 @@ from django.apps import apps
 from django.contrib.auth import get_user_model
 from django.db import connection, transaction
 from .models import (ProviderBinding, ProviderInventory, ProviderIPAMObject,
-                     ProviderNetworkLink, ProviderIPAMReceipt)
+                     ProviderNetworkLink, ProviderIPAMReceipt, ProviderAccountFence)
 from .provider_policy import digest, identity
 from .service import _permission
 from .selectel_ipam_policy import project, require
@@ -62,6 +62,7 @@ def prepare(user, request):
     require(isinstance(request, dict) and set(request) == {'account', 'targets', 'routing_context'}, 'REQUEST_INVALID')
     require(request['routing_context'] == 'public-global', 'ROUTING_CONTEXT_REQUIRED')
     require(isinstance(request['targets'], list) and 1 <= len(request['targets']) <= 20, 'TARGETS_REQUIRED')
+    require(not ProviderAccountFence.objects.filter(account=request['account'], deleted=True).exists(), 'ACCOUNT_DELETED')
     bindings, objects, links, notes, targets = {}, {}, [], [], []
     for target in sorted(request['targets'], key=lambda t: t['device_id']):
         require(set(target) == {'device_id', 'provider_key'}, 'TARGET_INVALID')
@@ -189,6 +190,7 @@ def apply(user, nonce, request, fingerprint):
                        'ipam_vlangroup, ipam_vlan, ipam_prefix, ipam_ipaddress, '
                        'netbox_guard_providerbinding, netbox_guard_providerinventory, netbox_guard_provideripamobject, '
                        'netbox_guard_providernetworklink, netbox_guard_provideripamreceipt IN SHARE ROW EXCLUSIVE MODE')
+    require(not ProviderAccountFence.objects.filter(account=request['account'], deleted=True).exists(), 'ACCOUNT_DELETED')
     receipt = ProviderIPAMReceipt.objects.filter(pk=nonce).first()
     if receipt:
         require(receipt.actor == actor and receipt.digest == request_digest, 'NONCE_CONFLICT')

@@ -52,12 +52,18 @@ Only on test, with schedules off and no active writes:
    physical server, a proven account-created cloud VM, and their current IPs.
    An uncertain account must complete receipt reconciliation or a reviewed
    historical baseline first; deletion cannot bypass that state.
-2. Disable the account. Open **Отсоединение и удаление**, review the delete/retain
-   lists and dependencies, then confirm only that plan. Adopted cards and IPs must
-   remain, owned cards listed for deletion must disappear, and the provider registry
-   must be empty. Foreign dependencies block deletion; detach a reviewed resource
-   if it should survive. No scheduler stop is needed; busy writes produce a retry
-   message. Lost responses require checking the same operation, not a new deletion.
+2. Open **Отсоединение и удаление** and click **Удалить аккаунт**. Preparation
+   disables new collections automatically. Review the compact counts and
+   consequences, then use the single account-level checkbox and confirmation.
+   No per-resource confirmation or expanded retained-object list is required.
+   Adopted cards and their existing IP assignments must remain; proven imported
+   cards and network objects must disappear and the provider registry must be
+   empty. Selectel claims are removed from adopted objects; an adopted prefix's
+   VLAN introduced by the original projection is restored if unchanged.
+   Missing origin evidence or foreign dependencies block the whole transaction;
+   record the grouped reason and object details rather than bypassing it.
+   No scheduler stop is needed; busy writes produce a retry message. Lost responses
+   require checking the same operation, not a new deletion.
 3. In the deleted account, prepare and confirm reconnection. Under **Доступ**, choose
    **Указать доступ и запустить сбор**, enter credentials, then **Подключить и собрать**.
    First collection/import starts automatically; schedules remain off. Editing
