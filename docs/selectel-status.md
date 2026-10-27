@@ -8,6 +8,23 @@ boundaries see [25 October diagnosis](selectel-diagnosis-20261025.md).
 
 ## Known limitations
 
+The account lifecycle now supports repeated reviewed deletion and reconnection.
+**Connect and collect** saves new access and starts one first collection/import;
+repeating that request returns its state instead of launching again. Credential
+editing remains save-only. A reactivated account requires fresh access, uses a new
+connection generation, and starts with scheduling off. Old connection forms and
+old lifecycle reviews cannot authorize a later cycle. An uncertain import must
+be reconciled before deletion; deleting an account is not a recovery shortcut.
+
+Deletion removes proven account-created cards without foreign dependencies and
+the account's inventory/registry. Adopted cards, their IPs, and shared/unowned
+placement survive; Selectel claims and metadata are detached. Existing native
+field values are not restored to a historical pre-Selectel snapshot. Audit receipts
+and the deletion fence remain. Reconnection matches strong identities afresh;
+previous weak/manual decisions are not silently retained as ownership evidence.
+Manual first creation and ambiguous-candidate confirmation remain separate gates.
+See the repeated-cycle acceptance procedure in the test operations guide.
+
 Dedicated resources without a usable chassis serial now have a separate
 [reviewed first-creation path](hardware-identity.md#reviewed-first-creation-without-a-chassis-serial).
 It requires administrator confirmation of absence and refuses known candidates;

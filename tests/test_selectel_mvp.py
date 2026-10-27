@@ -14,6 +14,7 @@ import os
 
 def test_admin_boundary_and_secret_projection():
     for method, path in [('GET', '/api/v1/selectel'), ('POST', '/api/v1/selectel'),
+                         ('POST', '/api/v1/selectel/connect'),
                          ('POST', '/api/v1/selectel/29916/collect'),
                          ('POST', '/api/v1/selectel/29916/reconcile'),
                          ('POST', '/api/v1/selectel/29916/schedule'),
@@ -35,6 +36,21 @@ def test_api_forwards_secret_once_and_returns_only_control_result():
         assert response.status_code == 200 and 'SECRET' not in response.text
         assert rpc.call_args.args[1]['data']['password'] == 'SECRET'
         assert response.headers['cache-control'] == 'no-store'
+
+
+def test_connect_api_requires_nonce_and_forwards_only_validated_connection():
+    from uuid import uuid4
+    app = FastAPI(); app.include_router(routes(SimpleNamespace(bootstrap_socket='/unused')))
+    client = TestClient(app)
+    data = dict(account='29916',name='Test',username='reader',password='SECRET')
+    with patch('netbox_sync.api.selectel.control',return_value={'result':{'status':'running'}}) as rpc:
+        assert client.post('/api/v1/selectel/connect',json=data).status_code == 422
+        assert not rpc.called
+        data.update(request_id=str(uuid4()),connection_generation=str(uuid4()))
+        result = client.post('/api/v1/selectel/connect',json=data)
+        assert result.status_code == 200 and 'SECRET' not in result.text
+        assert rpc.call_args.args[1]['operation'] == 'connect'
+        assert rpc.call_args.args[1]['data'] == data
 
 
 def test_summary_does_not_expose_raw_resource_payloads():

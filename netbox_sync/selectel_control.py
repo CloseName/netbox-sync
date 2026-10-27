@@ -29,6 +29,7 @@ PUBLIC = (
     "deleted",
     "reconciliation",
     "baseline_history",
+    "connection_generation",
 )
 
 
@@ -38,6 +39,7 @@ def public(state):
     from .selectel_diagnostic import diagnostic
 
     value = {k: state[k] for k in PUBLIC if k in state}
+    value["needs_credentials"] = not bool(state.get("password"))
     if diagnostic(state.get("import_diagnostic")):
         value["import_diagnostic"] = diagnostic(state["import_diagnostic"])
     return value
@@ -265,6 +267,10 @@ def _handle_account(store, lock_path, base, operation, data):
     error = _account_error(state)
     if error is not None:
         return error
+    if operation == "connect":
+        from .selectel_connect import connect
+
+        return connect(store, lock_path, base, path, state, data)
     if operation == "enabled":
         return _set_enabled(path, state, data)
     if operation == "schedule":
@@ -287,6 +293,7 @@ def handle(store, lock_path, payload):
     if set(payload) != {"action", "operation", "session", "data"} or payload["operation"] not in (
         "list",
         "save",
+        "connect",
         "collect",
         "schedule",
         "enabled",

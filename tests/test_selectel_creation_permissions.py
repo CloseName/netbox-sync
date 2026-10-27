@@ -1,6 +1,8 @@
 """NetBox object permissions cannot match a row before it has been saved."""
 
 import ast
+import hashlib
+import json
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace as NS
@@ -19,6 +21,19 @@ def function(filename, name, namespace):
 @pytest.fixture
 def placement():
     rows, proofs = [], []
+    class Query(list):
+        def first(self):
+            return self[0] if self else None
+        def exists(self):
+            return bool(self)
+    def matching(row, fields):
+        for key, expected in fields.items():
+            field = key.removesuffix('__in')
+            value = row.get(field) if isinstance(row, dict) else getattr(row, field, None)
+            matches = value in expected if key.endswith('__in') else value == expected
+            if not matches:
+                return False
+        return True
     class Denied(Exception):
         pass
     class User:
@@ -41,12 +56,13 @@ def placement():
             rows[:] = before
             raise
     class Model:
-        objects = NS(filter=lambda **kw: NS(first=lambda: None))
+        objects = NS(filter=lambda **kw: Query(row for row in rows if matching(row, kw)))
         _meta = NS(app_label="dcim", model_name="site", label_lower="dcim.site")
         def __init__(self, **kw):
             self.__dict__.update(kw)
             self.pk = None
             self.created = "creation-stamp"
+            self.parent_id = None
         def full_clean(self):
             pass
         def save(self):
@@ -54,8 +70,9 @@ def placement():
             rows.append(self)
     checked = lambda obj, method, **kwargs: getattr(obj, method)(**kwargs)
     namespace = dict(Site=Model, Region=Model, _add_permission=permission, checked=checked,
-                     DependencyGuardBlocked=Denied, digest=lambda key: "stable-hash",
-                     ProviderCreatedObject=NS(objects=NS(filter=lambda **kw: [],
+                     DependencyGuardBlocked=Denied,
+                     digest=lambda key: hashlib.sha256(json.dumps(key).encode()).hexdigest(),
+                     ProviderCreatedObject=NS(objects=NS(filter=lambda **kw: Query(row for row in proofs if matching(row, kw)),
                                                         create=lambda **kw: proofs.append(kw))))
     helper = ROOT / "provider_creation.py"
     if helper.exists():
@@ -104,3 +121,21 @@ def test_lazy_request_user_can_create_without_losing_object_constraints(placemen
     user.constrained = False
     result = resolve(proxy, snapshot)
     assert rows == [result] and len(proofs) == 1
+
+
+def test_retained_exact_placement_reused_without_reclaiming_ownership(placement):
+    resolve, user, snapshot, rows, proofs, _ = placement
+    original = resolve(user, snapshot)
+    proofs.clear()  # Deletion retained shared placement and released ownership.
+    assert resolve(user, snapshot) is original
+    assert rows == [original] and proofs == []
+
+
+def test_retained_placement_conflict_is_not_renamed_or_claimed(placement):
+    resolve, user, snapshot, rows, proofs, _ = placement
+    original = resolve(user, snapshot)
+    proofs.clear()
+    original.name = 'Manually changed site'
+    with pytest.raises(ValueError, match='PROVIDER_NATIVE_SCOPE_CONFLICT'):
+        resolve(user, snapshot)
+    assert original.name == 'Manually changed site' and rows == [original] and proofs == []

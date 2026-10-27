@@ -28,6 +28,8 @@ def _account_error(base, state):
 
     if running(state):
         return {"error": "RUN_ACTIVE"}
+    if state.get("status") == "running":
+        return {"error": "RUN_INTERRUPTED"}
     if state.get("enabled", True):
         return {"error": "DISABLE_ACCOUNT_FIRST"}
     if not (base / "netbox-token.json").is_file():
@@ -61,7 +63,7 @@ def _finish_lifecycle(path, state, data, payload, result):
             "next_run": None,
         }
     elif data["operation"] == "activate":
-        state.update(deleted=False, status="configured", error=None)
+        state.update(deleted=False, status="configured", error=None, connection_generation=payload["nonce"])
     write(path, state)
     return result
 
@@ -109,6 +111,10 @@ def _handle_account(store, base, operation, data):
     if not path.exists():
         return {"error": "SETUP_REQUIRED"}
     state = read(path)
+    if data.get("operation") == "activate" and not state.get("deleted"):
+        return {"error": "ACCOUNT_NOT_DELETED"}
+    if data.get("operation") != "baseline" and state.get("error") in ("IMPORT_UNCONFIRMED", "RUN_INTERRUPTED"):
+        return {"error": "IMPORT_UNCONFIRMED"}
     if data.get("operation") == "baseline":
         if state.get("error") not in ("IMPORT_UNCONFIRMED", "RUN_INTERRUPTED") or data.get("key") != state.get(
             "run_id"

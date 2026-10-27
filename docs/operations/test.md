@@ -44,6 +44,38 @@ the standalone backup/restore utility are unchanged.
 
 ## Before starting
 
+### Repeated Selectel account lifecycle acceptance
+
+Only on test, with schedules off and no active writes:
+
+1. For a settled account, record the provider UUID and NetBox ID of an adopted
+   physical server, a proven account-created cloud VM, and their current IPs.
+   An uncertain account must complete receipt reconciliation or a reviewed
+   historical baseline first; deletion cannot bypass that state.
+2. Disable the account. Open **Отсоединение и удаление**, review the delete/retain
+   lists and dependencies, then confirm only that plan. Adopted cards and IPs must
+   remain, owned cards listed for deletion must disappear, and the provider registry
+   must be empty. Foreign dependencies block deletion; detach a reviewed resource
+   if it should survive. No scheduler stop is needed; busy writes produce a retry
+   message. Lost responses require checking the same operation, not a new deletion.
+3. In the deleted account, prepare and confirm reconnection. Under **Доступ**, choose
+   **Указать доступ и запустить сбор**, enter credentials, then **Подключить и собрать**.
+   First collection/import starts automatically; schedules remain off. Editing
+   credentials of an existing connection does not launch collection.
+4. Wait for confirmed import, record its run ID and counts, then manually collect
+   once more. Strongly identified adopted cards keep their IDs; newly created cards
+   are reused by provider identity on subsequent collections. No duplicate cards
+   or IP changes are expected. Missing hardware IDs still require reviewed first
+   creation, and ambiguous candidates remain unresolved rather than auto-adopted.
+5. Repeat deletion/reconnection two more times. Account-created cards may receive
+   new IDs after deliberate deletion; pre-existing adopted cards must retain theirs.
+   Record delete/retain counts, import run IDs, candidate reasons and screenshots
+   in the test journal. Do not treat counts alone as proof of matching correctness.
+
+Deletion does not restore historical native names/status/placement on adopted
+cards. Unowned legacy placement and audit/deletion fences remain deliberately.
+Never use production's manually confirmed bindings as test matching evidence.
+
 ### Dedicated first-creation acceptance
 
 After a separately approved coordinated update, use a freshly and successfully

@@ -1,5 +1,55 @@
 import {test,expect} from './auth-fixture';
 
+test('Selectel delete and reconnect can be repeated with automatic first collection and schedules off',async({page})=>{
+ let row:any={account:'29916',name:'Cycle account',username:'reader',status:'completed',enabled:true,needs_credentials:false};
+ let collections=0;
+ await page.route('**/api/v1/**',async route=>{
+  const req=route.request(),path=new URL(req.url()).pathname;
+  if(path==='/api/v1/selectel')return route.fulfill({json:{items:[row],import_ready:true}});
+  if(path.endsWith('/enabled')){row.enabled=req.postDataJSON().enabled;return route.fulfill({json:row});}
+  if(path.endsWith('/lifecycle-review'))return route.fulfill({json:{...req.postDataJSON(),fingerprint:'a'.repeat(64),delete:[],retain:[],blockers:[]}});
+  if(path.endsWith('/lifecycle-execute')){
+   const operation=req.postDataJSON().operation;
+   row=operation==='delete'?{account:'29916',name:'Cycle account',status:'deleted',deleted:true,enabled:false,needs_credentials:true}:
+    {...row,status:'configured',deleted:false,connection_generation:`00000000-0000-4000-8000-00000000000${collections+1}`};
+   return route.fulfill({json:{writes_performed:true}});
+  }
+  if(path==='/api/v1/selectel/connect'){
+   const value=req.postDataJSON();expect(value.connection_generation).toBe(row.connection_generation);
+   expect(value.password).toBe('cycle-secret');expect(value.account).toBe('29916');collections++;
+   row={...row,username:value.username,status:'running',enabled:true,needs_credentials:false,schedule:{kind:'off'},next_run:null};
+   return route.fulfill({json:row});
+  }
+  if(path.endsWith('/collect'))throw new Error('Reconnection already launches the first collection');
+  if(path==='/api/v1/sources')return route.fulfill({json:{sources:[]}});
+  if(path==='/api/v1/pfsense')return route.fulfill({json:{items:[],count:0}});
+  if(path==='/api/v1/bootstrap')return route.fulfill({json:{revision:1,status:'READY',url:'https://netbox.test',completed:true,read_token_present:true,apply_token_present:true,checks:[]}});
+  return route.fulfill({json:{}});
+ });
+ await page.goto('/sources/selectel');
+ for(let cycle=1;cycle<=3;cycle++){
+  await page.getByRole('button',{name:'Отключить аккаунт',exact:true}).click();
+  const lifecycle=page.locator('details').filter({has:page.locator('summary', {hasText:'Отсоединение и удаление'})});
+  await lifecycle.locator('summary').first().click();
+  await page.getByRole('button',{name:'Проверить ресурсы перед удалением'}).click();
+  await lifecycle.getByRole('checkbox').check();
+  await page.getByRole('button',{name:'Применить проверенный план'}).click();
+  await expect(page.getByText('Аккаунт удалён; доступ и расписание очищены',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Подготовить повторное подключение'}).click();
+  await lifecycle.getByRole('checkbox').check();
+  await page.getByRole('button',{name:'Применить проверенный план'}).click();
+  await page.getByRole('button',{name:'Указать доступ и запустить сбор'}).click();
+  await page.getByLabel('Сервисный пользователь',{exact:true}).fill('reader');
+  await page.getByLabel('Пароль',{exact:true}).fill('cycle-secret');
+  await page.getByRole('button',{name:'Подключить и собрать'}).click();
+  await expect(page.getByRole('button',{name:'Сбор выполняется…'})).toBeDisabled();
+  expect(collections).toBe(cycle);expect(row.schedule.kind).toBe('off');expect(row.next_run).toBeNull();
+  await expect(page.locator('input[type=password]')).toHaveCount(0);
+  row.status='completed';await page.reload();
+  await expect(page.getByText('Импорт подтверждён',{exact:true})).toBeVisible();
+ }
+});
+
 test('Confirmed Selectel refusal displays structural validation evidence without collecting',async({page})=>{
  await page.route('**/api/v1/**',async route=>{
   const path=new URL(route.request().url()).pathname;
@@ -26,6 +76,12 @@ test('Selectel account onboarding, run and NetBox navigation do not expose saved
  let rows:any[]=[], collections=0;
  await page.route('**/api/v1/**',async route=>{
   const req=route.request(),path=new URL(req.url()).pathname;
+  if(path==='/api/v1/selectel/connect'){
+    const {account,name,username,password,request_id,connection_generation}=req.postDataJSON();
+    expect(password).toBe('fixture-secret');expect(request_id).toMatch(/^[0-9a-f-]{36}$/);expect(connection_generation).toBeNull();
+    collections++;rows=[{account,name,username,status:'running',needs_credentials:false,enabled:true,schedule:{kind:'off'},url:'https://netbox.test/plugins/netbox-sync-guard/providers/'+account+'/'}];
+    return route.fulfill({json:rows[0]});
+  }
   if(path==='/api/v1/selectel'){
    if(req.method()==='POST'){
     const {account,name,username,password}=req.postDataJSON();expect(password).toBe('fixture-secret');
@@ -46,13 +102,15 @@ test('Selectel account onboarding, run and NetBox navigation do not expose saved
  await page.getByLabel('Номер аккаунта').fill('29916');
  await page.getByLabel('Сервисный пользователь').fill('reader');
  await page.getByLabel('Пароль',{exact:true}).fill('fixture-secret');
- await page.getByRole('button',{name:'Сохранить подключение'}).click();
+ await page.getByRole('button',{name:'Подключить и собрать'}).click();
  await expect(page.getByRole('button',{name:'Тестовый Selectel'})).toBeVisible();
- await expect(page.getByText('Доступ сохранён; ещё не проверен',{exact:true})).toBeVisible();
- expect(collections).toBe(0);
+ await expect(page.getByText('Сбор и импорт выполняются',{exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Сбор выполняется…'})).toBeDisabled();
+ expect(collections).toBe(1);
  await expect(page.locator('input[type=password]')).toHaveCount(0);
  await expect(page.getByRole('link',{name:'Ресурсы в NetBox ↗'})).toHaveAttribute('href','https://netbox.test/plugins/netbox-sync-guard/providers/29916/');
- await page.getByRole('button',{name:'Собрать и обновить'}).click();
+ rows[0].status='completed';
+ await page.reload();
  await expect(page.getByText('Импорт подтверждён',{exact:true})).toBeVisible();
  expect(collections).toBe(1);
  await expect(page.locator('body')).not.toContainText('fixture-secret');

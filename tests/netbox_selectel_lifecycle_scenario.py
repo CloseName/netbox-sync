@@ -95,6 +95,87 @@ with override_settings(PLUGINS_CONFIG=config):
     assert list(IPAddress.objects.order_by('pk').values()) == addresses
 print('Legacy placement: reuse never grants deletion ownership; IDs and IPs retained OK')
 
+# Repeat real account import/delete/activate three times. The manually existing
+# chassis is re-adopted by hardware identity; cloud cards are created once per cycle.
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from django.utils import timezone
+from dcim.models import Device, DeviceRole, DeviceType, Manufacturer
+from django.db.models.deletion import Collector
+from netbox_guard.account_import import import_account
+from netbox_guard.models import ProviderInventory, ProviderResourceRegistry
+from tools.selectel_audit.resource_registry import registry
+fixture = runpy.run_path(str(Path(__file__).with_name('selectel_inventory_fixture.py')))['fixture']
+cycle_account = str(uuid4().int)[:20]
+# NetBox queues nullable relation updates even for a completely empty Site.
+# These empty querysets must not be mistaken for writes to foreign objects.
+empty_site = Site.objects.create(name='empty-'+cycle_account, slug='empty-'+cycle_account)
+empty_collector = Collector(using=connection.alias)
+empty_collector.collect([empty_site])
+assert empty_collector.field_updates
+assert not any(bool(group) for groups in empty_collector.field_updates.values() for group in groups)
+print('Empty Site deletion has queued field updates but no affected rows OK')
+manufacturer = Manufacturer.objects.create(name='cycle-'+cycle_account, slug='cycle-'+cycle_account)
+device_type = DeviceType.objects.create(manufacturer=manufacturer, model='cycle-'+cycle_account,
+    slug='cycle-'+cycle_account)
+device_role = DeviceRole.objects.create(name='cycle-'+cycle_account, slug='cycle-'+cycle_account)
+chassis = Device.objects.create(name='existing-'+cycle_account, serial='CYCLE-'+cycle_account,
+    site=site, device_type=device_type, role=device_role)
+original_device_id = chassis.pk
+retained_site_id = None
+old_delete = old_activate = None
+with override_settings(PLUGINS_CONFIG=config):
+    for cycle in range(3):
+        doc = fixture(cycle_account)
+        doc['finished_at'] = timezone.now().isoformat()
+        for dataset in doc['datasets']:
+            if dataset['service'] == 'dedicated' and dataset['kind'] == 'resources':
+                dataset['items'][0].update(serial=chassis.serial, user_desc='Provider chassis '+cycle_account)
+            if dataset['service'] == 'compute' and dataset['kind'] == 'servers':
+                dataset['items'][0].update(name='Cloud cycle '+cycle_account, status='ACTIVE')
+        payload = dict(account=cycle_account, nonce=str(uuid4()), document=doc, registry=registry(doc))
+        result = import_account(admin, payload)
+        assert result['native_adopted'] == 1 and result['native_created'] == 1, result
+        chassis.refresh_from_db()
+        if retained_site_id is None:
+            retained_site_id = chassis.site_id
+        assert chassis.site_id == retained_site_id
+        binding_ids = set(ProviderBinding.objects.filter(account=cycle_account).values_list('resource','object_id'))
+        assert ('device', original_device_id) in binding_ids
+        cloud_id = next(pk for kind, pk in binding_ids if kind == 'vm')
+        assert import_account(admin, payload)['replayed']
+        doc['finished_at'] = timezone.now().isoformat()
+        again = import_account(admin, dict(account=cycle_account,nonce=str(uuid4()),document=doc,registry=registry(doc)))
+        assert again['native_created'] == again['native_adopted'] == 0
+        assert set(ProviderBinding.objects.filter(account=cycle_account).values_list('resource','object_id')) == binding_ids
+        if old_delete:
+            try: execute(admin, cycle_account, 'delete', uuid4(), old_delete['fingerprint'])
+            except ValueError as exc: assert str(exc) == 'PROVIDER_REVIEW_STALE'
+            else: raise AssertionError('Prior-cycle deletion review accepted')
+        deletion = review(admin, cycle_account, 'delete')
+        assert not deletion['blockers'], deletion
+        deleted_nonce = uuid4()
+        execute(admin, cycle_account, 'delete', deleted_nonce, deletion['fingerprint'])
+        assert Device.objects.filter(pk=original_device_id).exists()
+        assert not VirtualMachine.objects.filter(pk=cloud_id).exists()
+        for model in (ProviderInventory, ProviderBinding, ProviderCreatedObject, ProviderResourceRegistry):
+            assert not model.objects.filter(account=cycle_account).exists(), model
+        chassis.refresh_from_db()
+        assert not any(k.startswith('selectel_') for k in chassis.custom_field_data)
+        assert list(IPAddress.objects.order_by('pk').values()) == addresses
+        if old_activate:
+            try: execute(admin, cycle_account, 'activate', uuid4(), old_activate['fingerprint'])
+            except ValueError as exc: assert str(exc) == 'PROVIDER_REVIEW_STALE'
+            else: raise AssertionError('Prior-cycle activation review accepted')
+        activation = review(admin, cycle_account, 'activate')
+        execute(admin, cycle_account, 'activate', uuid4(), activation['fingerprint'])
+        # A lost old deletion response is only a receipt replay, never another purge.
+        assert execute(admin, cycle_account, 'delete', deleted_nonce, deletion['fingerprint'])['replayed']
+        assert not ProviderAccountFence.objects.get(pk=cycle_account).deleted
+        old_delete, old_activate = deletion, activation
+        print('Selectel cycle', cycle + 1, 'import/delete/reactivate with same adopted Device and Site OK')
+print('Selectel repeated lifecycle: three imports/deletions/reconnections, stable chassis adoption, no duplicate clouds, old reviews refused and IPs unchanged OK')
+
 # Historical baseline changes only an audit/fence receipt, never native rows.
 from netbox_guard.account_import import import_account
 from netbox_guard.models import ProviderLifecycleReceipt
