@@ -6,6 +6,7 @@ of a Selectel token or a matching IP never authorizes this administrative action
 from uuid import UUID
 from .validation_detail import checked
 from django.apps import apps
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from .dependencies import DependencyGuardBlocked
 from .models import ProviderBinding, ProviderFieldClaim, ProviderBindingChange
@@ -33,7 +34,7 @@ def _spec(spec):
 def _read(user, spec, *, lock=False):
     _spec(spec)
     _permission(user, 'manage_providerbinding')
-    user = type(user).objects.get(pk=user.pk)
+    user = get_user_model().objects.get(pk=user.pk)
     check_schema()
     model = apps.get_model(MODELS[spec['resource']])
     query = model.objects.select_for_update() if lock else model.objects

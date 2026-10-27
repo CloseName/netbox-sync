@@ -15,6 +15,14 @@ normal automatic matching/creation gates are unchanged. This addresses first
 creation only, not the outstanding weak-candidate adoption or reverse-matching
 acceptance scenarios. No test-server or production acceptance is implied.
 
+On 27 October the operator deployed PR #129 to test and opening the first-creation
+review failed with `SimpleLazyObject has no attribute objects`. Browser authentication
+wraps the user; Guard incorrectly derived the model manager from that wrapper's type.
+Permission reloads now use Django's configured user model, keeping fresh permission
+and object-constraint checks. The native form scenario exercises lazy request users
+for GET, POST, refusal and receipt replay. This fixes the review/creation path, not
+matching policy, and does not authorize new records or enable schedules by itself.
+
 The coordinated test update and read-only receipt lookup are documented in
 [automated recovery](operations/selectel-recovery.md). This adds evidence-based
 confirmation for new runs; historical runs without an intent digest are not

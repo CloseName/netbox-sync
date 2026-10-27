@@ -7,6 +7,7 @@ never infer a removal intention from an absent source, name or network address.
 import re
 from uuid import UUID
 from django.apps import apps
+from django.contrib.auth import get_user_model
 from django.db import connection, transaction
 from .dependencies import MODELS, DependencySnapshot, DependencyGuardBlocked, _digest, _locked_closure
 from .models import CreationClaim, CreationReceipt, RetirementIntent, RetirementReceipt
@@ -15,7 +16,7 @@ from .models import CreationClaim, CreationReceipt, RetirementIntent, Retirement
 def _permission(user, action, obj=None):
     if not user.is_authenticated:
         raise DependencyGuardBlocked('PERMISSION_DENIED')
-    user = type(user).objects.get(pk=user.pk)
+    user = get_user_model().objects.get(pk=user.pk)
     allowed = user.has_perm('netbox_guard.' + action, obj)
     if action == 'manage_resourceregistry':
         allowed = allowed or user.has_perm('netbox_guard.manage_providerresourceregistry', obj)
@@ -25,7 +26,7 @@ def _permission(user, action, obj=None):
 
 
 def _add_permission(user, obj):
-    user = type(user).objects.get(pk=user.pk)
+    user = get_user_model().objects.get(pk=user.pk)
     permission = f'{obj._meta.app_label}.add_{obj._meta.model_name}'
     if not user.has_perm(permission, obj):
         raise DependencyGuardBlocked('PERMISSION_DENIED')
@@ -329,7 +330,7 @@ def audit_source(user, nonce, source):
         except DependencyGuardBlocked:raise DependencyGuardBlocked('GUARD_SOURCE_SCOPE_DENIED') from None
         if (intent.actor != actor or intent.source_instance != source or intent.manifest != {'format':3,'purpose':'AUDIT_ONLY'}):
             raise DependencyGuardBlocked('REQUEST_CONFLICT')
-    user=type(user).objects.get(pk=user.pk)
+    user=get_user_model().objects.get(pk=user.pk)
     rows=[]
     with transaction.atomic():
         claims=list(CreationClaim.objects.filter(source_instance=source).order_by('resource','object_id')[:10001])
