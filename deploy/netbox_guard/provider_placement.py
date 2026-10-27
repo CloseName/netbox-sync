@@ -27,14 +27,19 @@ def resolve(user, snapshot, previous=None, *, allow_updates=True):
         if proofs and (result is None or result.created != proofs[0].object_created):
             raise ValueError('PROVIDER_PLACEMENT_IDENTITY_CHANGED')
         if result is None:
-            legacy = model.objects.filter(slug=legacy_slug).first()
+            # A reviewed deletion may retain shared placement and release its
+            # ownership proof. Reconnect can reuse that exact reference too.
+            matches = list(model.objects.filter(slug__in=[legacy_slug, 'selectel-'+digest(key)[:24]]))
+            if len(matches) > 1:
+                raise ValueError('PROVIDER_NATIVE_SCOPE_CONFLICT')
+            legacy = matches[0] if matches else None
             proof = ProviderCreatedObject.objects.filter(account=account, model_label=model._meta.label_lower,
                 object_id=legacy.pk, object_created=legacy.created, provider_key='').first() if legacy else None
             if proof:
                 result=legacy; proof.provider_key=marker; proof.save(update_fields=['provider_key'])
             elif legacy is not None:
-                # V1 created these deterministic slugs before provenance existed.
-                # Reuse an exact reference, never infer ownership or rename it.
+                # V1 or retained shared placement: reuse an exact reference,
+                # never infer ownership or rename it.
                 if (ProviderCreatedObject.objects.filter(model_label=model._meta.label_lower,
                         object_id=legacy.pk).exists()
                         or any(getattr(legacy, field) != value for field, value in values.items())

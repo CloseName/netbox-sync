@@ -122,6 +122,7 @@ device_role = DeviceRole.objects.create(name='cycle-'+cycle_account, slug='cycle
 chassis = Device.objects.create(name='existing-'+cycle_account, serial='CYCLE-'+cycle_account,
     site=site, device_type=device_type, role=device_role)
 original_device_id = chassis.pk
+retained_site_id = None
 old_delete = old_activate = None
 with override_settings(PLUGINS_CONFIG=config):
     for cycle in range(3):
@@ -135,6 +136,10 @@ with override_settings(PLUGINS_CONFIG=config):
         payload = dict(account=cycle_account, nonce=str(uuid4()), document=doc, registry=registry(doc))
         result = import_account(admin, payload)
         assert result['native_adopted'] == 1 and result['native_created'] == 1, result
+        chassis.refresh_from_db()
+        if retained_site_id is None:
+            retained_site_id = chassis.site_id
+        assert chassis.site_id == retained_site_id
         binding_ids = set(ProviderBinding.objects.filter(account=cycle_account).values_list('resource','object_id'))
         assert ('device', original_device_id) in binding_ids
         cloud_id = next(pk for kind, pk in binding_ids if kind == 'vm')
@@ -168,6 +173,7 @@ with override_settings(PLUGINS_CONFIG=config):
         assert execute(admin, cycle_account, 'delete', deleted_nonce, deletion['fingerprint'])['replayed']
         assert not ProviderAccountFence.objects.get(pk=cycle_account).deleted
         old_delete, old_activate = deletion, activation
+        print('Selectel cycle', cycle + 1, 'import/delete/reactivate with same adopted Device and Site OK')
 print('Selectel repeated lifecycle: three imports/deletions/reconnections, stable chassis adoption, no duplicate clouds, old reviews refused and IPs unchanged OK')
 
 # Historical baseline changes only an audit/fence receipt, never native rows.
