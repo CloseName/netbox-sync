@@ -33,6 +33,7 @@ export function SelectelLifecycle({account,disabled,deleted,pending,busy,request
  <p>Нужно устранить препятствия. Ничего не удалено.</p>
  {[...new Set(plan.blockers.map(b=>b.reason))].map(reason=><p key={reason}>{reasons[reason]||'Требуется проверка зависимостей.'} Объектов: {plan.blockers.filter(b=>b.reason===reason).length}.</p>)}
  <details><summary>Показать препятствия</summary><ul>{plan.blockers.map((b,i)=><li key={i}>{b.url?<a href={b.url}>{b.name||`${b.model} #${b.id}`}</a>:b.name||`${b.model||'Объект'} ${b.id||''}`}</li>)}</ul></details></div>}
+ {plan.operation==='delete'&&plan.bindings?.some(r=>r.provider_key)? <details><summary>Отсоединить отдельный ресурс без удаления</summary><p>Это отдельное действие: карточка останется в NetBox. Для удаления всего аккаунта оно не требуется.</p><ul>{plan.bindings.filter(r=>r.provider_key).map(r=><li key={r.provider_key}>{r.name} <button disabled={waiting||busy} onClick={()=>void review('detach',r.provider_key)}>Проверить отсоединение</button></li>)}</ul></details>:null}
  <label><input type="checkbox" checked={confirm} onChange={e=>setConfirm(e.target.checked)}/>Я понимаю последствия и подтверждаю {plan.operation==='delete'?'удаление аккаунта и его импортированных ресурсов':plan.operation==='detach'?'отсоединение':'повторное подключение'}.</label>
  <button disabled={!disabled||!confirm||plan.blockers.length>0||waiting||busy} onClick={()=>void execute(plan)}>{plan.operation==='delete'?'Подтвердить удаление аккаунта':'Применить проверенный план'}</button>
  </section>}

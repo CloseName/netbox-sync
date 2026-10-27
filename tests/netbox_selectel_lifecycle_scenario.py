@@ -283,6 +283,12 @@ with override_settings(PLUGINS_CONFIG=config):
             with transaction.atomic(): ProviderNetworkLink.objects.filter(binding=binding).delete()
         except IntegrityError: pass
         else: raise AssertionError('Unfenced network removal accepted')
+        # A created address claimed by an independent Device cannot disappear.
+        foreign_host = Device.objects.create(name='foreign-'+str(cycle)+'-'+network_account, site=site,
+            device_type=device_type, role=device_role, primary_ip4=created_ip)
+        blocked = review(admin, network_account, 'delete')
+        assert any(b.get('id')==created_ip.pk and b['reason']=='foreign_dependencies_or_sync_source' for b in blocked['blockers'])
+        foreign_host.primary_ip4 = None; foreign_host.save()
         deletion = review(admin, network_account, 'delete')
         assert not deletion['blockers'], deletion['blockers']
         assert any(r['model']=='ipam.ipaddress' and r['id']==created_ip.pk for r in deletion['delete'])
@@ -342,3 +348,17 @@ for model in ('ipaddress', 'prefix', 'vlan', 'vlangroup'):
     for action in ('view', 'change', 'delete'):
         assert service_user.has_perm('ipam.'+action+'_'+model)
 print('Cleanup permission upgrade: enabled dedicated importer only, idempotent, token preserved OK')
+
+# A bare legacy mapping does not prove who created its native address.
+unknown_account = str(uuid4().int)[:20]
+unknown_ip = IPAddress.objects.create(address='8.8.8.8/32')
+ProviderIPAMObject.objects.create(key=json.dumps(['selectel',unknown_account,'ipaddress','unknown']),
+    kind='ipaddress', object_id=unknown_ip.pk, object_created=unknown_ip.created, claims={})
+with override_settings(PLUGINS_CONFIG=config):
+    unknown_plan = review(admin, unknown_account, 'delete')
+    assert [b['reason'] for b in unknown_plan['blockers']] == ['legacy_ipam_provenance_required']
+    try: execute(admin, unknown_account, 'delete', uuid4(), unknown_plan['fingerprint'])
+    except ValueError as exc: assert str(exc)=='PROVIDER_DEPENDENCIES_BLOCKED'
+    else: raise AssertionError('Unknown-origin address deleted')
+assert IPAddress.objects.filter(pk=unknown_ip.pk).exists()
+print('Unknown legacy provenance remains an account-level refusal without writes OK')
