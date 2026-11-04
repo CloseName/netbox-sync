@@ -2,6 +2,7 @@
 from ipaddress import ip_address, ip_network
 from datetime import timedelta
 from django.utils import timezone
+from django.contrib.contenttypes.models import ContentType
 from dcim.models import Site
 from ipam.models import VRF, VLANGroup, VLAN, Prefix, IPAddress
 from .models import ProviderCreatedObject, ProviderResourceRegistry
@@ -51,7 +52,9 @@ def apply(user, account):
     for router in rows:
         if router['kind'] != 'global_router' or not fresh(router): continue
         name = ('Selectel / ' + account + ' / ' + (data(router).get('name') or 'Роутер'))[:100]
-        vrf = ensure(VRF, router['key'], dict(name=name, enforce_unique=True), VRF.objects.filter(name=name))
+        from .provider_tenancy import resolve as resolve_tenant
+        tenant = resolve_tenant(user, dict(account=account, project=router.get('project') or ''))
+        vrf = ensure(VRF, router['key'], dict(name=name, enforce_unique=True, tenant_id=tenant.pk), VRF.objects.filter(name=name))
         if vrf is None: continue
         children = components(router, rows, relations)
         for network in children:
@@ -75,6 +78,8 @@ def apply(user, account):
                 except ValueError: continue
                 fields = dict(prefix=str(cidr), vrf_id=vrf.pk, vlan_id=vlan.pk if vlan else None,
                               status='active', description=(entry.get('name') or '')[:200])
+                if site:
+                    fields.update(scope_type_id=ContentType.objects.get_for_model(Site).pk, scope_id=site.pk)
                 prefix = ensure(Prefix, subnet['key'], fields, Prefix.objects.filter(vrf=vrf, prefix=str(cidr)))
                 if prefix is None: continue
                 addresses = [(entry.get('gateway'), 'Шлюз')] + [(v, 'Служебный IP') for v in entry.get('service_addresses') or []]
@@ -86,6 +91,15 @@ def apply(user, account):
                         dict(address=f'{ip}/{mask}', vrf_id=vrf.pk, status='active',
                              description=(role + ' · ' + (entry.get('name') or str(cidr)))[:200]),
                         IPAddress.objects.filter(vrf=vrf, address__net_host=str(ip)))
+        for route in children:
+            if route['kind'] != 'routing_route' or not fresh(route): continue
+            try: hop = ip_address(data(route).get('next_hop'))
+            except (ValueError, TypeError): continue
+            # A next hop has its own address record, never an invented interface.
+            ensure(IPAddress, route['key'] + ':' + str(hop),
+                dict(address=f'{hop}/{hop.max_prefixlen}', vrf_id=vrf.pk, status='active',
+                     description=('Следующий узел · ' + (data(route).get('name') or 'Маршрут'))[:200]),
+                IPAddress.objects.filter(vrf=vrf, address__net_host=str(hop)))
         # Registry routes remain typed records. Index their CIDRs against this
         # routing domain; never materialize destinations as connected Prefixes.
         from netbox.search.backends import search_backend

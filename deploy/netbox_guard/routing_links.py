@@ -49,6 +49,6 @@ def panel(user, obj):
     value['account'] = proof.account
     if source['kind'] != 'global_router':
         value['networks'] = [n for n in value['networks'] if n['key'] == source['key'] or any(s['key'] == source['key'] for s in n['subnets'])]
-        value['routes'] = []
+        value['routes'] = [r for r in value['routes'] if r['key'] == source['key']]
     value['routes'] = sorted(value['routes'], key=lambda r: -int(r['cidr'].rsplit('/', 1)[-1]) if '/' in r['cidr'] else 0)
     return value
