@@ -50,7 +50,9 @@ with patch.object(Device.objects, 'restrict', return_value=Device.objects.none()
 other_manual_record = insert_resource('dedicated', 'manual-link-conflict', 'Another provider label')
 rejected(lambda: link_review(admin, account, other_manual_record.pk, manual_target.pk), (ValueError,))
 manual_ref = hashlib.sha256(other_manual_record.pk.encode()).hexdigest()
-assert b'Renamed private host' not in manual_page(data={'q': 'Renamed private host'}).content
+occupied_search = manual_page(data={'q': 'Renamed private host'}).content
+assert ('?object_id=' + str(manual_target.pk) + '"').encode() not in occupied_search
+assert b'Renamed private host' in occupied_search  # Query remains visible in the search input.
 # Explicit relinking may resume a detached resource; normal collection stays blocked.
 from netbox_guard.models import ProviderDetachedResource
 ProviderDetachedResource.objects.create(provider_key=other_manual_record.pk, account=account)
