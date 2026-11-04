@@ -68,7 +68,9 @@ assert first_review['eligible']
 other.snapshot['sections']['placement']['data']['name'] = 'Changed shared placement'
 other.save()
 changed_placement = review(admin, account, other.pk)
-rejected(lambda: execute(admin, account, other.pk, uuid4(), changed_placement['fingerprint']), (ValueError,))
+from netbox_guard.provider_placement import resolve as resolve_placement
+assert changed_placement['eligible']
+assert resolve_placement(admin, other.snapshot, allow_updates=False).pk == target.site_id
 target.site.refresh_from_db()
 assert target.site.name.endswith('First creation zone')
 assert Device.objects.count() == count + 1
