@@ -47,8 +47,12 @@ Cloud port/subnet/network identity supports native interfaces, isolated VRFs,
 prefixes, IPs, floating-IP NAT and primary selection, plus attached VirtualDisk
 records. Existing primary addresses and foreign assignments survive. Component
 provenance controls repeated collection and account cleanup. Provider allocations
-without confirmed interface ownership remain observations (especially dedicated
-server addresses that may actually be guest firewall WANs).
+without confirmed physical interface ownership are represented, under the
+operator-authorized policy in PR #138, on a logical allocation interface when
+no existing IP record conflicts. Existing foreign assignments are preserved.
+All observed addresses remain searchable on the Device. This does not prove
+physical NIC ownership or guest routing. Existing Sites/Regions are preserved;
+new Regions are no longer created automatically.
 See the [completion and acceptance checklist](selectel-completion-checklist.md).
 Implementation and CI do not establish real-account or production acceptance.
 

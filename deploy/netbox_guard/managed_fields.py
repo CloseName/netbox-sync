@@ -62,7 +62,7 @@ def configure_managed_fields(using='default'):
         if not compatible(field, kind, models):
             LOGGER.warning('NetBox Sync: incompatible custom field %s; unchanged', name)
             continue
-        desired = 'hidden' if kind == 'json' else 'if-set'
+        desired = 'hidden' if kind == 'json' or name in ('cpu_model', 'cpu_vendor', 'cpu_sockets', 'cpu_cores', 'cpu_threads', 'memory_mb', 'hypervisor_version') else 'if-set'
         if field.ui_visible != desired or field.ui_editable != 'no':
             field.ui_visible = desired
             field.ui_editable = 'no'

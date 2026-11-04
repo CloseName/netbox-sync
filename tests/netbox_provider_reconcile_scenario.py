@@ -47,7 +47,7 @@ assert native_host.primary_ip4_id is None
 assert not any(p['action'] in ('bind', 'create') for p in native_prepare(admin, account)['resources'])
 vm_binding = ProviderBinding.objects.get(provider_key=cloud.pk)
 cloud_vm = VirtualMachine.objects.get(pk=vm_binding.object_id)
-assert cloud_vm.site.region.name.endswith('ru-test')
+assert cloud_vm.site.region_id is None  # Regions are maintained manually.
 assert cloud_vm.memory == 2048 and cloud_vm.primary_ip4_id is None
 assert ProviderCreatedObject.objects.filter(model_label='virtualization.virtualmachine',
     object_id=cloud_vm.pk, object_created=cloud_vm.created, account=account).exists()

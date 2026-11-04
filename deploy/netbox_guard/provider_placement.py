@@ -41,7 +41,7 @@ def resolve(user, snapshot, previous=None, *, allow_updates=True):
                 # never infer ownership or rename it.
                 if (ProviderCreatedObject.objects.filter(model_label=model._meta.label_lower,
                         object_id=legacy.pk).exists()
-                        or any(getattr(legacy, field) != value for field, value in values.items())
+                        or any(getattr(legacy, field) != value for field, value in values.items() if field != 'region')
                         or (model is Region and legacy.parent_id is not None)):
                     raise ValueError('PROVIDER_NATIVE_SCOPE_CONFLICT')
                 if not user.has_perm(f'{model._meta.app_label}.view_{model._meta.model_name}', legacy):
@@ -52,14 +52,9 @@ def resolve(user, snapshot, previous=None, *, allow_updates=True):
                 create_native(user, result)
                 ProviderCreatedObject.objects.create(account=account,model_label=model._meta.label_lower,
                     object_id=result.pk,object_created=result.created,provider_key=marker)
-        changed = [field for field,value in values.items() if getattr(result,field) != value]
-        if changed:
-            if not allow_updates:
-                raise ValueError('PROVIDER_PLACEMENT_REVIEW_REQUIRED')
-            if not user.has_perm(f'{model._meta.app_label}.change_{model._meta.model_name}',result):
-                raise DependencyGuardBlocked('PERMISSION_DENIED')
-            for field in changed: setattr(result,field,values[field])
-            checked(result, 'full_clean'); checked(result, 'save', update_fields=changed+['last_updated'])
+        # Reusing an owned Site still requires visibility; no placement edits.
+        if not user.has_perm(f'{model._meta.app_label}.view_{model._meta.model_name}', result):
+            raise DependencyGuardBlocked('PERMISSION_DENIED')
         return result
     legacy_label = label
     if isinstance(previous, dict) and previous.get('identity', {}).get('region', '') == region_id:
@@ -67,8 +62,8 @@ def resolve(user, snapshot, previous=None, *, allow_updates=True):
         if isinstance(old_data, dict) and (old_data.get('uuid') or old_data.get('OS-EXT-AZ:availability_zone')) == location:
             legacy_label = old_data.get('name') or old_data.get('OS-EXT-AZ:availability_zone') or label
     old_scope = digest([account, region_id or legacy_label])[:16]
-    region = ensure(Region,[account,'region',region_id],{'name':f'Selectel / {account} / {region_id}'[:100]},
-                    'selectel-'+old_scope) if region_id else None
+    region = Region.objects.filter(slug__in=['selectel-'+old_scope,
+        'selectel-'+digest([account,'region',region_id])[:24]]).first() if region_id else None
     return ensure(Site,[account,'site',region_id,location],
                   {'name':f'Selectel / {account} / {label}'[:100],'region':region},
                   'selectel-'+digest([old_scope,legacy_label])[:16])

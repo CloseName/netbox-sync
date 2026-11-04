@@ -199,7 +199,8 @@ with tempfile.TemporaryDirectory() as temp:
         assert Site.objects.filter(pk=legacy_site.pk).values().get() == legacy_site_before
         for model, native_id in [('dcim.region', legacy_region.pk), ('dcim.site', legacy_site.pk)]:
             assert not ProviderCreatedObject.objects.filter(model_label=model, object_id=native_id).exists()
-        assert set(created.custom_field_data['selectel_inventory']['native_fields']) >= {'name','vcpus','memory','site_id'}
+        assert set(created.custom_field_data['selectel_inventory']['native_fields']) >= {'name','vcpus','memory'}
+        assert 'site_id' not in created.custom_field_data['selectel_inventory']['native_fields']
         from django.db import IntegrityError
         rejected(lambda: VirtualMachine.objects.filter(pk=created.pk).update(memory=2048), (IntegrityError,))
         # Region/site labels can change while stable provider location IDs stay.
@@ -210,7 +211,7 @@ with tempfile.TemporaryDirectory() as temp:
         previous = copy.deepcopy(placement)
         placement['sections']['placement']['data']['name'] = 'Renamed'
         renamed_site = resolve(service_user, placement, previous)
-        assert first_site.pk == renamed_site.pk and renamed_site.name.endswith('/ Renamed')
+        assert first_site.pk == renamed_site.pk and renamed_site.name.endswith('/ Original')
         assert renamed_site.region_id is None
 print('Opt-in automatic native import: dedicated permission, creation provenance, atomic rollback and replay OK')
 

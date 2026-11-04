@@ -45,3 +45,33 @@ def test_routing_search_subnet_membership_and_orphans():
     assert browser.context(rows, edges, rows[0], '10.79.1.1', {})['networks'] == []
     assert browser.context(rows, edges, None, '', {})['unlinked'][0]['name'] == 'Unknown parent'
     assert result['routing_problems']
+
+
+def test_unified_hardware_host_priority_and_physical_disks():
+    hardware = importlib.import_module(package.__name__ + '.hardware_display').panel
+    snapshot = dict(identity=dict(kind='dedicated'), sections={'hardware': {'data': {
+        'cpu': [{'name': 'Provider CPU', 'count': 1}],
+        'ram': [{'name': '32 GB ECC', 'count': 8}],
+        'disk': [{'name': '6 TB HDD SATA Enterprise', 'count': 2},
+                 {'name': '480 GB SSD SATA', 'count': 2},
+                 {'name': '6 TB HDD SATA Enterprise', 'count': 2}]}}})
+    fields = dict(cpu_model='Host CPU', cpu_cores=6, cpu_threads=12, memory_mb=262030,
+                  selectel_inventory=snapshot)
+    result = hardware(fields)
+    assert dict(result['fields'])['Процессор'] == 'Host CPU'
+    assert dict(result['fields'])['Память по данным хоста'] == '262030 МиБ'
+    assert result['disks'] == [dict(count=4, capacity='6 TB', kind='HDD'),
+                               dict(count=2, capacity='480 GB', kind='SSD')]
+    assert result['disk_count'] == 6
+    assert hardware({'cpu_model': 'Standalone'})['fields'] == [('Процессор', 'Standalone')]
+    assert hardware({}) is None
+    assert hardware({'physical_disks': [{'name': 'datastore', 'size_bytes': 123}]}) is None
+
+
+def test_explicit_configuration_is_split_without_inventing_dimm_count():
+    hardware = importlib.import_module(package.__name__ + '.hardware_display').panel
+    result = hardware({'selectel_inventory': {'sections': {'hardware': {'data': {
+        'config_name': 'AMD Ryzen 7 3700X: 8 x 3.6GHz, 32 GB DDR4 non-ECC, 2 x 500 GB SSD NVMe M.2'}}}}})
+    assert dict(result['fields'])['Установленная память'] == '32 GB DDR4 non-ECC'
+    assert result['disks'] == [dict(count=2, capacity='500 GB', kind='SSD')]
+    assert 'Конфигурация Selectel' not in dict(result['fields'])

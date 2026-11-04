@@ -43,4 +43,6 @@ class Command(BaseCommand):
                 or not projection.enabled or set(projection.object_types.values_list('pk', flat=True)) != components):
             raise CommandError('Existing component projection permission differs; no overwrite.')
         projection.object_types.set(components); projection.users.add(user)
+        from netbox_guard.supplement_permissions import configure
+        configure(user, delete=True)
         self.stdout.write('Selectel account cleanup permissions ready; tokens unchanged.')

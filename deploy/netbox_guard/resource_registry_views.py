@@ -116,6 +116,8 @@ def registry(request, account=None):
                 tab['count'] = '—'
     if kind in routing_presentation.KINDS or (selected and selected.get('routing')):
         from .routing_browser import context as routing_context
+        from .routing_links import decorate as decorate_links
+        decorate_links(request.user, account, rows)
         context.update(routing_context(rows, snapshot['relations'].values(), selected, q, snapshot))
         return render(request, 'netbox_guard/routing_registry.html', context)
     return render(request, 'netbox_guard/resource_registry.html', context)

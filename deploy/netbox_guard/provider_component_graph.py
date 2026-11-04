@@ -5,15 +5,17 @@ from .provider_components import values
 
 
 def extend(user, account, nodes, edges):
-    fields = {'virtualization.vminterface': ('name', 'virtual_machine_id'),
+    fields = {'dcim.interface': ('name', 'device_id'), 'virtualization.vminterface': ('name', 'virtual_machine_id'),
               'virtualization.virtualdisk': ('name', 'size', 'virtual_machine_id'),
               'ipam.ipaddress': ('address', 'vrf_id', 'nat_inside_id'),
-              'ipam.prefix': ('prefix', 'vrf_id'), 'ipam.vrf': ('name',)}
+              'ipam.prefix': ('prefix', 'vrf_id', 'vlan_id'), 'ipam.vrf': ('name',), 'ipam.vlan': ('name', 'vid', 'site_id')}
     index = {(node['kind'], node['object_id']): key for key, node in nodes.items()
              if node.get('source') == 'netbox'}
     objects = []
-    for proof in ProviderCreatedObject.objects.filter(account=account, provider_key__startswith='component:'):
-        if proof.model_label not in fields or proof.resource_key not in nodes: continue
+    for proof in ProviderCreatedObject.objects.filter(account=account):
+        if not proof.provider_key.startswith(('component:', 'routing:')) or proof.model_label not in fields: continue
+        source = proof.resource_key if proof.resource_key in nodes else next((key for key in nodes if proof.resource_key.startswith(key + ':')), None)
+        if source is None: continue
         obj = apps.get_model(proof.model_label).objects.restrict(user, 'view').filter(pk=proof.object_id).first()
         if obj is None or obj.created != proof.object_created: continue
         key = f'netbox:{proof.model_label}:{obj.pk}:{obj.created.isoformat()}'
@@ -22,11 +24,11 @@ def extend(user, account, nodes, edges):
             object_id=obj.pk, url=obj.get_absolute_url(), observed_at=obj.last_updated,
             state='confirmed' if values(obj, proof.projection_values) == proof.projection_values else 'conflict',
             fields=values(obj, fields[proof.model_label]))
-        edges.append(dict(source=proof.resource_key, target=key, kind='projects_to',
+        edges.append(dict(source=source, target=key, kind='projects_to',
             evidence_source='guard', observed_at=proof.created_at, state=nodes[key]['state']))
         objects.append((key, obj))
     for key, obj in objects:
-        refs = [('virtual_machine_id', 'virtualization.virtualmachine', 'attached_to'),
+        refs = [('device_id', 'dcim.device', 'attached_to'), ('vlan_id', 'ipam.vlan', 'in_vlan'), ('virtual_machine_id', 'virtualization.virtualmachine', 'attached_to'),
                 ('vrf_id', 'ipam.vrf', 'in_routing_domain'), ('nat_inside_id', 'ipam.ipaddress', 'nat_to')]
         for field, label, kind in refs:
             target = index.get((label, getattr(obj, field, None)))

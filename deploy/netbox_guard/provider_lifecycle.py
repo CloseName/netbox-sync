@@ -14,9 +14,9 @@ from .models import (ProviderBinding, ProviderFieldClaim, ProviderBindingChange,
 
 TARGETS = {'device': 'dcim.device', 'vm': 'virtualization.virtualmachine'}
 ORDER = {'virtualization.virtualmachine': 0, 'dcim.device': 1, 'dcim.site': 2,
-         'virtualization.vminterface': -5, 'virtualization.virtualdisk': -5, 'ipam.vrf': -1,
+         'dcim.interface': -5, 'virtualization.vminterface': -5, 'virtualization.virtualdisk': -5, 'ipam.vrf': -1,
          'ipam.ipaddress': -7, 'ipam.prefix': -3, 'ipam.vlan': -2, 'ipam.vlangroup': -1,
-         'dcim.devicerole': 2, 'dcim.devicetype': 2, 'dcim.manufacturer': 3, 'dcim.region': 4}
+         'dcim.devicerole': 2, 'dcim.devicetype': 2, 'dcim.manufacturer': 3, 'dcim.region': 4, 'tenancy.tenant': 5, 'tenancy.tenantgroup': 6}
 
 
 def _access(user, obj, action):

@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 
-VERSION = 9
+VERSION = 10
 FIELDS = {
     "sync_identities": (
         "json",
@@ -142,7 +142,13 @@ def definition(name):
         "unique": False,
         # Managed JSON is rendered by Guard panels or intentionally API-only (events).
         # Scalar observations remain visible only when populated.
-        "ui_visible": "hidden" if kind == "json" else "if-set",
+        "ui_visible": (
+            "hidden"
+            if kind == "json"
+            or name
+            in {"cpu_model", "cpu_vendor", "cpu_sockets", "cpu_cores", "cpu_threads", "memory_mb", "hypervisor_version"}
+            else "if-set"
+        ),
         "ui_editable": "no",
     }
 
