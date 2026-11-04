@@ -60,6 +60,8 @@ def registry(request, account=None):
         if row['kind'] == 'dedicated' and not binding and request.user.has_perm('netbox_guard.manage_providerbinding'):
             row['creation_href'] = reverse('plugins:netbox_guard:provider_first_creation', kwargs={'account': account, 'ref': row['ref']})
         if binding:
+            if request.user.has_perm('netbox_guard.manage_providerbinding'):
+                row['unlink_href'] = reverse('plugins:netbox_guard:provider_unlink', kwargs={'account': account, 'ref': row['ref']})
             target = targets.get(binding.resource, {}).get(binding.object_id)
             if target and target.created == binding.object_created:
                 row['native'] = {'name': target.name, 'url': target.get_absolute_url(), 'kind': binding.resource}
@@ -77,6 +79,9 @@ def registry(request, account=None):
             plan = next((p for p in report['resources'] if p['key'] == selected['key']), None)
             if plan:
                 selected['matching'] = explain(plan)
+                for candidate in selected['matching']['candidates']:
+                    if candidate['resource'] == plan['resource'] and selected.get('link_href'):
+                        candidate['link_href'] = selected['link_href'] + '?' + urlencode({'object_id': candidate['id']})
         except (ValueError, DependencyGuardBlocked):
             selected['matching_unavailable'] = True
     # DNS records are nested under their zone; domains under their bucket.

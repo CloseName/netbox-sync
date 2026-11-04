@@ -3,6 +3,7 @@
 {% block content %}
 <p><a href="{{ back_url }}">Ресурсы Selectel / {{ account }}</a></p>
 <h1>Связать с существующей карточкой</h1>
+<section class="card mb-3"><h2 class="card-header">Ресурс Selectel: {{ source.name }}</h2><div class="card-body"><p>Аккаунт {{ account }} · UUID {{ source.native_id }}</p><p>Проект: {{ source.project_name }} · Площадка / регион: {{ source.location }}</p><p>Адреса Selectel: {% for address in source.addresses %}{{ address }}{% if not forloop.last %}, {% endif %}{% empty %}Не получены{% endfor %}</p><a href="{{ source_url }}">Вернуться к сведениям этого ресурса</a></div></section>
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 {% if result %}
 <div class="alert alert-success">Ресурс связан с <a href="{{ result.object_url }}">{{ result.name }}</a>.{% if result.replayed %} Показан результат уже выполненной операции.{% endif %}</div>
@@ -14,8 +15,12 @@
 <button class="btn btn-primary" type="submit">Связать карточку</button></form>
 {% else %}
 <p>Выберите {% if resource == 'device' %}физический сервер (Device){% else %}виртуальную машину{% endif %}. Можно найти карточку, даже если автоматический поиск не предложил кандидатов.</p>
+{% if candidates %}<h2>Найденные кандидаты</h2><ul>{% for target in candidates %}<li>{{ target.name }} — #{{ target.pk }} <a class="btn btn-outline-primary" href="?object_id={{ target.pk }}">Связать с этой карточкой</a></li>{% endfor %}</ul>{% endif %}
+<h2>Выбрать другую карточку</h2>
 <form method="get"><input name="q" value="{{ q }}" placeholder="Название в NetBox"><button class="btn btn-primary" type="submit">Найти</button></form>
-<p>Показаны первые 50 доступных карточек. Уточните название для поиска.</p>
+<p>Поиск показывает до 50 доступных карточек без привязки Selectel. Карточки, занятые другими аккаунтами, также скрыты. Связь ESXi или Proxmox не мешает сопоставлению с Selectel.</p>
+{% if q %}
 <ul>{% for target in targets %}<li><a href="?object_id={{ target.pk }}">{{ target.name }} — #{{ target.pk }}</a></li>{% empty %}<li>Карточки не найдены.</li>{% endfor %}</ul>
+{% endif %}
 {% endif %}
 {% endblock %}

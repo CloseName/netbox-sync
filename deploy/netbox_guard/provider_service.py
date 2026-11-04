@@ -31,7 +31,7 @@ def _spec(spec):
         raise ValueError('PROVIDER_EVIDENCE_REQUIRED')
 
 
-def _read(user, spec, *, lock=False):
+def _read(user, spec, *, lock=False, allow_detached=False):
     _spec(spec)
     _permission(user, 'manage_providerbinding')
     user = get_user_model().objects.get(pk=user.pk)
@@ -48,7 +48,7 @@ def _read(user, spec, *, lock=False):
     from .models import ProviderAccountFence, ProviderDetachedResource
     if ProviderAccountFence.objects.filter(account=spec['identity']['account'], deleted=True).exists():
         raise ValueError('PROVIDER_ACCOUNT_DELETED')
-    if ProviderDetachedResource.objects.filter(provider_key=key).exists():
+    if not allow_detached and ProviderDetachedResource.objects.filter(provider_key=key).exists():
         raise ValueError('PROVIDER_RESOURCE_DETACHED')
     binding = ProviderBinding.objects.filter(resource=spec['resource'], object_id=obj.pk).first()
     if binding and (binding.provider_key != key or binding.object_created != obj.created):
@@ -69,8 +69,8 @@ def _read(user, spec, *, lock=False):
     return obj, binding, before, proposed
 
 
-def review_binding(user, spec):
-    obj, binding, before, proposed = _read(user, spec)
+def review_binding(user, spec, *, allow_detached=False):
+    obj, binding, before, proposed = _read(user, spec, allow_detached=allow_detached)
     return {'fingerprint': digest({'spec': spec, 'before': before}),
             'binding_revision': before['binding_revision'], 'object_id': obj.pk,
             'object_name': obj.name, 'current_claims': before['claims'],

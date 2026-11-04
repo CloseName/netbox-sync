@@ -12,9 +12,12 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_http_methods
 from .dependencies import DependencyGuardBlocked
-from .models import ProviderInventory
+from .models import ProviderInventory, ProviderBinding
 from .provider_manual_link import review, execute
 from .provider_service import MODELS
+from .resource_tree import build_tree
+from .resource_presentation import decorate
+from .provider_reconcile import prepare
 
 SALT = 'selectel-manual-link-v1'
 
@@ -34,6 +37,9 @@ def manual_link(request, account, ref):
     kind = 'device' if record.snapshot['identity']['kind'] == 'dedicated' else 'vm'
     context = dict(account=account, resource=kind,
                    back_url=reverse('plugins:netbox_guard:provider_resource_account', kwargs={'account': account}))
+    source = build_tree([], [record])[0][0]
+    decorate(source, {})
+    context.update(source=source, source_url=context['back_url'] + '?kind=' + source['kind'] + '&resource=' + ref)
     status = 200
     try:
         if request.method == 'POST':
@@ -58,8 +64,16 @@ def manual_link(request, account, ref):
         q = request.GET.get('q', '')[:128]
         model = apps.get_model(MODELS[kind])
         targets = model.objects.restrict(request.user, 'view').restrict(request.user, 'change')
+        targets = targets.exclude(pk__in=ProviderBinding.objects.filter(resource=kind).values('object_id'))
+        targets = targets.filter(custom_field_data__selectel_refs__isnull=True) | targets.filter(custom_field_data__selectel_refs=[])
+        try:
+            plan = next(p for p in prepare(request.user, account)['resources'] if p['key'] == key)
+            ids = [c['id'] for c in plan['candidates'] if c['resource'] == kind]
+            context['candidates'] = list(targets.filter(pk__in=ids).order_by('name', 'pk'))
+        except (ValueError, DependencyGuardBlocked, StopIteration):
+            context['candidates'] = []
         if q:
             targets = targets.filter(name__icontains=q)
         # Bounded search also permits choosing a card which has no heuristic candidate.
-        context.update(q=q, targets=list(targets.order_by('name', 'pk')[:50]))
+        context.update(q=q, targets=list(targets.order_by('name', 'pk')[:50]) if q else [])
     return render(request, 'netbox_guard/provider_manual_link.html', context, status=status)
