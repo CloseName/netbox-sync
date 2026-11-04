@@ -30,7 +30,8 @@ with override_settings(PLUGINS_CONFIG=config):
     unprivileged = get_user_model().objects.create(username='unified-reader-' + uuid4().hex)
     account = '987654330'
     ident = dict(account=account, kind='dedicated', native_id=str(uuid4()), project='project-a', region='')
-    def section(value): return dict(status='collected', data=value)
+    def section(value): return dict(status='collected', code='collected', data=value,
+                                   observed_at=timezone.now().isoformat(), retained=False)
     snapshot = dict(identity=ident, sections={
         'resource': section(dict(user_desc='Unified allocation fixture', status='ACTIVE')),
         'placement': section(dict(uuid='spb-4', name='SPB-4')),
@@ -83,12 +84,12 @@ with override_settings(PLUGINS_CONFIG=config):
     update_document = dict(schema='selectel-audit-v1', account_verified=True, account=account,
         finished_at=timezone.now().isoformat(), datasets=[
             dict(service='dedicated', kind='resources', status='collected', project='', region='',
-                 items=[dict(uuid=ident['native_id'], project_uuid='project-a', user_desc=device.name,
+                 items=[dict(uuid=ident['native_id'], service_type='server', project_uuid='project-a', user_desc=device.name,
                              location_uuid='different-location')]),
             dict(service='dedicated', kind='locations', status='collected', project='', region='',
                  items=[dict(uuid='different-location', name='Different Site')])])
     preview = review_inventory(admin, update_document, 'c'*64)
-    assert preview['bound_count'] == 1
+    assert preview['server_count'] == 1 and preview['bound_count'] == 1, preview
     apply_inventory(admin, uuid4(), update_document, 'c'*64, preview['fingerprint'])
     device.refresh_from_db()
     assert device.site_id == original_site and Site.objects.count() == site_count
