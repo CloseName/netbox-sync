@@ -402,3 +402,43 @@ with override_settings(PLUGINS_CONFIG=config):
     # A different run is not accidentally retired by this deletion.
     assert not retired(account, str(uuid4()))
 print('Uncertain deletion: single review, stale refusal, atomic retirement/cleanup, replay and old-run fence after reconnect OK')
+
+# Per-resource unlink deletes only a proven created card, keeps adopted cards,
+# blocks foreign dependencies and does not delete the account's other resources.
+account = str(uuid4().int)[:20]
+with override_settings(PLUGINS_CONFIG=config):
+    unlink_adopted = VirtualMachine.objects.create(name='unlink-adopted-'+account)
+    unlink_owned = VirtualMachine.objects.create(name='unlink-owned-'+account)
+    unlink_other = VirtualMachine.objects.create(name='unlink-other-'+account)
+    adopted_key = bind(unlink_adopted, 'unlink-adopted')
+    owned_key = bind(unlink_owned, 'unlink-owned', True)
+    other_key = bind(unlink_other, 'unlink-other', True)
+    plan = review(admin, account, 'unlink', adopted_key)
+    assert not plan['delete'] and not plan['blockers']
+    execute(admin, account, 'unlink', uuid4(), plan['fingerprint'], adopted_key)
+    assert VirtualMachine.objects.filter(pk=unlink_adopted.pk).exists()
+    assert ProviderDetachedResource.objects.filter(pk=adopted_key).exists()
+    foreign_nic = VMInterface.objects.create(virtual_machine=unlink_owned, name='foreign')
+    plan = review(admin, account, 'unlink', owned_key)
+    assert plan['blockers']
+    try: execute(admin, account, 'unlink', uuid4(), plan['fingerprint'], owned_key)
+    except ValueError: pass
+    else: raise AssertionError('Unlink ignored foreign interface')
+    foreign_nic.delete()
+    plan = review(admin, account, 'unlink', owned_key)
+    assert [i['id'] for i in plan['delete']] == [unlink_owned.pk]
+    with patch('netbox_guard.provider_lifecycle.Collector.delete', side_effect=RuntimeError('rollback unlink')):
+        try: execute(admin, account, 'unlink', uuid4(), plan['fingerprint'], owned_key)
+        except RuntimeError: pass
+        else: raise AssertionError('Unlink failure did not roll back')
+    assert ProviderBinding.objects.filter(provider_key=owned_key).exists()
+    assert not ProviderDetachedResource.objects.filter(pk=owned_key).exists()
+    nonce = uuid4()
+    execute(admin, account, 'unlink', nonce, plan['fingerprint'], owned_key)
+    assert execute(admin, account, 'unlink', nonce, plan['fingerprint'], owned_key)['replayed']
+    assert not VirtualMachine.objects.filter(pk=unlink_owned.pk).exists()
+    assert ProviderDetachedResource.objects.filter(pk=owned_key).exists()
+    assert ProviderBinding.objects.filter(provider_key=other_key).exists()
+    assert VirtualMachine.objects.filter(pk=unlink_other.pk).exists()
+    assert not ProviderAccountFence.objects.filter(account=account, deleted=True).exists()
+print('Per-resource unlink: adopted preservation, owned deletion, foreign dependencies, rollback and replay OK')

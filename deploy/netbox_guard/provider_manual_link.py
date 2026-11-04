@@ -2,7 +2,7 @@
 from uuid import UUID, uuid5
 from django.conf import settings
 from django.db import connection, transaction
-from .models import ProviderInventory, ProviderInventoryImport
+from .models import ProviderInventory, ProviderInventoryImport, ProviderDetachedResource
 from .provider_policy import digest
 from .provider_reconcile import prepare
 from .provider_service import review_binding, apply_binding, _read
@@ -17,7 +17,7 @@ def review(user, account, key, object_id):
     _permission(user, 'manage_providerbinding')
     if settings.PLUGINS_CONFIG.get('netbox_guard', {}).get('selectel_native_reconcile') is not True:
         raise ValueError('PROVIDER_NATIVE_DISABLED')
-    report = prepare(user, account)
+    report = prepare(user, account, resume_key=key)
     plan = next((p for p in report['resources'] if p['key'] == key), None)
     if plan is None or plan['reason'] not in ALLOWED_REASONS:
         raise ValueError('PROVIDER_LINK_UNAVAILABLE')
@@ -29,8 +29,8 @@ def review(user, account, key, object_id):
                 identity=record.snapshot['identity'], serial=None,
                 reason='Operator confirmed association with existing inventory object',
                 evidence_digest=record.evidence_digest)
-    binding_review = review_binding(user, spec)
-    target, binding, _, _ = _read(user, spec)
+    binding_review = review_binding(user, spec, allow_detached=True)
+    target, binding, _, _ = _read(user, spec, allow_detached=True)
     if binding:
         raise ValueError('PROVIDER_BINDING_CONFLICT')
     prior_refs = (target.custom_field_data or {}).get('selectel_refs') or []
@@ -62,6 +62,7 @@ def execute(user, account, key, object_id, nonce, fingerprint):
     preview = review(user, account, key, object_id)
     if preview['fingerprint'] != fingerprint:
         raise ValueError('PROVIDER_REVIEW_STALE')
+    ProviderDetachedResource.objects.filter(pk=key, account=account).delete()
     apply_binding(user, uuid5(nonce, 'binding'), preview['spec'], preview['binding_fingerprint'])
     result = dict(operation='manual_link_v1', account=account, provider_key=key,
                   object_id=object_id, object_url=preview['object_url'], name=preview['object_name'],

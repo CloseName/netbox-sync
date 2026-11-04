@@ -14,7 +14,11 @@ def manual_page(method='GET', data=None, user=admin):
     request.user = user
     request._dont_enforce_csrf_checks = True
     return manual_link(request, account, manual_ref)
-assert manual_page(data={'q': 'Existing private host'}).status_code == 200
+search_page = manual_page(data={'q': 'Existing private host'})
+assert search_page.status_code == 200
+assert b'Provider label without candidate' in search_page.content
+assert b'Existing private host' in search_page.content
+assert b'Existing private host' not in manual_page().content
 assert manual_page(data={'object_id': manual_target.pk}).status_code == 200
 wrong_actor_token = signing.dumps(dict(actor='not-admin', account=account, key=manual_record.pk,
     object_id=manual_target.pk, nonce=str(uuid4()), fingerprint=manual_preview['fingerprint']), salt=LINK_SALT)
@@ -45,6 +49,19 @@ with patch.object(Device.objects, 'restrict', return_value=Device.objects.none()
     assert not any(n['source'] == 'netbox' for n in hidden_graph['nodes'])
 other_manual_record = insert_resource('dedicated', 'manual-link-conflict', 'Another provider label')
 rejected(lambda: link_review(admin, account, other_manual_record.pk, manual_target.pk), (ValueError,))
+manual_ref = hashlib.sha256(other_manual_record.pk.encode()).hexdigest()
+assert b'Renamed private host' not in manual_page(data={'q': 'Renamed private host'}).content
+# Explicit relinking may resume a detached resource; normal collection stays blocked.
+from netbox_guard.models import ProviderDetachedResource
+ProviderDetachedResource.objects.create(provider_key=other_manual_record.pk, account=account)
+assert next(p for p in native_prepare(admin, account)['resources'] if p['key'] == other_manual_record.pk)['reason'] == 'operator_detached'
+replacement_target = Device.objects.create(name='Replacement private host', site=site, device_type=dtype, role=role)
+resume = link_review(admin, account, other_manual_record.pk, replacement_target.pk)
+with patch('netbox_guard.provider_manual_link.apply_binding', side_effect=ValueError('rollback fixture')):
+    rejected(lambda: link_execute(admin, account, other_manual_record.pk, replacement_target.pk, uuid4(), resume['fingerprint']), (ValueError,))
+assert ProviderDetachedResource.objects.filter(pk=other_manual_record.pk).exists()
+link_execute(admin, account, other_manual_record.pk, replacement_target.pk, uuid4(), resume['fingerprint'])
+assert not ProviderDetachedResource.objects.filter(pk=other_manual_record.pk).exists()
 manual_vm = insert_resource('cloud_vm', 'manual-link-stale', 'Stale provider VM', age=3)
 rejected(lambda: link_review(admin, account, manual_vm.pk, cloud_vm.pk), (ValueError,))
 print('Manual association preserves native object ownership; stale, permission, conflict, rollback and replay checks OK')
