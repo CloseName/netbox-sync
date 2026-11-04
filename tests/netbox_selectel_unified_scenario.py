@@ -81,11 +81,13 @@ with override_settings(PLUGINS_CONFIG=config):
     original_site, site_count = device.site_id, Site.objects.count()
     update_document = dict(schema='selectel-audit-v1', account_verified=True, account=account,
         finished_at=timezone.now().isoformat(), datasets=[
-            dict(service='dedicated', kind='resources', status='collected', project='project-a', region='',
-                 items=[dict(uuid=ident['native_id'], user_desc=device.name, location_uuid='different-location')]),
+            dict(service='dedicated', kind='resources', status='collected', project='', region='',
+                 items=[dict(uuid=ident['native_id'], project_uuid='project-a', user_desc=device.name,
+                             location_uuid='different-location')]),
             dict(service='dedicated', kind='locations', status='collected', project='', region='',
                  items=[dict(uuid='different-location', name='Different Site')])])
     preview = review_inventory(admin, update_document, 'c'*64)
+    assert preview['bound_count'] == 1
     apply_inventory(admin, uuid4(), update_document, 'c'*64, preview['fingerprint'])
     device.refresh_from_db()
     assert device.site_id == original_site and Site.objects.count() == site_count
