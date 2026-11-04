@@ -138,7 +138,9 @@ def apply_inventory(user, nonce, document, evidence_digest, fingerprint):
             continue
         if settings.PLUGINS_CONFIG.get('netbox_guard', {}).get('selectel_native_reconcile') is True:
             from .provider_placement import resolve
-            site = resolve(user, snapshot, old.snapshot if old else None)
+            # Existing placement is operator-maintained. Only fill an empty
+            # Site; new cards receive their placement during native creation.
+            site = resolve(user, snapshot, old.snapshot if old else None) if obj.site_id is None else None
             pending = None
             if site is not None:
                 from django.core.exceptions import ValidationError

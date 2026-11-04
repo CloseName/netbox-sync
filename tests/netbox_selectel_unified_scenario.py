@@ -1,5 +1,6 @@
 """Native regression: allocation primary/search/layout, tenancy and routing IPAM."""
 from django.db import transaction
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.test import RequestFactory
 from django.template.response import TemplateResponse
@@ -26,6 +27,7 @@ def apply_components(*args):
     return components_apply(*args)
 
 with override_settings(PLUGINS_CONFIG=config):
+    unprivileged = get_user_model().objects.create(username='unified-reader-' + uuid4().hex)
     account = '987654330'
     ident = dict(account=account, kind='dedicated', native_id=str(uuid4()), project='project-a', region='')
     def section(value): return dict(status='collected', data=value)
@@ -64,12 +66,29 @@ with override_settings(PLUGINS_CONFIG=config):
     rendered = panels[1].get_context({'object': device, 'request': request})
     assert len(rendered['provider_addresses']) == 3
     assert sum(r['primary'] for r in rendered['provider_addresses']) == 1
+    assert '94.26.228.212' in panels[1].render({'object': device, 'request': request})
+    assert 'Xeon' in panels[2].render({'object': device, 'request': request})
     manual = Tenant.objects.create(name='Keep manual', slug='keep-manual-unified')
     device.tenant = manual
     device.save(update_fields=['tenant'])
     apply_components(admin, binding, device, snapshot)
     device.refresh_from_db()
     assert device.tenant_id == manual.pk
+
+    # Fresh provider location evidence must not move an existing Device.
+    from netbox_guard.inventory_service import review_inventory, apply_inventory
+    from dcim.models import Site
+    original_site, site_count = device.site_id, Site.objects.count()
+    update_document = dict(schema='selectel-audit-v1', account_verified=True, account=account,
+        finished_at=timezone.now().isoformat(), datasets=[
+            dict(service='dedicated', kind='resources', status='collected', project='project-a', region='',
+                 items=[dict(uuid=ident['native_id'], user_desc=device.name, location_uuid='different-location')]),
+            dict(service='dedicated', kind='locations', status='collected', project='', region='',
+                 items=[dict(uuid='different-location', name='Different Site')])])
+    preview = review_inventory(admin, update_document, 'c'*64)
+    apply_inventory(admin, uuid4(), update_document, 'c'*64, preview['fingerprint'])
+    device.refresh_from_db()
+    assert device.site_id == original_site and Site.objects.count() == site_count
 
     timestamp = timezone.now().isoformat()
     document = make_registry(dict(account=account, finished_at=timestamp,
