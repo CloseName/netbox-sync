@@ -38,8 +38,9 @@ with override_settings(PLUGINS_CONFIG=config):
         'hardware': section(dict(cpu=[dict(name='Xeon', count=1)], disk=[dict(name='6 TB HDD', count=2)]))})
     record = ProviderInventory.objects.create(provider_key=identity(ident, 'device'), account=account,
         snapshot=snapshot, evidence_digest='b'*64, observed_at=timezone.now())
-    plan = native_prepare(admin, account)
-    native_apply(admin, account, uuid4(), plan['fingerprint'])
+    from netbox_guard.provider_first_creation import review as creation_review, execute as creation_execute
+    plan = creation_review(admin, account, record.pk)
+    creation_execute(admin, account, record.pk, uuid4(), plan['fingerprint'])
     binding = ProviderBinding.objects.get(provider_key=record.pk)
     device = Device.objects.get(pk=binding.object_id)
     result = apply_components(admin, binding, device, snapshot)

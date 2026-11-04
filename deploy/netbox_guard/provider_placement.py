@@ -52,14 +52,9 @@ def resolve(user, snapshot, previous=None, *, allow_updates=True):
                 create_native(user, result)
                 ProviderCreatedObject.objects.create(account=account,model_label=model._meta.label_lower,
                     object_id=result.pk,object_created=result.created,provider_key=marker)
-        changed = []  # Existing placement and manually maintained region are preserved.
-        if changed:
-            if not allow_updates:
-                raise ValueError('PROVIDER_PLACEMENT_REVIEW_REQUIRED')
-            if not user.has_perm(f'{model._meta.app_label}.change_{model._meta.model_name}',result):
-                raise DependencyGuardBlocked('PERMISSION_DENIED')
-            for field in changed: setattr(result,field,values[field])
-            checked(result, 'full_clean'); checked(result, 'save', update_fields=changed+['last_updated'])
+        # Reusing an owned Site still requires visibility; no placement edits.
+        if not user.has_perm(f'{model._meta.app_label}.view_{model._meta.model_name}', result):
+            raise DependencyGuardBlocked('PERMISSION_DENIED')
         return result
     legacy_label = label
     if isinstance(previous, dict) and previous.get('identity', {}).get('region', '') == region_id:

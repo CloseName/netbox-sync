@@ -11,7 +11,7 @@ class Rows(list):
         return bool(self)
 
 
-@pytest.mark.parametrize('case', ['exact', 'renamed', 'foreign_proof', 'hidden', 'nested'])
+@pytest.mark.parametrize('case', ['exact', 'renamed', 'foreign_proof', 'hidden', 'nested', 'owned_hidden'])
 def test_legacy_placement_is_read_only_and_scoped(case):
     class Region:
         _meta = NS(label_lower='dcim.region', app_label='dcim', model_name='region')
@@ -26,6 +26,8 @@ def test_legacy_placement_is_read_only_and_scoped(case):
     Region.objects = NS(filter=lambda **kw: Rows([region]))
     Site.objects = NS(filter=lambda **kw: Rows([site]))
     def proofs(**kw):
+        if case == 'owned_hidden':
+            return Rows([NS(object_id=site.pk, object_created=site.created)])
         return Rows([NS(account='456')]) if case == 'foreign_proof' and 'account' not in kw else Rows()
     def no_write(*args, **kw):
         raise AssertionError('Legacy placement must not be created, saved or claimed')
@@ -35,7 +37,7 @@ def test_legacy_placement_is_read_only_and_scoped(case):
         checked=no_write, DependencyGuardBlocked=Denied,
         ProviderCreatedObject=NS(objects=NS(filter=proofs, create=no_write)))
     resolve = function('provider_placement.py', 'resolve', namespace)
-    user = NS(has_perm=lambda *args: case != 'hidden')
+    user = NS(has_perm=lambda *args: case not in ('hidden', 'owned_hidden'))
     snapshot = dict(identity=dict(account='123', region='r'), sections={
         'placement':dict(status='collected',data=dict(uuid='location',name='Site'))})
     if case in ('exact', 'renamed', 'nested'):
