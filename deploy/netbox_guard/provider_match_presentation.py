@@ -33,7 +33,8 @@ def explain(plan):
             reasons.append('Совпал публичный IP: ' + ', '.join(evidence['public_ips']))
         if evidence.get('observed_guest_wans'):
             reasons.append('Адрес Selectel найден на WAN гостевой pfSense с известным хостом')
-        candidates.append(dict(name=candidate['name'], url=candidate['url'], reasons=reasons))
+        candidates.append(dict(name=candidate['name'], url=candidate['url'], reasons=reasons,
+                               resource=candidate.get('resource'), id=candidate.get('id')))
     return dict(reason=REASONS.get(plan.get('reason'), 'Причина сопоставления требует дополнительной проверки.'),
                 candidates=candidates,
                 private_scope_unverified=bool(plan.get('ignored_address_matches')),

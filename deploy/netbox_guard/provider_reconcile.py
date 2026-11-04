@@ -51,7 +51,7 @@ def _permission_all(user):
     check_schema()
 
 
-def prepare(user, account):
+def prepare(user, account, *, resume_key=None):
     _permission_all(user)
     if ProviderAccountFence.objects.filter(account=account, deleted=True).exists():
         raise ValueError('PROVIDER_ACCOUNT_DELETED')
@@ -202,7 +202,7 @@ def prepare(user, account):
                     or section.get('status') != 'collected' or section.get('retained')):
                 plan.update(action='blocked', reason='fresh_inventory_required')
         plans.append(plan)
-        if record.provider_key in detached:
+        if record.provider_key in detached and record.provider_key != resume_key:
             plan.update(action='detached', reason='operator_detached')
     # Two resources must never adopt the same target or hardware identity in one run.
     for plan in plans:
@@ -219,7 +219,8 @@ def prepare(user, account):
     state = {'records': [(r.pk, r.evidence_digest, r.snapshot) for r in records],
              'native': [(kind, o.pk, str(o.last_updated), str(o.created)) for kind, o in targets],
              'bindings': [(b.provider_key, b.resource, b.object_id, str(b.object_created), b.revision) for b in bindings.values()],
-             'addresses': {k: sorted(v) for k, v in address_targets.items()}, 'plans': plans}
+             'addresses': {k: sorted(v) for k, v in address_targets.items()}, 'plans': plans,
+             'detached': sorted(detached), 'resume_key': resume_key}
     return {'account': account, 'fingerprint': digest(state), 'resources': plans, 'writes_performed': False}
 
 

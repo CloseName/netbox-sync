@@ -1,0 +1,16 @@
+{% extends 'base/layout.html' %}
+{% block title %}Selectel — удалить сопоставление{% endblock %}
+{% block content %}
+<h1>Удалить сопоставление</h1>
+<p>Ресурс Selectel: <strong>{{ source.name }}</strong> · Аккаунт {{ account }} · UUID {{ source.native_id }}</p>
+<p><a href="{{ back_url }}">Вернуться к сведениям ресурса</a></p>
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+{% if result %}<div class="alert alert-success">Сопоставление удалено.{% if result.replayed %} Показан результат уже выполненной операции.{% endif %}</div>
+{% elif plan %}
+{% for item in plan.delete %}<p>Будет удалена созданная Selectel карточка <a href="{{ item.url }}">{{ item.name }}</a>.</p>{% endfor %}
+{% for item in plan.retain %}<p>Существующая карточка <a href="{{ item.url }}">{{ item.name }}</a> сохранится; сведения и привязка Selectel будут отсоединены.</p>{% endfor %}
+<p>Сам ресурс у провайдера не удаляется. Следующие сборы не восстановят эту связь автоматически. При необходимости можно снова вручную связать ресурс с существующей карточкой.</p>
+{% if plan.blockers %}<div class="alert alert-warning">Удаление сопоставления заблокировано зависимостями: требуется проверить сетевые связи или использование карточки другими источниками.</div>
+{% else %}<form method="post">{% csrf_token %}<input type="hidden" name="review_token" value="{{ review_token }}"><label><input type="checkbox" name="confirm_unlink" value="yes" required> Подтверждаю перечисленные изменения.</label><button class="btn btn-danger" type="submit">Удалить сопоставление</button></form>{% endif %}
+{% endif %}
+{% endblock %}

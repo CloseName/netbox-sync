@@ -26,7 +26,7 @@ def _access(user, obj, action):
 def _spec(account, operation, key):
     if not isinstance(account, str) or not re.fullmatch('[0-9]{1,20}', account):
         raise ValueError('PROVIDER_ACCOUNT_INVALID')
-    if operation not in ('detach', 'delete', 'activate', 'baseline') or (operation in ('detach', 'baseline') and not isinstance(key, str)):
+    if operation not in ('detach', 'unlink', 'delete', 'activate', 'baseline') or (operation in ('detach', 'unlink', 'baseline') and not isinstance(key, str)):
         raise ValueError('PROVIDER_REQUEST_INVALID')
     if operation == 'activate' and key is not None:
         raise ValueError('PROVIDER_REQUEST_INVALID')
@@ -59,11 +59,16 @@ def _prepare(user, account, operation, key):
         return {'fingerprint':_digest([account,'activate',deleted,epoch]),'account':account,'operation':operation,
                 'key':None,'delete':[],'retain':[],'blockers':[],'writes_performed':False}, []
     bindings = list(ProviderBinding.objects.filter(account=account).order_by('pk'))
-    if operation == 'detach':
+    if operation in ('detach', 'unlink'):
         bindings = [b for b in bindings if b.provider_key == key]
         if len(bindings) != 1:
             raise ValueError('PROVIDER_BINDING_REQUIRED')
     owned = list(ProviderCreatedObject.objects.filter(account=account)) if operation == 'delete' else []
+    if operation == 'unlink':
+        binding = bindings[0]
+        owned = list(ProviderCreatedObject.objects.filter(account=account,
+            model_label=TARGETS[binding.resource], object_id=binding.object_id,
+            object_created=binding.object_created))
     from .provider_cleanup import network_plan, legacy_cards
     removed, retained, blockers, evidence = [], [], [], []
     cleanup = None
@@ -184,14 +189,14 @@ def execute(user, account, operation, nonce, fingerprint, key=None):
             ProviderAccountFence.objects.update_or_create(account=account,defaults={'deleted':True})
             release_network(plan['cleanup'])
         for binding in bindings:
-            if operation == 'detach':
+            if operation in ('detach', 'unlink'):
                 ProviderDetachedResource.objects.update_or_create(provider_key=binding.provider_key,defaults={'account':account})
                 ProviderCreatedObject.objects.filter(model_label=TARGETS[binding.resource],object_id=binding.object_id,
                                                     object_created=binding.object_created).delete()
             _release(binding)
         if operation == 'activate':
             ProviderAccountFence.objects.update_or_create(account=account,defaults={'deleted':False})
-        if operation == 'delete':
+        if operation in ('delete', 'unlink'):
             for item in plan['delete']:
                 obj=apps.get_model(item['model']).objects.get(pk=item['id'])
                 collector=Collector(using=connection.alias)
@@ -204,6 +209,7 @@ def execute(user, account, operation, nonce, fingerprint, key=None):
                 if actual != {(item['model'],item['id'])} or updates or any(q.exists() for q in collector.fast_deletes):
                     raise ValueError('PROVIDER_UNOWNED_CASCADE_BLOCKED')
                 collector.delete()
+        if operation == 'delete':
             ProviderCreatedObject.objects.filter(account=account).delete()
             ProviderDetachedResource.objects.filter(account=account).delete()
             ProviderInventory.objects.filter(account=account).delete()
