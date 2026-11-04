@@ -66,3 +66,12 @@ def test_unified_hardware_host_priority_and_physical_disks():
     assert hardware({'cpu_model': 'Standalone'})['fields'] == [('Процессор', 'Standalone')]
     assert hardware({}) is None
     assert hardware({'physical_disks': [{'name': 'datastore', 'size_bytes': 123}]}) is None
+
+
+def test_explicit_configuration_is_split_without_inventing_dimm_count():
+    hardware = importlib.import_module(package.__name__ + '.hardware_display').panel
+    result = hardware({'selectel_inventory': {'sections': {'hardware': {'data': {
+        'config_name': 'AMD Ryzen 7 3700X: 8 x 3.6GHz, 32 GB DDR4 non-ECC, 2 x 500 GB SSD NVMe M.2'}}}}})
+    assert dict(result['fields'])['Установленная память'] == '32 GB DDR4 non-ECC'
+    assert result['disks'] == [dict(count=2, capacity='500 GB', kind='SSD')]
+    assert 'Конфигурация Selectel' not in dict(result['fields'])

@@ -18,8 +18,11 @@ def resolve(user, identity):
                 raise DependencyGuardBlocked('PERMISSION_DENIED')
             return result
         result = create_native(user, model(slug=slug, **fields))
-        ProviderCreatedObject.objects.create(account=account, model_label=model._meta.label_lower,
-            object_id=result.pk, object_created=result.created, provider_key='tenancy:' + digest(key))
+        # The shared Selectel root outlives any one account. Child groups and
+        # tenants retain provenance and are removed only when unused.
+        if key != ['selectel']:
+            ProviderCreatedObject.objects.create(account=account, model_label=model._meta.label_lower,
+                object_id=result.pk, object_created=result.created, provider_key='tenancy:' + digest(key))
         return result
     root = ensure(TenantGroup, ['selectel'], dict(name='Selectel'))
     group = ensure(TenantGroup, ['selectel', account], dict(name='Аккаунт ' + account, parent=root))

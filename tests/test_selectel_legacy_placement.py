@@ -38,7 +38,7 @@ def test_legacy_placement_is_read_only_and_scoped(case):
     user = NS(has_perm=lambda *args: case != 'hidden')
     snapshot = dict(identity=dict(account='123', region='r'), sections={
         'placement':dict(status='collected',data=dict(uuid='location',name='Site'))})
-    if case == 'exact':
+    if case in ('exact', 'renamed', 'nested'):
         assert resolve(user, snapshot) is site
         assert resolve(user, snapshot) is site
     else:
