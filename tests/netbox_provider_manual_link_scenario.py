@@ -39,6 +39,10 @@ assert not ProviderCreatedObject.objects.filter(model_label='dcim.device', objec
 assert next(p for p in native_prepare(admin, account)['resources'] if p['key'] == manual_record.pk)['reason'] == 'existing_binding'
 from netbox_guard.provider_resource_graph import document as resource_graph
 assert any(e['source'] == manual_record.pk and e['kind'] == 'bound_to' for e in resource_graph(admin, account)['edges'])
+with patch.object(Device.objects, 'restrict', return_value=Device.objects.none()), patch.object(VirtualMachine.objects, 'restrict', return_value=VirtualMachine.objects.none()):
+    hidden_graph = resource_graph(admin, account)
+    assert not any(e['kind'] == 'bound_to' for e in hidden_graph['edges'])
+    assert not any(n['source'] == 'netbox' for n in hidden_graph['nodes'])
 other_manual_record = insert_resource('dedicated', 'manual-link-conflict', 'Another provider label')
 rejected(lambda: link_review(admin, account, other_manual_record.pk, manual_target.pk), (ValueError,))
 manual_vm = insert_resource('cloud_vm', 'manual-link-stale', 'Stale provider VM', age=3)

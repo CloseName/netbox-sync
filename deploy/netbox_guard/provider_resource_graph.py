@@ -33,6 +33,7 @@ def document(user, account):
     nodes = {row['key']: dict(id=row['key'], kind=row['kind'], name=row['name'], source='selectel',
                 account=account, observed_at=row.get('last_seen'), state=evidence_state(row),
                 project=row.get('project', json.loads(row['key'])[2]), region=row.get('region', ''),
+                external_id=row['native_id'] if 'native_id' in row else json.loads(row['key'])[6],
                 sections=row.get('sections', {})) for row in rows}
     edges = [dict(source=e['source'], target=e['target'], kind=e['relation'],
                   evidence_source='selectel', observed_at=e.get('last_seen'),
