@@ -5,7 +5,9 @@ from urllib.parse import urlencode
 
 LABELS = {'dedicated': 'Выделенные серверы', 'cloud_vm': 'Облачные серверы',
           'dns_zone': 'DNS-зоны', 'dns_rrset': 'DNS-записи',
-          'storage_container': 'Бакеты S3 / Swift', 'storage_domain': 'Домены бакетов'}
+          'storage_container': 'Бакеты S3 / Swift', 'storage_domain': 'Домены бакетов',
+          'global_router': 'Глобальный роутинг', 'routing_network': 'Сети роутера',
+          'routing_subnet': 'Подсети роутера', 'routing_route': 'Статические маршруты'}
 
 
 def build_tree(resources, servers=(), revision=None):

@@ -5,6 +5,9 @@ import re
 from datetime import datetime
 
 KINDS = {'account', 'project', 'dns_zone', 'dns_rrset', 'storage_container', 'storage_domain'}
+ROUTING = {'global_router': 'routers', 'routing_network': 'networks',
+           'routing_subnet': 'subnets', 'routing_route': 'static_routes'}
+KINDS.update(ROUTING)
 FIELDS = {
     'zones': {'id', 'name', 'status', 'project_id'},
     'rrsets': {'id', 'name', 'ttl', 'type', 'zone_id', 'managed_by', 'records'},
@@ -15,9 +18,14 @@ FIELDS = {
     'quota': {'max_bytes_used', 'max_object_count'},
     'web': {'error', 'error_status_code', 'index', 'listing_css', 'listing_enabled'},
     'records': {'content', 'disabled'},
+    'routers': {'id', 'name', 'status', 'enabled', 'account_id', 'project_id', 'created_at', 'updated_at', 'tags', 'vpn_id'},
+    'networks': {'id', 'name', 'status', 'account_id', 'project_id', 'router_id', 'zone_id', 'zone_name', 'zone_service', 'vlan', 'inner_vlan', 'vdc_name', 'os_network_id', 'created_at', 'updated_at', 'tags'},
+    'subnets': {'id', 'name', 'status', 'account_id', 'project_id', 'network_id', 'cidr', 'gateway', 'service_addresses', 'os_subnet_id', 'created_at', 'updated_at', 'tags'},
+    'static_routes': {'id', 'name', 'status', 'account_id', 'project_id', 'router_id', 'subnet_id', 'cidr', 'next_hop', 'created_at', 'updated_at', 'tags'},
 }
 SECTIONS = {'account': set(), 'project': set(), 'dns_zone': {'zones'}, 'dns_rrset': {'rrsets'},
             'storage_container': {'buckets', 'container_options', 'container_domains'}, 'storage_domain': set()}
+SECTIONS.update({kind: {section} for kind, section in ROUTING.items()})
 
 
 def require(value, code='PROVIDER_REGISTRY_INVALID'):
@@ -58,6 +66,8 @@ def identity(value, account):
     require(value == json.dumps(parts, ensure_ascii=False, separators=(',', ':')))
     if parts[4] == 'account':
         require(parts[2:4] == ['', ''] and parts[5:] == ['', ''])
+    elif parts[4] in ROUTING:
+        require(bool(parts[6]) and parts[3] == parts[5] == '')
     else:
         require(bool(parts[2]) and bool(parts[6]))
         if parts[4] == 'project':
@@ -92,6 +102,10 @@ def normalize(document):
             require(isinstance(status, str) and re.fullmatch('[A-Za-z0-9_]{1,100}', status))
             require(section not in sections, 'PROVIDER_REGISTRY_CONFLICT')
             data = allowed(obs.get('data'), section)
+            if parts[4] in ROUTING:
+                require(isinstance(data, dict) and data.get('id') == parts[6])
+                require(data.get('account_id') in (None, account))
+                require((data.get('project_id') or '') == parts[2])
             if status == 'collected' and section in ('zones', 'rrsets', 'buckets'):
                 require(isinstance(data, dict))
                 require(data.get('name' if section == 'buckets' else 'id') == parts[6])
@@ -115,6 +129,11 @@ def normalize(document):
             (a[4] == 'dns_zone' and b[4] == 'dns_rrset' and a[2:4] == b[2:4] and a[6] == b[5]))) or (
             relation == 'custom_domain' and a[4] == 'storage_container' and b[4] == 'storage_domain'
             and a[2:4] == b[2:4] and a[6] == b[5])
+        if relation == 'contains' and b[4] in ROUTING:
+            data = nodes[dst]['sections'][ROUTING[b[4]]]['data']
+            valid = ((a[4], b[4]) == ('account', 'global_router') or
+                     (a[4] == 'global_router' and b[4] in ('routing_network', 'routing_route') and data.get('router_id') == a[6]) or
+                     ((a[4], b[4]) == ('routing_network', 'routing_subnet') and data.get('network_id') == a[6]))
         require(valid, 'PROVIDER_REGISTRY_RELATION_INVALID')
         ek = json.dumps([src, dst, relation], separators=(',', ':'))
         edges[ek] = {'source': src, 'target': dst, 'relation': relation}

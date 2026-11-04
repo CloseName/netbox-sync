@@ -27,6 +27,11 @@ not proof that today's checkout or deployment passes those checks.
 
 ## Contracts by subject
 
+- [Целевая модель инфраструктуры](infrastructure-target-model.md): согласованные
+  сущности, сопоставление, поля, IP, глобальный роутинг и порядок тестовой приёмки.
+  [Таблица полей и владения](infrastructure-field-mapping.md) уточняет источники
+  значений и поведение при удалении аккаунта.
+
 - Identity and ownership: [hardware identity](hardware-identity.md),
   [host registration](host-identity-registration.md),
   [conflicts and recovery](inventory-conflicts-and-source-recovery.md).

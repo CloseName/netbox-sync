@@ -13,7 +13,7 @@ from .models import ProviderResourceRegistry, ProviderInventory, ProviderBinding
 from .resource_tree import build_tree
 from .resource_presentation import decorate
 
-CATEGORIES = ('dedicated', 'cloud_vm', 'storage_container', 'dns_zone')
+CATEGORIES = ('dedicated', 'cloud_vm', 'storage_container', 'dns_zone', 'global_router')
 
 
 @login_required
@@ -55,6 +55,8 @@ def registry(request, account=None):
         row['href'] = row['detail_href']
         binding = bindings.get(row['key'])
         row['binding_exists'] = binding is not None
+        if row.get('server') and not binding and request.user.has_perm('netbox_guard.manage_providerbinding'):
+            row['link_href'] = reverse('plugins:netbox_guard:provider_manual_link', kwargs={'account': account, 'ref': row['ref']})
         if row['kind'] == 'dedicated' and not binding and request.user.has_perm('netbox_guard.manage_providerbinding'):
             row['creation_href'] = reverse('plugins:netbox_guard:provider_first_creation', kwargs={'account': account, 'ref': row['ref']})
         if binding:
@@ -66,6 +68,17 @@ def registry(request, account=None):
             selected = row
     if request.GET.get('resource') and selected is None:
         raise Http404
+    if selected and selected.get('server') and not selected.get('native') and request.user.has_perm('netbox_guard.manage_providerbinding'):
+        from .provider_reconcile import prepare
+        from .provider_match_presentation import explain
+        from .dependencies import DependencyGuardBlocked
+        try:
+            report = prepare(request.user, account)
+            plan = next((p for p in report['resources'] if p['key'] == selected['key']), None)
+            if plan:
+                selected['matching'] = explain(plan)
+        except (ValueError, DependencyGuardBlocked):
+            selected['matching_unavailable'] = True
     # DNS records are nested under their zone; domains under their bucket.
     children = []
     if selected:
@@ -80,4 +93,20 @@ def registry(request, account=None):
         selected=selected, children=children,
         page=Paginator(sorted(filtered, key=lambda r: (r['name'].casefold(), r['key'])), 50).get_page(request.GET.get('page')),
         page_query=urlencode({'project': project, 'kind': kind, 'q': q}))
+    from . import routing_presentation
+    if kind in routing_presentation.KINDS or (selected and selected.get('routing')):
+        context['routing_coverage'] = routing_presentation.coverage(snapshot)
+        if selected:
+            context['routing_components'] = routing_presentation.components(selected, rows, snapshot['relations'].values())
+        else:
+            attached = set()
+            for router in (r for r in rows if r['kind'] == 'global_router'):
+                attached.update(r['key'] for r in routing_presentation.components(router, rows, snapshot['relations'].values()))
+            context['routing_unlinked'] = [r for r in rows if r.get('routing') and r['kind'] != 'global_router'
+                                          and r['key'] not in attached and (not project or r['project'] == project)]
+    if not any(c.get('service') == 'global-router' and c.get('kind') == 'routers' and c.get('status') == 'collected'
+               for c in snapshot.get('coverage', [])):
+        for tab in tabs:
+            if tab['kind'] == 'global_router' and tab['count'] == 0:
+                tab['count'] = '—'
     return render(request, 'netbox_guard/resource_registry.html', context)

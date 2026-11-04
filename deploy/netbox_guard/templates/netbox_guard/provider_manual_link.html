@@ -1,0 +1,21 @@
+{% extends 'base/layout.html' %}
+{% block title %}Selectel — связь с существующей карточкой{% endblock %}
+{% block content %}
+<p><a href="{{ back_url }}">Ресурсы Selectel / {{ account }}</a></p>
+<h1>Связать с существующей карточкой</h1>
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+{% if result %}
+<div class="alert alert-success">Ресурс связан с <a href="{{ result.object_url }}">{{ result.name }}</a>.{% if result.replayed %} Показан результат уже выполненной операции.{% endif %}</div>
+{% elif preview %}
+<dl><dt>Ресурс Selectel</dt><dd>{{ preview.name }}</dd><dt>Существующая карточка NetBox</dt><dd><a href="{{ preview.object_url }}">{{ preview.object_name }}</a> — {{ preview.resource }} #{{ preview.object_id }}</dd></dl>
+<p>Сохраняется привязка к UUID Selectel для следующих сборов. Карточка остаётся ранее существовавшей: удаление аккаунта отсоединит сведения Selectel, но сохранит её. Эта операция не меняет имя, размещение и назначения IP.</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="review_token" value="{{ review_token }}">
+<label><input type="checkbox" name="confirm_same" value="yes" required> Я проверил сведения: это один и тот же сервер.</label>
+<button class="btn btn-primary" type="submit">Связать карточку</button></form>
+{% else %}
+<p>Выберите {% if resource == 'device' %}физический сервер (Device){% else %}виртуальную машину{% endif %}. Можно найти карточку, даже если автоматический поиск не предложил кандидатов.</p>
+<form method="get"><input name="q" value="{{ q }}" placeholder="Название в NetBox"><button class="btn btn-primary" type="submit">Найти</button></form>
+<p>Показаны первые 50 доступных карточек. Уточните название для поиска.</p>
+<ul>{% for target in targets %}<li><a href="?object_id={{ target.pk }}">{{ target.name }} — #{{ target.pk }}</a></li>{% empty %}<li>Карточки не найдены.</li>{% endfor %}</ul>
+{% endif %}
+{% endblock %}

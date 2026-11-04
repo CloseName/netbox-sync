@@ -10,6 +10,7 @@
 {% elif preview %}
 <dl><dt>Ресурс Selectel</dt><dd>{{ preview.name }}</dd><dt>UUID ресурса</dt><dd>{{ preview.native_id }}</dd><dt>Площадка / регион</dt><dd>{{ preview.location|default:'Не получена' }} / {{ preview.region|default:'Не указан' }}</dd></dl>
 <p>{{ reason }}</p>
+<p><a class="btn btn-outline-primary" href="{{ link_url }}">Связать с существующей карточкой</a></p>
 {% if preview.candidates %}<ul>{% for candidate in preview.candidates %}<li><a href="{{ candidate.url }}">{{ candidate.name }}</a> — {{ candidate.resource }} #{{ candidate.id }}</li>{% endfor %}</ul>{% endif %}
 {% if preview.eligible %}
 <p>Будет создана одна карточка «{{ preview.native_name }}» с привязкой к аккаунту {{ account }} и UUID Selectel. Серийный номер останется пустым. Сведения провайдера будут сохранены; IP, существующие карточки и их привязки останутся прежними.</p>

@@ -74,3 +74,30 @@ with tempfile.TemporaryDirectory() as directory:
     call_command('provider_project_names', input=str(audit_path), account='123', actor=admin.username)
     assert ProviderResourceRegistry.objects.get(pk='123').revision == 3
     assert registry_prepare(admin, registry_new)[3]['changes'] == 0
+
+# Global Router cards render through the same stored registry without native Devices.
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tools.selectel_audit.resource_registry import registry as audit_registry
+routing_document = audit_registry(dict(account='123', finished_at='2026-11-04T10:00:00Z',
+    datasets=[dict(service='global-router', kind='routers', status='collected',
+                   items=[dict(id='router-fixture', name='Routing fixture')]),
+              dict(service='global-router', kind='networks', status='collected',
+                   items=[dict(id='network-fixture', name='Routing network', router_id='router-fixture', vlan=100)])],
+    coverage=[dict(service='global-router', kind='routers', status='collected')]))
+routing_preview = registry_prepare(admin, routing_document)[3]
+registry_apply(admin, uuid4(), routing_document, routing_preview['fingerprint'])
+routing_rows, _ = build_tree(ProviderResourceRegistry.objects.get(pk='123').snapshot['resources'].values())
+router_row = next(r for r in routing_rows if r['kind'] == 'global_router')
+request = RequestFactory().get('/providers/123/', {'kind': 'global_router', 'resource': router_row['ref']})
+request.user = admin
+response = registry_view(request, '123')
+assert response.status_code == 200 and b'Routing network' in response.content
+assert b'NOT_REPORTED' in response.content and b'VLAN' in response.content
+assert list(Device.objects.order_by('pk').values()) == native_before
+from netbox_guard.provider_resource_graph import document as resource_graph
+graph = resource_graph(admin, '123')
+assert graph['schema'] == 'netbox-sync.provider-resources.v1' and not graph['writes_performed']
+assert any(n['kind'] == 'global_router' for n in graph['nodes'])
+assert any(e['kind'] == 'contains' and 'routing_network' in e['target'] for e in graph['edges'])
+rejected(lambda: resource_graph(unprivileged, '123'), (PermissionDenied,))
