@@ -110,6 +110,10 @@ def _prepare(user, account, operation, key):
         _access(user,obj,'view'); _access(user,obj,'delete')
         if obj.created != proof.object_created:
             blockers.append({'reason':'creation_identity_changed','model':proof.model_label,'id':obj.pk}); continue
+        if getattr(proof, 'projection_values', None):
+            from .provider_components import values
+            if values(obj, proof.projection_values) != proof.projection_values:
+                blockers.append({'reason':'binding_target_changed','model':proof.model_label,'id':obj.pk}); continue
         item = {'model':proof.model_label,'id':obj.pk,'name':str(obj),'url':obj.get_absolute_url()}
         evidence.append((proof.pk,_digest({f.attname:getattr(obj,f.attname) for f in obj._meta.concrete_fields})))
         foreign = bool((getattr(obj,'custom_field_data',None) or {}).get('sync_identities'))
@@ -133,7 +137,8 @@ def _prepare(user, account, operation, key):
                         or (dependent._meta.label_lower,dependent.pk) in retained_catalog):
                     foreign = True
         if foreign:
-            if proof.model_label in TARGETS.values() or proof.model_label.startswith('ipam.'):
+            if (proof.model_label in TARGETS.values() or proof.model_label.startswith('ipam.')) and not (
+                    operation == 'unlink' and proof.model_label in ('ipam.vrf', 'ipam.prefix')):
                 blockers.append({**item,'reason':'foreign_dependencies_or_sync_source'})
             else:
                 retained.append({**item,'reason':'shared_catalog_object'})

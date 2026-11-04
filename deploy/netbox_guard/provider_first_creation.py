@@ -87,6 +87,8 @@ def execute(user, account, key, nonce, fingerprint):
     claims['custom_fields.selectel_inventory'] = {**record.snapshot, 'native_fields': ['name', 'site_id']}
     _write_claims(target, binding, before, claims, actor, uuid5(nonce, 'projection'),
                   request_digest, record.evidence_digest, spec['reason'])
+    from .provider_components import apply as apply_components
+    apply_components(user, binding, target, record.snapshot)
     result = dict(operation='first_creation_v1', account=account, provider_key=key,
                   object_id=target.pk, object_url=target.get_absolute_url(), name=target.name,
                   writes_performed=True, replayed=False)

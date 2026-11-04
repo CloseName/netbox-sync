@@ -210,8 +210,9 @@ def _write_host(nb_api, context, targets, operations, counts):
     current_device = nb_api.dcim.devices.get(device.id)
 
     current_primary = operations.object_id(current_device.serialize().get("primary_ip4"))
+    from .selectel_authority import primary_owned
 
-    if current_primary != primary_ip.id:
+    if current_primary != primary_ip.id and not primary_owned(current_device):
         current_device.update(
             {
                 "primary_ip4": primary_ip.id,

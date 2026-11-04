@@ -2,9 +2,11 @@
 from ipaddress import ip_address, ip_interface, ip_network
 from django.contrib.contenttypes.models import ContentType
 from django.db import connection
+from django.utils import timezone
+from datetime import timedelta
 from virtualization.models import VMInterface, VirtualDisk
 from ipam.models import IPAddress, VRF, Prefix
-from .models import ProviderCreatedObject, ProviderFieldClaim
+from .models import ProviderCreatedObject, ProviderFieldClaim, ProviderInventory
 from .provider_policy import digest
 from .provider_creation import create_native
 from .dependencies import DependencyGuardBlocked
@@ -29,6 +31,10 @@ def apply(user, binding, target, snapshot):
     """Called inside account transaction/fence. Foreign objects are never reassigned."""
     account, key = binding.account, binding.provider_key
     notes, candidates = [], []
+    record = ProviderInventory.objects.filter(pk=key, account=account).first()
+    now = timezone.now()
+    if record is None or not now - timedelta(hours=48) <= record.observed_at <= now + timedelta(minutes=5):
+        return dict(notes=['fresh_stable_resource_required'], primary_updated=[])
     resource = fresh(snapshot, 'resource') or {}
     if not resource or resource.get('OS-EXT-STS:task_state'):
         return dict(notes=['fresh_stable_resource_required'], primary_updated=[])
@@ -46,9 +52,13 @@ def apply(user, binding, target, snapshot):
             if obj is None or obj.created != proof.object_created:
                 notes.append('component_recreated'); return None
             access(user, obj, 'view')
+            if model not in (VRF, Prefix) and proof.resource_key != key:
+                notes.append('component_owner_conflict'); return None
             if values(obj, proof.projection_values) != proof.projection_values:
                 notes.append('component_edited'); return None
             if values(obj, fields) != fields:
+                if conflicts.exclude(pk=obj.pk).exists():
+                    notes.append('existing_component_requires_review'); return None
                 access(user, obj, 'change')
                 for field, value in fields.items(): setattr(obj, field, value)
                 checked(obj, 'full_clean'); checked(obj, 'save')
@@ -154,5 +164,11 @@ def apply(user, binding, target, snapshot):
             ProviderFieldClaim.objects.update_or_create(binding=binding, field=field + '_id', defaults={'value': eligible[0].pk})
             changed.append(field)
     if changed:
-        checked(target, 'full_clean'); checked(target, 'save', update_fields=changed + ['last_updated'])
+        cf = dict(target.custom_field_data or {})
+        inventory = dict(cf.get('selectel_inventory') or snapshot)
+        inventory['native_fields'] = sorted(set(inventory.get('native_fields', [])) | {field + '_id' for field in changed})
+        cf['selectel_inventory'] = inventory
+        ProviderFieldClaim.objects.update_or_create(binding=binding, field='custom_fields.selectel_inventory', defaults={'value': inventory})
+        target.custom_field_data = cf
+        checked(target, 'full_clean'); checked(target, 'save', update_fields=changed + ['custom_field_data', 'last_updated'])
     return dict(notes=sorted(set(notes)), primary_updated=changed)

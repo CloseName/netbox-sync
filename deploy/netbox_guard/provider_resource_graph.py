@@ -54,6 +54,8 @@ def document(user, account):
             edges.append(dict(source=binding.provider_key, target=native_key, kind='bound_to',
                               evidence_source='guard', state='confirmed', observed_at=binding.created_at,
                               revision=binding.revision))
+    from .provider_component_graph import extend
+    extend(user, account, nodes, edges)
     return dict(schema='netbox-sync.provider-resources.v1', account=account,
                 observed_at=stored.observed_at if stored else None,
                 nodes=list(nodes.values()), edges=edges, coverage=snapshot.get('coverage', []),

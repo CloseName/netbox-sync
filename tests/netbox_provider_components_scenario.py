@@ -1,10 +1,26 @@
 """Native ports, disks, primary IP and repeated removal/reconnection, isolated DB."""
-from netbox_guard.provider_components import apply as project_components
+from django.db import transaction
+from django.utils import timezone
+from netbox_guard.provider_reconcile import prepare as native_prepare, apply as native_apply
+from netbox_guard.provider_policy import identity as provider_key
+from netbox_guard.models import ProviderInventory
+from netbox_guard.provider_components import apply as apply_components
+
+@transaction.atomic
+def project_components(*args):
+    return apply_components(*args)
+
+def rejected(action, errors):
+    try:
+        action()
+    except errors:
+        return
+    raise AssertionError('Expected component refusal')
 from netbox_guard.provider_lifecycle import review as lifecycle_review, execute as lifecycle_execute
 from virtualization.models import VirtualDisk
 from ipam.models import VRF
 
-with transaction.atomic():
+with override_settings(PLUGINS_CONFIG=config):
     component_account = '987654322'
     def new_cloud():
         ident = dict(account=component_account, kind='cloud_vm', native_id=str(uuid4()), project='p', region='ru-9')
@@ -49,6 +65,16 @@ with transaction.atomic():
         assert not project_components(admin, binding, vm, record.snapshot)['primary_updated']
         assert counts == (VMInterface.objects.count(), IPAddress.objects.count(), VirtualDisk.objects.count(), VRF.objects.count())
         assert vm.primary_ip4_id == primary
+        from netbox_guard.provider_resource_graph import document as graph_document
+        graph = graph_document(admin, component_account)
+        assert {'assigned_to', 'nat_to', 'attached_to'} <= {e['kind'] for e in graph['edges']}
+        # Manual component edits block destructive cleanup and are never overwritten.
+        disk = VirtualDisk.objects.get(virtual_machine=vm)
+        old_name = disk.name
+        disk.name = 'Operator disk name'; disk.save()
+        assert 'component_edited' in project_components(admin, binding, vm, record.snapshot)['notes']
+        assert any(b['reason'] == 'binding_target_changed' for b in lifecycle_review(admin, component_account, 'delete')['blockers'])
+        disk.name = old_name; disk.save()
         deletion = lifecycle_review(admin, component_account, 'delete')
         assert not deletion['blockers'], deletion['blockers']
         nonce = uuid4()
@@ -59,5 +85,4 @@ with transaction.atomic():
         assert initial == (VMInterface.objects.count(), IPAddress.objects.count(), VirtualDisk.objects.count())
         activate = lifecycle_review(admin, component_account, 'activate')
         lifecycle_execute(admin, component_account, 'activate', uuid4(), activate['fingerprint'])
-    transaction.set_rollback(True)
 print('Native cloud region fallback, port/IP/NAT/primary/disk projection, idempotence, rollback and two account cycles OK')

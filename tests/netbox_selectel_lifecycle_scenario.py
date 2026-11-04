@@ -443,3 +443,5 @@ with override_settings(PLUGINS_CONFIG=config):
     assert VirtualMachine.objects.filter(pk=unlink_other.pk).exists()
     assert not ProviderAccountFence.objects.filter(account=account, deleted=True).exists()
 print('Per-resource unlink: adopted preservation, owned deletion, foreign dependencies, rollback and replay OK')
+
+runpy.run_path(str(Path(__file__).with_name('netbox_provider_components_scenario.py')), init_globals=globals())

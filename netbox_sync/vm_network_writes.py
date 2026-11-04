@@ -140,6 +140,11 @@ def _write_ip(nb_api, ip_context, interface, counts):
 
 def _write_primary(context, applied_ips, netbox_vm, counts):
     """Apply the existing VM primary IPv4 policy after all interface writes."""
+    from .selectel_authority import primary_owned
+
+    if primary_owned(netbox_vm):
+        counts["skipped"] += 1
+        return
     candidate = context["primary_candidate"]
 
     if candidate is not None and candidate in applied_ips and context["primary_action"] != "preserve_manual":
