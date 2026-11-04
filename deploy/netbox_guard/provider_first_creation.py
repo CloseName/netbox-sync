@@ -26,7 +26,8 @@ def review(user, account, key):
     ident = record.snapshot['identity']
     reason = plan['reason']
     eligible = (ident['account'] == account and ident['kind'] == 'dedicated'
-                and plan['action'] == 'blocked' and reason == 'hardware_identity_missing'
+                and ((plan['action'] == 'blocked' and reason == 'hardware_identity_missing')
+                     or (plan['action'] == 'create' and reason == 'no_existing_candidate'))
                 and not plan['candidates'])
     try:
         parsed_uuid = UUID(ident['native_id'])

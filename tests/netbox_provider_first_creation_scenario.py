@@ -17,8 +17,7 @@ before_vms = list(VirtualMachine.objects.order_by('pk').values())
 preview = review(admin, account, record.pk)
 assert preview['eligible'] and preview['writes_performed'] is False
 assert list(Device.objects.order_by('pk').values()) == before_devices
-assert next(r for r in native_prepare(admin, account)['resources'] if r['key'] == record.pk)['action'] == 'blocked'
-native_apply(admin, account, uuid4(), native_prepare(admin, account)['fingerprint'])
+assert next(r for r in native_prepare(admin, account)['resources'] if r['key'] == record.pk)['action'] == 'create'
 assert not ProviderBinding.objects.filter(provider_key=record.pk).exists()
 preview = review(admin, account, record.pk)
 rejected(lambda: execute(unprivileged, account, record.pk, uuid4(), preview['fingerprint']), (DependencyGuardBlocked, ValueError))

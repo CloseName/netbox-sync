@@ -16,6 +16,7 @@ from .service import _permission
 from .provider_creation import create_native
 from .hardware_identity import canonical, tokens, selectel_observation, compare
 from .provider_guest_evidence import guest_wans
+from .provider_automation import placement, canonical_uuid, candidate
 
 
 VM_STATES = {'ACTIVE': 'active', 'SHUTOFF': 'offline', 'SHELVED': 'offline',
@@ -180,12 +181,13 @@ def prepare(user, account, *, resume_key=None):
                 members=members, confirmed=False) for i, members in sorted(groups.items())]
             if len(strong) == 1 and not (possible - strong) and not (strong & bound_targets):
                 plan.update(action='bind', reason='stable_identity', object_id=next(iter(strong))[1])
+            elif not strong and candidate(plan, bound_targets) is not None:
+                plan.update(action='bind', reason='unambiguous_network_identity', object_id=candidate(plan, bound_targets))
             elif strong or possible:
                 plan['reason'] = 'identity_needs_confirmation'
-            elif native_kind == 'device' and not info['serial']:
+            elif native_kind == 'device' and not info['serial'] and not canonical_uuid(snap['identity']['native_id']):
                 plan['reason'] = 'hardware_identity_missing'
-            elif not (obj({'sections': snap['sections']}, 'placement').get('uuid')
-                      or obj({'sections': snap['sections']}, 'placement').get('OS-EXT-AZ:availability_zone')):
+            elif placement(snap) is None:
                 plan['reason'] = 'placement_missing'
             else:
                 plan.update(action='create', reason='no_existing_candidate')

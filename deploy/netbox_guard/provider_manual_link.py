@@ -10,7 +10,7 @@ from .service import _permission
 
 
 ALLOWED_REASONS = frozenset(('identity_needs_confirmation', 'hardware_identity_missing',
-                             'placement_missing', 'no_existing_candidate', 'stable_identity'))
+                             'placement_missing', 'no_existing_candidate', 'stable_identity', 'unambiguous_network_identity'))
 
 
 def review(user, account, key, object_id):

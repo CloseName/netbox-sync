@@ -5,18 +5,17 @@ from .models import ProviderCreatedObject
 from .provider_policy import digest
 from .provider_creation import create_native
 from .dependencies import DependencyGuardBlocked
+from .provider_automation import placement
 
 
 def resolve(user, snapshot, previous=None, *, allow_updates=True):
     ident = snapshot['identity']
-    section = snapshot['sections'].get('placement', {})
-    data = section.get('data')
-    if section.get('status') != 'collected' or section.get('retained') or not isinstance(data, dict):
+    position = placement(snapshot)
+    if position is None:
         return None
-    location = data.get('uuid') or data.get('OS-EXT-AZ:availability_zone')
-    label = data.get('name') or data.get('OS-EXT-AZ:availability_zone')
-    if not isinstance(location, str) or not location or not isinstance(label, str) or not label:
-        return None
+    location, label, regional = position
+    if regional and previous and placement(previous) and not placement(previous)[2]:
+        return None  # A missing zone does not move a known card to a generic region.
     account, region_id = ident['account'], ident.get('region') or ''
     def ensure(model, key, values, legacy_slug):
         marker = 'placement:' + digest(key)

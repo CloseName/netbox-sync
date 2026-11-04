@@ -183,6 +183,7 @@ with transaction.atomic():
         'netbox_guard': {**settings.PLUGINS_CONFIG['netbox_guard'], 'selectel_native_reconcile': True}}):
         runpy.run_path(str(Path(__file__).with_name('netbox_provider_manual_link_scenario.py')), init_globals=first_creation_scope)
         runpy.run_path(str(Path(__file__).with_name('netbox_provider_first_creation_scenario.py')), init_globals=first_creation_scope)
+        runpy.run_path(str(Path(__file__).with_name('netbox_provider_components_scenario.py')), init_globals=first_creation_scope)
     runpy.run_path(str(Path(__file__).with_name('netbox_selectel_mvp_scenario.py')), init_globals=globals())
     transaction.set_rollback(True)
 print('Provider schema, server inventory, atomic rollback, stale review, replay, permissions and PostgreSQL protection OK; fixtures rolled back')

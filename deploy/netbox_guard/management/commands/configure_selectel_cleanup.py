@@ -34,4 +34,13 @@ class Command(BaseCommand):
             raise CommandError('Existing network removal permission differs; no overwrite.')
         permission.object_types.set(wanted)
         permission.users.add(user)
+        components = {ContentType.objects.get(app_label=app, model=model).pk for app, model in (
+            ('virtualization', 'vminterface'), ('virtualization', 'virtualdisk'),
+            ('ipam', 'ipaddress'), ('ipam', 'prefix'), ('ipam', 'vrf'))}
+        projection, new = ObjectPermission.objects.get_or_create(name='Selectel native component projection',
+            defaults={'actions': ['view', 'add', 'change', 'delete'], 'constraints': None})
+        if not new and (set(projection.actions) != {'view', 'add', 'change', 'delete'} or projection.constraints
+                or not projection.enabled or set(projection.object_types.values_list('pk', flat=True)) != components):
+            raise CommandError('Existing component projection permission differs; no overwrite.')
+        projection.object_types.set(components); projection.users.add(user)
         self.stdout.write('Selectel account cleanup permissions ready; tokens unchanged.')

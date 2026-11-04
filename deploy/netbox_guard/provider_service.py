@@ -111,10 +111,10 @@ def apply_binding(user, nonce, spec, fingerprint):
             if cf.get(name) != value:
                 cf[name] = value
                 update.add('custom_field_data')
-        elif field in ('name', 'serial', 'status', 'vcpus', 'memory', 'site_id'):
+        elif field in ('name', 'serial', 'status', 'vcpus', 'memory', 'site_id', 'primary_ip4_id', 'primary_ip6_id'):
             if getattr(obj, field) != value:
                 setattr(obj, field, value)
-                update.add('site' if field == 'site_id' else field)
+                update.add(field.removesuffix('_id'))
         else:
             raise ValueError('PROVIDER_FIELD_UNSUPPORTED')
     if update:

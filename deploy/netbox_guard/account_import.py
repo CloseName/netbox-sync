@@ -54,6 +54,17 @@ def import_account(user, payload):
         servers['writes_performed'] |= projection_result['writes_performed']
         servers['unmatched_count'] = review['unmatched_count']
         servers['placement_pending'] = projection_result.get('placement_pending', [])
+        from .provider_components import apply as apply_components
+        from .models import ProviderBinding, ProviderInventory
+        from .selectel_inventory import Inventory
+        from django.apps import apps
+        component_results = []
+        for binding in ProviderBinding.objects.filter(account=account, provider_key__in=Inventory(document).normalize()):
+            record = ProviderInventory.objects.filter(pk=binding.provider_key).first()
+            if record is None: continue
+            target = apps.get_model('dcim.Device' if binding.resource == 'device' else 'virtualization.VirtualMachine').objects.get(pk=binding.object_id)
+            component_results.append(dict(provider_key=binding.provider_key,
+                **apply_components(user, binding, target, record.snapshot)))
     result = dict(account=account, servers=servers['server_count'],
         matched=review['bound_count'], unmatched=servers['unmatched_count'],
         registry_resources=resources['resources'], retained=resources['retained_resources'],
@@ -61,6 +72,7 @@ def import_account(user, payload):
         replayed=False, writes_performed=servers['writes_performed'] or resources['writes_performed'])
     result['native_mode'] = 'automatic' if native is not None else 'registry_only'
     if native is not None:
+        result['components'] = component_results
         result.update(native_created=sum(row['action'] == 'create' for row in native['applied']),
                       native_adopted=sum(row['action'] == 'bind' for row in native['applied']),
                       native_blocked=len(native['blocked']))
