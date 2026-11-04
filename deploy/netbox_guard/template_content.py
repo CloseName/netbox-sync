@@ -109,6 +109,7 @@ class ProviderCard(PluginTemplateExtension):
         value = panel(snapshot)
         if value is None:
             return ''
+        value['primary_missing'] = bool(value['addresses']) and self.context['object'].primary_ip4_id is None
         if self.context['request'].user.has_perm('netbox_guard.view_resourceregistry'):
             registry = ProviderResourceRegistry.objects.filter(pk=value['account']).first()
             if registry:

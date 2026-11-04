@@ -378,7 +378,11 @@ def _prepare_lxc_network_context(container, inventory, cluster, discovered_macs,
 
     unique_ipv4 = sorted(set(ipv4_candidates))
 
-    if len(unique_ipv4) == 1:
+    from .selectel_authority import primary_owned
+
+    if primary_owned(context["netbox_vm"]):
+        context["primary_provider_owned"] = True
+    elif len(unique_ipv4) == 1:
         context["primary_candidate"] = unique_ipv4[0]
 
     return context

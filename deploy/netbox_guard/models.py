@@ -66,6 +66,8 @@ class ProviderCreatedObject(models.Model):
     object_id = models.PositiveBigIntegerField()
     object_created = models.DateTimeField()
     provider_key = models.CharField(max_length=512, blank=True)
+    resource_key = models.CharField(max_length=512, blank=True)
+    projection_values = models.JSONField(default=dict)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

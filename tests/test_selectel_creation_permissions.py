@@ -12,6 +12,12 @@ ROOT = Path(__file__).resolve().parents[1] / "deploy/netbox_guard"
 
 
 def function(filename, name, namespace):
+    if filename == 'provider_placement.py':
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('placement_policy_fixture', ROOT / 'provider_automation.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        namespace['placement'] = module.placement
     tree = ast.parse((ROOT / filename).read_text(encoding="utf-8"))
     node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name)
     exec(compile(ast.Module(body=[node], type_ignores=[]), filename, "exec"), namespace)

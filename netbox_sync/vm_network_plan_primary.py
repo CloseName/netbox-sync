@@ -3,6 +3,11 @@
 
 def plan_primary_ipv4(netbox_vm, discovered_ipv4, ips_by_id, counters, *, _existing_primary_ipv4):
     """Print the original primary decision and update only the plan counter."""
+    from .selectel_authority import primary_owned
+
+    if netbox_vm is not None and primary_owned(netbox_vm):
+        print("      KEEP PRIMARY IPv4 reason=selectel-owned")
+        return
     unique_ipv4 = sorted(set(discovered_ipv4))
 
     current_primary = _existing_primary_ipv4(

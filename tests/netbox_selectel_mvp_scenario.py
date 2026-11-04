@@ -139,7 +139,8 @@ with tempfile.TemporaryDirectory() as temp:
     call_command('configure_selectel_mvp', output=str(Path(temp)/'native-token.json'), native_resources=True)
     service_user = get_user_model().objects.get(username='netbox-sync-selectel')
     assert service_user.has_perm('dcim.add_device')
-    assert not service_user.has_perm('ipam.change_ipaddress')
+    assert service_user.has_perm('ipam.change_ipaddress')
+    assert not service_user.has_perm('ipam.delete_ipaddress')
     native_document = copy.deepcopy(document)
     native_document['account'] = '67891'
     native_document['finished_at'] = timezone.now().isoformat()

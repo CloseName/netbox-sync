@@ -82,6 +82,8 @@ def print_lxc_network_precheck(contexts, site, cluster):
         for nic_context in context["nics"]:
             _print_interface(container, nic_context, counts)
 
+        if context.get("primary_provider_owned"):
+            print("  PRIMARY IPv4 PRESERVE reason=selectel-owned")
         candidate = context["primary_candidate"]
 
         if candidate is not None:

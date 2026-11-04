@@ -10,7 +10,7 @@ from .service import _permission
 
 
 ALLOWED_REASONS = frozenset(('identity_needs_confirmation', 'hardware_identity_missing',
-                             'placement_missing', 'no_existing_candidate', 'stable_identity'))
+                             'placement_missing', 'no_existing_candidate', 'stable_identity', 'unambiguous_network_identity'))
 
 
 def review(user, account, key, object_id):
@@ -64,6 +64,15 @@ def execute(user, account, key, object_id, nonce, fingerprint):
         raise ValueError('PROVIDER_REVIEW_STALE')
     ProviderDetachedResource.objects.filter(pk=key, account=account).delete()
     apply_binding(user, uuid5(nonce, 'binding'), preview['spec'], preview['binding_fingerprint'])
+    from .selectel_inventory import projection
+    from .inventory_service import _write_claims
+    from .provider_components import apply as apply_components
+    record = ProviderInventory.objects.get(pk=key, account=account)
+    target, binding, before, claims = _read(user, preview['spec'], lock=True)
+    claims.update({'custom_fields.' + name: value for name, value in projection(record.snapshot).items()})
+    _write_claims(target, binding, before, claims, actor, uuid5(nonce, 'projection'),
+                  request_digest, record.evidence_digest, preview['spec']['reason'])
+    apply_components(user, binding, target, record.snapshot)
     result = dict(operation='manual_link_v1', account=account, provider_key=key,
                   object_id=object_id, object_url=preview['object_url'], name=preview['object_name'],
                   writes_performed=True, replayed=False)

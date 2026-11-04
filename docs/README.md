@@ -31,6 +31,8 @@ not proof that today's checkout or deployment passes those checks.
   сущности, сопоставление, поля, IP, глобальный роутинг и порядок тестовой приёмки.
   [Таблица полей и владения](infrastructure-field-mapping.md) уточняет источники
   значений и поведение при удалении аккаунта.
+  [Чек-лист Selectel](selectel-completion-checklist.md) фиксирует реализованные
+  пункты и сценарии пользовательской приёмки.
 
 - Identity and ownership: [hardware identity](hardware-identity.md),
   [host registration](host-identity-registration.md),

@@ -306,6 +306,12 @@ def _prepare_vm_primary(vm_context, vm_ipv4, inventory):
     vm = vm_context["source_vm"]
     netbox_vm = vm_context["netbox_vm"]
     unique_ipv4 = sorted(set(vm_ipv4))
+    from .selectel_authority import primary_owned
+
+    if primary_owned(netbox_vm):
+        vm_context["primary_candidate"] = None
+        vm_context["primary_action"] = "preserve_provider"
+        return
 
     if len(unique_ipv4) == 1:
         candidate = unique_ipv4[0]

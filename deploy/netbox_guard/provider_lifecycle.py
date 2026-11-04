@@ -14,7 +14,8 @@ from .models import (ProviderBinding, ProviderFieldClaim, ProviderBindingChange,
 
 TARGETS = {'device': 'dcim.device', 'vm': 'virtualization.virtualmachine'}
 ORDER = {'virtualization.virtualmachine': 0, 'dcim.device': 1, 'dcim.site': 2,
-         'ipam.ipaddress': -4, 'ipam.prefix': -3, 'ipam.vlan': -2, 'ipam.vlangroup': -1,
+         'virtualization.vminterface': -5, 'virtualization.virtualdisk': -5, 'ipam.vrf': -1,
+         'ipam.ipaddress': -7, 'ipam.prefix': -3, 'ipam.vlan': -2, 'ipam.vlangroup': -1,
          'dcim.devicerole': 2, 'dcim.devicetype': 2, 'dcim.manufacturer': 3, 'dcim.region': 4}
 
 
@@ -80,7 +81,12 @@ def _prepare(user, account, operation, key):
         owned.extend(o for o in network_owned if (o.model_label, o.object_id) not in known)
         evidence.extend(cleanup['evidence']); blockers.extend(cleanup['blockers'])
         retained.extend(cleanup['retain'])
+    if operation == 'unlink':
+        owned.extend(ProviderCreatedObject.objects.filter(account=account, resource_key=key))
     owned_keys = {(o.model_label, o.object_id) for o in owned}
+    primary_claims = {(TARGETS[b.resource], b.object_id, field, value)
+        for b in bindings for field, value in ProviderFieldClaim.objects.filter(binding=b,
+            field__in=['primary_ip4_id', 'primary_ip6_id']).values_list('field', 'value')}
     for binding in bindings:
         model = apps.get_model(TARGETS[binding.resource])
         obj = model.objects.filter(pk=binding.object_id).first()
@@ -104,9 +110,19 @@ def _prepare(user, account, operation, key):
         _access(user,obj,'view'); _access(user,obj,'delete')
         if obj.created != proof.object_created:
             blockers.append({'reason':'creation_identity_changed','model':proof.model_label,'id':obj.pk}); continue
+        if getattr(proof, 'projection_values', None):
+            from .provider_components import values
+            if values(obj, proof.projection_values) != proof.projection_values:
+                blockers.append({'reason':'binding_target_changed','model':proof.model_label,'id':obj.pk}); continue
         item = {'model':proof.model_label,'id':obj.pk,'name':str(obj),'url':obj.get_absolute_url()}
         evidence.append((proof.pk,_digest({f.attname:getattr(obj,f.attname) for f in obj._meta.concrete_fields})))
         foreign = bool((getattr(obj,'custom_field_data',None) or {}).get('sync_identities'))
+        if operation == 'unlink' and proof.model_label == 'ipam.prefix':
+            # Prefix membership is not a database foreign key. Retain shared
+            # network context while another resource still has addresses in it.
+            foreign |= apps.get_model('ipam.IPAddress').objects.filter(
+                vrf_id=obj.vrf_id, address__net_contained_or_equal=str(obj.prefix)).exclude(
+                    pk__in=[pk for label, pk in owned_keys if label == 'ipam.ipaddress']).exists()
         # NetBox primary-IP fields use hidden reverse relations (related_name='+').
         # They still carry live references and must appear in the review, not only
         # be caught later by Collector's final no-external-writes check.
@@ -118,6 +134,8 @@ def _prepare(user, account, operation, key):
             for dependent in dependents:
                 _access(user,dependent,'view')
                 evidence.append(('dependency',proof.pk,dependent._meta.label_lower,dependent.pk))
+                if (dependent._meta.label_lower, dependent.pk, rel.field.attname, obj.pk) in primary_claims:
+                    continue
                 if cleanup and any(r['model'] == dependent._meta.label_lower and r['id'] == dependent.pk
                                    and r['field'] == rel.field.attname and r['value'] is None for r in cleanup['restore']):
                     continue
@@ -125,7 +143,8 @@ def _prepare(user, account, operation, key):
                         or (dependent._meta.label_lower,dependent.pk) in retained_catalog):
                     foreign = True
         if foreign:
-            if proof.model_label in TARGETS.values() or proof.model_label.startswith('ipam.'):
+            if (proof.model_label in TARGETS.values() or proof.model_label.startswith('ipam.')) and not (
+                    operation == 'unlink' and proof.model_label in ('ipam.vrf', 'ipam.prefix')):
                 blockers.append({**item,'reason':'foreign_dependencies_or_sync_source'})
             else:
                 retained.append({**item,'reason':'shared_catalog_object'})
@@ -133,6 +152,10 @@ def _prepare(user, account, operation, key):
             continue
         removed.append(item)
     removed_keys={(r['model'],r['id']) for r in removed}
+    # NAT outside addresses must disappear before the inside address they refer to.
+    removed.sort(key=lambda r: (ORDER.get(r['model'], 99),
+        0 if r['model'] == 'ipam.ipaddress' and apps.get_model('ipam.IPAddress').objects.filter(pk=r['id'], nat_inside__isnull=False).exists() else 1,
+        r['id']))
     binding_rows = list(retained)
     retained=[r for r in retained if (r['model'],r['id']) not in removed_keys]
     state = dict(account=account,operation=operation,key=key,evidence=evidence,epoch=epoch,retirement=retirement,
@@ -152,14 +175,17 @@ def review(user, account, operation, key=None):
 def _release(binding):
     obj = apps.get_model(TARGETS[binding.resource]).objects.get(pk=binding.object_id)
     cf = dict(obj.custom_field_data or {})
+    cleared = []
     for field in ProviderFieldClaim.objects.filter(binding=binding).values_list('field',flat=True):
+        if field in ('primary_ip4_id', 'primary_ip6_id'):
+            setattr(obj, field, None); cleared.append(field.removesuffix('_id'))
         if field.startswith('custom_fields.selectel_'):
             cf.pop(field.split('.',1)[1],None)
     ProviderFieldClaim.objects.filter(binding=binding).delete()
     ProviderBindingChange.objects.filter(binding=binding).delete()
     binding.delete()
     obj.custom_field_data=cf
-    obj.full_clean(); obj.save(update_fields=['custom_field_data','last_updated'])
+    obj.full_clean(); obj.save(update_fields=['custom_field_data','last_updated'] + cleared)
 
 
 def execute(user, account, operation, nonce, fingerprint, key=None):
@@ -209,6 +235,7 @@ def execute(user, account, operation, nonce, fingerprint, key=None):
                 if actual != {(item['model'],item['id'])} or updates or any(q.exists() for q in collector.fast_deletes):
                     raise ValueError('PROVIDER_UNOWNED_CASCADE_BLOCKED')
                 collector.delete()
+                ProviderCreatedObject.objects.filter(model_label=item['model'], object_id=item['id']).delete()
         if operation == 'delete':
             ProviderCreatedObject.objects.filter(account=account).delete()
             ProviderDetachedResource.objects.filter(account=account).delete()

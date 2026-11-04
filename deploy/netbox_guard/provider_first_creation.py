@@ -26,7 +26,8 @@ def review(user, account, key):
     ident = record.snapshot['identity']
     reason = plan['reason']
     eligible = (ident['account'] == account and ident['kind'] == 'dedicated'
-                and plan['action'] == 'blocked' and reason == 'hardware_identity_missing'
+                and ((plan['action'] == 'blocked' and reason == 'hardware_identity_missing')
+                     or (plan['action'] == 'create' and reason == 'no_existing_candidate'))
                 and not plan['candidates'])
     try:
         parsed_uuid = UUID(ident['native_id'])
@@ -86,6 +87,8 @@ def execute(user, account, key, nonce, fingerprint):
     claims['custom_fields.selectel_inventory'] = {**record.snapshot, 'native_fields': ['name', 'site_id']}
     _write_claims(target, binding, before, claims, actor, uuid5(nonce, 'projection'),
                   request_digest, record.evidence_digest, spec['reason'])
+    from .provider_components import apply as apply_components
+    apply_components(user, binding, target, record.snapshot)
     result = dict(operation='first_creation_v1', account=account, provider_key=key,
                   object_id=target.pk, object_url=target.get_absolute_url(), name=target.name,
                   writes_performed=True, replayed=False)

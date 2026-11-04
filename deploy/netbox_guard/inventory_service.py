@@ -93,9 +93,9 @@ def _write_claims(obj, binding, before, claims, actor, nonce, request_digest, ev
         # Ownership claims precede native writes for the SQL guard.
         if field.startswith('custom_fields.'):
             cf[field.split('.', 1)[1]] = value
-        elif field in ('name', 'serial', 'status', 'vcpus', 'memory', 'site_id'):
+        elif field in ('name', 'serial', 'status', 'vcpus', 'memory', 'site_id', 'primary_ip4_id', 'primary_ip6_id'):
             setattr(obj, field, value)
-            native_updates.add('site' if field == 'site_id' else field)
+            native_updates.add(field.removesuffix('_id'))
         else:
             raise ValueError('PROVIDER_FIELD_UNSUPPORTED')
         ProviderFieldClaim.objects.update_or_create(binding=binding, field=field, defaults={'value': value})

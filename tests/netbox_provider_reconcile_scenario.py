@@ -98,7 +98,8 @@ assert rows[scoped.pk]['ignored_address_matches'][0]['reason'] == 'network_scope
 assert rows[error_vm.pk]['action'] == 'create' and rows[error_vm.pk]['native_status'] == 'failed'
 assert rows[busy.pk]['reason'] == 'provider_task_in_progress'
 assert rows[unknown_state.pk]['reason'] == 'provider_state_not_ready'
-assert rows[public_collision.pk]['action'] == 'blocked'
+assert rows[public_collision.pk]['action'] == 'bind'
+assert rows[public_collision.pk]['object_id'] == guest.pk
 assert rows[chain.pk]['action'] == 'blocked'
 assert len(rows[chain.pk]['host_groups']) == 1
 assert rows[chain.pk]['host_groups'][0]['device_id'] == native_host.pk

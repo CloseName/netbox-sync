@@ -31,15 +31,26 @@ placement survive; Selectel claims and metadata are detached. Existing native
 field values are not restored to a historical pre-Selectel snapshot. Audit receipts
 and the deletion fence remain. Reconnection matches strong identities afresh;
 previous weak/manual decisions are not silently retained as ownership evidence.
-Manual first creation and ambiguous-candidate confirmation remain separate gates.
+Ambiguous-candidate confirmation remains a separate gate.
 See the repeated-cycle acceptance procedure in the test operations guide.
 
-Dedicated resources without a usable chassis serial now have a separate
-[reviewed first-creation path](hardware-identity.md#reviewed-first-creation-without-a-chassis-serial).
-It requires administrator confirmation of absence and refuses known candidates;
-normal automatic matching/creation gates are unchanged. This addresses first
-creation only, not the outstanding weak-candidate adoption or reverse-matching
-acceptance scenarios. No test-server or production acceptance is implied.
+As of 4 November, a fresh dedicated resource with a canonical provider UUID and
+known placement can be created automatically when no candidates or identity
+conflicts exist. A unique compatible public-address/confirmed guest-WAN candidate
+can be adopted automatically; ambiguous, name-only, occupied and conflicting
+candidates still require review. Manual binding and first creation remain available.
+The operator explicitly authorized this policy change. A missing AZ no longer
+prevents creating a cloud VM if its region is known; the regional Site explicitly
+says the zone is unknown. Known existing placement is not downgraded.
+
+Cloud port/subnet/network identity supports native interfaces, isolated VRFs,
+prefixes, IPs, floating-IP NAT and primary selection, plus attached VirtualDisk
+records. Existing primary addresses and foreign assignments survive. Component
+provenance controls repeated collection and account cleanup. Provider allocations
+without confirmed interface ownership remain observations (especially dedicated
+server addresses that may actually be guest firewall WANs).
+See the [completion and acceptance checklist](selectel-completion-checklist.md).
+Implementation and CI do not establish real-account or production acceptance.
 
 On 27 October the operator deployed PR #129 to test and opening the first-creation
 review failed with `SimpleLazyObject has no attribute objects`. Browser authentication
