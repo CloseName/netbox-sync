@@ -57,6 +57,15 @@ class Command(BaseCommand):
                     or not native.enabled or set(native.object_types.values_list('pk', flat=True)) != wanted_native):
                 raise CommandError('Existing native reconciliation permission differs; no overwrite.')
             native.object_types.set(wanted_native); native.users.add(user)
+            components = {ContentType.objects.get(app_label=app, model=model).pk for app, model in (
+                ('virtualization', 'vminterface'), ('virtualization', 'virtualdisk'),
+                ('ipam', 'ipaddress'), ('ipam', 'prefix'), ('ipam', 'vrf'))}
+            component_write, new = ObjectPermission.objects.get_or_create(name='Selectel native component writes',
+                defaults={'actions': ['view', 'add', 'change'], 'constraints': None})
+            if not new and (set(component_write.actions) != {'view', 'add', 'change'} or component_write.constraints
+                    or not component_write.enabled or set(component_write.object_types.values_list('pk', flat=True)) != components):
+                raise CommandError('Existing component write permission differs; no overwrite.')
+            component_write.object_types.set(components); component_write.users.add(user)
             if options.get('lifecycle'):
                 deletion, new = ObjectPermission.objects.get_or_create(name='Selectel reviewed native removal',
                     defaults={'actions': ['delete'], 'constraints': None})

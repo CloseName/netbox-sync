@@ -74,8 +74,10 @@ Only on test, with schedules off and no active writes:
 4. Wait for confirmed import, record its run ID and counts, then manually collect
    once more. Strongly identified adopted cards keep their IDs; newly created cards
    are reused by provider identity on subsequent collections. No duplicate cards
-   or IP changes are expected. Missing hardware IDs still require reviewed first
-   creation, and ambiguous candidates remain unresolved rather than auto-adopted.
+   are expected. Confirmed cloud interface assignments may now populate an empty
+   Primary. A canonical dedicated UUID and fresh placement permit automatic creation
+   without chassis ID when no candidates exist. A unique compatible network candidate
+   may be adopted; ambiguous/name-only/conflicting candidates remain unresolved.
 5. Repeat deletion/reconnection two more times. Account-created cards may receive
    new IDs after deliberate deletion; pre-existing adopted cards must retain theirs.
    Record delete/retain counts, import run IDs, candidate reasons and screenshots

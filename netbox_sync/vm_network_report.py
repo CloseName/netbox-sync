@@ -49,6 +49,9 @@ def _print_interface(vm, nic_context, counts):
 
 def _print_primary(context, vm, counts):
     """Print the VM primary-IP decision, retaining manual-primary preservation counts."""
+    if context.get("primary_action") == "preserve_provider":
+        print("  PRIMARY IPv4 PRESERVE reason=selectel-owned")
+        return
     candidate = context["primary_candidate"]
 
     if candidate is not None:

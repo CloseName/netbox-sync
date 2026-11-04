@@ -239,7 +239,7 @@ class Inventory:
             if v.get('id') not in attached and not attachments:
                 continue
             disk = pick(v, ('id', 'name', 'status', 'size', 'availability_zone', 'volume_type', 'bootable', 'encrypted', 'multiattach'))
-            disk['attachments'] = [pick(a, ('server_id', 'device', 'attachment_id', 'attached_at')) for a in attachments]
+            disk['attachments'] = [pick(a, ('server_id', 'device', 'attachment_id', 'attached_at')) for a in rows(v.get('attachments'))]
             disk['image'] = pick(v.get('volume_image_metadata'), ('image_id', 'image_name', 'os_type', 'os_distro', 'x_sel_image_os_dist'))
             disks.append(disk)
         sections['volumes'] = self.section(volumes, disks)

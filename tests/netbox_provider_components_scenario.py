@@ -22,8 +22,8 @@ from ipam.models import VRF
 
 with override_settings(PLUGINS_CONFIG=config):
     component_account = '987654322'
-    def new_cloud():
-        ident = dict(account=component_account, kind='cloud_vm', native_id=str(uuid4()), project='p', region='ru-9')
+    def new_cloud(account=component_account, floating=True):
+        ident = dict(account=account, kind='cloud_vm', native_id=str(uuid4()), project='p', region='ru-9')
         def section(data): return dict(status='collected', data=data)
         snapshot = dict(identity=ident, sections={
             'resource': section(dict(name='Regional cloud fixture', status='SHELVED_OFFLOADED')),
@@ -38,11 +38,13 @@ with override_settings(PLUGINS_CONFIG=config):
             'volumes': section([dict(id='volume-a', name='System disk', size=50,
                 attachments=[dict(server_id=ident['native_id'])])]),
         })
-        record = ProviderInventory.objects.create(provider_key=provider_key(ident, 'vm'), account=component_account,
+        if not floating:
+            snapshot['sections']['floatingips']['data'] = []
+        record = ProviderInventory.objects.create(provider_key=provider_key(ident, 'vm'), account=account,
             snapshot=snapshot, evidence_digest='a'*64, observed_at=timezone.now())
-        review = native_prepare(admin, component_account)
+        review = native_prepare(admin, account)
         assert review['resources'][0]['action'] == 'create'
-        native_apply(admin, component_account, uuid4(), review['fingerprint'])
+        native_apply(admin, account, uuid4(), review['fingerprint'])
         binding = ProviderBinding.objects.get(provider_key=record.pk)
         vm = VirtualMachine.objects.get(pk=binding.object_id)
         assert vm.status == 'offline' and vm.site.name.endswith('ru-9 — зона не указана')
@@ -85,4 +87,20 @@ with override_settings(PLUGINS_CONFIG=config):
         assert initial == (VMInterface.objects.count(), IPAddress.objects.count(), VirtualDisk.objects.count())
         activate = lifecycle_review(admin, component_account, 'activate')
         lifecycle_execute(admin, component_account, 'activate', uuid4(), activate['fingerprint'])
+    # Equal private IP/network identifiers in two accounts stay isolated.
+    first, first_binding, first_vm = new_cloud('987654323', floating=False)
+    second, second_binding, second_vm = new_cloud('987654324', floating=False)
+    for record, binding, vm in ((first, first_binding, first_vm), (second, second_binding, second_vm)):
+        assert not project_components(admin, binding, vm, record.snapshot)['notes']
+        vm.refresh_from_db()
+        assert str(vm.primary_ip4.address.ip) == '10.250.91.4'
+    assert first_vm.primary_ip4.vrf_id != second_vm.primary_ip4.vrf_id
+    second_primary = second_vm.primary_ip4_id
+    deletion = lifecycle_review(admin, first.account, 'delete')
+    assert not deletion['blockers'], deletion['blockers']
+    lifecycle_execute(admin, first.account, 'delete', uuid4(), deletion['fingerprint'])
+    second_vm.refresh_from_db()
+    assert second_vm.primary_ip4_id == second_primary and IPAddress.objects.filter(pk=second_primary).exists()
+    deletion = lifecycle_review(admin, second.account, 'delete')
+    lifecycle_execute(admin, second.account, 'delete', uuid4(), deletion['fingerprint'])
 print('Native cloud region fallback, port/IP/NAT/primary/disk projection, idempotence, rollback and two account cycles OK')

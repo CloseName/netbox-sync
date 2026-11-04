@@ -71,7 +71,12 @@ def report_host_plans(
         print(f"  SET platform={platform.name}")
         print(f"  SET device_type={device_type.slug}")
         print(f"  SET cluster={config.cluster_name}")
-        print(f"  SET primary_ip4=" f'{host.management_ip or "-"}')
+        from .selectel_authority import primary_owned
+
+        if device is not None and primary_owned(device):
+            print("  KEEP primary_ip4 reason=selectel-owned")
+        else:
+            print(f"  SET primary_ip4=" f'{host.management_ip or "-"}')
 
         _plan_host_network(
             nb_api,
