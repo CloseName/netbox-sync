@@ -24,6 +24,14 @@ class ProviderNetworks(APIView):
             raise Http404
         return Response(document(request.user, kind, pk))
 
+
+class ProviderResources(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, account):
+        from ..provider_resource_graph import document
+        return Response(document(request.user, account))
+
 class FirewallInventory(APIView):
     permission_classes = [IsAuthenticated]
     def get(self,request,pk):

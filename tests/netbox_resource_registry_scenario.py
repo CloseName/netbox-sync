@@ -76,6 +76,8 @@ with tempfile.TemporaryDirectory() as directory:
     assert registry_prepare(admin, registry_new)[3]['changes'] == 0
 
 # Global Router cards render through the same stored registry without native Devices.
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.selectel_audit.resource_registry import registry as audit_registry
 routing_document = audit_registry(dict(account='123', finished_at='2026-11-04T10:00:00Z',
     datasets=[dict(service='global-router', kind='routers', status='collected',
@@ -93,3 +95,9 @@ response = registry_view(request, '123')
 assert response.status_code == 200 and b'Routing network' in response.content
 assert b'NOT_REPORTED' in response.content and b'VLAN' in response.content
 assert list(Device.objects.order_by('pk').values()) == native_before
+from netbox_guard.provider_resource_graph import document as resource_graph
+graph = resource_graph(admin, '123')
+assert graph['schema'] == 'netbox-sync.provider-resources.v1' and not graph['writes_performed']
+assert any(n['kind'] == 'global_router' for n in graph['nodes'])
+assert any(e['kind'] == 'contains' and 'routing_network' in e['target'] for e in graph['edges'])
+rejected(lambda: resource_graph(unprivileged, '123'), (PermissionDenied,))

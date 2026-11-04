@@ -37,6 +37,8 @@ assert manual_target.name == 'Renamed private host' and manual_target.serial == 
 assert manual_target.primary_ip4_id is None and manual_target.site_id == site.pk
 assert not ProviderCreatedObject.objects.filter(model_label='dcim.device', object_id=manual_target.pk).exists()
 assert next(p for p in native_prepare(admin, account)['resources'] if p['key'] == manual_record.pk)['reason'] == 'existing_binding'
+from netbox_guard.provider_resource_graph import document as resource_graph
+assert any(e['source'] == manual_record.pk and e['kind'] == 'bound_to' for e in resource_graph(admin, account)['edges'])
 other_manual_record = insert_resource('dedicated', 'manual-link-conflict', 'Another provider label')
 rejected(lambda: link_review(admin, account, other_manual_record.pk, manual_target.pk), (ValueError,))
 manual_vm = insert_resource('cloud_vm', 'manual-link-stale', 'Stale provider VM', age=3)

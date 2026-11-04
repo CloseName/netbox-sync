@@ -98,6 +98,12 @@ def registry(request, account=None):
         context['routing_coverage'] = routing_presentation.coverage(snapshot)
         if selected:
             context['routing_components'] = routing_presentation.components(selected, rows, snapshot['relations'].values())
+        else:
+            attached = set()
+            for router in (r for r in rows if r['kind'] == 'global_router'):
+                attached.update(r['key'] for r in routing_presentation.components(router, rows, snapshot['relations'].values()))
+            context['routing_unlinked'] = [r for r in rows if r.get('routing') and r['kind'] != 'global_router'
+                                          and r['key'] not in attached and (not project or r['project'] == project)]
     if not any(c.get('service') == 'global-router' and c.get('kind') == 'routers' and c.get('status') == 'collected'
                for c in snapshot.get('coverage', [])):
         for tab in tabs:

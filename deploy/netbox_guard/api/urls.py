@@ -1,10 +1,11 @@
 from django.urls import path
 from .views import Capabilities, CreateOwned, Review, Retire, Receipt, ReviewSource, RetireSource, CreationProof, SourceAudit, ArchiveReview, ArchiveExecute, SourceNamespaceState
 from .pfsense import PfSenseImport, PfSensePreflight
-from .infrastructure import Infrastructure, FirewallInventory, ProviderNetworks
+from .infrastructure import Infrastructure, FirewallInventory, ProviderNetworks, ProviderResources
 from .provider import ProviderReview, ProviderApply, ProviderAccountImport, ProviderAccountReceipt, ProviderLifecycleReview, ProviderLifecycleExecute
 from .vm_replacement import VMReplacementReview, VMReplacementExecute
 urlpatterns = [
+    path('providers/resources/v1/<str:account>/', ProviderResources.as_view()),
     path('vm-replacements/<int:pk>/review/', VMReplacementReview.as_view()),
     path('vm-replacements/<int:pk>/execute/', VMReplacementExecute.as_view()),
     path('providers/account-import/', ProviderAccountImport.as_view()),

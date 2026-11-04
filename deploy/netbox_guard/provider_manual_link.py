@@ -33,6 +33,10 @@ def review(user, account, key, object_id):
     target, binding, _, _ = _read(user, spec)
     if binding:
         raise ValueError('PROVIDER_BINDING_CONFLICT')
+    prior_refs = (target.custom_field_data or {}).get('selectel_refs') or []
+    expected_ref = dict(provider='selectel', **record.snapshot['identity'])
+    if prior_refs and prior_refs != [expected_ref]:
+        raise ValueError('PROVIDER_BINDING_CONFLICT')
     return dict(account=account, key=key, name=plan['name'], resource=plan['resource'],
                 object_id=target.pk, object_name=target.name, object_url=target.get_absolute_url(),
                 spec=spec, binding_fingerprint=binding_review['fingerprint'],
