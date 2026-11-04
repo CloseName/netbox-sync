@@ -269,8 +269,9 @@ class Collector:
                      'floatingips', 'single')
         self.collect('resell', 'subnets', RESELL + '/subnets', token, 'subnets', 'single')
         self.collect_dedicated(token)
-        self.collect('global-router', 'routers', 'https://api.selectel.ru/naas/v1/routers',
-                     token, None, 'page')
+        for kind in ('routers', 'networks', 'subnets', 'static_routes', 'zones'):
+            self.collect('global-router', kind, 'https://api.selectel.ru/naas/v1/' + kind,
+                         token, None, 'page')
         merged = {}
         for item in projects + resell:
             ident = item.get('id') or item.get('uuid')

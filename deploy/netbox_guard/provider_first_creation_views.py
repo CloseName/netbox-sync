@@ -40,6 +40,7 @@ def first_creation(request, account, ref):
         raise Http404
     context = {'account': account, 'back_url': reverse('plugins:netbox_guard:provider_resource_account',
                                                     kwargs={'account': account})}
+    context['link_url'] = reverse('plugins:netbox_guard:provider_manual_link', kwargs={'account': account, 'ref': ref})
     status = 200
     if request.method == 'POST':
         try:

@@ -25,6 +25,13 @@ def size(value):
         value /= 1024
 
 
+def components(value):
+    if not isinstance(value, list):
+        return None
+    return '; '.join(str(part.get('count') or 1) + ' × ' + str(part.get('name') or part.get('type') or 'Компонент')
+                     for part in value if isinstance(part, dict))
+
+
 def decorate(row, project_names):
     row['project_name'] = project_names.get(row['project']) or ('Без проекта' if not row['project'] else 'Проект · ' + row['project'][:8])
     row['kind_label'] = LABELS.get(row['kind'], row['kind'])
@@ -33,7 +40,11 @@ def decorate(row, project_names):
     resource = obj(row, 'resource')
     row['state'] = resource.get('status') or resource.get('state') or ''
     fields = [('Проект', row['project_name']), ('Регион / площадка', row['location'])]
-    if row['kind'] == 'storage_container':
+    from . import routing_presentation
+    if row['kind'] in routing_presentation.KINDS:
+        fields += routing_presentation.fields(row)
+        row['routing'] = True
+    elif row['kind'] == 'storage_container':
         bucket = obj(row, 'buckets')
         options = next(iter(items(row, 'container_options')), {})
         general = options.get('general') or {}
@@ -55,8 +66,11 @@ def decorate(row, project_names):
         operating = obj(row, 'operating_system')
         fields += [('Состояние в Selectel', row['state']),
             ('Конфигурация', hardware.get('config_name') or obj(row, 'details').get('config_name')),
-            ('vCPU', hardware.get('vcpus')), ('Память, МиБ', hardware.get('ram')),
-            ('Локальный диск, ГиБ', hardware.get('disk')),
+            ('vCPU', hardware.get('vcpus')),
+            ('Модули памяти' if isinstance(hardware.get('ram'), list) else 'Память, МиБ',
+             components(hardware['ram']) if isinstance(hardware.get('ram'), list) else hardware.get('ram')),
+            ('Физические диски' if isinstance(hardware.get('disk'), list) else 'Локальный диск, ГиБ',
+             components(hardware['disk']) if isinstance(hardware.get('disk'), list) else hardware.get('disk')),
             ('Образ ОС', operating.get('name') or operating.get('os_template'))]
         row['addresses'] = sorted({str(v.get('ip')) for section in ('public_ips', 'private_ips')
                                   for v in items(row, section) if v.get('ip')})

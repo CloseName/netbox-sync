@@ -74,3 +74,22 @@ with tempfile.TemporaryDirectory() as directory:
     call_command('provider_project_names', input=str(audit_path), account='123', actor=admin.username)
     assert ProviderResourceRegistry.objects.get(pk='123').revision == 3
     assert registry_prepare(admin, registry_new)[3]['changes'] == 0
+
+# Global Router cards render through the same stored registry without native Devices.
+from tools.selectel_audit.resource_registry import registry as audit_registry
+routing_document = audit_registry(dict(account='123', finished_at='2026-11-04T10:00:00Z',
+    datasets=[dict(service='global-router', kind='routers', status='collected',
+                   items=[dict(id='router-fixture', name='Routing fixture')]),
+              dict(service='global-router', kind='networks', status='collected',
+                   items=[dict(id='network-fixture', name='Routing network', router_id='router-fixture', vlan=100)])],
+    coverage=[dict(service='global-router', kind='routers', status='collected')]))
+routing_preview = registry_prepare(admin, routing_document)[3]
+registry_apply(admin, uuid4(), routing_document, routing_preview['fingerprint'])
+routing_rows, _ = build_tree(ProviderResourceRegistry.objects.get(pk='123').snapshot['resources'].values())
+router_row = next(r for r in routing_rows if r['kind'] == 'global_router')
+request = RequestFactory().get('/providers/123/', {'kind': 'global_router', 'resource': router_row['ref']})
+request.user = admin
+response = registry_view(request, '123')
+assert response.status_code == 200 and b'Routing network' in response.content
+assert b'NOT_REPORTED' in response.content and b'VLAN' in response.content
+assert list(Device.objects.order_by('pk').values()) == native_before

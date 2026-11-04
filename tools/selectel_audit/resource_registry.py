@@ -5,6 +5,7 @@ from collections import Counter
 from html import escape
 
 from .client import sanitize
+from .routing_registry import add_routing
 
 
 def key(account, project='', region='', kind='account', native_id='', parent=''):
@@ -80,6 +81,7 @@ def registry(document):
                               'storage_domain', domain, ds['resource_id']), 'storage_domain', domain)
                 edge(ident, dk, 'custom_domain')
 
+    add_routing(document, key, node, edge, unresolved)
     for ident, relation in list(edges.items()):
         if relation['source'] not in nodes or relation['target'] not in nodes:
             unresolved.append({**relation, 'status': 'unconfirmed', 'code': 'PARENT_NOT_OBSERVED'})
