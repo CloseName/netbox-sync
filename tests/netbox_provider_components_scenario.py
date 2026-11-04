@@ -29,13 +29,13 @@ with override_settings(PLUGINS_CONFIG=config):
             'resource': section(dict(name='Regional cloud '+ident['native_id'][:8], status='SHELVED_OFFLOADED')),
             'placement': dict(status='not_reported', data={}),
             'hardware': section(dict(vcpus=2, ram=2048)),
-            'ports': section([dict(id='port-a', device_id=ident['native_id'], network_id='net-a',
+            'ports': section([dict(id='port-'+ident['native_id'], device_id=ident['native_id'], network_id='net-a',
                 fixed_ips=[dict(subnet_id='subnet-a', ip_address='10.250.91.4')])]),
             'networks': section([dict(id='net-a', name='Private LAN')]),
             'subnets': section([dict(id='subnet-a', network_id='net-a', cidr='10.250.91.0/24')]),
             'floatingips': section([dict(id='fip-a', floating_ip_address='94.26.228.219',
-                fixed_ip_address='10.250.91.4', port_id='port-a')]),
-            'volumes': section([dict(id='volume-a', name='System disk', size=50,
+                fixed_ip_address='10.250.91.4', port_id='port-'+ident['native_id'])]),
+            'volumes': section([dict(id='volume-'+ident['native_id'], name='System disk', size=50,
                 attachments=[dict(server_id=ident['native_id'])])]),
         })
         if not floating:
@@ -43,7 +43,7 @@ with override_settings(PLUGINS_CONFIG=config):
         record = ProviderInventory.objects.create(provider_key=provider_key(ident, 'vm'), account=account,
             snapshot=snapshot, evidence_digest='a'*64, observed_at=timezone.now())
         review = native_prepare(admin, account)
-        assert review['resources'][0]['action'] == 'create'
+        assert next(r for r in review['resources'] if r['key'] == record.pk)['action'] == 'create'
         native_apply(admin, account, uuid4(), review['fingerprint'])
         binding = ProviderBinding.objects.get(provider_key=record.pk)
         vm = VirtualMachine.objects.get(pk=binding.object_id)
@@ -103,4 +103,22 @@ with override_settings(PLUGINS_CONFIG=config):
     assert second_vm.primary_ip4_id == second_primary and IPAddress.objects.filter(pk=second_primary).exists()
     deletion = lifecycle_review(admin, second.account, 'delete')
     lifecycle_execute(admin, second.account, 'delete', uuid4(), deletion['fingerprint'])
+    # Unlinking one VM keeps shared subnet/VRF context used by a second VM.
+    from ipam.models import Prefix
+    first, first_binding, first_vm = new_cloud('987654325', floating=False)
+    second, second_binding, second_vm = new_cloud('987654325', floating=False)
+    second.snapshot['sections']['ports']['data'][0]['fixed_ips'][0]['ip_address'] = '10.250.91.5'
+    second.save(update_fields=['snapshot'])
+    for record, binding, vm in ((first, first_binding, first_vm), (second, second_binding, second_vm)):
+        assert not project_components(admin, binding, vm, record.snapshot)['notes']
+        vm.refresh_from_db()
+    shared_vrf = second_vm.primary_ip4.vrf_id
+    unlink = lifecycle_review(admin, first.account, 'unlink', first.pk)
+    assert not unlink['blockers'], unlink['blockers']
+    lifecycle_execute(admin, first.account, 'unlink', uuid4(), unlink['fingerprint'], first.pk)
+    assert VirtualMachine.objects.filter(pk=second_vm.pk).exists()
+    assert Prefix.objects.filter(vrf_id=shared_vrf).exists()
+    deletion = lifecycle_review(admin, first.account, 'delete')
+    assert not deletion['blockers'], deletion['blockers']
+    lifecycle_execute(admin, first.account, 'delete', uuid4(), deletion['fingerprint'])
 print('Native cloud region fallback, port/IP/NAT/primary/disk projection, idempotence, rollback and two account cycles OK')
