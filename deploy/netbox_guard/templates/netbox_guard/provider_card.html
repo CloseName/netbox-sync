@@ -1,0 +1,7 @@
+<section class="card mb-3"><h2 class="card-header">Selectel</h2><div class="card-body">
+<p>Аккаунт {{ provider_card.account }}{% if provider_card.project %} · {{ provider_card.project }}{% endif %}{% if provider_card.location %} · {{ provider_card.location }}{% endif %}</p>
+{% if provider_card.fields %}<table class="table"><tbody>{% for label, value in provider_card.fields %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+{% if provider_card.addresses %}<h3>Адреса в Selectel</h3>{% for address in provider_card.addresses %}<div>{{ address }}</div>{% endfor %}<p class="text-muted mt-2">Назначения интерфейсам и основной адрес показаны в стандартных полях карточки.</p>{% endif %}
+{% if provider_card.retained %}<p class="text-warning">Часть сведений сохранена с предыдущего сбора.</p>{% endif %}
+{% if provider_card.placement_pending %}<p class="text-warning">Изменение площадки требует проверки связанных объектов.</p>{% endif %}
+</div></section>

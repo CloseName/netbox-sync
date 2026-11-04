@@ -58,6 +58,10 @@ with transaction.atomic():
     ids = list(CustomField.objects.filter(name__startswith='selectel_').values_list('id', flat=True))
     configure_provider_fields()
     assert ids == list(CustomField.objects.filter(name__startswith='selectel_').values_list('id', flat=True))
+    CustomField.objects.filter(name='selectel_configuration').update(ui_visible='if-set')
+    configure_provider_fields()
+    assert CustomField.objects.get(name='selectel_configuration').ui_visible == 'hidden'
+    assert ids == list(CustomField.objects.filter(name__startswith='selectel_').values_list('id', flat=True))
     with transaction.atomic():
         CustomField.objects.filter(name='selectel_refs').update(type='text')
         rejected(configure_provider_fields, (ValueError,))
