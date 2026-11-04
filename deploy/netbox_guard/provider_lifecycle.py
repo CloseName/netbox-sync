@@ -117,6 +117,12 @@ def _prepare(user, account, operation, key):
         item = {'model':proof.model_label,'id':obj.pk,'name':str(obj),'url':obj.get_absolute_url()}
         evidence.append((proof.pk,_digest({f.attname:getattr(obj,f.attname) for f in obj._meta.concrete_fields})))
         foreign = bool((getattr(obj,'custom_field_data',None) or {}).get('sync_identities'))
+        if operation == 'unlink' and proof.model_label == 'ipam.prefix':
+            # Prefix membership is not a database foreign key. Retain shared
+            # network context while another resource still has addresses in it.
+            foreign |= apps.get_model('ipam.IPAddress').objects.filter(
+                vrf_id=obj.vrf_id, address__net_contained_or_equal=str(obj.prefix)).exclude(
+                    pk__in=[pk for label, pk in owned_keys if label == 'ipam.ipaddress']).exists()
         # NetBox primary-IP fields use hidden reverse relations (related_name='+').
         # They still carry live references and must appear in the review, not only
         # be caught later by Collector's final no-external-writes check.

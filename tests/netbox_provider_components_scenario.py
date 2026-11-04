@@ -26,7 +26,7 @@ with override_settings(PLUGINS_CONFIG=config):
         ident = dict(account=account, kind='cloud_vm', native_id=str(uuid4()), project='p', region='ru-9')
         def section(data): return dict(status='collected', data=data)
         snapshot = dict(identity=ident, sections={
-            'resource': section(dict(name='Regional cloud fixture', status='SHELVED_OFFLOADED')),
+            'resource': section(dict(name='Regional cloud '+ident['native_id'][:8], status='SHELVED_OFFLOADED')),
             'placement': dict(status='not_reported', data={}),
             'hardware': section(dict(vcpus=2, ram=2048)),
             'ports': section([dict(id='port-a', device_id=ident['native_id'], network_id='net-a',
