@@ -52,6 +52,7 @@ jobs:
           done
           exit 1
       - name: Test actual NetBox and SQL triggers
+        id: native-models
         run: |
           docker build -f deploy/Dockerfile.netbox-guard -t provider-guard:test .
           docker run --rm --network container:provider-test-pg \
@@ -62,6 +63,7 @@ jobs:
             --entrypoint /opt/netbox/venv/bin/python provider-guard:test \
             /app/tests/netbox_provider_binding_scenario.py
       - name: Test Selectel lifecycle and historical baseline
+        if: ${{ success() || steps.native-models.conclusion == 'failure' }}
         run: |
           docker run --rm --network container:provider-test-pg \
             --mount type=bind,src="$PWD",dst=/app,readonly \
