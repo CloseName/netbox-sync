@@ -48,6 +48,8 @@ class Command(BaseCommand):
             raise CommandError('Existing permission differs; no overwrite.')
         permission.object_types.set(wanted); permission.users.add(user)
         if options.get('native_resources'):
+            from netbox_guard.supplement_permissions import configure
+            configure(user, delete=bool(options.get('lifecycle')))
             wanted_native = {ContentType.objects.get(app_label=app, model=model).pk for app, model in (
                 ('dcim', 'device'), ('dcim', 'site'), ('dcim', 'region'), ('dcim', 'devicetype'),
                 ('dcim', 'devicerole'), ('dcim', 'manufacturer'), ('virtualization', 'virtualmachine'))}

@@ -82,9 +82,7 @@ class NetworkLinks(PluginTemplateExtension):
             anchors={n.pk:n for n in visible(VMInterface,request.user).filter(pk__in=[n['interface_id'] for n in networks]).select_related('virtual_machine')}
             networks=[n for n in networks if any(i.pk==n['interface_id'] or (n['interface_id'] in anchors and same_network(i,anchors[n['interface_id']])) for i in current)]
         return self.render('netbox_guard/network_link.html', extra_context={
-            'network_kind':kind,'linked_networks':networks,
-            'host_guests':guests if kind=='device' else None,
-            'host_facts':(obj.custom_field_data or {}) if kind=='device' else {}})
+            'network_kind':kind,'linked_networks':networks})
 
 
 class ProviderNetworks(PluginTemplateExtension):
@@ -99,26 +97,13 @@ class ProviderNetworks(PluginTemplateExtension):
         return self.render('netbox_guard/provider_networks.html', extra_context={'provider_networks': value})
 
 
-class ProviderCard(PluginTemplateExtension):
-    models = ['dcim.device', 'virtualization.virtualmachine']
+class RoutingNativePanel(PluginTemplateExtension):
+    models = ['ipam.vrf', 'ipam.prefix', 'ipam.ipaddress', 'ipam.vlan']
 
-    def right_page(self):
-        from .provider_card_display import panel
-        from .models import ProviderResourceRegistry
-        snapshot = (self.context['object'].custom_field_data or {}).get('selectel_inventory')
-        value = panel(snapshot)
-        if value is None:
-            return ''
-        value['primary_missing'] = bool(value['addresses']) and self.context['object'].primary_ip4_id is None
-        if self.context['request'].user.has_perm('netbox_guard.view_resourceregistry'):
-            registry = ProviderResourceRegistry.objects.filter(pk=value['account']).first()
-            if registry:
-                from .resource_tree import build_tree
-                project = snapshot['identity'].get('project')
-                _, projects = build_tree(registry.snapshot['resources'].values())
-                value['project'] = next((row['name'] for row in projects
-                    if row['id'] == project and row['name'] != project), '')
-        return self.render('netbox_guard/provider_card.html', extra_context={'provider_card': value})
+    def full_width_page(self):
+        from .routing_links import panel
+        value = panel(self.context['request'].user, self.context['object'])
+        return self.render('netbox_guard/routing_native.html', extra_context={'routing': value}) if value else ''
 
 
-template_extensions = [NetworkLinks, EsxiNetworkDetails, ProxmoxNetworkDetails, PfsenseInventoryDetails, ProviderNetworks, ProviderCard]
+template_extensions = [RoutingNativePanel, NetworkLinks, EsxiNetworkDetails, ProxmoxNetworkDetails, PfsenseInventoryDetails, ProviderNetworks]

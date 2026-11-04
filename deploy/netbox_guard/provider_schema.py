@@ -48,3 +48,7 @@ def _configure(using):
             for app, model in sorted(SCOPES):
                 field.object_types.add(field.object_types.model.objects.using(using).get(app_label=app, model=model))
     check_schema(using)
+    field = CustomField.objects.using(using).get(name='selectel_networks')
+    if not field.search_weight:
+        field.search_weight = 100
+        checked(field, 'save', using=using, update_fields=['search_weight'])

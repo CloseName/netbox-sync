@@ -65,6 +65,8 @@ def import_account(user, payload):
             target = apps.get_model('dcim.Device' if binding.resource == 'device' else 'virtualization.VirtualMachine').objects.get(pk=binding.object_id)
             component_results.append(dict(provider_key=binding.provider_key,
                 **apply_components(user, binding, target, record.snapshot)))
+        from .routing_projection import apply as apply_routing
+        routing_notes = apply_routing(user, account)
     result = dict(account=account, servers=servers['server_count'],
         matched=review['bound_count'], unmatched=servers['unmatched_count'],
         registry_resources=resources['resources'], retained=resources['retained_resources'],
@@ -73,6 +75,7 @@ def import_account(user, payload):
     result['native_mode'] = 'automatic' if native is not None else 'registry_only'
     if native is not None:
         result['components'] = component_results
+        result['routing_notes'] = routing_notes
         result.update(native_created=sum(row['action'] == 'create' for row in native['applied']),
                       native_adopted=sum(row['action'] == 'bind' for row in native['applied']),
                       native_blocked=len(native['blocked']))

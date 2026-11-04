@@ -338,7 +338,7 @@ def test_first_install_json_is_hidden_only_when_guard_has_a_panel():
     assert json_fields == rendered | api_only
     for name in FIELDS:
         created = definition(name)
-        assert created['ui_visible'] == ('hidden' if name in rendered | api_only else 'if-set')
+        assert created['ui_visible'] == ('hidden' if name in rendered | api_only | {'cpu_model', 'cpu_vendor', 'cpu_sockets', 'cpu_cores', 'cpu_threads', 'memory_mb', 'hypervisor_version'} else 'if-set')
         assert created['ui_editable'] == 'no'
 
 

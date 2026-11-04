@@ -445,3 +445,5 @@ with override_settings(PLUGINS_CONFIG=config):
 print('Per-resource unlink: adopted preservation, owned deletion, foreign dependencies, rollback and replay OK')
 
 runpy.run_path(str(Path(__file__).with_name('netbox_provider_components_scenario.py')), init_globals=globals())
+
+runpy.run_path(str(Path(__file__).with_name('netbox_selectel_unified_scenario.py')), init_globals=globals())

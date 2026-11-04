@@ -5,7 +5,7 @@ from .provider_components import values
 
 
 def extend(user, account, nodes, edges):
-    fields = {'virtualization.vminterface': ('name', 'virtual_machine_id'),
+    fields = {'dcim.interface': ('name', 'device_id'), 'virtualization.vminterface': ('name', 'virtual_machine_id'),
               'virtualization.virtualdisk': ('name', 'size', 'virtual_machine_id'),
               'ipam.ipaddress': ('address', 'vrf_id', 'nat_inside_id'),
               'ipam.prefix': ('prefix', 'vrf_id'), 'ipam.vrf': ('name',)}

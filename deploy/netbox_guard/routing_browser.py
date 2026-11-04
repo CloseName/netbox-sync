@@ -26,7 +26,9 @@ def card(row):
     section = row['sections'][KINDS[row['kind']]]
     result = dict(key=row['key'], name=value.get('name') or value.get('cidr') or
                   ('VLAN ' + str(value['vlan']) if value.get('vlan') is not None else 'Без названия'),
-                  href=row.get('detail_href'), vlan=value.get('vlan'),
+                  href=row.get('detail_href'), native_href=row.get('native_href'), vlan=value.get('vlan'),
+                  gateway_url=row.get('ip_links', {}).get(value.get('gateway')),
+                  service_links=[dict(address=ip, url=row.get('ip_links', {}).get(ip)) for ip in value.get('service_addresses') or []],
                   zone=value.get('zone_name') or '', cidr=value.get('cidr') or '',
                   gateway=value.get('gateway') or '', next_hop=value.get('next_hop') or '',
                   service_addresses=value.get('service_addresses') or [],

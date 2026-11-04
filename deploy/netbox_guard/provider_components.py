@@ -5,6 +5,7 @@ from django.db import connection
 from django.utils import timezone
 from datetime import timedelta
 from virtualization.models import VMInterface, VirtualDisk
+from dcim.models import Interface
 from ipam.models import IPAddress, VRF, Prefix
 from .models import ProviderCreatedObject, ProviderFieldClaim, ProviderInventory
 from .provider_policy import digest
@@ -87,6 +88,31 @@ def apply(user, binding, target, snapshot):
         if parent_id == target.pk and str(address.address.ip) in source_addresses:
             access(user, nic, 'view'); candidates.append(address)
 
+    if binding.resource == 'device' and source_addresses:
+        # Explicit provider-allocation interface. This records the operator's chosen
+        # inventory model, not an observed physical NIC or a guest's WAN interface.
+        from .provider_card_display import address_order
+        nic = None
+        for raw in sorted(source_addresses, key=address_order):
+            try: ip = ip_address(raw)
+            except ValueError: continue
+            if any(str(a.address.ip) == str(ip) for a in candidates): continue
+            existing = IPAddress.objects.filter(address__net_host=str(ip))
+            if existing.exists():
+                notes.append('existing_address_owner_preserved'); continue
+            if nic is None:
+                nic = ensure(Interface, [account, key, 'allocation-interface'],
+                    dict(device_id=target.pk, name='Selectel allocations', type='virtual',
+                         description='Выделения Selectel; фактический интерфейс не подтверждён'),
+                    Interface.objects.filter(device=target, name='Selectel allocations'))
+            if nic is None: break
+            address = ensure(IPAddress, [account, key, 'allocation', str(ip)],
+                dict(address=f'{ip}/{ip.max_prefixlen}', vrf_id=None, status='active',
+                     description='Адрес выделен Selectel; маска сети не сообщена',
+                     assigned_object_type_id=ContentType.objects.get_for_model(Interface).pk,
+                     assigned_object_id=nic.pk), existing)
+            if address: candidates.append(address)
+
     if binding.resource == 'vm':
         identity = snapshot['identity']
         scope = [account, identity.get('project'), identity.get('region')]
@@ -153,6 +179,8 @@ def apply(user, binding, target, snapshot):
             ensure(VirtualDisk, [*scope, 'volume', disk['id']],
                 dict(virtual_machine_id=target.pk, name=name, size=disk['size'] * 1024**3 // 1000000),
                 VirtualDisk.objects.filter(virtual_machine=target, name=name))
+    from .provider_tenancy import apply as apply_tenancy
+    apply_tenancy(user, target, snapshot['identity'])
     changed = []
     for version, field in ((4, 'primary_ip4'), (6, 'primary_ip6')):
         if getattr(target, field + '_id') is not None: continue

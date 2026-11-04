@@ -45,3 +45,24 @@ def test_routing_search_subnet_membership_and_orphans():
     assert browser.context(rows, edges, rows[0], '10.79.1.1', {})['networks'] == []
     assert browser.context(rows, edges, None, '', {})['unlinked'][0]['name'] == 'Unknown parent'
     assert result['routing_problems']
+
+
+def test_unified_hardware_host_priority_and_physical_disks():
+    hardware = importlib.import_module(package.__name__ + '.hardware_display').panel
+    snapshot = dict(identity=dict(kind='dedicated'), sections={'hardware': {'data': {
+        'cpu': [{'name': 'Provider CPU', 'count': 1}],
+        'ram': [{'name': '32 GB ECC', 'count': 8}],
+        'disk': [{'name': '6 TB HDD SATA Enterprise', 'count': 2},
+                 {'name': '480 GB SSD SATA', 'count': 2},
+                 {'name': '6 TB HDD SATA Enterprise', 'count': 2}]}}})
+    fields = dict(cpu_model='Host CPU', cpu_cores=6, cpu_threads=12, memory_mb=262030,
+                  selectel_inventory=snapshot)
+    result = hardware(fields)
+    assert dict(result['fields'])['Процессор'] == 'Host CPU'
+    assert dict(result['fields'])['Память по данным хоста'] == '262030 МиБ'
+    assert result['disks'] == [dict(count=4, capacity='6 TB', kind='HDD'),
+                               dict(count=2, capacity='480 GB', kind='SSD')]
+    assert result['disk_count'] == 6
+    assert hardware({'cpu_model': 'Standalone'})['fields'] == [('Процессор', 'Standalone')]
+    assert hardware({}) is None
+    assert hardware({'physical_disks': [{'name': 'datastore', 'size_bytes': 123}]}) is None
