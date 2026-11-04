@@ -93,7 +93,9 @@ request = RequestFactory().get('/providers/123/', {'kind': 'global_router', 'res
 request.user = admin
 response = registry_view(request, '123')
 assert response.status_code == 200 and b'Routing network' in response.content
-assert b'NOT_REPORTED' in response.content and b'VLAN' in response.content
+assert b'NOT_REPORTED' not in response.content and b'VLAN 100' in response.content
+assert 'Сведения ещё не получены'.encode() in response.content
+assert b'router-fixture' not in response.content and b'network-fixture' not in response.content
 assert list(Device.objects.order_by('pk').values()) == native_before
 from netbox_guard.provider_resource_graph import document as resource_graph
 graph = resource_graph(admin, '123')

@@ -99,4 +99,25 @@ class ProviderNetworks(PluginTemplateExtension):
         return self.render('netbox_guard/provider_networks.html', extra_context={'provider_networks': value})
 
 
-template_extensions = [NetworkLinks, EsxiNetworkDetails, ProxmoxNetworkDetails, PfsenseInventoryDetails, ProviderNetworks]
+class ProviderCard(PluginTemplateExtension):
+    models = ['dcim.device', 'virtualization.virtualmachine']
+
+    def right_page(self):
+        from .provider_card_display import panel
+        from .models import ProviderResourceRegistry
+        snapshot = (self.context['object'].custom_field_data or {}).get('selectel_inventory')
+        value = panel(snapshot)
+        if value is None:
+            return ''
+        if self.context['request'].user.has_perm('netbox_guard.view_resourceregistry'):
+            registry = ProviderResourceRegistry.objects.filter(pk=value['account']).first()
+            if registry:
+                from .resource_tree import build_tree
+                project = snapshot['identity'].get('project')
+                _, projects = build_tree(registry.snapshot['resources'].values())
+                value['project'] = next((row['name'] for row in projects
+                    if row['id'] == project and row['name'] != project), '')
+        return self.render('netbox_guard/provider_card.html', extra_context={'provider_card': value})
+
+
+template_extensions = [NetworkLinks, EsxiNetworkDetails, ProxmoxNetworkDetails, PfsenseInventoryDetails, ProviderNetworks, ProviderCard]

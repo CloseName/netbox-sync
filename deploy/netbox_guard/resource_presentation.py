@@ -65,7 +65,9 @@ def decorate(row, project_names):
         hardware = obj(row, 'hardware')
         operating = obj(row, 'operating_system')
         fields += [('Состояние в Selectel', row['state']),
-            ('Конфигурация', hardware.get('config_name') or obj(row, 'details').get('config_name')),
+            ('Конфигурация', (hardware.get('config_name') or obj(row, 'details').get('config_name'))
+             if not hardware.get('cpu') else None),
+            ('Процессоры', components(hardware.get('cpu'))),
             ('vCPU', hardware.get('vcpus')),
             ('Модули памяти' if isinstance(hardware.get('ram'), list) else 'Память, МиБ',
              components(hardware['ram']) if isinstance(hardware.get('ram'), list) else hardware.get('ram')),

@@ -3,8 +3,8 @@ from .validation_detail import checked
 from django.db import transaction
 from extras.models import CustomField
 
-FIELDS = {'selectel_refs': ('json', 'hidden'), 'selectel_summary': ('text', 'if-set')}
-FIELDS.update({'selectel_inventory': ('json', 'hidden'), **{name: ('longtext', 'if-set') for name in (
+FIELDS = {'selectel_refs': ('json', 'hidden'), 'selectel_summary': ('text', 'hidden')}
+FIELDS.update({'selectel_inventory': ('json', 'hidden'), **{name: ('longtext', 'hidden') for name in (
     'selectel_location', 'selectel_configuration', 'selectel_os', 'selectel_networks', 'selectel_collection_status')}})
 LABELS = {'selectel_refs': 'Selectel bindings', 'selectel_summary': 'Selectel',
           'selectel_inventory': 'Selectel server inventory', 'selectel_location': 'Provider location / zone',
@@ -31,6 +31,14 @@ def configure_provider_fields(using='default'):
 def _configure(using):
     for name, (kind, visible) in FIELDS.items():
         field = CustomField.objects.using(using).select_for_update().filter(name=name).first()
+        # Upgrade only our exact old display schema. Values and claims are untouched.
+        if (field is not None and name not in ('selectel_refs', 'selectel_inventory')
+                and field.ui_visible == 'if-set' and field.type == kind
+                and field.group_name == 'Selectel' and field.ui_editable == 'no'
+                and not field.required and not field.unique
+                and {(t.app_label, t.model) for t in field.object_types.all()} == SCOPES):
+            field.ui_visible = visible
+            checked(field, 'save', using=using, update_fields=['ui_visible'])
         if field is None:
             field = CustomField(name=name, label=LABELS[name],
                                 type=kind, group_name='Selectel', required=False, unique=False,
