@@ -407,9 +407,10 @@ print('Uncertain deletion: single review, stale refusal, atomic retirement/clean
 # blocks foreign dependencies and does not delete the account's other resources.
 account = str(uuid4().int)[:20]
 with override_settings(PLUGINS_CONFIG=config):
-    unlink_adopted = VirtualMachine.objects.create(name='unlink-adopted-'+account)
-    unlink_owned = VirtualMachine.objects.create(name='unlink-owned-'+account)
-    unlink_other = VirtualMachine.objects.create(name='unlink-other-'+account)
+    unlink_site = Site.objects.create(name='unlink-'+account, slug='unlink-'+account)
+    unlink_adopted = VirtualMachine.objects.create(name='unlink-adopted-'+account, site=unlink_site)
+    unlink_owned = VirtualMachine.objects.create(name='unlink-owned-'+account, site=unlink_site)
+    unlink_other = VirtualMachine.objects.create(name='unlink-other-'+account, site=unlink_site)
     adopted_key = bind(unlink_adopted, 'unlink-adopted')
     owned_key = bind(unlink_owned, 'unlink-owned', True)
     other_key = bind(unlink_other, 'unlink-other', True)
