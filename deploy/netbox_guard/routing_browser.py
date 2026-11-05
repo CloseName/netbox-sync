@@ -67,7 +67,10 @@ def context(rows, relations, selected, query, snapshot):
         networks.append(value)
     problems = [dict(label=c['label'], message='Сведения получены не полностью' if c['status'] != 'NOT_REPORTED'
                      else 'Сведения ещё не получены') for c in coverage(snapshot) if c['status'] != 'collected']
+    parent = next((r for r in rows if r['kind'] == 'global_router' and selected and r['key'] != selected['key']
+                   and any(c['key'] == selected['key'] for c in components(r, rows, relations))), None)
     return dict(routing_selected=card(selected) if selected else None,
+        routing_parent=card(parent) if parent else None,
         routing_kind=selected['kind'] if selected else None, routing_query=query,
         routers=[card(r) for r in rows if r['kind'] == 'global_router' and
                  (matches(r, query) or any(matches(c, query) for c in components(r, rows, relations)))],

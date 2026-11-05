@@ -140,7 +140,10 @@ def apply(user, binding, target, snapshot):
                 VMInterface.objects.filter(virtual_machine=target, name=nic_name))
             if nic is None: continue
             vrf_name = f'Selectel / {account} / {network.get("name") or "network"}'[:80] + ' [' + digest([*scope, network_id])[:8] + ']'
-            vrf = ensure(VRF, [*scope, 'network', network_id], dict(name=vrf_name, enforce_unique=True), VRF.objects.filter(name=vrf_name))
+            from .provider_tenancy import resolve as resolve_tenant
+            network_tenant = resolve_tenant(user, identity)
+            vrf = ensure(VRF, [*scope, 'network', network_id], dict(name=vrf_name, enforce_unique=True,
+                tenant_id=network_tenant.pk), VRF.objects.filter(name=vrf_name))
             if vrf is None: continue
             for allocation in port.get('fixed_ips', []):
                 subnet = subnets.get(allocation.get('subnet_id'))

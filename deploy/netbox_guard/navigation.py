@@ -12,6 +12,11 @@ menu = PluginMenu(
                 link_text='Ресурсы провайдеров',
                 permissions=['netbox_guard.view_resourceregistry'],
             ),
+            PluginMenuItem(
+                link='plugins:netbox_guard:routing_overview',
+                link_text='Сети Selectel',
+                permissions=['netbox_guard.view_resourceregistry'],
+            ),
         )),
     ),
 )

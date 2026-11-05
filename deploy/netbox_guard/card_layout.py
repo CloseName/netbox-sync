@@ -41,28 +41,48 @@ class HardwarePanel(Panel):
 
 
 class InventoryLayout(MiddlewareMixin):
+    def process_view(self, request, callback, callback_args, callback_kwargs):
+        match = request.resolver_match
+        if match and match.view_name == 'search':
+            from .search_views import InventorySearchView
+            return InventorySearchView.as_view()(request, *callback_args, **callback_kwargs)
+        if not match or match.view_name not in ('dcim:device', 'virtualization:virtualmachine'):
+            return None
+        view_class = getattr(callback, 'view_class', None)
+        original = getattr(view_class, 'layout', None)
+        if original is None:
+            return None
+        # ObjectView uses django.shortcuts.render(), not TemplateResponse.
+        # A request-local subclass preserves dispatch/permissions and the shared layout.
+        layout = inventory_layout(original, match.view_name == 'dcim:device')
+        adapted = type('InventoryView', (view_class,), {'layout': layout})
+        return adapted.as_view(**getattr(callback, 'view_initkwargs', {}))(
+            request, *callback_args, **callback_kwargs)
+
     def process_template_response(self, request, response):
         context = response.context_data
         match = request.resolver_match
-        if not context or not match or match.view_name not in ('dcim:device', 'virtualization:virtualmachine'):
-            return response
-        original = context.get('layout')
-        if original is None:
-            return response
-        layout = copy(original)
-        layout.rows = [copy(row) for row in original.rows]
-        device = match.view_name == 'dcim:device'
-        for row in layout.rows:
-            row.columns = [copy(column) for column in row.columns]
-            for column in row.columns:
-                panels = []
-                for panel in column.panels:
-                    panels.append(panel)
-                    anchor = 'DeviceManagementPanel' if device else 'VirtualMachinePanel'
-                    if panel.__class__.__name__ == anchor:
-                        panels.append(AddressesPanel())
-                        if device:
-                            panels.append(HardwarePanel())
-                column.panels = panels
-        context['layout'] = layout
+        if context and match and match.view_name in ('dcim:device', 'virtualization:virtualmachine'):
+            if context.get('layout') is not None:
+                context['layout'] = inventory_layout(context['layout'], match.view_name == 'dcim:device')
         return response
+
+
+def inventory_layout(original, device):
+    layout = copy(original)
+    layout.rows = [copy(row) for row in original.rows]
+    for row in layout.rows:
+        row.columns = [copy(column) for column in row.columns]
+        for column in row.columns:
+            panels = []
+            for panel in column.panels:
+                if isinstance(panel, (AddressesPanel, HardwarePanel)):
+                    continue
+                panels.append(panel)
+                anchor = 'DeviceManagementPanel' if device else 'VirtualMachinePanel'
+                if panel.__class__.__name__ == anchor:
+                    panels.append(AddressesPanel())
+                    if device:
+                        panels.append(HardwarePanel())
+            column.panels = panels
+    return layout

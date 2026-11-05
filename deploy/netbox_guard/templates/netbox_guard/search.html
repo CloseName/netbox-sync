@@ -1,0 +1,13 @@
+{% extends 'search.html' %}
+{% block content %}
+{{ block.super }}
+{% if route_page.paginator.count %}
+<section class="card mt-3" id="routing-search-results">
+  <h2 class="card-header">Статические маршруты · {{ route_page.paginator.count }}</h2>
+  <div class="table-responsive"><table class="table"><thead><tr><th>Название</th><th>Сеть назначения</th><th>Следующий узел</th><th>Роутер</th><th>Аккаунт</th></tr></thead><tbody>
+  {% for route in route_page %}<tr><td><a href="{{ route.href }}">{{ route.name }}</a>{% if route.retained %} · Сохранено ранее{% endif %}</td><td><a href="{{ route.href }}">{{ route.cidr }}</a></td><td>{{ route.next_hop }}</td><td><a href="{{ route.router_url }}">{{ route.router }}</a></td><td>{{ route.account }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% if route_page.has_other_pages %}<div class="card-footer">{% if route_page.has_previous %}<a href="?{{ route_query }}&amp;route_page={{ route_page.previous_page_number }}">Назад</a>{% endif %} · {{ route_page.number }} / {{ route_page.paginator.num_pages }} · {% if route_page.has_next %}<a href="?{{ route_query }}&amp;route_page={{ route_page.next_page_number }}">Далее</a>{% endif %}</div>{% endif %}
+</section>
+{% endif %}
+{% endblock %}
