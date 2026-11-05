@@ -141,6 +141,9 @@ with override_settings(PLUGINS_CONFIG=config, ALLOWED_HOSTS=['testserver']):
     # Upgrade an old owned routing tenant without moving any native IPAM object.
     from netbox_guard.provider_tenancy import resolve as resolve_tenant
     old_tenant = resolve_tenant(admin, dict(account=account, project=''))
+    old_tenant.name = 'Без проекта / уровень аккаунта'
+    old_tenant.save(update_fields=['name'])
+    collision = Tenant.objects.create(name='Общие ресурсы аккаунта', slug='manual-general-unified', group=old_tenant.group)
     vrf = prefix.vrf
     vrf.tenant = old_tenant
     vrf.save(update_fields=['tenant'])
@@ -151,6 +154,12 @@ with override_settings(PLUGINS_CONFIG=config, ALLOWED_HOSTS=['testserver']):
     vrf.refresh_from_db()
     assert vrf.tenant.name == 'Глобальный роутинг'
     assert prefix.vrf_id == vrf.pk
+    old_tenant.refresh_from_db()
+    assert old_tenant.name == 'Без проекта / уровень аккаунта'
+    collision.delete()
+    with transaction.atomic(): assert not routing_apply(admin, account)
+    old_tenant.refresh_from_db()
+    assert old_tenant.name == 'Общие ресурсы аккаунта'
     from netbox_guard.routing_catalog import routes as find_routes
     from django.urls import reverse
     matches = find_routes(admin, '10.160.0.42')

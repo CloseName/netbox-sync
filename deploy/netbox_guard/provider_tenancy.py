@@ -18,6 +18,7 @@ def resolve(user, identity, routing=False):
                 raise DependencyGuardBlocked('PERMISSION_DENIED')
             if (model is Tenant and fields['name'] == 'Общие ресурсы аккаунта' and
                     result.name == 'Без проекта / уровень аккаунта' and
+                    not Tenant.objects.filter(group_id=result.group_id, name=fields['name']).exclude(pk=result.pk).exists() and
                     ProviderCreatedObject.objects.filter(account=account, model_label='tenancy.tenant',
                         object_id=result.pk, object_created=result.created,
                         provider_key='tenancy:' + digest(key)).exists()):
