@@ -84,14 +84,13 @@ with override_settings(PLUGINS_CONFIG=config, ALLOWED_HOSTS=['testserver']):
     denied = reader.get(device.get_absolute_url())
     assert denied.status_code in (403, 404) and b'94.26.228.212' not in denied.content
     # Standalone host facts must render without any Selectel allocation snapshot.
-    original_fields = copy.deepcopy(device.custom_field_data)
-    device.custom_field_data = dict(cpu_model='Standalone host CPU', memory_mb=32768)
-    device.save(update_fields=['custom_field_data'])
-    standalone_html = client.get(device.get_absolute_url()).content.decode()
+    standalone = Device.objects.create(name='Standalone host fixture', site=device.site,
+        role=device.role, device_type=device.device_type, status='active',
+        custom_field_data=dict(cpu_model='Standalone host CPU', memory_mb=32768))
+    standalone_html = client.get(standalone.get_absolute_url()).content.decode()
     assert 'Standalone host CPU' in standalone_html and '32768' in standalone_html
     assert 'data-sync-hardware' in standalone_html
-    device.custom_field_data = original_fields
-    device.save(update_fields=['custom_field_data'])
+    standalone.delete()
     manual = Tenant.objects.create(name='Keep manual', slug='keep-manual-unified')
     device.tenant = manual
     device.save(update_fields=['tenant'])
