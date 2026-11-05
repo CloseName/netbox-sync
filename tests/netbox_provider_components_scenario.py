@@ -75,7 +75,7 @@ with override_settings(PLUGINS_CONFIG=config):
         # Simulate upgrading a pre-tenancy proof with an operator-assigned tenant.
         network_proof.projection_values.pop('tenant_id')
         network_proof.save(update_fields=['projection_values'])
-        operator_tenant = Tenant.objects.create(name='Manual network tenant', slug='manual-network-' + str(cycle))
+        operator_tenant = Tenant.objects.create(name='Manual network tenant ' + str(cycle), slug='manual-network-' + str(cycle))
         network_vrf.tenant = operator_tenant
         network_vrf.save(update_fields=['tenant'])
         project_components(admin, binding, vm, record.snapshot)
