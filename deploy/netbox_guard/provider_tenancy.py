@@ -43,6 +43,9 @@ def resolve(user, identity, routing=False):
         _, projects = build_tree(registry.snapshot['resources'].values())
         names = {p['id']: p['name'] for p in projects}
     if routing:
+        legacy_key = ['selectel', account, '']
+        if Tenant.objects.filter(slug='selectel-' + digest(legacy_key)[:24]).exists():
+            ensure(Tenant, legacy_key, dict(name='Общие ресурсы аккаунта', group=group))
         return ensure(Tenant, ['selectel', account, 'routing', 'account'],
                       dict(name='Глобальный роутинг', group=group))
     name = (names.get(project) or project) if project else 'Общие ресурсы аккаунта'

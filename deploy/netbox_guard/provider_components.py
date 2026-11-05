@@ -57,6 +57,10 @@ def apply(user, binding, target, snapshot):
                 notes.append('component_owner_conflict'); return None
             if values(obj, proof.projection_values) != proof.projection_values:
                 notes.append('component_edited'); return None
+            # Older component proofs did not manage tenancy. An existing tenant
+            # outside that proof belongs to the operator, even on an owned VRF.
+            if 'tenant_id' in fields and 'tenant_id' not in proof.projection_values and obj.tenant_id is not None:
+                fields = {field: value for field, value in fields.items() if field != 'tenant_id'}
             if values(obj, fields) != fields:
                 if conflicts.exclude(pk=obj.pk).exists():
                     notes.append('existing_component_requires_review'); return None

@@ -37,9 +37,12 @@ def domains(user, routers_only=False):
             rows, _ = build_tree(snapshot['resources'].values())
             router = next((r for r in rows if r['key'] == proof.resource_key and r['kind'] == 'global_router'), None)
             if router:
+                children = components(router, rows, snapshot['relations'].values())
+                zones = sorted({data(r).get('zone_name') for r in children
+                                if r['kind'] == 'routing_network' and data(r).get('zone_name')})
                 yield dict(account=proof.account, name=card(router)['name'], kind='Глобальный роутер',
-                    url=detail_url(proof.account, router), vrf=vrf, project='Глобальный роутинг', zone='Несколько площадок',
-                    children=components(router, rows, snapshot['relations'].values()))
+                    url=detail_url(proof.account, router), vrf=vrf, project='Глобальный роутинг',
+                    zone=', '.join(zones) or 'Не указано', children=children)
         elif proof.provider_key.startswith('component:'):
             inventory = ProviderInventory.objects.filter(pk=proof.resource_key, account=proof.account).first()
             ident = inventory.snapshot.get('identity', {}) if inventory else {}
