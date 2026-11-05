@@ -67,6 +67,27 @@ with override_settings(PLUGINS_CONFIG=config):
         assert not project_components(admin, binding, vm, record.snapshot)['primary_updated']
         assert counts == (VMInterface.objects.count(), IPAddress.objects.count(), VirtualDisk.objects.count(), VRF.objects.count())
         assert vm.primary_ip4_id == primary
+        from tenancy.models import Tenant
+        network_vrf = vm.primary_ip4.nat_inside.vrf
+        assert network_vrf.tenant_id == vm.tenant_id
+        network_proof = ProviderCreatedObject.objects.get(model_label='ipam.vrf', object_id=network_vrf.pk)
+        managed_tenant = network_vrf.tenant_id
+        # Simulate upgrading a pre-tenancy proof with an operator-assigned tenant.
+        network_proof.projection_values.pop('tenant_id')
+        network_proof.save(update_fields=['projection_values'])
+        operator_tenant = Tenant.objects.create(name='Manual network tenant ' + str(cycle), slug='manual-network-' + str(cycle))
+        network_vrf.tenant = operator_tenant
+        network_vrf.save(update_fields=['tenant'])
+        project_components(admin, binding, vm, record.snapshot)
+        network_vrf.refresh_from_db()
+        network_proof.refresh_from_db()
+        assert network_vrf.tenant_id == operator_tenant.pk
+        assert 'tenant_id' not in network_proof.projection_values
+        network_vrf.tenant_id = None
+        network_vrf.save(update_fields=['tenant'])
+        project_components(admin, binding, vm, record.snapshot)
+        network_vrf.refresh_from_db()
+        assert network_vrf.tenant_id == managed_tenant
         from netbox_guard.provider_resource_graph import document as graph_document
         graph = graph_document(admin, component_account)
         assert {'assigned_to', 'nat_to', 'attached_to'} <= {e['kind'] for e in graph['edges']}

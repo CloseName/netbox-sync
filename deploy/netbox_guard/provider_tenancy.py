@@ -7,7 +7,7 @@ from .validation_detail import checked
 from .dependencies import DependencyGuardBlocked
 
 
-def resolve(user, identity):
+def resolve(user, identity, routing=False):
     account, project = identity['account'], identity.get('project') or ''
     def ensure(model, key, fields):
         slug = 'selectel-' + digest(key)[:24]
@@ -16,6 +16,17 @@ def resolve(user, identity):
             result = matches[0]
             if not user.has_perm(f'{model._meta.app_label}.view_{model._meta.model_name}', result):
                 raise DependencyGuardBlocked('PERMISSION_DENIED')
+            if (model is Tenant and fields['name'] == 'Общие ресурсы аккаунта' and
+                    result.name == 'Без проекта / уровень аккаунта' and
+                    not Tenant.objects.filter(group_id=result.group_id, name=fields['name']).exclude(pk=result.pk).exists() and
+                    ProviderCreatedObject.objects.filter(account=account, model_label='tenancy.tenant',
+                        object_id=result.pk, object_created=result.created,
+                        provider_key='tenancy:' + digest(key)).exists()):
+                if not user.has_perm('tenancy.change_tenant', result):
+                    raise DependencyGuardBlocked('PERMISSION_DENIED')
+                result.name = fields['name']
+                checked(result, 'full_clean')
+                checked(result, 'save', update_fields=['name', 'last_updated'])
             return result
         result = create_native(user, model(slug=slug, **fields))
         # The shared Selectel root outlives any one account. Child groups and
@@ -32,7 +43,13 @@ def resolve(user, identity):
         from .resource_tree import build_tree
         _, projects = build_tree(registry.snapshot['resources'].values())
         names = {p['id']: p['name'] for p in projects}
-    name = names.get(project) or project or 'Общие ресурсы аккаунта'
+    if routing:
+        legacy_key = ['selectel', account, '']
+        if Tenant.objects.filter(slug='selectel-' + digest(legacy_key)[:24]).exists():
+            ensure(Tenant, legacy_key, dict(name='Общие ресурсы аккаунта', group=group))
+        return ensure(Tenant, ['selectel', account, 'routing', 'account'],
+                      dict(name='Глобальный роутинг', group=group))
+    name = (names.get(project) or project) if project else 'Общие ресурсы аккаунта'
     return ensure(Tenant, ['selectel', account, project], dict(name=name[:100], group=group))
 
 

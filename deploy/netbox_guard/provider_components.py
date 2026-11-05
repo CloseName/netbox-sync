@@ -57,6 +57,10 @@ def apply(user, binding, target, snapshot):
                 notes.append('component_owner_conflict'); return None
             if values(obj, proof.projection_values) != proof.projection_values:
                 notes.append('component_edited'); return None
+            # Older component proofs did not manage tenancy. An existing tenant
+            # outside that proof belongs to the operator, even on an owned VRF.
+            if 'tenant_id' in fields and 'tenant_id' not in proof.projection_values and obj.tenant_id is not None:
+                fields = {field: value for field, value in fields.items() if field != 'tenant_id'}
             if values(obj, fields) != fields:
                 if conflicts.exclude(pk=obj.pk).exists():
                     notes.append('existing_component_requires_review'); return None
@@ -140,7 +144,10 @@ def apply(user, binding, target, snapshot):
                 VMInterface.objects.filter(virtual_machine=target, name=nic_name))
             if nic is None: continue
             vrf_name = f'Selectel / {account} / {network.get("name") or "network"}'[:80] + ' [' + digest([*scope, network_id])[:8] + ']'
-            vrf = ensure(VRF, [*scope, 'network', network_id], dict(name=vrf_name, enforce_unique=True), VRF.objects.filter(name=vrf_name))
+            from .provider_tenancy import resolve as resolve_tenant
+            network_tenant = resolve_tenant(user, identity)
+            vrf = ensure(VRF, [*scope, 'network', network_id], dict(name=vrf_name, enforce_unique=True,
+                tenant_id=network_tenant.pk), VRF.objects.filter(name=vrf_name))
             if vrf is None: continue
             for allocation in port.get('fixed_ips', []):
                 subnet = subnets.get(allocation.get('subnet_id'))

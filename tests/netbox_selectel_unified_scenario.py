@@ -26,7 +26,7 @@ from tools.selectel_audit.resource_registry import registry as make_registry
 def apply_components(*args):
     return components_apply(*args)
 
-with override_settings(PLUGINS_CONFIG=config):
+with override_settings(PLUGINS_CONFIG=config, ALLOWED_HOSTS=['testserver']):
     unprivileged = get_user_model().objects.create(username='unified-reader-' + uuid4().hex)
     account = '987654330'
     ident = dict(account=account, kind='dedicated', native_id=str(uuid4()), project='project-a', region='')
@@ -70,6 +70,27 @@ with override_settings(PLUGINS_CONFIG=config):
     assert sum(r['primary'] for r in rendered['provider_addresses']) == 1
     assert '94.26.228.212' in panels[1].render({'object': device, 'request': request})
     assert 'Xeon' in panels[2].render({'object': device, 'request': request})
+    from django.test import Client
+    client = Client()
+    client.force_login(admin)
+    page = client.get(device.get_absolute_url())
+    assert page.status_code == 200
+    html = page.content.decode()
+    assert '94.26.228.212' in html and 'Xeon' in html
+    assert html.index('Management') < html.index('94.26.228.212') < html.index('Xeon')
+    assert not any(isinstance(p, AddressesPanel) for p in DeviceView.layout.rows[0].columns[1].panels)
+    reader = Client()
+    reader.force_login(unprivileged)
+    denied = reader.get(device.get_absolute_url())
+    assert denied.status_code in (403, 404) and b'94.26.228.212' not in denied.content
+    # Standalone host facts must render without any Selectel allocation snapshot.
+    standalone = Device.objects.create(name='Standalone host fixture', site=device.site,
+        role=device.role, device_type=device.device_type, status='active',
+        custom_field_data=dict(cpu_model='Standalone host CPU', memory_mb=32768))
+    standalone_html = client.get(standalone.get_absolute_url()).content.decode()
+    assert 'Standalone host CPU' in standalone_html and '32768' in standalone_html
+    assert 'data-sync-hardware' in standalone_html
+    standalone.delete()
     manual = Tenant.objects.create(name='Keep manual', slug='keep-manual-unified')
     device.tenant = manual
     device.save(update_fields=['tenant'])
@@ -116,6 +137,55 @@ with override_settings(PLUGINS_CONFIG=config):
     search_backend.cache(prefix)
     assert any(hit.object == prefix for hit in search_backend.search('10.78.12.42', user=admin))
     assert any(hit.object == prefix.vrf for hit in search_backend.search('10.160.0.42', user=admin))
+    assert prefix.vrf.tenant.name == 'Глобальный роутинг'
+    # Upgrade an old owned routing tenant without moving any native IPAM object.
+    from netbox_guard.provider_tenancy import resolve as resolve_tenant
+    old_tenant = resolve_tenant(admin, dict(account=account, project=''))
+    old_tenant.name = 'Без проекта / уровень аккаунта'
+    old_tenant.save(update_fields=['name'])
+    collision = Tenant.objects.create(name='Общие ресурсы аккаунта', slug='manual-general-unified', group=old_tenant.group)
+    vrf = prefix.vrf
+    vrf.tenant = old_tenant
+    vrf.save(update_fields=['tenant'])
+    proof = ProviderCreatedObject.objects.get(model_label='ipam.vrf', object_id=vrf.pk)
+    proof.projection_values['tenant_id'] = old_tenant.pk
+    proof.save(update_fields=['projection_values'])
+    with transaction.atomic(): assert not routing_apply(admin, account)
+    vrf.refresh_from_db()
+    assert vrf.tenant.name == 'Глобальный роутинг'
+    assert prefix.vrf_id == vrf.pk
+    old_tenant.refresh_from_db()
+    assert old_tenant.name == 'Без проекта / уровень аккаунта'
+    collision.delete()
+    with transaction.atomic(): assert not routing_apply(admin, account)
+    old_tenant.refresh_from_db()
+    assert old_tenant.name == 'Общие ресурсы аккаунта'
+    from netbox_guard.routing_catalog import routes as find_routes
+    from django.urls import reverse
+    matches = find_routes(admin, '10.160.0.42')
+    match = next(r for r in matches if r['account'] == account)
+    assert match['name'] == 'PAM-DEV-CLOUD' and match['next_hop'] == '10.78.12.2'
+    search_page = client.get(reverse('search'), {'q': '10.160.0.0/16'})
+    assert search_page.status_code == 200
+    assert 'routing-search-results' in search_page.content.decode()
+    assert 'PAM-DEV-CLOUD' in search_page.content.decode()
+    route_page = client.get(match['href'])
+    assert route_page.status_code == 200
+    route_html = route_page.content.decode()
+    assert all(value in route_html for value in ('PAM-DEV-CLOUD', '10.160.0.0/16', '10.78.12.2', 'Routing unified'))
+    overview = client.get(reverse('plugins:netbox_guard:routing_overview'), {'account': account})
+    assert overview.status_code == 200 and 'Routing unified' in overview.content.decode()
+    assert find_routes(unprivileged, '10.160.0.0/16') == []
+    assert reader.get(reverse('plugins:netbox_guard:routing_overview')).status_code == 403
+    assert b'PAM-DEV-CLOUD' not in reader.get(reverse('search'), {'q': '10.160.0.0/16'}).content
+    # A manual VRF tenant change is not overwritten by a later projection.
+    vrf.tenant = manual
+    vrf.save(update_fields=['tenant'])
+    with transaction.atomic(): assert 'routing_manual_edit_preserved' in routing_apply(admin, account)
+    vrf.refresh_from_db()
+    assert vrf.tenant_id == manual.pk
+    vrf.tenant_id = proof.projection_values['tenant_id'] = resolve_tenant(admin, dict(account=account), routing=True).pk
+    vrf.save(update_fields=['tenant'])
     from netbox_guard.routing_links import panel as routing_panel
     assert routing_panel(admin, prefix)['networks'][0]['subnets'][0]['gateway_url']
     assert routing_panel(unprivileged, prefix) is None

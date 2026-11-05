@@ -53,7 +53,7 @@ def apply(user, account):
         if router['kind'] != 'global_router' or not fresh(router): continue
         name = ('Selectel / ' + account + ' / ' + (data(router).get('name') or 'Роутер'))[:100]
         from .provider_tenancy import resolve as resolve_tenant
-        tenant = resolve_tenant(user, dict(account=account, project=router.get('project') or ''))
+        tenant = resolve_tenant(user, dict(account=account, project=router.get('project') or ''), routing=True)
         vrf = ensure(VRF, router['key'], dict(name=name, enforce_unique=True, tenant_id=tenant.pk), VRF.objects.filter(name=name))
         if vrf is None: continue
         children = components(router, rows, relations)
