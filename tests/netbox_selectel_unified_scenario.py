@@ -184,8 +184,16 @@ with override_settings(PLUGINS_CONFIG=config, ALLOWED_HOSTS=['testserver']):
         assert 'PAM-DEV-CLOUD' in routes_html and 'data-routing-network' not in routes_html
         assert 'routing_tab=networks' in routes_html
     vlan_page = client.get(prefix.vlan.get_absolute_url())
-    assert vlan_page.status_code == 200 and '10.78.12.0/26' in vlan_page.content.decode()
+    assert vlan_page.status_code == 200
     assert 'Маршрутизация Selectel' not in vlan_page.content.decode()
+    # NetBox 4.7 loads its native Prefixes table through a separate HTMX request.
+    import re
+    from html import unescape
+    prefix_table_url = next(unescape(url) for url in re.findall(r'hx-get="([^"]+)"', vlan_page.content.decode())
+                            if reverse('ipam:prefix_list') in unescape(url))
+    assert 'vlan_id=' + str(prefix.vlan_id) in prefix_table_url
+    prefix_table = client.get(prefix_table_url, HTTP_HX_REQUEST='true')
+    assert prefix_table.status_code == 200 and '10.78.12.0/26' in prefix_table.content.decode()
     prefix_page = client.get(prefix.get_absolute_url())
     assert prefix_page.status_code == 200 and '10.78.12.61' in prefix_page.content.decode()
     query_page = client.get(match['router_url'] + '&q=10.160.0.0%2F16')
