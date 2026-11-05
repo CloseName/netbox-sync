@@ -93,9 +93,19 @@ request = RequestFactory().get('/providers/123/', {'kind': 'global_router', 'res
 request.user = admin
 response = registry_view(request, '123')
 assert response.status_code == 200 and b'Routing network' in response.content
-from django.utils.html import strip_tags
-import re
-routing_text = re.sub(r'\s+', ' ', strip_tags(response.content.decode()))
+from html.parser import HTMLParser
+
+class VisibleText(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.parts = []
+
+    def handle_data(self, value):
+        self.parts.extend(value.split())
+
+visible = VisibleText()
+visible.feed(response.content.decode())
+routing_text = ' '.join(visible.parts)
 assert 'NOT_REPORTED' not in routing_text and 'VLAN 100' in routing_text
 assert 'Сведения ещё не получены'.encode() in response.content
 assert b'router-fixture' not in response.content and b'network-fixture' not in response.content
