@@ -1,0 +1,4 @@
+<div class="table-responsive"><table class="table" style="table-layout:fixed;min-width:560px;overflow-wrap:anywhere">
+  <thead><tr><th>Название</th><th>Сеть назначения</th><th>Следующий узел</th></tr></thead>
+  <tbody>{% for route in routes %}<tr><td><a href="{{ route.href }}">{{ route.name }}</a>{% if route.retained %} · Сохранено ранее{% endif %}</td><td><a href="{{ route.href }}">{{ route.cidr }}</a></td><td>{% if route.next_hop_url %}<a href="{{ route.next_hop_url }}">{{ route.next_hop }}</a>{% else %}{{ route.next_hop }}{% endif %}</td></tr>{% empty %}<tr><td colspan="3">Маршруты не найдены.</td></tr>{% endfor %}</tbody>
+</table></div>

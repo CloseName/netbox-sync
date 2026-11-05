@@ -1,4 +1,18 @@
-<section class="card mb-3" data-sync-hardware><h2 class="card-header">Аппаратная конфигурация</h2><div class="card-body">
-<table class="table"><tbody>{% for label, value in hardware.fields %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</tbody></table>
-{% if hardware.disks %}<h3>Физические диски</h3><table class="table"><thead><tr><th>Количество</th><th>Объём каждого</th><th>Тип</th></tr></thead><tbody>{% for disk in hardware.disks %}<tr><td>{{ disk.count }}</td><td>{{ disk.capacity }}</td><td>{{ disk.kind }}</td></tr>{% endfor %}</tbody></table><p class="text-muted">Всего дисков: {{ hardware.disk_count }} · {{ hardware.disk_source }}</p>{% endif %}
-</div></section>
+<section class="card mb-3" data-sync-hardware>
+  <h2 class="card-header">Аппаратная конфигурация</h2>
+  <div class="p-3">
+    {% if hardware.cpu %}{% include 'netbox_guard/hardware_section.html' with title='Процессор' rows=hardware.cpu %}{% endif %}
+    {% if hardware.memory %}{% include 'netbox_guard/hardware_section.html' with title='Память' rows=hardware.memory %}{% endif %}
+    {% if hardware.disks %}
+    <section class="border rounded mb-3 overflow-hidden">
+      <h3 class="h5 m-0 p-3 border-bottom">Физические диски</h3>
+      <table class="table mb-0" style="table-layout:fixed;overflow-wrap:anywhere">
+        <thead><tr><th class="px-3">Тип</th><th>Количество</th><th class="pe-3">Объём каждого</th></tr></thead>
+        <tbody>{% for disk in hardware.disks %}<tr><td class="px-3">{{ disk.kind }}</td><td>{{ disk.count }}</td><td class="pe-3">{{ disk.capacity }}</td></tr>{% endfor %}</tbody>
+      </table>
+      <div class="p-3 border-top text-muted">Всего дисков: {{ hardware.disk_count }} · Источник: {{ hardware.disk_source }}</div>
+    </section>
+    {% endif %}
+    {% if hardware.other %}{% include 'netbox_guard/hardware_section.html' with title='Дополнительно' rows=hardware.other %}{% endif %}
+  </div>
+</section>

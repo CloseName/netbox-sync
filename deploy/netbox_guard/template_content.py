@@ -98,11 +98,15 @@ class ProviderNetworks(PluginTemplateExtension):
 
 
 class RoutingNativePanel(PluginTemplateExtension):
-    models = ['ipam.vrf', 'ipam.prefix', 'ipam.ipaddress', 'ipam.vlan']
+    models = ['ipam.vrf', 'ipam.prefix', 'ipam.ipaddress']
 
     def full_width_page(self):
         from .routing_links import panel
+        from .routing_tabs import configure
         value = panel(self.context['request'].user, self.context['object'])
+        if value:
+            value['is_router'] = self.context['object']._meta.model_name == 'vrf'
+            configure(value, self.context['request'].GET)
         return self.render('netbox_guard/routing_native.html', extra_context={'routing': value}) if value else ''
 
 

@@ -1,0 +1,13 @@
+{% for network in networks %}
+<section class="card mb-3" data-routing-network>
+  <div class="card-header d-block p-3">
+    <div class="row g-3 align-items-start">
+      <div class="col-12 col-lg-6"><div class="small text-muted">Название сети</div><a class="fw-bold" style="overflow-wrap:anywhere" href="{{ network.native_href|default:network.href }}">{{ network.name }}</a>{% if network.service %}<div class="small text-muted">{{ network.service }}</div>{% endif %}</div>
+      <div class="col-6 col-lg-2"><div class="small text-muted">VLAN</div>{% if network.vlan != None %}{% if network.native_href %}<a href="{{ network.native_href }}">{{ network.vlan }}</a>{% else %}{{ network.vlan }}{% endif %}{% else %}—{% endif %}</div>
+      <div class="col-6 col-lg-4"><div class="small text-muted">Площадка</div><span style="overflow-wrap:anywhere">{{ network.zone|default:'Не указана' }}</span></div>
+    </div>
+    {% if network.retained %}<div class="small text-warning mt-2">Сохранено ранее</div>{% endif %}
+  </div>
+  {% include 'netbox_guard/routing_subnets.html' with subnets=network.subnets %}
+</section>
+{% empty %}<p class="text-muted">Сети не найдены.</p>{% endfor %}
