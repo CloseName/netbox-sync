@@ -119,5 +119,7 @@ def registry(request, account=None):
         from .routing_links import decorate as decorate_links
         decorate_links(request.user, account, rows)
         context.update(routing_context(rows, snapshot['relations'].values(), selected, q, snapshot))
+        from .routing_tabs import configure
+        configure(context, request.GET)
         return render(request, 'netbox_guard/routing_registry.html', context)
     return render(request, 'netbox_guard/resource_registry.html', context)

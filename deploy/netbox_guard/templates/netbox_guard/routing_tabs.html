@@ -1,0 +1,7 @@
+<div id="routing-content">
+  <nav class="nav nav-tabs mb-3" aria-label="Разделы роутера">
+    <a class="nav-link {% if routing_tab == 'networks' %}active{% endif %}" {% if routing_tab == 'networks' %}aria-current="page"{% endif %} href="{{ network_tab_url }}">Сети и подсети <span class="badge text-bg-secondary">{{ networks|length }}</span></a>
+    <a class="nav-link {% if routing_tab == 'routes' %}active{% endif %}" {% if routing_tab == 'routes' %}aria-current="page"{% endif %} href="{{ route_tab_url }}">Статические маршруты <span class="badge text-bg-secondary">{{ routes|length }}</span></a>
+  </nav>
+  {% if routing_tab == 'routes' %}{% include 'netbox_guard/routing_route_table.html' %}{% else %}{% include 'netbox_guard/routing_network_cards.html' %}{% endif %}
+</div>

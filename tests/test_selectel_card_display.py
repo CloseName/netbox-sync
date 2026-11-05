@@ -59,7 +59,9 @@ def test_unified_hardware_host_priority_and_physical_disks():
                   selectel_inventory=snapshot)
     result = hardware(fields)
     assert dict(result['fields'])['Процессор'] == 'Host CPU'
-    assert dict(result['fields'])['Память по данным хоста'] == '262030 МиБ'
+    assert dict(result['fields'])['Память по данным хоста'] == '255,89 ГиБ'
+    assert result['cpu'][0] == ('Процессор', 'Host CPU')
+    assert result['memory'][0] == ('Память по данным хоста', '255,89 ГиБ')
     assert result['disks'] == [dict(count=4, capacity='6 TB', kind='HDD'),
                                dict(count=2, capacity='480 GB', kind='SSD')]
     assert result['disk_count'] == 6
@@ -75,3 +77,17 @@ def test_explicit_configuration_is_split_without_inventing_dimm_count():
     assert dict(result['fields'])['Установленная память'] == '32 GB DDR4 non-ECC'
     assert result['disks'] == [dict(count=2, capacity='500 GB', kind='SSD')]
     assert 'Конфигурация Selectel' not in dict(result['fields'])
+
+
+def test_memory_units_and_route_tab_selection():
+    hardware = importlib.import_module(package.__name__ + '.hardware_display').panel
+    assert hardware({'memory_mb': 262005})['memory'][0][1] == '255,86 ГиБ'
+    assert hardware({'memory_mb': 32768})['memory'][0][1] == '32 ГиБ'
+    assert hardware({'memory_mb': 'unknown'})['memory'][0][1] == 'unknown'
+    tabs = importlib.import_module(package.__name__ + '.routing_tabs').configure
+    value = {'networks': [], 'routes': [{'name': 'PAM'}], 'routing_query': '10.160'}
+    tabs(value, {'q': '10.160', 'resource': 'abc'})
+    assert value['routing_tab'] == 'routes'
+    assert 'resource=abc' in value['network_tab_url'] and 'q=10.160' in value['network_tab_url']
+    tabs(value, {'q': '10.160', 'routing_tab': 'networks'})
+    assert value['routing_tab'] == 'networks'

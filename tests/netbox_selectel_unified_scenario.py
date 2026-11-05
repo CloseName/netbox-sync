@@ -88,7 +88,7 @@ with override_settings(PLUGINS_CONFIG=config, ALLOWED_HOSTS=['testserver']):
         role=device.role, device_type=device.device_type, status='active',
         custom_field_data=dict(cpu_model='Standalone host CPU', memory_mb=32768))
     standalone_html = client.get(standalone.get_absolute_url()).content.decode()
-    assert 'Standalone host CPU' in standalone_html and '32768' in standalone_html
+    assert 'Standalone host CPU' in standalone_html and '32 ГиБ' in standalone_html
     assert 'data-sync-hardware' in standalone_html
     standalone.delete()
     manual = Tenant.objects.create(name='Keep manual', slug='keep-manual-unified')
@@ -173,6 +173,32 @@ with override_settings(PLUGINS_CONFIG=config, ALLOWED_HOSTS=['testserver']):
     assert route_page.status_code == 200
     route_html = route_page.content.decode()
     assert all(value in route_html for value in ('PAM-DEV-CLOUD', '10.160.0.0/16', '10.78.12.2', 'Routing unified'))
+    # Both router entry points use tabs; VLAN keeps native prefixes without a duplicate panel.
+    for router_url in (match['router_url'], vrf.get_absolute_url()):
+        separator = '&' if '?' in router_url else '?'
+        networks_html = client.get(router_url).content.decode()
+        assert 'data-routing-network' in networks_html and 'Сети и подсети' in networks_html
+        routes_response = client.get(router_url + separator + 'routing_tab=routes')
+        assert routes_response.status_code == 200
+        routes_html = routes_response.content.decode()
+        assert 'PAM-DEV-CLOUD' in routes_html and 'data-routing-network' not in routes_html
+        assert 'routing_tab=networks' in routes_html
+    vlan_page = client.get(prefix.vlan.get_absolute_url())
+    assert vlan_page.status_code == 200
+    assert 'Маршрутизация Selectel' not in vlan_page.content.decode()
+    # NetBox 4.7 loads its native Prefixes table through a separate HTMX request.
+    import re
+    from html import unescape
+    prefix_table_url = next(unescape(url) for url in re.findall(r'hx-get="([^"]+)"', vlan_page.content.decode())
+                            if reverse('ipam:prefix_list') in unescape(url))
+    assert 'vlan_id=' + str(prefix.vlan_id) in prefix_table_url
+    prefix_table = client.get(prefix_table_url, HTTP_HX_REQUEST='true')
+    assert prefix_table.status_code == 200 and '10.78.12.0/26' in prefix_table.content.decode()
+    prefix_page = client.get(prefix.get_absolute_url())
+    assert prefix_page.status_code == 200 and '10.78.12.61' in prefix_page.content.decode()
+    query_page = client.get(match['router_url'] + '&q=10.160.0.0%2F16')
+    assert query_page.status_code == 200 and 'PAM-DEV-CLOUD' in query_page.content.decode()
+    assert 'data-routing-network' not in query_page.content.decode()
     overview = client.get(reverse('plugins:netbox_guard:routing_overview'), {'account': account})
     assert overview.status_code == 200 and 'Routing unified' in overview.content.decode()
     assert find_routes(unprivileged, '10.160.0.0/16') == []

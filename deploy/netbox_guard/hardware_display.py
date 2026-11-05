@@ -1,10 +1,21 @@
 """Read-only hardware summary: host facts win; provider physical disks stay distinct."""
 import re
+from decimal import Decimal, InvalidOperation
 from .resource_presentation import obj, components
 
 HOST_FIELDS = (('cpu_model', 'Процессор'), ('cpu_sockets', 'Процессоров'),
                ('cpu_cores', 'Ядер'), ('cpu_threads', 'Потоков'),
                ('memory_mb', 'Память по данным хоста'), ('hypervisor_version', 'Гипервизор'))
+
+
+def memory_gib(value):
+    try:
+        amount = Decimal(str(value))
+        if amount.is_finite() and amount >= 0:
+            return format(amount / 1024, '.2f').rstrip('0').rstrip('.').replace('.', ',') + ' ГиБ'
+    except InvalidOperation:
+        pass
+    return str(value)
 
 
 def disk_rows(parts):
@@ -32,7 +43,7 @@ def panel(fields):
     config = hardware.get('config_name') or obj(snapshot, 'details').get('config_name')
     if config and not any(hardware.get(k) for k in ('cpu', 'ram', 'disk')):
         hardware.update(parse_configuration(str(config)))
-    rows = [(label, str(fields[key]) + (' МиБ' if key == 'memory_mb' else ''))
+    rows = [(label, memory_gib(fields[key]) if key == 'memory_mb' else str(fields[key]))
             for key, label in HOST_FIELDS if fields.get(key) not in (None, '')]
     if not fields.get('cpu_model') and components(hardware.get('cpu')):
         rows.insert(0, ('Процессор', components(hardware['cpu'])))
@@ -48,7 +59,12 @@ def panel(fields):
         rows.append(('Конфигурация Selectel', fallback))
     if not rows and not disks:
         return None
-    return dict(fields=rows, disks=disks, disk_count=sum(d['count'] for d in disks),
+    cpu_labels = {label for key, label in HOST_FIELDS if key.startswith('cpu_')}
+    memory_labels = {'Память по данным хоста', 'Установленная память'}
+    return dict(fields=rows, cpu=[r for r in rows if r[0] in cpu_labels],
+                memory=[r for r in rows if r[0] in memory_labels],
+                other=[r for r in rows if r[0] not in cpu_labels | memory_labels],
+                disks=disks, disk_count=sum(d['count'] for d in disks),
                 disk_source='Selectel' if disks else '')
 
 
