@@ -128,6 +128,7 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     for component in ('general', 'users', 'certificates'):
         system_snapshot['components'][component] = dict(presence='built_in', collection='ok', configuration='present', runtime='not_collected',
             tables={table: [] for table in SCHEMA[component]})
+    system_snapshot['components']['general']['tables']['settings'] = [row('general', 'settings', hostname=['edge-fw'], domain=['example.test'])]
     system_snapshot['components']['users']['tables']['users'] = [row('users', 'users', uid=['2001'], name=['operator'], cert=['cert1'])]
     system_snapshot['components']['users']['tables']['groups'] = [row('users', 'groups', gid=['2002'], name=['operators'], member=['2001'])]
     system_snapshot['components']['certificates']['tables']['authorities'] = [row('certificates', 'authorities', refid=['ca1'], descr=['Company CA'])]
@@ -143,6 +144,9 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     assert 'Operator certificate' in client.get(local_user.get_absolute_url()).content.decode()
     user_html = client.get(first.get_absolute_url(), {'section': 'system', 'view': 'users', 'sub': 'users'}).content.decode()
     assert 'operator' in user_html and 'Web NAT' not in user_html
+    settings_html = client.get(first.get_absolute_url(), {'section': 'system', 'view': 'general'}).content.decode()
+    assert 'edge-fw' in settings_html and 'example.test' in settings_html
+    assert 'Связи и сведения об объекте' in settings_html
     old_uid = local_cert.uid
     system_snapshot['components']['certificates']['tables']['certificates'][0]['descr'] = ['Renewed certificate']
     vms[0].save(); project(vms[0]); local_cert.refresh_from_db()

@@ -46,7 +46,7 @@ def enabled(row):
 
 
 def title(row, fallback):
-    return next((' · '.join(row[k]) for k in ('name', 'descr', 'description', 'tracker', 'network')
+    return next((' · '.join(row[k]) for k in ('name', 'descr', 'description', 'tracker', 'network', 'hostname', 'host', 'address', 'refid', 'serial')
                  if row.get(k) and row[k] != ['']), fallback)[:256]
 
 

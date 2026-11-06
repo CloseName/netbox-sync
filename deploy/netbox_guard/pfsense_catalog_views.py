@@ -84,6 +84,9 @@ def appliance(request, pk):
             context['runtime_rows'] = [r for r in context['inventory']['routes'] if (r['key'] == 'pf_nat') == (key == 'nat')]
     if selected.get('component') or request.GET.get('q', '').strip():
         context.update(search_context(request, obj, selected, path))
+        if selected.get('component') in ('general', 'users') and selected.get('table') in ('settings', 'webgui') and not context.get('whole'):
+            context['settings_rows'] = [dict(object=hit['object'], fields=catalog.fields(hit['object'])) for hit in context['page']]
+            context['settings_page'] = True
     return render(request, 'netbox_guard/pfsense_appliance.html', context)
 
 

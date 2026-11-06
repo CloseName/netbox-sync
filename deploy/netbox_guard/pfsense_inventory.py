@@ -142,7 +142,7 @@ def panel(value):
             summary.append([LABELS[name]]+[STATE[part[k]] for k in ('presence','configuration','collection','runtime')])
             tables=[]
             for table,rows in part['tables'].items():
-                columns=SCHEMA[name][table]
+                columns=[key for key in SCHEMA[name][table] if key != 'public_crl']
                 def cell(row,key):
                     if key in ('source','destination'):
                         base = ', '.join(row.get(key+'/address',[]) or row.get(key+'/network',[])) or ('Любой' if row.get(key+'/any') else 'Не указан')
