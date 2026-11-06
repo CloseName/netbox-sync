@@ -1,0 +1,7 @@
+<section class="card" id="routes-to-prefix">
+  <h2 class="card-header">Маршруты к этой сети</h2>
+  <div class="card-body">Сеть назначения статического маршрута. Наличие маршрута не означает прямое подключение этой сети к роутеру.</div>
+  <div class="table-responsive"><table class="table"><thead><tr><th>Название</th><th>Следующий узел</th><th>Роутер</th><th>Аккаунт</th></tr></thead><tbody>
+  {% for route in routes %}<tr><td>{{ route.name }}{% if route.retained %} · Сохранено ранее{% endif %}</td><td>{% if route.next_hop_url %}<a href="{{ route.next_hop_url }}">{{ route.next_hop }}</a>{% else %}{{ route.next_hop }}{% endif %}</td><td><a href="{{ route.router_url }}?routing_tab=routes">{{ route.router }}</a></td><td>{{ route.account }}</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>

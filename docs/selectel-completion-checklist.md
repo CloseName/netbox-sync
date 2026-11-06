@@ -119,3 +119,7 @@ Children — вложенные префиксы; число IP — записи
 обзор сетей — кнопка «Применить» в окне обычной и малой ширины; grouter1/2 —
 переключение вкладок и поиск маршрута; VLAN 1368 — штатные Prefixes без нижнего
 повтора. Порядок IP, назначения, tenancy и размещение этим изменением не меняются.
+
+## Native route destinations
+
+Static route destinations are represented as Prefixes in the router VRF after the next fresh collection. Search and route links open the exact native Prefix; its routes panel links to the native VRF and next-hop IP. Destination-only prefixes carry an explicit description and no inferred VLAN/site/interface. An existing unique same-VRF prefix is reused without ownership adoption or field updates. Overlapping address spaces stay separate. Until projection, links open the native VRF routes tab. Account cleanup retains independent prefixes and their manual fields.

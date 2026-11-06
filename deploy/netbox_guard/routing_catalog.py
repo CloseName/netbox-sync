@@ -63,6 +63,8 @@ def routes(user, query, exact=False):
                 continue
             value = card(row)
             value.update(account=domain['account'], router=domain['name'], router_url=domain['url'],
-                         href=detail_url(domain['account'], row))
+                         href=domain['vrf'].get_absolute_url() + '?routing_tab=routes', vrf_id=domain['vrf'].pk)
+            from .routing_destinations import links
+            value.update(links(user, domain['vrf'], data(row)))
             result.append(value)
     return sorted(result, key=lambda r: (rank(query, r['cidr'], True), r['account'], r['router'], r['name']))
