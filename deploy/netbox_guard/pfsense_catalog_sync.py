@@ -7,7 +7,7 @@ from django.db import transaction
 from virtualization.models import VirtualMachine
 from .models import FirewallAppliance, FirewallObject, FirewallReference
 from .pfsense_inventory import validate, TITLES
-from .pfsense_catalog_policy import CATEGORIES, identity, enabled, title, tokens
+from .pfsense_catalog_policy import CATEGORIES, ALIAS_FIELDS, identity, enabled, title, tokens
 
 
 @transaction.atomic
@@ -92,7 +92,11 @@ def project(vm):
             if field in ('order', 'name', 'descr', 'description') or not isinstance(values, list):
                 continue
             component = {'interface': 'interfaces', 'source/network': 'interfaces',
-                         'destination/network': 'interfaces', 'sched': 'schedules', 'gateway': 'routing'}.get(field, 'aliases')
+                         'destination/network': 'interfaces', 'sched': 'schedules', 'gateway': 'routing'}.get(field)
+            if component is None:
+                if field not in ALIAS_FIELDS:
+                    continue
+                component = 'aliases'
             for token in tokens(values):
                 candidates = targets.get((component, token), [])
                 if len(candidates) == 1 and candidates[0].pk != obj.pk:

@@ -134,8 +134,14 @@ def document(user, obj):
         visible = Prefix.objects.restrict(user, 'view')
         bindings = NetworkBinding.objects.filter(vm_id=obj.appliance.vm_id, interface_id=native.pk,
                                                   interface_key__in=obj.data.get('name', []), prefix__in=visible).select_related('prefix')
-        prefixes = [dict(id=b.prefix_id, prefix=str(b.prefix.prefix), vrf_id=b.prefix.vrf_id,
-                         url=b.prefix.get_absolute_url()) for b in bindings]
+        from .network_views import interface as confirmed_interface
+        for binding in bindings.select_related('vm'):
+            try:
+                confirmed_interface(binding)
+            except (ValueError, KeyError, TypeError):
+                continue
+            prefixes.append(dict(id=binding.prefix_id, prefix=str(binding.prefix.prefix),
+                                 vrf_id=binding.prefix.vrf_id, url=binding.prefix.get_absolute_url()))
     return dict(schema='netbox-sync.firewall-object.v1', id=str(obj.uid), name=obj.name,
         appliance_id=obj.appliance_id, vm_id=obj.appliance.vm_id, url=obj.get_absolute_url(),
         component=obj.component, table=obj.table, category=obj.category, position=obj.position,

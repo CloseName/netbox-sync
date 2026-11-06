@@ -27,6 +27,8 @@ def test_alias_resolution_is_scoped_recursive_and_cycle_safe():
     assert catalog.match('443', row, aliases)
     assert not catalog.match('10.160.0.9', row, {})
     assert not catalog.match('10.160.0.9', {'descr': ['10.160.0.90']}, {})
+    assert not catalog.match('203.0.113.7', {'type': ['pass'], 'protocol': ['tcp']},
+                             {'pass': ['203.0.113.7'], 'tcp': ['203.0.113.7']})
 
 
 def test_addresses_networks_ranges_ipv6_and_partial_text():

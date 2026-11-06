@@ -16,6 +16,10 @@ FIELD_LABELS = {'source/address': 'Источник', 'source/network': 'Сет�
                 'parent': 'Родительский интерфейс', 'tag': 'VLAN ID', 'mtu': 'MTU', 'mac': 'MAC'}
 
 
+ALIAS_FIELDS = {'source/address', 'destination/address', 'source/port', 'destination/port',
+                'address', 'network', 'target', 'external', 'port', 'local-port', 'natport'}
+
+
 def identity(component, table, row):
     # Never use rule position as identity. Anonymous entries have content identity:
     # edits create a new object, whereas a reorder preserves its UUID.
@@ -108,7 +112,7 @@ def match(query, row, aliases):
         for token in tokens(values):
             if typed and contains(query, token):
                 reasons.append(label + ': ' + token)
-            if token in aliases and field not in ('name', 'descr', 'description'):
+            if token in aliases and field in ALIAS_FIELDS:
                 reasons.extend(label + ' · alias ' + path for path in alias_paths(token, aliases, query))
             if 'port' in field and port_contains(query, token):
                 reasons.append(label + ': ' + token)

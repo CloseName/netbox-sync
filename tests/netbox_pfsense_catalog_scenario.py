@@ -46,7 +46,8 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     base = dict(schema='netbox-sync.pfsense.inventory.snapshot.v1', collected_at=stamp.isoformat(), version='2.7.2',
         components=json.loads(Path('/app/tests/fixtures/pfsense_empty_components.json').read_text()),
         packages=dict(collection='ok', items=[]), runtime={k: dict(collection='ok', text='') for k in ('routes4', 'routes6')})
-    base['components']['aliases']['tables']['aliases'] = [row('aliases', 'aliases', name=['LAN'], type=['network'], address=['10.160.0.0/16'])]
+    base['components']['aliases']['tables']['aliases'] = [row('aliases', 'aliases', name=['LAN'], type=['network'], address=['10.160.0.0/16']),
+        {**row('aliases', 'aliases', name=['pass'], type=['host'], address=['203.0.113.7']), 'order': 2}]
     base['components']['firewall']['tables']['rules'] = [row('firewall', 'rules', tracker=['1001'], descr=['Allow web'],
         type=['pass'], protocol=['tcp'], **{'destination/address': ['LAN'], 'destination/port': ['443'], 'source/any': ['']})]
     base['components']['nat']['tables']['port_forwards'] = [row('nat', 'port_forwards', descr=['Web NAT'], target=['10.160.0.10'])]
@@ -58,10 +59,12 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     assert native_counts == (IPAddress.objects.count(), Prefix.objects.count())
     first = FirewallAppliance.objects.get(vm=vms[0])
     rule = first.entries.get(component='firewall')
-    alias = first.entries.get(component='aliases')
+    alias = first.entries.get(component='aliases', name='LAN')
     assert FirewallReference.objects.filter(source=rule, target=alias, field='destination/address').exists()
+    assert not FirewallReference.objects.filter(source=rule, field='type').exists()
     assert len(list(results(user, {'q': '10.160.0.10'}))) == 3
     assert len(list(results(admin, {'q': '10.160.0.10'}))) == 6
+    assert len(list(results(user, {'q': '203.0.113.7'}))) == 1
     assert document(user, rule)['references'][0]['target'] == str(alias.uid)
     ids = set(first.entries.values_list('uid', flat=True))
     project(vms[0])
@@ -170,6 +173,11 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     assert document(admin, vlan_object)['native_interface_id'] is None
     data = document(admin, interface_object)
     assert data['native_interface_id'] == nic.pk and data['prefixes'][0]['id'] == prefix.pk
+    vms[0].custom_field_data['pfsense_network']['interfaces'][0]['runtime']['addresses'] = [dict(address='198.51.100.1/24')]
+    vms[0].save()
+    assert document(admin, interface_object)['prefixes'] == []
+    vms[0].custom_field_data['pfsense_network']['interfaces'][0]['runtime']['addresses'] = [dict(address='192.0.2.1/24')]
+    vms[0].save()
     nic.primary_mac_address = None; nic.save()
     assert document(admin, interface_object)['native_interface_id'] is None
     assert document(admin, interface_object)['prefixes'] == []
