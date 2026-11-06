@@ -28,7 +28,7 @@ try {
     if (is_link($ns_dir)) { throw new Exception('PATH_CONFLICT'); }
     if (!is_dir($ns_dir) && !mkdir($ns_dir, 0755)) { throw new Exception('INSTALL_FAILED'); }
     if (fileowner($ns_dir) !== 0 || (fileperms($ns_dir) & 0022)) { throw new Exception('PATH_CONFLICT'); }
-    foreach (['network-v1.php', 'inventory-v1.php', 'pf-runtime-v1.php'] as $ns_file) {
+    foreach (['network-v1.php', 'inventory-v1.php', 'system-v1.php', 'pf-runtime-v1.php'] as $ns_file) {
         $ns_bytes = base64_decode($ns_input['files'][$ns_file], true);
         if ($ns_bytes === false || strlen($ns_bytes) > 262144) { throw new Exception('INSTALL_FAILED'); }
         $ns_temp = tempnam($ns_dir, '.install-');

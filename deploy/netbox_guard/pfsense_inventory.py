@@ -6,7 +6,9 @@ from pathlib import Path
 
 FIELD = 'pfsense_inventory'
 SCHEMA = json.loads(Path(__file__).with_name('pfsense_inventory_schema.json').read_text(encoding='utf-8'))
-LABELS = {'firewall':'Firewall', 'nat':'NAT', 'aliases':'Aliases', 'schedules':'Расписания',
+OPTIONAL_COLUMNS = {('openvpn', 'servers'): {'crlref'}, ('openvpn', 'clients'): {'crlref'}}
+OPTIONAL_COMPONENTS = {'general', 'users', 'certificates'}
+LABELS = {'general': 'General Setup', 'users': 'User Manager', 'certificates': 'Certificates', 'firewall':'Firewall', 'nat':'NAT', 'aliases':'Aliases', 'schedules':'Расписания',
           'routing':'Маршрутизация', 'openvpn':'OpenVPN', 'ipsec':'IPsec', 'wireguard':'WireGuard',
           'haproxy':'HAProxy', 'dhcp':'DHCP', 'dns_resolver':'DNS Resolver', 'dns_forwarder':'DNS Forwarder'}
 STATE = {'built_in':'Встроен', 'installed':'Установлен', 'not_installed':'Не установлен',
@@ -20,7 +22,7 @@ TITLES = {'rules':'Правила', 'mode':'Режим', 'port_forwards':'Про
           'servers':'Серверы', 'clients':'Клиенты', 'client_overrides':'Параметры клиентов', 'settings':'Настройки',
           'phase1':'Phase 1', 'phase2':'Phase 2', 'tunnels':'Туннели', 'peers':'Пиры', 'frontends':'Frontend', 'backends':'Backend',
           'ipv4':'IPv4', 'ipv6':'IPv6', 'static_ipv4':'Статические назначения IPv4', 'hosts':'Имена хостов', 'domains':'Домены'}
-COLUMNS = {'source':'Источник / порт','destination':'Назначение / порт','target':'Адрес преобразования','external':'Внешний адрес','local-port':'Внутренний порт','natport':'Порт NAT','tracker':'Идентификатор','ipprotocol':'Семейство IP','direction':'Направление','sched':'Расписание','log':'Журнал','quick':'Первое совпадение','floating':'Floating','staticnatport':'Сохранение порта','nonat':'Без NAT','nobinat':'Без NAT 1:1','source/any':'Любой источник','source/not':'Исключить источник','source/network':'Сеть источника','destination/any':'Любое назначение','destination/not':'Исключить назначение','destination/network':'Сеть назначения','order':'№', 'name':'Имя', 'descr':'Описание', 'description':'Описание', 'interface':'Интерфейс',
+COLUMNS = {'refid':'Идентификатор источника', 'uid':'UID', 'gid':'GID', 'member':'Участники (UID)', 'priv':'Права', 'cert':'Сертификаты', 'caref':'Центр сертификации', 'expires':'Окончание действия учётной записи', 'subject':'Subject', 'issuer':'Issuer', 'common_name':'Common Name', 'san':'Subject Alternative Names', 'serial_hex':'Серийный номер (hex)', 'serial':'Серийный номер', 'fingerprint_sha256':'SHA256', 'valid_from':'Действует с', 'valid_until':'Действует до', 'validity':'Срок действия на момент сбора', 'metadata_state':'Чтение метаданных', 'key_type':'Тип открытого ключа', 'key_bits':'Размер ключа (бит)', 'signature_algorithm':'Алгоритм подписи', 'private_key_present':'Закрытый ключ присутствует', 'csr_present':'Запрос CSR присутствует', 'reason':'Причина отзыва', 'revoke_time':'Время отзыва', 'pwhash':'Алгоритм хеширования паролей', 'authmode':'Источник аутентификации', 'session_timeout':'Тайм-аут сессии (мин)', 'source':'Источник / порт','destination':'Назначение / порт','target':'Адрес преобразования','external':'Внешний адрес','local-port':'Внутренний порт','natport':'Порт NAT','tracker':'Идентификатор','ipprotocol':'Семейство IP','direction':'Направление','sched':'Расписание','log':'Журнал','quick':'Первое совпадение','floating':'Floating','staticnatport':'Сохранение порта','nonat':'Без NAT','nobinat':'Без NAT 1:1','source/any':'Любой источник','source/not':'Исключить источник','source/network':'Сеть источника','destination/any':'Любое назначение','destination/not':'Исключить назначение','destination/network':'Сеть назначения','order':'№', 'name':'Имя', 'descr':'Описание', 'description':'Описание', 'interface':'Интерфейс',
            'type':'Тип', 'protocol':'Протокол', 'disabled':'Отключено', 'disable':'Отключено', 'enable':'Включено',
            'enabled':'Включено', 'gateway':'Шлюз', 'network':'Сеть', 'address':'Адрес', 'port':'Порт',
            'source/address':'Источник', 'destination/address':'Назначение', 'source/port':'Порт источника',
@@ -52,19 +54,20 @@ def validate(value):
         raise ValueError('Unsupported inventory schema')
     string(value['collected_at'],64);string(value['version'],256)
     components=value['components']
-    if not isinstance(components,dict) or set(components)!=set(SCHEMA):raise ValueError('Missing inventory components')
+    if not isinstance(components, dict) or not set(SCHEMA).difference(OPTIONAL_COMPONENTS) <= set(components) or not set(components) <= set(SCHEMA):
+        raise ValueError('Missing inventory components')
     clean={}
     for name,definition in SCHEMA.items():
-        part=components[name]
+        part=components.get(name, dict(presence='built_in', collection='not_collected', configuration='unknown', runtime='not_collected', tables={}))
         if part['presence'] not in (('installed','not_installed','unknown') if name in ('haproxy','wireguard') else ('built_in',)):
             raise ValueError('Invalid component presence')
-        if part['collection'] not in ('ok','error') or part['configuration'] not in ('present','not_configured','unknown'):
+        if part['collection'] not in (('ok','error','not_collected') if name in OPTIONAL_COMPONENTS else ('ok','error')) or part['configuration'] not in ('present','not_configured','unknown'):
             raise ValueError('Invalid collection state')
         if part['runtime'] not in ('not_collected','process_seen','process_not_seen','unknown'):
             raise ValueError('Invalid runtime state')
         tables=part['tables']
         if not isinstance(tables,dict):raise ValueError('Invalid tables')
-        if part['collection']=='error':
+        if part['collection']!='ok':
             if tables or part['configuration']!='unknown':raise ValueError('Error must not imply absent configuration')
         elif set(tables)!=set(definition):raise ValueError('Incomplete component tables')
         filtered={}
@@ -72,6 +75,8 @@ def validate(value):
             if not isinstance(rows,list) or len(rows)>1000:raise ValueError('Too many inventory rows')
             filtered[table]=[]
             for index,row in enumerate(rows):
+                if isinstance(row, dict):
+                    row = {**{key: [] for key in OPTIONAL_COLUMNS.get((name, table), set())}, **row}
                 if not isinstance(row,dict) or set(row)!=set(definition[table]) or type(row['order']) is not int or row['order']!=index+1:
                     raise ValueError('Invalid inventory columns or order')
                 copy={'order':row['order']}
@@ -137,7 +142,7 @@ def panel(value):
             summary.append([LABELS[name]]+[STATE[part[k]] for k in ('presence','configuration','collection','runtime')])
             tables=[]
             for table,rows in part['tables'].items():
-                columns=SCHEMA[name][table]
+                columns=[key for key in SCHEMA[name][table] if key != 'public_crl']
                 def cell(row,key):
                     if key in ('source','destination'):
                         base = ', '.join(row.get(key+'/address',[]) or row.get(key+'/network',[])) or ('Любой' if row.get(key+'/any') else 'Не указан')

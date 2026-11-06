@@ -1,6 +1,7 @@
 <?php
 /** Allowlisted configuration inventory. No generated configs, credentials or control actions. */
 declare(strict_types=1);
+require_once __DIR__ . "/system-v1.php";
 
 function nsi_string($value): string {
     $text = (string)$value;
@@ -56,8 +57,8 @@ function nsi_definitions(): array {
             'groups' => ['/pfsense/gateways/gateway_group', ['name','item','trigger','descr']],
             'static_routes' => ['/pfsense/staticroutes/route', ['network','gateway','disabled','descr']]],
         'openvpn' => [
-            'servers' => ['/pfsense/openvpn/openvpn-server', ['vpnid','description','mode','protocol','dev_mode','interface','local_port','tunnel_network','tunnel_networkv6','local_network','local_networkv6','remote_network','remote_networkv6','disable','caref','certref']],
-            'clients' => ['/pfsense/openvpn/openvpn-client', ['vpnid','description','mode','protocol','dev_mode','interface','server_addr','server_port','tunnel_network','tunnel_networkv6','remote_network','remote_networkv6','disable','caref','certref']],
+            'servers' => ['/pfsense/openvpn/openvpn-server', ['vpnid','description','mode','protocol','dev_mode','interface','local_port','tunnel_network','tunnel_networkv6','local_network','local_networkv6','remote_network','remote_networkv6','disable','caref','certref','crlref']],
+            'clients' => ['/pfsense/openvpn/openvpn-client', ['vpnid','description','mode','protocol','dev_mode','interface','server_addr','server_port','tunnel_network','tunnel_networkv6','remote_network','remote_networkv6','disable','caref','certref','crlref']],
             'client_overrides' => ['/pfsense/openvpn/openvpn-csc', ['common_name','description','tunnel_network','tunnel_networkv6','local_network','remote_network','disable']]],
         'ipsec' => [
             'settings' => ['/pfsense/ipsec', ['enable']],
@@ -91,7 +92,7 @@ function nsi_configuration(string $xml, ?array $packages): array {
     $root = simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NONET);
     if ($root === false || $root->getName() !== 'pfsense') { throw new RuntimeException('invalid XML'); }
     $components = [];
-    foreach (nsi_definitions() as $name => $definitions) {
+    foreach (array_merge(nsi_definitions(), nsi_system_definitions()) as $name => $definitions) {
         $presence = 'built_in';
         if (in_array($name, ['haproxy','wireguard'], true)) {
             $presence = $packages === null ? 'unknown' : 'not_installed';
@@ -119,6 +120,7 @@ function nsi_configuration(string $xml, ?array $packages): array {
                     }
                 }
             }
+            $tables = nsi_system_enrich($name, $tables, $root);
             $count = array_sum(array_map('count', $tables));
             if ($name === 'ipsec') { $count = count($tables['phase1']) + count($tables['phase2']); }
             if ($name === 'haproxy') { $count = count($tables['frontends']) + count($tables['backends']); }

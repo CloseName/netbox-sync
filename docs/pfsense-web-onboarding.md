@@ -52,3 +52,13 @@ PHP 7.4, 8.2, 8.3 and 8.4; it does not emulate a live FreeBSD firewall or LDAP l
 References: [CE 2.6 source](https://github.com/pfsense/pfsense/tree/RELENG_2_6_0),
 [CE 2.7.2 source](https://github.com/pfsense/pfsense/tree/RELENG_2_7_2),
 [PHP transition in CE 2.7](https://docs.netgate.com/pfsense/en/latest/releases/2-7-0.html).
+
+## System collector update
+
+System / General Setup, Certificates and User Manager use `system-v1.php`, installed
+alongside the existing collector by Connect and collect. After a NetBox update,
+run that operation once for the existing pfSense binding; it reuses the managed
+collector identity. A regular collection only reads installed files and cannot
+upgrade the collector. Legacy snapshots remain readable with System marked not
+collected. No account deletion or schedule activation is required. See the
+[object catalogue](pfsense-object-catalog.md) for the field and secret boundaries.

@@ -94,10 +94,11 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     assert client.get(private.entries.first().get_absolute_url()).status_code == 404
     with patch('netbox_guard.pfsense_catalog.results', side_effect=AssertionError('Global search must not scan firewall objects')):
         global_html = client.get(reverse('search'), {'q': '10.160.0.10'}).content.decode()
-    assert 'pfsense-search-link' in global_html and 'Web NAT' not in global_html
+    assert 'pfsense-search-link' not in global_html and 'Web NAT' not in global_html
     assert 'pfsense-search-link' not in denied.get(reverse('search'), {'q': '10.160.0.10'}).content.decode()
-    search_url = reverse('plugins:netbox_guard:pfsense_search')
-    search = client.get(search_url, {'q': '10.160.0.10'})
+    search_url = first.get_absolute_url()
+    assert client.get('/plugins/netbox-sync-guard/pfsense/search/').status_code == 404
+    search = client.get(search_url, {'q': '10.160.0.10', 'scope': 'firewall'})
     assert search.status_code == 200 and 'alias LAN' in search.content.decode()
     assert client.get(search_url, {'appliance': private.pk, 'q': '10.160.0.10'}).status_code == 200
     api = '/api/plugins/netbox-sync-guard/firewall/catalog/v1/'
@@ -108,6 +109,48 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     assert client.get(api + str(private.entries.first().uid) + '/').status_code == 404
     assert denied.get(api).status_code == 403
     assert client.post(api, {}).status_code == 405
+    from netbox_guard.pfsense_navigation import MENU
+    for section in MENU:
+        for view in section['children']:
+            for sub in view.get('children', [view]):
+                response = client.get(first.get_absolute_url(), {'section': section['key'], 'view': view['key'], 'sub': sub['key']})
+                assert response.status_code == 200, (section, view, sub, response.status_code)
+    overview_html = client.get(reverse('plugins:netbox_guard:pfsense_overview')).content.decode()
+    assert '<th>Хост</th>' in overview_html and '<th>Правила</th>' not in overview_html
+    assert '>VM в NetBox</a>' in overview_html
+    legacy_html = client.get(first.get_absolute_url(), {'section': 'system', 'view': 'users'}).content.decode()
+    assert 'Этот раздел ещё не собран' in legacy_html
+    # Scoped UI search ignores attempts to inject another firewall or category.
+    injected = client.get(search_url, {'q': '10.160.0.10', 'scope': 'firewall', 'appliance': private.pk, 'category': 'system'}).content.decode()
+    assert 'Web NAT' in injected and vms[1].name not in injected
+    # New System data and explicit parent relationships keep native object URLs.
+    system_snapshot = vms[0].custom_field_data['pfsense_inventory']
+    for component in ('general', 'users', 'certificates'):
+        system_snapshot['components'][component] = dict(presence='built_in', collection='ok', configuration='present', runtime='not_collected',
+            tables={table: [] for table in SCHEMA[component]})
+    system_snapshot['components']['general']['tables']['settings'] = [row('general', 'settings', hostname=['edge-fw'], domain=['example.test'])]
+    system_snapshot['components']['users']['tables']['users'] = [row('users', 'users', uid=['2001'], name=['operator'], cert=['cert1'])]
+    system_snapshot['components']['users']['tables']['groups'] = [row('users', 'groups', gid=['2002'], name=['operators'], member=['2001'])]
+    system_snapshot['components']['certificates']['tables']['authorities'] = [row('certificates', 'authorities', refid=['ca1'], descr=['Company CA'])]
+    system_snapshot['components']['certificates']['tables']['certificates'] = [row('certificates', 'certificates', refid=['cert1'], descr=['Operator certificate'], caref=['ca1'])]
+    system_snapshot['components']['ipsec']['tables']['phase1'] = [row('ipsec', 'phase1', ikeid=['1'], descr=['Tunnel'])]
+    system_snapshot['components']['ipsec']['tables']['phase2'] = [row('ipsec', 'phase2', ikeid=['1'], uniqid=['p2'], descr=['Protected network'])]
+    vms[0].save(); project(vms[0])
+    local_user = first.entries.get(component='users', table='users')
+    local_cert = first.entries.get(component='certificates', table='certificates')
+    assert FirewallReference.objects.filter(source=local_user, target=local_cert, field='cert').exists()
+    tunnel = first.entries.get(component='ipsec', table='phase1')
+    assert 'Protected network' in client.get(tunnel.get_absolute_url()).content.decode()
+    assert 'Operator certificate' in client.get(local_user.get_absolute_url()).content.decode()
+    user_html = client.get(first.get_absolute_url(), {'section': 'system', 'view': 'users', 'sub': 'users'}).content.decode()
+    assert 'operator' in user_html and 'Web NAT' not in user_html
+    settings_html = client.get(first.get_absolute_url(), {'section': 'system', 'view': 'general'}).content.decode()
+    assert 'edge-fw' in settings_html and 'example.test' in settings_html
+    assert 'Связи и сведения об объекте' in settings_html
+    old_uid = local_cert.uid
+    system_snapshot['components']['certificates']['tables']['certificates'][0]['descr'] = ['Renewed certificate']
+    vms[0].save(); project(vms[0]); local_cert.refresh_from_db()
+    assert local_cert.uid == old_uid and local_cert.name == 'Renewed certificate'
     # More than one page must retain every object and all scope filters.
     bulk = deepcopy(vms[0].custom_field_data['pfsense_inventory'])
     bulk['collected_at'] = (stamp + timedelta(seconds=2)).isoformat()

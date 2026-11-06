@@ -155,7 +155,7 @@ def _provision_code(state, compat):
     """Build the bundled collector installation command without GUI credentials."""
     files = {
         name: base64.b64encode((ASSETS / name).read_bytes()).decode()
-        for name in ("network-v1.php", "inventory-v1.php", "pf-runtime-v1.php")
+        for name in ("network-v1.php", "inventory-v1.php", "system-v1.php", "pf-runtime-v1.php")
     }
     payload = {
         "username": state["username"],

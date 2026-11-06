@@ -172,7 +172,8 @@
       "remote_networkv6",
       "disable",
       "caref",
-      "certref"
+      "certref",
+      "crlref"
     ],
     "clients": [
       "order",
@@ -190,7 +191,8 @@
       "remote_networkv6",
       "disable",
       "caref",
-      "certref"
+      "certref",
+      "crlref"
     ],
     "client_overrides": [
       "order",
@@ -362,6 +364,175 @@
       "domain",
       "ip",
       "descr"
+    ]
+  },
+  "general": {
+    "settings": [
+      "order",
+      "hostname",
+      "domain",
+      "dnsallowoverride",
+      "dnslocalhost",
+      "timezone",
+      "timeservers",
+      "language"
+    ],
+    "dns": [
+      "order",
+      "address",
+      "hostname",
+      "gateway"
+    ],
+    "webgui": [
+      "order",
+      "webguicss",
+      "logincss",
+      "webguifixedmenu",
+      "dashboardcolumns",
+      "interfacessort",
+      "webguileftcolumnhyper",
+      "disablealiaspopupdetail",
+      "dashboardavailablewidgetspanel",
+      "systemlogsfilterpanel",
+      "systemlogsmanagelogpanel",
+      "statusmonitoringsettingspanel",
+      "webguihostnamemenu",
+      "roworderdragging",
+      "loginshowhost",
+      "requirestatefilter",
+      "requirefirewallinterface",
+      "ssl-certref"
+    ]
+  },
+  "users": {
+    "users": [
+      "order",
+      "name",
+      "descr",
+      "scope",
+      "uid",
+      "disabled",
+      "expires",
+      "priv",
+      "cert"
+    ],
+    "groups": [
+      "order",
+      "name",
+      "description",
+      "scope",
+      "gid",
+      "member",
+      "priv"
+    ],
+    "authservers": [
+      "order",
+      "refid",
+      "name",
+      "type",
+      "host",
+      "ldap_caref",
+      "ldap_port",
+      "ldap_urltype",
+      "ldap_protver",
+      "ldap_scope",
+      "ldap_basedn",
+      "ldap_authcn",
+      "ldap_extended_enabled",
+      "ldap_extended_query",
+      "ldap_attr_user",
+      "ldap_attr_group",
+      "ldap_attr_member",
+      "ldap_attr_groupobj",
+      "ldap_pam_groupdn",
+      "ldap_utf8",
+      "ldap_nostrip_at",
+      "ldap_allow_unauthenticated",
+      "ldap_rfc2307",
+      "ldap_rfc2307_userdn",
+      "ldap_binddn",
+      "ldap_timeout",
+      "radius_protocol",
+      "radius_nasip_attribute",
+      "radius_auth_port",
+      "radius_acct_port",
+      "radius_timeout"
+    ],
+    "settings": [
+      "order",
+      "authmode",
+      "session_timeout",
+      "pwhash",
+      "shellauth",
+      "backend",
+      "auth_refresh_time"
+    ]
+  },
+  "certificates": {
+    "authorities": [
+      "order",
+      "refid",
+      "descr",
+      "caref",
+      "serial",
+      "trust",
+      "randomserial",
+      "metadata_state",
+      "subject",
+      "issuer",
+      "common_name",
+      "san",
+      "serial_hex",
+      "fingerprint_sha256",
+      "valid_from",
+      "valid_until",
+      "validity",
+      "key_type",
+      "key_bits",
+      "signature_algorithm",
+      "private_key_present",
+      "csr_present"
+    ],
+    "certificates": [
+      "order",
+      "refid",
+      "descr",
+      "caref",
+      "metadata_state",
+      "subject",
+      "issuer",
+      "common_name",
+      "san",
+      "serial_hex",
+      "fingerprint_sha256",
+      "valid_from",
+      "valid_until",
+      "validity",
+      "key_type",
+      "key_bits",
+      "signature_algorithm",
+      "private_key_present",
+      "csr_present"
+    ],
+    "crls": [
+      "order",
+      "refid",
+      "descr",
+      "caref",
+      "method",
+      "serial",
+      "lifetime",
+      "public_crl",
+      "metadata_state"
+    ],
+    "revocations": [
+      "order",
+      "../refid",
+      "refid",
+      "descr",
+      "serial",
+      "reason",
+      "revoke_time"
     ]
   }
 }

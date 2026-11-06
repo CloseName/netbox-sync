@@ -4,9 +4,9 @@ from ipaddress import ip_address, ip_network
 import json
 import re
 
-CATEGORIES = {'firewall': 'rules', 'nat': 'nat', 'aliases': 'aliases', 'routing': 'routes',
+CATEGORIES = {'general': 'system', 'users': 'system', 'certificates': 'system', 'firewall': 'rules', 'nat': 'nat', 'aliases': 'aliases', 'routing': 'routes',
               'openvpn': 'vpn', 'ipsec': 'vpn', 'wireguard': 'vpn'}
-TABS = [('overview', 'Обзор'), ('interfaces', 'Интерфейсы и сети'), ('rules', 'Правила'),
+TABS = [('overview', 'Обзор'), ('system', 'System'), ('interfaces', 'Интерфейсы и сети'), ('rules', 'Правила'),
         ('nat', 'NAT'), ('aliases', 'Aliases'), ('routes', 'Маршруты'), ('vpn', 'VPN'), ('services', 'Сервисы')]
 FIELD_LABELS = {'source/address': 'Источник', 'source/network': 'Сеть источника',
                 'destination/address': 'Назначение', 'destination/network': 'Сеть назначения',
@@ -24,7 +24,11 @@ def identity(component, table, row):
     # Never use rule position as identity. Anonymous entries have content identity:
     # edits create a new object, whereas a reorder preserves its UUID.
     keys = ('tracker',) if component == 'firewall' else ('name', 'vpnid', 'ikeid', 'uniqid')
+    if component in ('certificates', 'users'):
+        keys = ('refid', 'uid', 'gid', 'name')
     native = next(((key, row[key]) for key in keys if row.get(key) and row[key] != ['']), None)
+    if (component, table) in {('general', 'settings'), ('general', 'webgui'), ('users', 'settings')}:
+        native = ('singleton', [table])
     basis = native or {k: v for k, v in row.items() if k != 'order'}
     digest = sha256(json.dumps([component, table, basis], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     return digest, 'native' if native else 'content'
@@ -42,7 +46,7 @@ def enabled(row):
 
 
 def title(row, fallback):
-    return next((' · '.join(row[k]) for k in ('name', 'descr', 'description', 'tracker', 'network')
+    return next((' · '.join(row[k]) for k in ('name', 'descr', 'description', 'tracker', 'network', 'hostname', 'host', 'address', 'refid', 'serial')
                  if row.get(k) and row[k] != ['']), fallback)[:256]
 
 

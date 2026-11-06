@@ -1,14 +1,51 @@
 # pfSense object catalog
 
-The NetBox plugin menu has a pfSense overview and a separate configuration search.
-Each accepted pfSense VM has an appliance page: overview, interfaces/networks,
-rules, NAT, aliases, routes, VPN, services and observations/packages. The VM links
-to this page instead of repeating the entire inventory. Existing network/IPAM
-panels and native assignments are preserved.
-The interface tab includes observed VLAN configuration; these observations do not
-invent native VLAN/interface assignments. The appliance header links to the existing
-confirmed networks/IPAM view. Runtime observations and installed packages remain
-available under their own tab.
+The NetBox plugin menu has one pfSense overview: Host, pfSense, VM in NetBox,
+Site, Last collection and State. Host links to the VM's explicitly assigned Device,
+subject to Device permissions; no cluster-based inference is made. The VM link has
+the fixed label `VM в NetBox`. Counts are omitted.
+
+Each appliance has System, Interfaces, Firewall, Services, VPN, Status,
+Diagnostics and Help sections, with URL-addressable child tabs and local search.
+System includes General Setup, Certificates, User Manager, Routing and packages.
+The first child opens by default; old `tab=` links remain compatible. Rules and
+DHCP pages group records by interface. IPsec Phase 2, WireGuard peers, HAProxy
+backend servers, schedule ranges and CRL entries appear below their explicit
+parent object. The VM links to the catalogue instead of duplicating it.
+Existing network/IPAM panels and native assignments are preserved. Unsupported
+sections such as Advanced explicitly say they are not collected; no live control
+or fictitious empty configuration is presented. Help provides snapshot/version
+information and the official documentation link.
+
+## System collection
+
+`system-v1.php` extends the same bounded allowlist collector, not a second endpoint.
+General Setup collects hostname/domain, DNS servers with hostname/gateway,
+DNS override/local mode, timezone, time servers, language and GUI presentation
+settings. User Manager collects local users, groups/membership/privileges,
+expiry/disabled flags, certificate references, nonsecret LDAP/RADIUS connection
+settings and authentication/session settings. External directory users are not
+enumerated. Missing fields keep their unset state; appliance defaults are not guessed.
+
+Certificates collects Authorities, Certificates and CRLs with source refids,
+CA links, public X509 metadata, SHA256 fingerprints, validity dates, public-key
+algorithm/size, CSR/private-key presence flags and internal revocations. Imported
+public CRLs are envelope-checked on pfSense and decoded into metadata/revocation
+objects in NetBox. Parse errors remain explicit. Validity means date validity at
+collection time, not revocation status, trust or live certificate acceptance.
+Renewal changing a certificate with the same refid preserves its object URL.
+Explicit GUI, VPN, authentication-server, user and CA references form graph edges.
+
+Passwords, password hashes, LDAP bind passwords, RADIUS secrets, private keys,
+SSH authorized-key bodies and arbitrary configuration subtrees are excluded at
+collection. Public CRL bodies are not displayed or retained in catalog objects.
+The algorithm name `pwhash` is a setting, not a password hash.
+
+Old snapshots/collectors remain readable. Missing new components are marked
+`not_collected`, never empty or successfully collected; previous known rows are
+retained. After updating NetBox, use **Connect and collect** once for the existing
+pfSense binding to install the new collector with its existing managed key.
+Ordinary collection does not upload collector files. Account deletion is unnecessary.
 
 ## Storage and identity
 
@@ -49,12 +86,12 @@ exports are added; the existing collector allowlist remains authoritative.
 
 ## Search and Map contract
 
-Global NetBox results retain their ordering and contents. Users with visible
-pfSense appliances get one link that carries the query into pfSense search.
-The global search does not scan every rule or index configuration IP mentions.
+Global NetBox results retain their ordering and contents. There is no standalone
+pfSense search page or global-search shortcut. Global search does not scan rules
+or index their IP mentions.
 
-Dedicated search filters by appliance, site, category, collection state and enabled
-state. Results are paginated (50) and explain direct/alias matches. Exact IPs match
+Search inside an appliance covers its selected tab/interface or the whole firewall,
+with collection/enabled filters. A supplied appliance ID cannot escape that scope. Results are paginated (50) and explain direct/alias matches. Exact IPs match
 CIDRs and ranges; CIDR queries match containing networks. Text searches match names
 and descriptions; port searches include ranges. Recursive aliases are resolved only
 inside the same appliance, with cycle/depth bounds. Negated references are still
@@ -66,7 +103,7 @@ Read-only API:
 - `GET /api/plugins/netbox-sync-guard/firewall/catalog/v1/`
 - `GET /api/plugins/netbox-sync-guard/firewall/catalog/v1/<uuid>/`
 
-List accepts the same filters and `page`. Each record includes UUID, appliance/VM,
+The read-only Map API retains appliance/site/category/state/enabled filters and `page`. Each record includes UUID, appliance/VM,
 category, source order, enabled/state, allowlisted data, referenced object UUIDs,
 and confirmed native interface/prefix links. Consumers must preserve appliance
 scope and collection state, and must not infer cables or IP ownership from rule
@@ -78,10 +115,11 @@ After the test update, open NetBox Sync > pfSense. Existing valid saved snapshot
 should appear without reconnecting. Check one firewall and all tabs, open an alias,
 follow its incoming rule links, then search an IP in its CIDR. Confirm the same IP
 on another firewall stays in a separate scope. Global search should show its usual
-IPAM/device results plus one pfSense link. Check a user restricted to one VM cannot
+IPAM/device results without any pfSense shortcut or rule results. Check a user restricted to one VM cannot
 open another firewall by direct URL or API. Collect twice: stable objects keep
 their URLs. Physical/native IP assignments and schedules must remain unchanged.
 
 Automated native coverage is in `tests/netbox_pfsense_catalog_scenario.py`; pure
-identity and search tests are in `tests/test_pfsense_catalog.py`. Live appliance
+identity and search tests are in `tests/test_pfsense_catalog.py`; System contracts are in
+`tests/test_pfsense_system.py` and `deploy/pfsense/test-system-v1.php`. Live appliance
 collection remains an operator acceptance check.
