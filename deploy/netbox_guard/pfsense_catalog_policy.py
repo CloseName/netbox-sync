@@ -12,7 +12,8 @@ FIELD_LABELS = {'source/address': 'Источник', 'source/network': 'Сет�
                 'destination/address': 'Назначение', 'destination/network': 'Сеть назначения',
                 'address': 'Адрес', 'network': 'Сеть', 'target': 'Адрес NAT', 'targetip': 'Адрес NAT',
                 'external': 'Внешний адрес', 'gateway': 'Шлюз', 'port': 'Порт',
-                'source/port': 'Порт источника', 'destination/port': 'Порт назначения'}
+                'source/port': 'Порт источника', 'destination/port': 'Порт назначения',
+                'parent': 'Родительский интерфейс', 'tag': 'VLAN ID', 'mtu': 'MTU', 'mac': 'MAC'}
 
 
 def identity(component, table, row):

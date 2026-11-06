@@ -71,4 +71,5 @@ def detail(request, uid):
     return render(request, 'netbox_guard/pfsense_object.html', dict(
         entry=obj, fields=catalog.fields(obj), document=catalog.document(request.user, obj),
         state_label=catalog.STATES[obj.state],
+        custom_fields=obj.get_custom_fields(omit_hidden=True),
         incoming=obj.referenced_by.select_related('source').exclude(source__state='removed')))

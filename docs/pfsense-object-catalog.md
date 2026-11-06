@@ -5,6 +5,10 @@ Each accepted pfSense VM has an appliance page: overview, interfaces/networks,
 rules, NAT, aliases, routes, VPN, services and observations/packages. The VM links
 to this page instead of repeating the entire inventory. Existing network/IPAM
 panels and native assignments are preserved.
+The interface tab includes observed VLAN configuration; these observations do not
+invent native VLAN/interface assignments. The appliance header links to the existing
+confirmed networks/IPAM view. Runtime observations and installed packages remain
+available under their own tab.
 
 ## Storage and identity
 
@@ -34,6 +38,9 @@ error retains previous rows with a visible retained state. Older observations do
 not replace newer ones. Repeated identical imports preserve IDs. Upgrade backfills
 valid saved snapshots without connecting to firewalls or enabling schedules;
 incompatible snapshots are counted in a warning and left untouched.
+Catalog rows are dependent on their VM. Existing guarded lifecycle rules still
+refuse unknown dependencies rather than silently deleting the new inventory;
+no cleanup bypass or permission expansion is added in this release.
 
 Catalog access inherits native VM view permissions including object restrictions.
 All pages, search and API enforce the same scope. Native interface/prefix links

@@ -9,6 +9,7 @@ from .pfsense_catalog_policy import match, TABS, FIELD_LABELS
 from .pfsense_inventory import COLUMNS, LABELS, TITLES, FLAGS
 
 STATES = {'current': 'В последнем сборе', 'retained': 'Сохранено ранее · ошибка сбора', 'removed': 'Больше нет в конфигурации'}
+TABLE_TITLES = {**TITLES, 'interfaces': 'Интерфейсы', 'vlans': 'VLAN'}
 
 
 def appliances(user):
@@ -59,7 +60,7 @@ def results(user, params):
         reasons = match(query, obj.data, aliases) if query else []
         if not query or reasons or query == str(obj.uid):
             yield {'object': obj, 'reasons': reasons, 'state_label': STATES[obj.state],
-                   'kind': LABELS.get(obj.component, 'Интерфейсы') + ' · ' + TITLES.get(obj.table, obj.table)}
+                   'kind': LABELS.get(obj.component, 'Сеть') + ' · ' + TABLE_TITLES.get(obj.table, obj.table)}
 
 
 def page(user, params):
@@ -74,7 +75,7 @@ def page(user, params):
         selected = Paginator(filtered(user, params), 50).get_page(params.get('page'))
         rows = [(obj, []) for obj in selected]
     selected.object_list = [dict(object=obj, reasons=reasons, state_label=STATES[obj.state],
-        kind=LABELS.get(obj.component, 'Интерфейсы') + ' · ' + TITLES.get(obj.table, obj.table),
+        kind=LABELS.get(obj.component, 'Сеть') + ' · ' + TABLE_TITLES.get(obj.table, obj.table),
         summary=summary(obj)) for obj, reasons in rows]
     return selected
 
@@ -83,7 +84,7 @@ def summary(obj):
     values = []
     for key in ('type', 'protocol', 'interface', 'source/address', 'source/network',
                 'source/port', 'destination/address', 'destination/network', 'destination/port',
-                'address', 'network', 'target', 'gateway'):
+                'address', 'network', 'target', 'gateway', 'parent', 'tag'):
         if obj.data.get(key):
             label = COLUMNS.get(key, FIELD_LABELS.get(key, key))
             excluded = key.startswith(('source/', 'destination/')) and obj.data.get(key.split('/')[0] + '/not')

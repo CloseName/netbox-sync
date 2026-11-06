@@ -33,7 +33,7 @@ def project(vm):
     # Retain interface observations only from the same accepted collection.
     matched_network = network.get('schema') == 'netbox-sync.pfsense.snapshot.v1' and network.get('vm_id') == vm.pk and network.get('collected_at') == raw['collected_at']
     coverage['interfaces'] = {'collection': 'ok' if matched_network else 'error'}
-    groups['interfaces'] = {'interfaces': []}
+    groups['interfaces'] = {'interfaces': [], 'vlans': []}
     if matched_network:
         for number, item in enumerate(network.get('interfaces', []), 1):
             config, runtime, match = item['configuration'], item['runtime'], item['match']
@@ -41,6 +41,12 @@ def project(vm):
                 descr=[config['name']], device=[config['device']], mac=[runtime['mac']],
                 address=[a['address'] for a in runtime['addresses']], native_interface_id=[str(match['id'])],
                 enabled=['yes' if config['enabled'] else 'no']))
+            for field in ('mtu', 'status'):
+                if runtime.get(field) is not None:
+                    groups['interfaces']['interfaces'][-1][field] = [str(runtime[field])]
+        for number, vlan in enumerate(network.get('vlans', []), 1):
+            groups['interfaces']['vlans'].append(dict(order=number, name=[vlan['device']],
+                parent=[vlan['parent']], tag=[str(vlan['tag'])], descr=[vlan['description']]))
     appliance, _ = FirewallAppliance.objects.update_or_create(vm=vm, defaults=dict(
         observed_at=stamp, version=clean['version'], coverage=coverage, digest=digest))
     for component, tables in groups.items():
@@ -101,6 +107,6 @@ def backfill(using='default'):
     for vm in VirtualMachine.objects.using(using).filter(custom_field_data__has_key='pfsense_inventory').iterator(chunk_size=100):
         try:
             project(vm)
-        except (ValueError, TypeError, KeyError):
+        except (ValueError, TypeError, KeyError, AttributeError):
             invalid += 1
     return invalid

@@ -15,6 +15,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.test import Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from core.models import ObjectType
 from users.models import ObjectPermission
 from virtualization.models import VirtualMachine, VMInterface
 from dcim.models import MACAddress
@@ -25,6 +26,7 @@ from netbox_guard.pfsense_catalog import results, document
 from netbox_guard.pfsense_inventory import SCHEMA
 
 call_command('makemigrations', 'netbox_guard', check=True, dry_run=True, verbosity=1)
+assert 'custom_fields' in ObjectType.objects.get_for_model(FirewallObject).features
 
 
 def row(component, table, **values):
@@ -159,9 +161,13 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
         vm_id=vms[0].pk, collected_at=snapshot['collected_at'], interfaces=[dict(
             configuration=dict(id='lan', name='LAN', device='vtnet0', enabled=True),
             runtime=dict(mac=str(mac.mac_address), addresses=[dict(address='192.0.2.1/24')]),
-            match=dict(id=nic.pk, name=nic.name))])
+            match=dict(id=nic.pk, name=nic.name))],
+        vlans=[dict(device='vtnet0.42', parent='vtnet0', tag=42, description='Test VLAN')])
     vms[0].save(); project(vms[0])
-    interface_object = first.entries.get(component='interfaces')
+    interface_object = first.entries.get(component='interfaces', table='interfaces')
+    vlan_object = first.entries.get(component='interfaces', table='vlans')
+    assert vlan_object.data['tag'] == ['42']
+    assert document(admin, vlan_object)['native_interface_id'] is None
     data = document(admin, interface_object)
     assert data['native_interface_id'] == nic.pk and data['prefixes'][0]['id'] == prefix.pk
     nic.primary_mac_address = None; nic.save()
