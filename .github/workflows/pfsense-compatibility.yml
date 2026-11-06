@@ -1,5 +1,8 @@
 name: pfSense PHP compatibility
 on:
+  pull_request:
+    branches: [main]
+    paths: ["deploy/pfsense/**", "deploy/netbox_guard/pfsense*", "netbox_sync/pfsense_connect.py", ".github/workflows/pfsense-compatibility.yml"]
   push:
     branches: [feat/selectel-guard-bindings]
   workflow_dispatch:
@@ -17,11 +20,11 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: simplexml, posix
+          extensions: simplexml, posix, openssl
           coverage: none
       - name: Check provisioning syntax and collector fixtures
         run: |
-          for file in network-v1.php inventory-v1.php pf-runtime-v1.php; do
+          for file in network-v1.php inventory-v1.php system-v1.php pf-runtime-v1.php; do
             php -l "deploy/pfsense/$file"
           done
           { echo '<?php'; cat deploy/pfsense/compat-web.php deploy/pfsense/provision-web.php; } > /tmp/netbox-pfsense-provision.php
@@ -30,4 +33,5 @@ jobs:
           php deploy/pfsense/test-compat-web.php modern
           php deploy/pfsense/test-network-v1.php
           php deploy/pfsense/test-inventory-v1.php
+          php deploy/pfsense/test-system-v1.php
           php deploy/pfsense/test-pf-runtime-v1.php

@@ -28,7 +28,7 @@ def test_absence_is_not_error_and_firewall_is_builtin():
     assert result['components']['haproxy']['presence']=='not_installed'
     assert result['components']['openvpn']['configuration']=='not_configured'
     assert result['components']['ipsec']['configuration']=='not_configured'
-    assert len(m.panel(result)['summary'])==12
+    assert len(m.panel(result)['summary'])==15
     assert m.snapshot_record(value,preview,result,now=NOW)==result
 
 

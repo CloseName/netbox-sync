@@ -7,6 +7,7 @@ from django.db import transaction
 from virtualization.models import VirtualMachine
 from .models import FirewallAppliance, FirewallObject, FirewallReference
 from .pfsense_inventory import validate, TITLES
+from .pfsense_system import prepare, relationships
 from .pfsense_catalog_policy import CATEGORIES, ALIAS_FIELDS, identity, enabled, title, tokens
 
 
@@ -23,13 +24,15 @@ def project(vm):
     network = (vm.custom_field_data or {}).get('pfsense_network') or {}
     if not isinstance(network, dict):
         network = {}
-    digest = sha256(json.dumps([raw, network], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    digest = sha256(json.dumps(['system-navigation-v1', raw, network], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     appliance = FirewallAppliance.objects.filter(vm=vm).first()
     if appliance and (appliance.observed_at > stamp or appliance.digest == digest):
         return appliance
     coverage = {name: {key: part[key] for key in ('collection', 'configuration', 'presence', 'runtime')}
                 for name, part in clean['components'].items()}
     groups = {name: part['tables'] for name, part in clean['components'].items()}
+    if coverage.get('certificates', {}).get('collection') == 'ok':
+        groups['certificates'] = prepare(groups['certificates'])
     # Retain interface observations only from the same accepted collection.
     matched_network = network.get('schema') == 'netbox-sync.pfsense.snapshot.v1' and network.get('vm_id') == vm.pk and network.get('collected_at') == raw['collected_at']
     coverage['interfaces'] = {'collection': 'ok' if matched_network else 'error'}
@@ -86,7 +89,7 @@ def project(vm):
             for name in obj.data.get('name', []):
                 targets[(obj.component, name)].append(obj)
     FirewallReference.objects.filter(source__appliance=appliance).delete()
-    edges = set()
+    edges = relationships(entries)
     for obj in entries:
         for field, values in obj.data.items():
             if field in ('order', 'name', 'descr', 'description') or not isinstance(values, list):
