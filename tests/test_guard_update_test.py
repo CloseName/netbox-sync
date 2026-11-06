@@ -129,14 +129,58 @@ def test_build_uses_installed_base_without_pull(installation):
     old = update.run
     def run(*args):
         if args[:3] == ('docker', 'image', 'inspect'):
-            return json.dumps([{'Id': 'sha256:' + 'd'*64}])
+            return json.dumps([{'Id': 'sha256:' + 'd'*64, 'Config': {'User': '999:0'}}])
+        if args[:2] == ('docker', 'run'):
+            calls.append(args)
+            return 'GUARD_IMAGE:' + json.dumps({'fingerprint': update.fingerprint})
         return old(*args)
     update.run = run
     update.build()
     build = next(call for call in calls if call[:2] == ('docker', 'build'))
     assert '--pull=false' in build
     assert 'NETBOX_BASE_IMAGE=netbox-with-sync-guard:base-' + 'a'*64 in build
+    assert 'NETBOX_RUNTIME_USER=999:0' in build
+    probe = next(call for call in calls if call[:2] == ('docker', 'run'))
+    assert '--read-only' in probe and '--network' in probe and 'none' in probe
     assert not any('stop' in call for call in calls)
+
+
+@pytest.mark.parametrize('problem', ['content', 'user', 'invalid-base-user'])
+def test_bad_built_image_is_rejected_before_netbox_pause(installation, problem):
+    update, _, _, calls = installation
+    update.preflight()
+    original = update.run
+    def run(*args):
+        if args[:3] == ('docker', 'image', 'inspect'):
+            user = '999:0'
+            if problem == 'user' and args[-1] != update.old_image:
+                user = '0'
+            if problem == 'invalid-base-user':
+                user = 'bad user\nSECRET'
+            return json.dumps([{'Id': 'sha256:' + 'd'*64, 'Config': {'User': user}}])
+        if args[:2] == ('docker', 'run'):
+            return 'GUARD_IMAGE:' + json.dumps({'fingerprint': 'wrong'})
+        return original(*args)
+    update.run = run
+    with pytest.raises(guard.GuardUpdateError) as error:
+        update.build()
+    assert 'SECRET' not in str(error.value)
+    assert not any('stop' in call or 'up' in call or 'migrate' in call and '--check' not in call for call in calls)
+
+
+@pytest.mark.parametrize('stderr,expected', [
+    ('CommandError: GUARD_RELEASE_MISMATCH\n', 'GUARD_RELEASE_MISMATCH'),
+    ('CommandError: SELECTEL_IMPORTER_NOT_READY\n', 'SELECTEL_IMPORTER_NOT_READY'),
+    ('SECRET: private contents\n', 'GUARD_VERIFY_COMMAND_FAILED:release'),
+])
+def test_verify_reports_closed_error_codes_without_command_output(stderr, expected, capsys):
+    import subprocess
+    update = guard.GuardUpdate(None, None, 'a'*40)
+    def fail():
+        raise subprocess.CalledProcessError(1, ['private-command'], output='SECRET', stderr=stderr)
+    with pytest.raises(guard.GuardUpdateError, match=expected) as error:
+        update._verify_step('release', fail)
+    assert 'SECRET' not in str(error.value) + capsys.readouterr().out
 
 
 def test_activation_starts_only_netbox_services_after_migration(installation):

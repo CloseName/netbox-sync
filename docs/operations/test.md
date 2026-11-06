@@ -149,6 +149,12 @@ requires selected containers running/healthy on the requested image, inactive
 scheduling entrypoints and HTTP 200 through public HTTPS with certificate verification.
 Only `UPDATE_OK` establishes script completion, not `Built` or `migrate completed`.
 
+Guard builds replace their owned package instead of merging over old files, and
+check the new image's content before stopping NetBox. This covers removed files
+such as the standalone pfSense search template removed in PR #143. The updater
+preserves the installed image user and other plugins. `GUARD_VERIFY` identifies
+the exact post-activation check if verification fails.
+
 ## Failure and recovery
 
 Record `UPDATE_FAILED_STAGE` and `PREVIOUS_RELEASE`. No backup is created by this test updater.

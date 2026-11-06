@@ -228,13 +228,33 @@ class GuardUpdate:
 
     def build(self):
         # Reuse the exact installed NetBox base, not a moving upstream tag.
+        installed = json.loads(self.run('docker', 'image', 'inspect', self.old_image))[0]
+        runtime_user = installed['Config'].get('User', '') or '0'
+        if not re.fullmatch(r'[a-zA-Z0-9_.-]+(?::[a-zA-Z0-9_.-]+)?', runtime_user):
+            raise GuardUpdateError('GUARD_BASE_USER_INVALID')
         self.image = 'netbox-with-sync-guard:' + self.commit
         base = 'netbox-with-sync-guard:base-' + self.old_image.removeprefix('sha256:')
         self.run('docker', 'image', 'tag', self.old_image, base)
         self.run('docker', 'build', '--pull=false', '--build-arg', 'NETBOX_BASE_IMAGE=' + base,
+                 '--build-arg', 'NETBOX_RUNTIME_USER=' + runtime_user,
                  '--label', 'org.opencontainers.image.revision=' + self.commit,
                  '-f', str(self.source / 'deploy/Dockerfile.netbox-guard'), '-t', self.image, str(self.source))
-        self.new_image = json.loads(self.run('docker', 'image', 'inspect', self.image))[0]['Id']
+        built = json.loads(self.run('docker', 'image', 'inspect', self.image))[0]
+        self.new_image = built['Id']
+        if (built['Config'].get('User', '') or '0') != runtime_user:
+            raise GuardUpdateError('GUARD_IMAGE_USER_MISMATCH')
+        # Verify the new filesystem before stopping NetBox or running migrations.
+        script = (
+            "import importlib.util,json; from pathlib import Path; "
+            "p=Path('/opt/netbox-sync-guard/netbox_guard'); "
+            "s=importlib.util.spec_from_file_location('manifest',p/'release_manifest.py'); "
+            "m=importlib.util.module_from_spec(s); s.loader.exec_module(m); "
+            "print('GUARD_IMAGE:'+json.dumps({'fingerprint':m.fingerprint(m.manifest(p))}))"
+        )
+        result = marked(self.run('docker', 'run', '--rm', '--network', 'none', '--read-only',
+                                 '--entrypoint', PYTHON, self.new_image, '-B', '-c', script), 'GUARD_IMAGE:')
+        if result.get('fingerprint') != self.fingerprint:
+            raise GuardUpdateError('GUARD_IMAGE_CONTENT_MISMATCH')
 
     def pause(self):
         """Stop test writers before migrations; no database/configuration backup."""
@@ -252,6 +272,24 @@ class GuardUpdate:
                      '--wait-timeout', '180', 'netbox', 'netbox-worker')
 
     def verify(self):
+        return self._verify_step('runtime', self._verify_runtime)
+
+    def _verify_step(self, name, action):
+        """Report the failed check without exposing command output or secrets."""
+        print('GUARD_VERIFY:', name, flush=True)
+        try:
+            return action()
+        except subprocess.CalledProcessError as error:
+            known = {'GUARD_RELEASE_MISMATCH', 'SELECTEL_IMPORTER_UNAVAILABLE', 'SELECTEL_IMPORTER_NOT_READY'}
+            for line in (error.stderr or '').splitlines():
+                code = line.removeprefix('CommandError: ').strip()
+                if code in known:
+                    raise GuardUpdateError(code) from None
+            raise GuardUpdateError('GUARD_VERIFY_COMMAND_FAILED:' + name) from None
+        except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+            raise GuardUpdateError('GUARD_VERIFY_CHECK_FAILED:' + name) from None
+
+    def _verify_runtime(self):
         ids = self.compose('ps', '-q', 'netbox', 'netbox-worker').split()
         if len(ids) != 2:
             raise GuardUpdateError('GUARD_RUNTIME_MISSING')
@@ -259,13 +297,14 @@ class GuardUpdate:
             if container['Image'] != self.new_image or not container['State']['Running'] or \
                     container['State'].get('Health', {}).get('Status', 'healthy') != 'healthy':
                 raise GuardUpdateError('GUARD_RUNTIME_MISMATCH')
-        self.manage('check')
-        self.manage('migrate', '--check')
-        result = marked(self.manage('sync_guard_release_check', '--expected', self.fingerprint), 'GUARD_CHECK:')
+        self._verify_step('django', lambda: self.manage('check'))
+        self._verify_step('migrations', lambda: self.manage('migrate', '--check'))
+        result = self._verify_step('release', lambda: marked(
+            self.manage('sync_guard_release_check', '--expected', self.fingerprint), 'GUARD_CHECK:'))
         if (result['fingerprint'] != self.fingerprint or result['selectel_protocol'] != 1
                 or result['native_reconcile'] is not self.native):
             raise GuardUpdateError('GUARD_PROTOCOL_MISMATCH')
-        self.https()
+        self._verify_step('https', self.https)
 
     def apply(self):
         with apply_lock():

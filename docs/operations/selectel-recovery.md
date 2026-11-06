@@ -26,6 +26,12 @@ script refuses scheduled/running Selectel work rather than changing schedules.
    **exact currently installed NetBox image** with pulling disabled. This is not
    an upgrade of the NetBox base version. No Guard permissions, tokens, native
    flags or account schedules are provisioned or changed.
+   The installed image's runtime user is explicitly preserved. The build replaces
+   only `/opt/netbox-sync-guard/netbox_guard`, so deleted templates/modules cannot
+   survive a directory COPY. Other plugins and configuration are preserved. The
+   new image's content fingerprint is checked without network or database access
+   before stopping NetBox or running migrations. Standalone custom-base builds
+   must supply `NETBOX_RUNTIME_USER` (the upstream default is `0`).
 4. Stop only NetBox and its worker. No database dump, configuration archive or
    backup verification is performed in this test-only updater.
 5. Replace the existing configured `netbox-with-sync-guard:*` image reference,
@@ -45,6 +51,12 @@ release action based on the failed stage, not manual server investigation.
 All generic child commands have a 30-minute ceiling; HTTPS checks
 have shorter bounds. The known test stack must fit the discovered contract;
 unknown installation layouts fail closed and need a code change.
+
+The verification report includes `GUARD_VERIFY` substeps (runtime, Django,
+migrations, release and HTTPS). Known release/importer failures retain their
+bounded error codes; other command output stays private. In particular,
+`GUARD_RELEASE_MISMATCH` is not a successful update even when NetBox's login
+page is reachable.
 
 Compose must support JSON configuration and `--no-env-resolution` so the updater
 can validate referenced configuration paths without exposing their contents. See the [Compose config reference](https://docs.docker.com/reference/cli/docker/compose/config/).

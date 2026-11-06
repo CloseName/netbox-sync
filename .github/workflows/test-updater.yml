@@ -37,3 +37,6 @@ jobs:
       - run: python -m pytest tests/test_guard_compose_integration.py -q
         env:
           GUARD_COMPOSE_TEST: '1'
+      - run: python -m pytest tests/test_guard_image_integration.py -q
+        env:
+          GUARD_IMAGE_TEST: '1'
