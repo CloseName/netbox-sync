@@ -5,7 +5,12 @@ from . import provider_first_creation_views
 from . import provider_manual_link_views
 from . import provider_unlink_views
 from . import routing_views
+from . import pfsense_catalog_views
 urlpatterns = [
+    path('pfsense/', pfsense_catalog_views.overview, name='pfsense_overview'),
+    path('pfsense/search/', pfsense_catalog_views.search, name='pfsense_search'),
+    path('pfsense/appliances/<int:pk>/', pfsense_catalog_views.appliance, name='pfsense_appliance'),
+    path('pfsense/objects/<uuid:uid>/', pfsense_catalog_views.detail, name='pfsense_object'),
     path('routing/', routing_views.overview, name='routing_overview'),
     path('providers/<str:account>/unlink/<str:ref>/', provider_unlink_views.unlink, name='provider_unlink'),
     path('providers/<str:account>/link/<str:ref>/', provider_manual_link_views.manual_link, name='provider_manual_link'),

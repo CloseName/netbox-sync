@@ -2,7 +2,7 @@ name: Selectel Guard integration
 on:
   pull_request:
     branches: [main]
-    paths: ['deploy/netbox_guard/**', 'tests/*selectel*', '.github/workflows/selectel-guard.yml']
+    paths: ['deploy/netbox_guard/**', 'tests/*selectel*', 'tests/*pfsense*', '.github/workflows/selectel-guard.yml']
   push:
     branches: [feat/selectel-guard-bindings]
   workflow_dispatch:
@@ -33,7 +33,7 @@ jobs:
           sudo "$(which python)" -m pytest -q tests/test_hardware_identity.py tests/test_hardware_identity_plan.py tests/test_sync_plan.py tests/test_host_network_paths.py tests/test_proxmox_discovery.py tests/test_esxi_host_network.py tests/test_prerequisite_preparation.py tests/test_network_evidence.py tests/test_discovery_review.py tests/test_first_sync.py
       - name: Test Selectel account API
         # Includes the web account API, credential projection and scope checks.
-        run: sudo "$(which python)" -m pytest -q tests/test_selectel_mvp.py tests/test_selectel_payload.py tests/test_pfsense_connect.py tests/test_pfsense_snapshot.py tests/test_pfsense_inventory.py tests/test_pfsense_preview.py tests/test_pfsense_scheduler.py
+        run: sudo "$(which python)" -m pytest -q tests/test_selectel_mvp.py tests/test_selectel_payload.py tests/test_pfsense_connect.py tests/test_pfsense_snapshot.py tests/test_pfsense_inventory.py tests/test_pfsense_preview.py tests/test_pfsense_scheduler.py tests/test_pfsense_catalog.py
       - name: Prepare disposable PostgreSQL service
         run: |
           docker run -d --name provider-test-pg --network none \
@@ -72,6 +72,16 @@ jobs:
             -e NETBOX_SYNC_MODEL_DB=netbox_sync_guard_test \
             --entrypoint /opt/netbox/venv/bin/python provider-guard:test \
             /app/tests/netbox_selectel_lifecycle_scenario.py
+      - name: Test pfSense object catalog, permissions and upgrade
+        if: ${{ success() || steps.native-models.conclusion == 'failure' }}
+        run: |
+          docker run --rm --network container:provider-test-pg \
+            --mount type=bind,src="$PWD",dst=/app,readonly \
+            --mount type=bind,src="$PWD/tests/netbox_guard_plugins.py",dst=/etc/netbox/config/plugins.py,readonly \
+            -e NETBOX_SYNC_ISOLATED_MODEL_TEST=1 \
+            -e NETBOX_SYNC_MODEL_DB=netbox_sync_guard_test \
+            --entrypoint /opt/netbox/venv/bin/python provider-guard:test \
+            /app/tests/netbox_pfsense_catalog_scenario.py
       - name: Remove disposable database container
         if: always()
         run: docker rm -f -v provider-test-redis provider-test-pg

@@ -1,5 +1,8 @@
 # pfSense web onboarding (test rollout)
 
+For NetBox object pages, scoped configuration search and the read-only Map API,
+see the [pfSense object catalog](pfsense-object-catalog.md).
+
 Sources expands to ESXi, Proxmox and pfSense, including zero counts. Hypervisor counts are registered sources; pfSense counts are NetBox VMs whose names contain `pfsense` case-insensitively. Counts show unavailable rather than zero on fetch errors. NetBox custom fields and other object types are not candidates. VM ID, cluster and site disambiguate equal names. Names discover candidates only: configured interfaces must match by MAC before snapshots are saved.
 
 Automated setup accepts stable pfSense CE 2.x releases starting with 2.6.0 (including RELEASE-pN builds). SSH must already be enabled. The operator enters the pfSense HTTPS endpoint and an administrative LDAP or local account accepted by its webConfigurator. Authentication follows that appliance's configured authentication backend; Sync does not bypass LDAP or impersonate users. Diagnostics: Command permission is required. Older CE, development/RC builds, Plus calendar versions and unknown major versions stop before provisioning. Later stable 2.x releases must also pass capability checks; this is not a claim of live testing on every appliance.

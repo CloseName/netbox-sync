@@ -1,0 +1,7 @@
+{% extends 'base/layout.html' %}
+{% block title %}pfSense{% endblock %}
+{% block content %}
+<h1>pfSense</h1><p><a class="btn btn-primary" href="{% url 'plugins:netbox_guard:pfsense_search' %}">Поиск объектов pfSense</a></p>
+<div class="table-responsive"><table class="table"><thead><tr><th>Firewall</th><th>VM в NetBox</th><th>Площадка</th><th>Правила</th><th>NAT</th><th>Aliases</th><th>Последний сбор</th><th>Состояние</th></tr></thead><tbody>
+{% for row in rows %}<tr><td><a href="{{ row.appliance.get_absolute_url }}">{{ row.appliance.vm.name }}</a></td><td><a href="{{ row.appliance.vm.get_absolute_url }}">{{ row.appliance.vm.name }}</a></td><td>{{ row.appliance.vm.site|default:'—' }}</td><td>{{ row.rules }}</td><td>{{ row.nat }}</td><td>{{ row.aliases }}</td><td>{{ row.appliance.observed_at }}</td><td>{% if row.partial %}Неполные сведения{% else %}Снимок получен{% endif %}</td></tr>{% empty %}<tr><td colspan="8">Сохранённых снимков pfSense пока нет. Выполните сбор для подключённого firewall.</td></tr>{% endfor %}
+</tbody></table></div>{% endblock %}

@@ -37,8 +37,13 @@ class PfSenseImport(GuardView):
                     field.object_types.add(field.object_types.model.objects.get(app_label='virtualization',model='virtualmachine'))
                 elif field.type!='json' or {(t.app_label,t.model) for t in field.object_types.all()}!={('virtualization','virtualmachine')}:
                     raise DependencyGuardBlocked('PFSENSE_FIELDS_INCOMPATIBLE')
-            if fields==vm.custom_field_data:return Response({'status':'UNCHANGED'})
+            if fields==vm.custom_field_data:
+                from ..pfsense_catalog_sync import project
+                project(vm)
+                return Response({'status':'UNCHANGED'})
             vm.custom_field_data=fields;vm.full_clean();vm.save(update_fields=['custom_field_data','last_updated'])
+            from ..pfsense_catalog_sync import project
+            project(vm)
             return Response({'status':'SAVED'})
         except (ValueError,KeyError,TypeError,VirtualMachine.DoesNotExist):
             raise DependencyGuardBlocked('PFSENSE_SNAPSHOT_INVALID') from None

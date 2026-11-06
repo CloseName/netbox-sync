@@ -1,0 +1,3 @@
+{% extends 'base/layout.html' %}{% block title %}Поиск объектов pfSense{% endblock %}{% block content %}
+<p><a href="{% url 'plugins:netbox_guard:pfsense_overview' %}">pfSense</a></p><h1>Поиск объектов pfSense</h1>
+{% include 'netbox_guard/pfsense_filters.html' %}{% include 'netbox_guard/pfsense_results.html' %}{% endblock %}
