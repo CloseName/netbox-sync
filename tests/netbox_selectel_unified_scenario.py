@@ -130,7 +130,8 @@ with override_settings(PLUGINS_CONFIG=config, ALLOWED_HOSTS=['testserver']):
     prefix = Prefix.objects.get(prefix='10.78.12.0/26', description='LAN management')
     assert prefix.vlan.vid == 1368
     assert IPAddress.objects.filter(vrf=prefix.vrf, address__net_host='10.78.12.1').exists()
-    assert not Prefix.objects.filter(vrf=prefix.vrf, prefix='10.160.0.0/16').exists()
+    destination = Prefix.objects.get(vrf=prefix.vrf, prefix='10.160.0.0/16')
+    assert destination.vlan_id is None and destination.scope_id is None
     counts = (Prefix.objects.count(), VLAN.objects.count(), IPAddress.objects.count(), VRF.objects.count())
     with transaction.atomic(): assert not routing_apply(admin, account)
     assert counts == (Prefix.objects.count(), VLAN.objects.count(), IPAddress.objects.count(), VRF.objects.count())
@@ -165,6 +166,8 @@ with override_settings(PLUGINS_CONFIG=config, ALLOWED_HOSTS=['testserver']):
     matches = find_routes(admin, '10.160.0.42')
     match = next(r for r in matches if r['account'] == account)
     assert match['name'] == 'PAM-DEV-CLOUD' and match['next_hop'] == '10.78.12.2'
+    assert match['href'] == destination.get_absolute_url()
+    assert match['router_url'] == prefix.vrf.get_absolute_url()
     search_page = client.get(reverse('search'), {'q': '10.160.0.0/16'})
     assert search_page.status_code == 200
     assert 'routing-search-results' in search_page.content.decode()
@@ -196,7 +199,7 @@ with override_settings(PLUGINS_CONFIG=config, ALLOWED_HOSTS=['testserver']):
     assert prefix_table.status_code == 200 and '10.78.12.0/26' in prefix_table.content.decode()
     prefix_page = client.get(prefix.get_absolute_url())
     assert prefix_page.status_code == 200 and '10.78.12.61' in prefix_page.content.decode()
-    query_page = client.get(match['router_url'] + '&q=10.160.0.0%2F16')
+    query_page = client.get(match['router_url'] + '?q=10.160.0.0%2F16')
     assert query_page.status_code == 200 and 'PAM-DEV-CLOUD' in query_page.content.decode()
     assert 'data-routing-network' not in query_page.content.decode()
     overview = client.get(reverse('plugins:netbox_guard:routing_overview'), {'account': account})
@@ -215,6 +218,17 @@ with override_settings(PLUGINS_CONFIG=config, ALLOWED_HOSTS=['testserver']):
     from netbox_guard.routing_links import panel as routing_panel
     assert routing_panel(admin, prefix)['networks'][0]['subnets'][0]['gateway_url']
     assert routing_panel(unprivileged, prefix) is None
+    # Independently managed exact destination is reused without changing it.
+    ProviderCreatedObject.objects.filter(model_label='ipam.prefix', object_id=destination.pk).delete()
+    destination.description = 'Manual destination'
+    destination.save()
+    with transaction.atomic(): routing_apply(admin, account)
+    destination.refresh_from_db()
+    assert destination.description == 'Manual destination'
+    assert find_routes(admin, '10.160.0.0/16')[0]['href'] == destination.get_absolute_url()
+    assert 'routes-to-prefix' in client.get(destination.get_absolute_url()).content.decode()
+    # Remove the independent reference before exercising account deletion.
+    destination.delete()
     review = deletion_review(admin, account, 'delete')
     assert not review['blockers'], review['blockers']
     deletion_execute(admin, account, 'delete', uuid4(), review['fingerprint'])

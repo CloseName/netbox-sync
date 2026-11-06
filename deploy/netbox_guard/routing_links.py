@@ -25,6 +25,15 @@ def decorate(user, account, rows):
             for source in rows:
                 if proof.resource_key.startswith(source['key'] + ':'):
                     source.setdefault('ip_links', {})[str(native.address.ip)] = native.get_absolute_url()
+    from .routing_catalog import routes
+    native_routes = {r['key']: r for r in routes(user, '') if r['account'] == account}
+    for row in rows:
+        route = native_routes.get(row['key'])
+        if route:
+            row['detail_href'] = row['native_href'] = route['href']
+            if route.get('next_hop_url'):
+                from .routing_browser import data
+                row.setdefault('ip_links', {})[data(row)['next_hop']] = route['next_hop_url']
 
 
 def panel(user, obj):
@@ -45,7 +54,7 @@ def panel(user, obj):
         any(c['key'] == source['key'] for c in components(r, rows, relations)))), None)
     if router is None: return None
     value = routing_context(rows, relations, router, '', registry.snapshot)
-    value['router_url'] = router['detail_href']
+    value['router_url'] = router.get('native_href') or router['detail_href']
     value['account'] = proof.account
     if source['kind'] != 'global_router':
         value['networks'] = [n for n in value['networks'] if n['key'] == source['key'] or any(s['key'] == source['key'] for s in n['subnets'])]
