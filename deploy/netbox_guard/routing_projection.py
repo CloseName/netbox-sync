@@ -1,4 +1,4 @@
-"""Provider routing -> native IPAM, without inventing route destination subnets."""
+"""Provider routing -> IPAM; destination prefixes do not imply connected networks."""
 from ipaddress import ip_address, ip_network
 from datetime import timedelta
 from django.utils import timezone
@@ -93,6 +93,17 @@ def apply(user, account):
                         IPAddress.objects.filter(vrf=vrf, address__net_host=str(ip)))
         for route in children:
             if route['kind'] != 'routing_route' or not fresh(route): continue
+            try: destination = str(ip_network(data(route).get('cidr', ''), strict=False))
+            except ValueError: continue
+            # Reuse an exact prefix in this routing domain without adopting or
+            # editing it. Several routes can share a destination. Never infer
+            # a VLAN, site or interface from a static route.
+            existing = Prefix.objects.filter(vrf=vrf, prefix=destination)
+            if not existing.exists():
+                ensure(Prefix, router['key'] + ':destination:' + destination,
+                    dict(prefix=destination, vrf_id=vrf.pk, status='active',
+                         description=('Сеть назначения маршрута · ' + (data(route).get('name') or destination))[:200]),
+                    existing)
             try: hop = ip_address(data(route).get('next_hop'))
             except (ValueError, TypeError): continue
             # A next hop has its own address record, never an invented interface.
@@ -100,8 +111,7 @@ def apply(user, account):
                 dict(address=f'{hop}/{hop.max_prefixlen}', vrf_id=vrf.pk, status='active',
                      description=('Следующий узел · ' + (data(route).get('name') or 'Маршрут'))[:200]),
                 IPAddress.objects.filter(vrf=vrf, address__net_host=str(hop)))
-        # Registry routes remain typed records. Index their CIDRs against this
-        # routing domain; never materialize destinations as connected Prefixes.
+        # Retain VRF indexing for old installations until their next collection.
         from netbox.search.backends import search_backend
         search_backend.cache(vrf)
     return sorted(set(notes))

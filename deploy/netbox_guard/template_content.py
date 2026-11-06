@@ -107,7 +107,13 @@ class RoutingNativePanel(PluginTemplateExtension):
     def full_width_page(self):
         from .routing_links import panel
         from .routing_tabs import configure
-        value = panel(self.context['request'].user, self.context['object'])
+        obj = self.context['object']
+        if obj._meta.label_lower == 'ipam.prefix':
+            from .routing_destinations import panel as destinations
+            routes = destinations(self.context['request'].user, obj)
+            if routes:
+                return self.render('netbox_guard/routing_destination.html', extra_context={'routes': routes})
+        value = panel(self.context['request'].user, self.context['object'], self.context['request'].GET.get('q', '')[:256])
         if value:
             value['is_router'] = self.context['object']._meta.model_name == 'vrf'
             configure(value, self.context['request'].GET)
