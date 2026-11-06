@@ -18,12 +18,20 @@ from .routing_catalog import routes
 class InventorySearchView(SearchView):
     def get(self, request):
         results, route_results, highlight = [], [], None
+        pfsense_url = None
         form = SearchForm(request.GET) if 'q' in request.GET else SearchForm()
         if form.is_valid():
             query = form.cleaned_data['q']
             selected = form.cleaned_data['obj_types']
             object_types = [ContentType.objects.get_by_natural_key(*t.split('.')) for t in selected]
             lookup = form.cleaned_data['lookup'] or LookupTypes.PARTIAL
+            if not selected and lookup in (LookupTypes.PARTIAL, LookupTypes.EXACT) and request.user.has_perm('virtualization.view_virtualmachine'):
+                from .pfsense_catalog import appliances
+                from django.urls import reverse
+                from urllib.parse import urlencode
+                # Keep ordinary NetBox search independent of configuration size.
+                if appliances(request.user).exists():
+                    pfsense_url = reverse('plugins:netbox_guard:pfsense_search') + '?' + urlencode({'q': query})
             results = search_backend.search(query, user=request.user, object_types=object_types, lookup=lookup)
             if lookup in (LookupTypes.PARTIAL, LookupTypes.EXACT):
                 results = sorted(results, key=lambda hit: result_rank(query, hit))
@@ -39,7 +47,7 @@ class InventorySearchView(SearchView):
         table = SearchTable(results, highlight=highlight)
         RequestConfig(request, {'paginator_class': EnhancedPaginator,
                                'per_page': get_paginate_count(request)}).configure(table)
-        context = dict(form=form, table=table,
+        context = dict(form=form, table=table, pfsense_url=pfsense_url,
             route_page=Paginator(route_results, 25).get_page(request.GET.get('route_page')))
         params = request.GET.copy()
         params.pop('route_page', None)

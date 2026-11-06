@@ -1,5 +1,8 @@
 """Independent records survive removal of the infrastructure objects."""
 from django.db import models
+from django.urls import reverse
+from uuid import uuid4
+from netbox.models.features import CustomFieldsMixin
 
 
 class ProviderAccountRun(models.Model):
@@ -266,3 +269,60 @@ class AddressReservation(models.Model):
 
     class Meta:
         default_permissions = ()
+
+
+class FirewallAppliance(models.Model):
+    """Inventory scope, authorized through the existing NetBox VM."""
+    vm = models.OneToOneField('virtualization.VirtualMachine', on_delete=models.CASCADE)
+    observed_at = models.DateTimeField()
+    version = models.CharField(max_length=256)
+    coverage = models.JSONField(default=dict)
+    digest = models.CharField(max_length=64)
+
+    class Meta:
+        default_permissions = ()
+
+    def get_absolute_url(self):
+        return reverse('plugins:netbox_guard:pfsense_appliance', kwargs={'pk': self.pk})
+
+    def __str__(self):
+        return str(self.vm)
+
+
+class FirewallObject(CustomFieldsMixin, models.Model):
+    """One scoped configuration object; references never allocate native IPs."""
+    uid = models.UUIDField(default=uuid4, unique=True, editable=False)
+    appliance = models.ForeignKey(FirewallAppliance, on_delete=models.CASCADE, related_name='entries')
+    identity_key = models.CharField(max_length=80)
+    identity_kind = models.CharField(max_length=16)
+    component = models.CharField(max_length=32)
+    table = models.CharField(max_length=32)
+    category = models.CharField(max_length=16, db_index=True)
+    name = models.CharField(max_length=256)
+    position = models.PositiveIntegerField()
+    enabled = models.BooleanField(default=True)
+    state = models.CharField(max_length=16, default='current', db_index=True)
+    data = models.JSONField(default=dict)
+    first_seen = models.DateTimeField()
+    last_seen = models.DateTimeField()
+
+    class Meta:
+        default_permissions = ()
+        ordering = ('appliance_id', 'component', 'table', 'position', 'pk')
+        constraints = [models.UniqueConstraint(fields=('appliance', 'identity_key'), name='guard_firewall_identity')]
+
+    def get_absolute_url(self):
+        return reverse('plugins:netbox_guard:pfsense_object', kwargs={'uid': self.uid})
+
+    def __str__(self):
+        return self.name
+
+
+class FirewallReference(models.Model):
+    source = models.ForeignKey(FirewallObject, on_delete=models.CASCADE, related_name='references')
+    target = models.ForeignKey(FirewallObject, on_delete=models.CASCADE, related_name='referenced_by')
+    field = models.CharField(max_length=64)
+
+    class Meta:
+        default_permissions = ()
+        constraints = [models.UniqueConstraint(fields=('source', 'target', 'field'), name='guard_firewall_reference')]

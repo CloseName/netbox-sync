@@ -22,3 +22,8 @@ def prepare_managed_fields(sender, using, **kwargs):
         configure_managed_fields(using)
         from .provider_schema import configure_provider_fields
         configure_provider_fields(using)
+        from .pfsense_catalog_sync import backfill
+        invalid = backfill(using)
+        if invalid:
+            import logging
+            logging.getLogger(__name__).warning('pfSense catalog: %s incompatible saved snapshots skipped', invalid)

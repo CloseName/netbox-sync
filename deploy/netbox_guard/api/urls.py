@@ -4,7 +4,10 @@ from .pfsense import PfSenseImport, PfSensePreflight
 from .infrastructure import Infrastructure, FirewallInventory, ProviderNetworks, ProviderResources
 from .provider import ProviderReview, ProviderApply, ProviderAccountImport, ProviderAccountReceipt, ProviderLifecycleReview, ProviderLifecycleExecute
 from .vm_replacement import VMReplacementReview, VMReplacementExecute
+from .pfsense_catalog import FirewallCatalog, FirewallObjectDetail
 urlpatterns = [
+    path('firewall/catalog/v1/', FirewallCatalog.as_view(), name='firewall_catalog'),
+    path('firewall/catalog/v1/<uuid:uid>/', FirewallObjectDetail.as_view(), name='firewall_object'),
     path('providers/resources/v1/<str:account>/', ProviderResources.as_view()),
     path('vm-replacements/<int:pk>/review/', VMReplacementReview.as_view()),
     path('vm-replacements/<int:pk>/execute/', VMReplacementExecute.as_view()),

@@ -59,6 +59,10 @@ class PfsenseInventoryDetails(PluginTemplateExtension):
     def full_width_page(self):
         from .pfsense_inventory import panel
         obj = self.context.get('object')
+        from .models import FirewallAppliance
+        appliance = FirewallAppliance.objects.filter(vm=obj).first()
+        if appliance:
+            return self.render('netbox_guard/pfsense_link.html', extra_context={'appliance': appliance})
         value = panel((getattr(obj, 'custom_field_data', {}) or {}).get('pfsense_inventory'))
         if value is None:
             return ''

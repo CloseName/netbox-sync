@@ -48,11 +48,15 @@ class Command(BaseCommand):
                 field.save()
                 field.object_types.add(field.object_types.model.objects.get(app_label='virtualization', model='virtualmachine'))
             if value == existing:
+                from netbox_guard.pfsense_catalog_sync import project
+                project(vm)
                 self.stdout.write('UNCHANGED: identical snapshot already stored')
                 return
             vm.custom_field_data = {**(vm.custom_field_data or {}), FIELD: value}
             vm.full_clean()
             vm.save(update_fields=['custom_field_data', 'last_updated'])
+            from netbox_guard.pfsense_catalog_sync import project
+            project(vm)
             self.stdout.write('SAVED: pfsense_inventory; interface and IP objects unchanged')
         except (ValueError, OSError, VirtualMachine.DoesNotExist) as error:
             raise CommandError(str(error)) from None

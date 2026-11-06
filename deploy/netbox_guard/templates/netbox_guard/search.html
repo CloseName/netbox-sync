@@ -1,6 +1,7 @@
 {% extends 'search.html' %}
 {% block content %}
 {{ block.super }}
+{% if pfsense_url %}<div class="card mt-3" id="pfsense-search-link"><div class="card-body"><a href="{{ pfsense_url }}">Искать этот запрос в конфигурации pfSense</a></div></div>{% endif %}
 {% if route_page.paginator.count %}
 <section class="card mt-3" id="routing-search-results">
   <h2 class="card-header">Статические маршруты · {{ route_page.paginator.count }}</h2>
