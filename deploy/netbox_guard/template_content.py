@@ -109,7 +109,7 @@ class RoutingNativePanel(PluginTemplateExtension):
             routes = destinations(self.context['request'].user, obj)
             if routes:
                 return self.render('netbox_guard/routing_destination.html', extra_context={'routes': routes})
-        value = panel(self.context['request'].user, self.context['object'])
+        value = panel(self.context['request'].user, self.context['object'], self.context['request'].GET.get('q', '')[:256])
         if value:
             value['is_router'] = self.context['object']._meta.model_name == 'vrf'
             configure(value, self.context['request'].GET)
