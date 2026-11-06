@@ -73,11 +73,18 @@ def alias_paths(name, aliases, query):
             continue
         visited.add(current)
         for item in tokens(aliases.get(current, [])):
-            if contains(query, item) or query.casefold() == item.casefold():
+            if contains(query, item) or query.casefold() == item.casefold() or port_contains(query, item):
                 found.append(' → '.join(path + [item]))
             if item in aliases:
                 pending.append((item, path + [item]))
     return found[:5]
+
+
+def port_contains(query, value):
+    if query.isdigit() and re.fullmatch(r'\d+[:-]\d+', value):
+        start, end = map(int, re.split('[:-]', value))
+        return 0 <= start <= int(query) <= end <= 65535
+    return False
 
 
 def match(query, row, aliases):
@@ -102,8 +109,6 @@ def match(query, row, aliases):
                 reasons.append(label + ': ' + token)
             if token in aliases and field not in ('name', 'descr', 'description'):
                 reasons.extend(label + ' · alias ' + path for path in alias_paths(token, aliases, query))
-            if query.isdigit() and re.fullmatch(r'\d+[:-]\d+', token) and 'port' in field:
-                start, end = map(int, re.split('[:-]', token))
-                if start <= int(query) <= end:
-                    reasons.append(label + ': ' + token)
+            if 'port' in field and port_contains(query, token):
+                reasons.append(label + ': ' + token)
     return list(dict.fromkeys(reasons))[:8]

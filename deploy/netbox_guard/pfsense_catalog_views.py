@@ -1,7 +1,6 @@
 """Read-only pfSense inventory pages; scopes use the native VM view permission."""
 from collections import Counter
 from django.contrib.auth.decorators import login_required
-from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_GET
 from . import pfsense_catalog as catalog
@@ -14,7 +13,7 @@ def search_context(request, params):
     query.pop('page', None)
     appliances = list(catalog.appliances(request.user).order_by('vm__name'))
     sites = {a.vm.site_id: a.vm.site for a in appliances if a.vm.site_id}
-    return dict(page=Paginator(list(catalog.results(request.user, params)), 50).get_page(params.get('page')),
+    return dict(page=catalog.page(request.user, params),
                 filters=params, page_query=query.urlencode(), appliances=appliances,
                 sites=sites.values(), categories=TABS[1:], states=catalog.STATES.items())
 

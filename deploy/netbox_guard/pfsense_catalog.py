@@ -1,6 +1,7 @@
 """Permission-aware catalog reads shared by UI, search and the graph API."""
 from collections import Counter
 from django.core.exceptions import PermissionDenied
+from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404
 from virtualization.models import VirtualMachine, VMInterface
 from .models import FirewallAppliance, FirewallObject, NetworkBinding
@@ -59,6 +60,35 @@ def results(user, params):
         if not query or reasons or query == str(obj.uid):
             yield {'object': obj, 'reasons': reasons, 'state_label': STATES[obj.state],
                    'kind': LABELS.get(obj.component, 'Интерфейсы') + ' · ' + TITLES.get(obj.table, obj.table)}
+
+
+def page(user, params):
+    """Only retain IDs/reasons while scanning; load full JSON for one page."""
+    query = params.get('q', '').strip()[:256]
+    if query:
+        matches = [(hit['object'].pk, hit['reasons']) for hit in results(user, params)]
+        selected = Paginator(matches, 50).get_page(params.get('page'))
+        objects = {obj.pk: obj for obj in entries(user).filter(pk__in=[pk for pk, _ in selected])}
+        rows = [(objects[pk], reasons) for pk, reasons in selected if pk in objects]
+    else:
+        selected = Paginator(filtered(user, params), 50).get_page(params.get('page'))
+        rows = [(obj, []) for obj in selected]
+    selected.object_list = [dict(object=obj, reasons=reasons, state_label=STATES[obj.state],
+        kind=LABELS.get(obj.component, 'Интерфейсы') + ' · ' + TITLES.get(obj.table, obj.table),
+        summary=summary(obj)) for obj, reasons in rows]
+    return selected
+
+
+def summary(obj):
+    values = []
+    for key in ('type', 'protocol', 'interface', 'source/address', 'source/network',
+                'source/port', 'destination/address', 'destination/network', 'destination/port',
+                'address', 'network', 'target', 'gateway'):
+        if obj.data.get(key):
+            label = COLUMNS.get(key, FIELD_LABELS.get(key, key))
+            excluded = key.startswith(('source/', 'destination/')) and obj.data.get(key.split('/')[0] + '/not')
+            values.append(label + ': ' + ('кроме ' if excluded else '') + ', '.join(obj.data[key]))
+    return values
 
 
 def fields(obj):

@@ -35,3 +35,13 @@ def test_addresses_networks_ranges_ipv6_and_partial_text():
     assert not catalog.match('10.0.0.40', {'source/address': ['10.0.0.1-10.0.0.9']}, {})
     assert catalog.match('web', {'descr': ['Web access']}, {})
     assert not catalog.match('10.0.0.0/24', {'source/address': ['10.0.0.1']}, {})
+
+
+def test_ports_inside_nested_alias_ranges_and_disabled_flags():
+    row = {'destination/port': ['HTTPS'], 'disabled': ['']}
+    assert catalog.match('443', row, {'HTTPS': ['WEB'], 'WEB': ['440:450']})
+    assert not catalog.match('451', row, {'HTTPS': ['WEB'], 'WEB': ['440:450']})
+    assert not catalog.enabled(row)
+    assert catalog.enabled({'disabled': []})
+    assert not catalog.enabled({'enable': []})
+    assert catalog.enabled({'enable': ['']})
