@@ -190,14 +190,17 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     vms[0].custom_field_data['pfsense_inventory'] = {**deepcopy(base), 'vm_id': vms[0].pk,
         'collected_at': (stamp + timedelta(seconds=3)).isoformat()}
     vms[0].save(); project(vms[0])
+    # A confirmed removal followed by reappearance creates a new catalog object.
+    restored_rule = first.entries.get(component='firewall', table='rules', data__tracker=['1001'])
+    assert restored_rule.uid != rule.uid
     # Successful absence and failed collection are distinct, scoped states.
     vms[0].custom_field_data['pfsense_inventory']['collected_at'] = (stamp + timedelta(seconds=4)).isoformat()
     vms[0].custom_field_data['pfsense_inventory']['components']['firewall'].update(collection='error', configuration='unknown', tables={})
     removed = first.entries.get(component='nat', table='port_forwards')
     vms[0].custom_field_data['pfsense_inventory']['components']['nat']['tables']['port_forwards'] = []
     vms[0].save(); project(vms[0])
-    rule.refresh_from_db()
-    assert rule.state == 'retained'
+    restored_rule.refresh_from_db()
+    assert restored_rule.state == 'retained'
     assert not first.entries.filter(pk=removed.pk).exists()
     assert client.get(removed.get_absolute_url()).status_code == 404
     assert removed.get_absolute_url() not in client.get(search_url, {'scope':'firewall', 'state':'removed', 'q':'Web NAT'}).content.decode()
