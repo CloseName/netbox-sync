@@ -47,3 +47,19 @@ def test_ports_inside_nested_alias_ranges_and_disabled_flags():
     assert catalog.enabled({'disabled': []})
     assert not catalog.enabled({'enable': []})
     assert catalog.enabled({'enable': ['']})
+
+
+def test_full_address_distinguishes_host_literal_from_covering_network():
+    row = {'destination/address': ['nets'], 'destination/not': ['']}
+    matches = catalog.search_hits('10.17.0.25', row, {'nets': ['10.17.1.92/23']})
+    assert matches[0]['covering'] and '10.17.0.0/23' in matches[0]['reason']
+    assert 'исключение' in matches[0]['reason']
+    assert not catalog.search_hits('10.17.0.25', {'address': ['10.17.0.1/24']}, {}, interface=True)
+    exact = catalog.search_hits('10.17.0.1', {'address': ['10.17.0.1/24']}, {}, interface=True)
+    assert exact and not exact[0]['covering']
+    assert catalog.match('10.17.0', {'address': ['10.17.0.53 192.0.2.42']}, {}) == ['Адрес: 10.17.0.53']
+
+
+def test_local_rule_groups_follow_interface_tabs():
+    assert catalog.rule_groups({'interface': ['lan,opt1']}) == ['lan', 'opt1']
+    assert catalog.rule_groups({'floating': [''], 'interface': ['lan']}) == ['__floating__']

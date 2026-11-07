@@ -46,7 +46,7 @@ def interface(binding):
     return row
 
 
-def availability(binding, user):
+def availability(binding, user, *, address_filter=None, allow_unscoped=True):
     row=interface(binding)
     snapshot=(binding.vm.custom_field_data or {}).get('pfsense_inventory',{})
     observation=snapshot.get('ipam',{})
@@ -56,6 +56,8 @@ def availability(binding, user):
     evidence=[]; links={}
     prefix=binding.prefix
     ips=IPAddress.objects.filter(vrf_id=prefix.vrf_id,address__net_contained_or_equal=str(prefix.prefix))
+    if address_filter is not None:
+        ips=ips.filter(address__net_host=str(address_filter))
     allowed_ids=set(visible(IPAddress,user).filter(pk__in=ips.values('pk')).values_list('pk',flat=True))
     if len(allowed_ids)!=ips.count(): fresh=False
     if ips.count() > 10000: raise ValueError('Too many IPAM records')
@@ -79,6 +81,9 @@ def availability(binding, user):
         # DHCP and ARP carry local interface identity. Leases are scoped to this
         # firewall and then to the confirmed prefix, never matched globally.
         if item['interface'] not in ('',binding.interface_key,row['configuration']['device']): continue
+        if not item['interface'] and not allow_unscoped:
+            fresh=False
+            continue
         evidence.append(dict(start=item['start'],end=item['end'],
             state={'dhcp':'dhcp','static':'reserved','vip':'gateway','lease':'observed','arp':'observed','historical':'observed'}[item['kind']],
             owner=item['kind']+(' · '+item['mac'] if item['mac'] else '')))
@@ -95,7 +100,7 @@ def availability(binding, user):
                 if address not in ip_network(str(prefix.prefix)): continue
                 if observation.get('scope_conflicts'):
                     fresh=False
-                if observation.get('vrf_id')==prefix.vrf_id:
+                if 'vrf_id' in observation and observation['vrf_id']==prefix.vrf_id:
                     evidence.append(dict(start=str(address),state='observed',owner='Guest address requiring review'))
     fresh = fresh and ip_network(str(prefix.prefix)).version==4
     fresh = fresh and (prefix.vrf.enforce_unique if prefix.vrf_id else get_config().ENFORCE_GLOBAL_UNIQUE)

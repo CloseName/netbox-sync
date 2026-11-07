@@ -5,7 +5,7 @@ from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404
 from virtualization.models import VirtualMachine, VMInterface
 from .models import FirewallAppliance, FirewallObject, NetworkBinding
-from .pfsense_catalog_policy import match, TABS, FIELD_LABELS
+from .pfsense_catalog_policy import rule_groups, search_hits, TABS, FIELD_LABELS
 from .pfsense_inventory import COLUMNS, LABELS, TITLES, FLAGS
 
 STATES = {'current': 'В последнем сборе', 'retained': 'Сохранено ранее · нет свежих данных', 'removed': 'Больше нет в конфигурации'}
@@ -38,12 +38,12 @@ def filtered(user, params):
         if params.get(key):
             rows = rows.filter(**{key: params[key]})
     if params.get('group'):
-        if params['group'] == '__floating__':
-            rows = rows.filter(data__floating__in=[[''], ['yes'], ['true'], ['1']])
+        if params.get('component') == 'firewall':
+            group = params['group']
+            ids = [pk for pk, data in rows.values_list('pk', 'data').iterator() if group in rule_groups(data)]
+            rows = rows.filter(pk__in=ids)
         else:
             rows = rows.filter(data__interface__contains=[params['group']])
-            if params.get('component') == 'firewall':
-                rows = rows.exclude(data__floating__in=[[''], ['yes'], ['true'], ['1']])
     state = params.get('state', '')
     if state in STATES:
         rows = rows.filter(state=state)
@@ -68,9 +68,10 @@ def results(user, params):
         if scope != obj.appliance_id:
             scope = obj.appliance_id
             aliases = aliases_for(scope) if query else {}
-        reasons = match(query, obj.data, aliases) if query else []
-        if not query or reasons or query == str(obj.uid):
-            yield {'object': obj, 'reasons': reasons, 'state_label': STATES[obj.state],
+        hits = search_hits(query, obj.data, aliases, interface=obj.component == 'interfaces') if query else []
+        if not query or hits or query == str(obj.uid):
+            yield {'object': obj, 'reasons': [h['reason'] for h in hits],
+                   'covering': bool(hits) and all(h['covering'] for h in hits), 'state_label': STATES[obj.state],
                    'kind': LABELS.get(obj.component, 'Сеть') + ' · ' + COMPONENT_TITLES.get((obj.component, obj.table), TABLE_TITLES.get(obj.table, obj.table))}
 
 
@@ -78,29 +79,19 @@ def page(user, params):
     """Only retain IDs/reasons while scanning; load full JSON for one page."""
     query = params.get('q', '').strip()[:256]
     if query:
-        matches = [(hit['object'].pk, hit['reasons']) for hit in results(user, params)]
+        matches = [(hit['object'].pk, hit['reasons'], hit['covering']) for hit in results(user, params)]
+        matches.sort(key=lambda item: item[2])
         selected = Paginator(matches, 50).get_page(params.get('page'))
-        objects = {obj.pk: obj for obj in entries(user).filter(pk__in=[pk for pk, _ in selected])}
-        rows = [(objects[pk], reasons) for pk, reasons in selected if pk in objects]
+        selected.covering_count = sum(item[2] for item in matches)
+        objects = {obj.pk: obj for obj in entries(user).filter(pk__in=[item[0] for item in selected])}
+        rows = [(objects[pk], reasons, covering) for pk, reasons, covering in selected if pk in objects]
     else:
         selected = Paginator(filtered(user, params), 50).get_page(params.get('page'))
-        rows = [(obj, []) for obj in selected]
-    selected.object_list = [dict(object=obj, reasons=reasons, state_label=STATES[obj.state],
+        rows = [(obj, [], False) for obj in selected]
+    selected.object_list = [dict(object=obj, reasons=reasons, covering=covering, state_label=STATES[obj.state],
         kind=LABELS.get(obj.component, 'Сеть') + ' · ' + COMPONENT_TITLES.get((obj.component, obj.table), TABLE_TITLES.get(obj.table, obj.table)),
-        summary=summary(obj)) for obj, reasons in rows]
+        ) for obj, reasons, covering in rows]
     return selected
-
-
-def summary(obj):
-    values = []
-    for key in ('type', 'protocol', 'interface', 'source/address', 'source/network',
-                'source/port', 'destination/address', 'destination/network', 'destination/port',
-                'address', 'network', 'target', 'gateway', 'parent', 'tag', 'hostname', 'domain', 'subject', 'issuer', 'valid_until', 'uid', 'gid', 'expires', 'host', 'serial', 'reason', 'revoke_time'):
-        if obj.data.get(key):
-            label = COLUMNS.get(key, FIELD_LABELS.get(key, key))
-            excluded = key.startswith(('source/', 'destination/')) and obj.data.get(key.split('/')[0] + '/not')
-            values.append(label + ': ' + ('кроме ' if excluded else '') + ', '.join(obj.data[key]))
-    return values
 
 
 def fields(obj):

@@ -147,6 +147,7 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     settings_html = client.get(first.get_absolute_url(), {'section': 'system', 'view': 'general'}).content.decode()
     assert 'edge-fw' in settings_html and 'example.test' in settings_html
     assert 'Связи и сведения об объекте' in settings_html
+    assert 'name="state"' not in settings_html and 'Глобальный поиск по этому pfSense' in settings_html
     old_uid = local_cert.uid
     system_snapshot['components']['certificates']['tables']['certificates'][0]['descr'] = ['Renewed certificate']
     vms[0].save(); project(vms[0]); local_cert.refresh_from_db()
@@ -155,7 +156,8 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     bulk = deepcopy(vms[0].custom_field_data['pfsense_inventory'])
     bulk['collected_at'] = (stamp + timedelta(seconds=2)).isoformat()
     bulk['components']['firewall']['tables']['rules'] = [
-        {**row('firewall', 'rules', tracker=[str(2000 + n)], descr=['Paging rule ' + str(n)]), 'order': n + 1}
+        {**row('firewall', 'rules', tracker=[str(2000 + n)], descr=['Paging rule ' + str(n)],
+               interface=['lan' if n % 2 else 'wan']), 'order': n + 1}
         for n in range(61)]
     vms[0].custom_field_data['pfsense_inventory'] = bulk
     vms[0].save(); project(vms[0])
@@ -165,6 +167,8 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
         assert payload['count'] == 61 and len(payload['results']) == expected
         seen.update(item['id'] for item in payload['results'])
     assert len(seen) == 61
+    local = client.get(search_url, {'section':'firewall', 'view':'rules', 'group':'lan', 'q':'Paging rule 59'})
+    assert '<td>30</td>' in local.content.decode()
     empty = client.get(api, {'q': 'Paging rule', 'appliance': private.pk}).json()
     assert empty['count'] == 0
     # Import failure rolls back both the snapshot and all derived objects.
@@ -194,6 +198,9 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     rule.refresh_from_db()
     assert rule.state == 'retained'
     assert first.entries.get(component='nat', table='port_forwards').state == 'removed'
+    removed = first.entries.get(component='nat', table='port_forwards')
+    assert client.get(removed.get_absolute_url()).status_code == 404
+    assert 'Web NAT' not in client.get(search_url, {'scope':'firewall', 'state':'removed', 'q':'Web NAT'}).content.decode()
     assert private.entries.get(component='firewall').state == 'current'
     # Native interface and prefix links require current same-VM/MAC identity.
     nic = VMInterface.objects.create(virtual_machine=vms[0], name='vtnet0')
@@ -216,6 +223,14 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     assert document(admin, vlan_object)['native_interface_id'] is None
     data = document(admin, interface_object)
     assert data['native_interface_id'] == nic.pk and data['prefixes'][0]['id'] == prefix.pk
+    from netbox_guard.pfsense_address_search import inspect_address
+    from ipaddress import ip_address
+    detail = inspect_address(admin, first, ip_address('192.0.2.1'))
+    assert detail['contexts'][0]['prefix'] == prefix and detail['contexts'][0]['state'] == 'Шлюз / VIP'
+    assert not inspect_address(user, first, ip_address('192.0.2.1'))['contexts']
+    html = client.get(search_url, {'q':'10.160.0.10', 'scope':'firewall'}).content.decode()
+    assert 'Проверка IP' in html and '<details' in html
+    assert 'Правила' in html or 'Rules' in html
     vms[0].custom_field_data['pfsense_network']['interfaces'][0]['runtime']['addresses'] = [dict(address='198.51.100.1/24')]
     vms[0].save()
     assert document(admin, interface_object)['prefixes'] == []

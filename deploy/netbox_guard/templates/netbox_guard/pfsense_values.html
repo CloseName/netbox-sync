@@ -1,0 +1,4 @@
+{% for item in cell.preview %}<div>{% if item.url %}<a href="{{ item.url }}">{{ item.text }}</a>{% else %}{{ item.text }}{% endif %}</div>{% endfor %}
+{% if cell.more %}<details><summary>Показать все ({{ cell.items|length }})</summary>
+{% for item in cell.more %}<div>{% if item.url %}<a href="{{ item.url }}">{{ item.text }}</a>{% else %}{{ item.text }}{% endif %}</div>{% endfor %}
+</details>{% endif %}
