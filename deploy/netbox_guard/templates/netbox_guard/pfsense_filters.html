@@ -2,7 +2,6 @@
 {% for key,value in path.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 {% if filters.group %}<input type="hidden" name="group" value="{{ filters.group }}">{% endif %}
 <input class="form-control" style="flex:2 1 18rem;min-width:0;max-width:100%" name="q" value="{{ filters.q }}" placeholder="Имя, IP, CIDR, порт или идентификатор" aria-label="Поиск в firewall">
-<select name="scope" class="form-select" style="flex:1 1 12rem;width:auto" aria-label="Область поиска"><option value="section">В текущей вкладке</option><option value="firewall" {% if filters.scope == 'firewall' %}selected{% endif %}>Во всём firewall</option></select>
-<select name="state" class="form-select" style="flex:1 1 12rem;width:auto" aria-label="Состояние сбора"><option value="">Текущие и сохранённые</option>{% for key,label in states %}<option value="{{ key }}" {% if filters.state == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+<select name="scope" class="form-select" style="flex:1 1 12rem;width:auto" aria-label="Область поиска"><option value="section">В текущей вкладке</option><option value="firewall" {% if filters.scope == 'firewall' %}selected{% endif %}>Глобальный поиск по этому pfSense</option></select>
 <select name="enabled" class="form-select" style="flex:1 1 10rem;width:auto" aria-label="Включено"><option value="">Любое состояние</option><option value="yes" {% if filters.enabled == 'yes' %}selected{% endif %}>Включено</option><option value="no" {% if filters.enabled == 'no' %}selected{% endif %}>Отключено</option></select>
 <button class="btn btn-primary">Найти</button></form>

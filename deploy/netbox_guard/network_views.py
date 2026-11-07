@@ -46,7 +46,7 @@ def interface(binding):
     return row
 
 
-def availability(binding, user):
+def availability(binding, user, *, address_filter=None, allow_unscoped=True):
     row=interface(binding)
     snapshot=(binding.vm.custom_field_data or {}).get('pfsense_inventory',{})
     observation=snapshot.get('ipam',{})
@@ -56,6 +56,8 @@ def availability(binding, user):
     evidence=[]; links={}
     prefix=binding.prefix
     ips=IPAddress.objects.filter(vrf_id=prefix.vrf_id,address__net_contained_or_equal=str(prefix.prefix))
+    if address_filter is not None:
+        ips=ips.filter(address__net_host=str(address_filter))
     allowed_ids=set(visible(IPAddress,user).filter(pk__in=ips.values('pk')).values_list('pk',flat=True))
     if len(allowed_ids)!=ips.count(): fresh=False
     if ips.count() > 10000: raise ValueError('Too many IPAM records')
@@ -70,6 +72,11 @@ def availability(binding, user):
             else: links[owner]=address.get_absolute_url()
         evidence.append(dict(start=str(address.address.ip),state='reserved' if address.status=='reserved' else 'assigned',owner=owner))
     pools=IPRange.objects.filter(vrf_id=prefix.vrf_id)
+    if address_filter is not None:
+        readable = pools.restrict(user, 'view')
+        if readable.count() != pools.count():
+            fresh = False
+        pools = readable
     if pools.count() > 10000: raise ValueError('Too many IP ranges')
     for pool in pools:
         evidence.append(dict(start=str(pool.start_address.ip),end=str(pool.end_address.ip),state='reserved',owner='Диапазон IPAM'))
@@ -79,12 +86,22 @@ def availability(binding, user):
         # DHCP and ARP carry local interface identity. Leases are scoped to this
         # firewall and then to the confirmed prefix, never matched globally.
         if item['interface'] not in ('',binding.interface_key,row['configuration']['device']): continue
+        if not item['interface'] and not allow_unscoped:
+            fresh=False
+            continue
         evidence.append(dict(start=item['start'],end=item['end'],
             state={'dhcp':'dhcp','static':'reserved','vip':'gateway','lease':'observed','arp':'observed','historical':'observed'}[item['kind']],
             owner=item['kind']+(' · '+item['mac'] if item['mac'] else '')))
     # Disputed guest addresses may intentionally be absent from native IPAM.
     # Scope only by the selected cluster and explicit VRF evidence, never names/MACs.
     guests=VMInterface.objects.filter(virtual_machine__cluster_id=binding.vm.cluster_id).exclude(custom_field_data__sync_network_observations=None)
+    if address_filter is not None:
+        if binding.vm.cluster_id is None:
+            guests = guests.filter(virtual_machine=binding.vm)
+        readable = guests.restrict(user, 'view').filter(virtual_machine__in=visible(VirtualMachine,user))
+        if readable.count() != guests.count():
+            fresh = False
+        guests = readable
     if guests.count()>10000: raise ValueError('Too many guest interfaces')
     for guest in guests:
         observations=(guest.custom_field_data or {}).get('sync_network_observations') or {}
@@ -95,6 +112,10 @@ def availability(binding, user):
                 if address not in ip_network(str(prefix.prefix)): continue
                 if observation.get('scope_conflicts'):
                     fresh=False
+                if address_filter is not None and 'vrf_id' not in observation:
+                    if address == address_filter:
+                        fresh = False
+                    continue
                 if observation.get('vrf_id')==prefix.vrf_id:
                     evidence.append(dict(start=str(address),state='observed',owner='Guest address requiring review'))
     fresh = fresh and ip_network(str(prefix.prefix)).version==4

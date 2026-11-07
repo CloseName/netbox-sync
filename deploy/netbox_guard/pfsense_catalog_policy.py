@@ -1,6 +1,6 @@
 """Stable configuration identity and bounded, appliance-local reference search."""
 from hashlib import sha256
-from ipaddress import ip_address, ip_network
+from ipaddress import ip_address, ip_interface, ip_network
 import json
 import re
 
@@ -96,7 +96,13 @@ def port_contains(query, value):
     return False
 
 
-def match(query, row, aliases):
+def rule_groups(row):
+    if row.get('floating') in ([''], ['yes'], ['true'], ['1']):
+        return ['__floating__']
+    return list(dict.fromkeys(tokens(row.get('interface', []))))
+
+
+def search_hits(query, row, aliases, interface=False):
     query = query.strip()
     if not query:
         return []
@@ -105,19 +111,46 @@ def match(query, row, aliases):
         typed = True
     except ValueError:
         typed = False
-    reasons = []
+    hits = {}
+    def record(field, token, label, path=''):
+        covering = False
+        description = token
+        if typed:
+            try:
+                candidate = ip_interface(token)
+                if interface and field == 'address' and '/' not in query:
+                    if ip_address(query) != candidate.ip:
+                        return
+                else:
+                    covering = ip_network(query, strict=False) != candidate.network
+                    if covering and candidate.ip != candidate.network.network_address:
+                        description += ' (сеть ' + str(candidate.network) + ')'
+            except ValueError:
+                covering = '-' in token
+        if field.startswith(('source/', 'destination/')) and row.get(field.split('/')[0] + '/not'):
+            label += ' (исключение)'
+        reason = label + ((' · alias ' + path + ' → ') if path else ': ') + description
+        hits[reason] = dict(reason=reason, covering=covering)
+
     for field, values in row.items():
         if field == 'order' or not isinstance(values, list):
             continue
         label = FIELD_LABELS.get(field, field)
-        for value in values:
+        searchable = tokens(values) if field in ALIAS_FIELDS else values
+        for value in searchable:
             if not typed and query.casefold() in value.casefold():
-                reasons.append(label + ': ' + value)
+                record(field, value, label)
         for token in tokens(values):
             if typed and contains(query, token):
-                reasons.append(label + ': ' + token)
+                record(field, token, label)
             if token in aliases and field in ALIAS_FIELDS:
-                reasons.extend(label + ' · alias ' + path for path in alias_paths(token, aliases, query))
+                for path in alias_paths(token, aliases, query):
+                    chain, _, terminal = path.rpartition(' → ')
+                    record(field, terminal, label, chain)
             if 'port' in field and port_contains(query, token):
-                reasons.append(label + ': ' + token)
-    return list(dict.fromkeys(reasons))[:8]
+                record(field, token, label)
+    return sorted(hits.values(), key=lambda hit: hit['covering'])[:8]
+
+
+def match(query, row, aliases):
+    return [hit['reason'] for hit in search_hits(query, row, aliases)]

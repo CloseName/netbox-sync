@@ -59,7 +59,7 @@ Equal IP literals on different firewalls are independent observations.
 
 Rules use the source tracker; named objects use their source name/identifier.
 Reordering preserves UUIDs. Anonymous objects use a content fingerprint: changing
-their configuration creates a new object and retains the old one as removed.
+their configuration creates a new object and drops the superseded row.
 Duplicate source identifiers are marked ambiguous and use content identity.
 Do not interpret these identities as a guarantee that arbitrary NAT edits retain
 their UUID. User custom fields are supported as supplementary metadata and are
@@ -70,7 +70,7 @@ and API; a write-back constructor is not implemented.
 ## Collection and permissions
 
 Projection is in the same database transaction as an accepted inventory import.
-Successful absence marks previously observed rows removed; a component collection
+Confirmed absence in a successfully collected component deletes the corresponding catalog rows. A component collection
 error retains previous rows with a visible retained state. Older observations do
 not replace newer ones. Repeated identical imports preserve IDs. Upgrade backfills
 valid saved snapshots without connecting to firewalls or enabling schedules;
@@ -91,7 +91,7 @@ pfSense search page or global-search shortcut. Global search does not scan rules
 or index their IP mentions.
 
 Search inside an appliance covers its selected tab/interface or the whole firewall,
-with collection/enabled filters. A supplied appliance ID cannot escape that scope. Results are paginated (50) and explain direct/alias matches. Exact IPs match
+with an enabled/disabled filter. Current UI pages omit confirmed removals. The read-only API retains explicit historical state queries. A supplied appliance ID cannot escape that scope. Results are paginated (50). Exact matches precede a collapsed group of covering networks and ranges. Rules are numbered within each interface (Floating has its own sequence), before filtering and pagination. Configuration order and stable graph IDs remain in the API. Alias references link to the rule and its interface path. Exact IPs match
 CIDRs and ranges; CIDR queries match containing networks. Text searches match names
 and descriptions; port searches include ranges. Recursive aliases are resolved only
 inside the same appliance, with cycle/depth bounds. Negated references are still
@@ -108,6 +108,8 @@ category, source order, enabled/state, allowlisted data, referenced object UUIDs
 and confirmed native interface/prefix links. Consumers must preserve appliance
 scope and collection state, and must not infer cables or IP ownership from rule
 references. This is the graph foundation for Map, not traffic simulation.
+
+A full host IP additionally looks up address evidence on this appliance. The search reports native IPAM assignments in the explicitly bound prefix/VRF, local interface addresses, VIPs, static DHCP mappings, enabled pools and observed ISC leases. Unbound networks can show visible VM assignments with confirmed host, bridge, VLAN and source. Only a fresh, complete, unambiguous IPv4 context with a confirmed prefix can report a static candidate. Unavailable leases, partial evidence, overlapping networks and retained observations are distinguished. Lease expiry is checked by the collector but not stored. No reservations or writes occur during lookup.
 
 ## Acceptance
 

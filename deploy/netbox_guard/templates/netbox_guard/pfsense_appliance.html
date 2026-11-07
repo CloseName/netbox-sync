@@ -6,6 +6,8 @@
 {% if subviews %}<nav aria-label="Вложенные страницы"><ul class="nav nav-tabs mb-3" style="flex-wrap:wrap">{% for item in subviews %}<li class="nav-item"><a class="nav-link {% if item.active %}active{% endif %}" href="{{ item.url }}">{{ item.label }}</a></li>{% endfor %}</ul></nav>{% endif %}
 {% if groups %}<nav aria-label="Интерфейсы"><ul class="nav nav-pills mb-3" style="flex-wrap:wrap">{% for item in groups %}<li class="nav-item"><a class="nav-link {% if filters.group == item.key %}active{% endif %}" href="{{ item.url }}">{{ item.label }}</a></li>{% endfor %}</ul></nav>{% endif %}
 {% include 'netbox_guard/pfsense_filters.html' %}
+{% if inspection %}{% include 'netbox_guard/pfsense_address.html' %}{% endif %}
+{% if fragment %}<p>Поиск по фрагменту адреса</p>{% endif %}
 {% if whole %}<p>Результаты внутри {{ appliance.vm.name }}.</p>{% include 'netbox_guard/pfsense_results.html' %}
 {% elif selected.component %}
 {% if collection == 'not_collected' %}<div class="alert alert-info">Этот раздел ещё не собран. Обновите сборщик через «Подключить и собрать» для существующего подключения pfSense.</div>{% elif collection == 'error' %}<div class="alert alert-warning">Ошибка получения раздела. Ранее сохранённые объекты показаны с отметкой времени.</div>{% elif configuration == 'not_configured' %}<p>В последнем сборе настройки этого раздела отсутствуют.</p>{% endif %}

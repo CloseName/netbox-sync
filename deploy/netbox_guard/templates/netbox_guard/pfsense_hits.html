@@ -1,0 +1,10 @@
+<div class="table-responsive"><table class="table align-top">
+<thead><tr><th>№</th><th>Объект</th>{% if whole %}<th>Раздел</th>{% endif %}
+<th>{% if filters.q %}Почему найден{% else %}Содержание{% endif %}</th><th>Состояние</th></tr></thead><tbody>
+{% for hit in hits %}<tr>
+<td>{{ hit.number }}</td><td class="text-break"><a href="{{ hit.object.get_absolute_url }}">{{ hit.object.name }}</a></td>
+{% if whole %}<td>{{ hit.path }}</td>{% endif %}
+<td class="text-break">{% if filters.q %}{% for reason in hit.reasons %}<div>{{ reason }}</div>{% empty %}Идентификатор объекта{% endfor %}
+{% else %}<dl class="mb-0">{% for cell in hit.cells %}<dt>{{ cell.label }}</dt><dd>{% include 'netbox_guard/pfsense_values.html' %}</dd>{% endfor %}</dl>{% endif %}</td>
+<td>{% if hit.object.state == 'retained' %}Снимок от {{ hit.object.last_seen }} · {% endif %}{% if hit.object.enabled %}Включено{% else %}Отключено{% endif %}</td>
+</tr>{% endfor %}</tbody></table></div>
