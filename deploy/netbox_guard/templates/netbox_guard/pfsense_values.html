@@ -1,4 +1,1 @@
-{% for item in cell.preview %}<div>{% if item.url %}<a href="{{ item.url }}">{{ item.text }}</a>{% else %}{{ item.text }}{% endif %}</div>{% endfor %}
-{% if cell.more %}<details><summary>Показать все ({{ cell.items|length }})</summary>
-{% for item in cell.more %}<div>{% if item.url %}<a href="{{ item.url }}">{{ item.text }}</a>{% else %}{{ item.text }}{% endif %}</div>{% endfor %}
-</details>{% endif %}
+{% for item in cell.items %}<div>{% if item.url %}<a href="{{ item.url }}">{% endif %}{% if item.matched %}<mark>{{ item.text }}</mark>{% else %}{{ item.text }}{% endif %}{% if item.url %}</a>{% endif %}</div>{% endfor %}

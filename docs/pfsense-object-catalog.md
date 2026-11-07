@@ -113,6 +113,18 @@ A full host IP additionally looks up address evidence on this appliance. The sea
 
 ## Acceptance
 
+On an appliance, each configuration list uses columns specific to its pfSense tab.
+Rules show local order, action, protocol, endpoints and ports. Gateway, queue
+and schedule columns appear when used on that interface. NAT shows translation
+or its exception. Alias lists preview two members and link to the full list.
+The IP, port and URL alias filters apply inside the selected firewall. User,
+certificate, VPN, routing and service pages show their own key fields. Open a
+row by number for the full public configuration, related objects and nested
+records. A search result carries its query into the detail view and offers a
+return link to its original list, filters and page. Existing snapshots work
+immediately. Queue details and NAT rule associations need a snapshot from the
+updated pfSense collector when these settings exist on the appliance.
+
 After the test update, open NetBox Sync > pfSense. Existing valid saved snapshots
 should appear without reconnecting. Check one firewall and all tabs, open an alias,
 follow its incoming rule links, then search an IP in its CIDR. Confirm the same IP

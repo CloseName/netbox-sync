@@ -8,7 +8,7 @@ from virtualization.models import VirtualMachine
 from .models import FirewallAppliance, FirewallObject, FirewallReference
 from .pfsense_inventory import validate, TITLES
 from .pfsense_system import prepare, relationships
-from .pfsense_catalog_policy import CATEGORIES, ALIAS_FIELDS, identity, enabled, title, tokens
+from .pfsense_catalog_policy import CATEGORIES, ALIAS_FIELDS, identity, identity_fields, enabled, title, tokens
 
 
 @transaction.atomic
@@ -65,7 +65,7 @@ def project(vm):
             for row, (key, strength) in zip(rows, identities):
                 if counts[key] > 1:
                     # Duplicate trackers/names cannot prove identity across edits.
-                    fingerprint = sha256(json.dumps({k: v for k, v in row.items() if k != 'order'}, sort_keys=True).encode()).hexdigest()
+                    fingerprint = sha256(json.dumps(identity_fields(component, row), sort_keys=True).encode()).hexdigest()
                     key = sha256((key + fingerprint).encode()).hexdigest()
                     strength = 'ambiguous'
                 occurrences[key] += 1

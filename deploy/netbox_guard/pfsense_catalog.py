@@ -7,6 +7,7 @@ from virtualization.models import VirtualMachine, VMInterface
 from .models import FirewallAppliance, FirewallObject, NetworkBinding
 from .pfsense_catalog_policy import rule_groups, search_hits, TABS, FIELD_LABELS
 from .pfsense_inventory import COLUMNS, LABELS, TITLES, FLAGS
+from .pfsense_tables import ALIAS_TYPES
 
 STATES = {'current': 'В последнем сборе', 'retained': 'Сохранено ранее · нет свежих данных', 'removed': 'Больше нет в конфигурации'}
 COMPONENT_TITLES = {('users', 'groups'): 'Groups', ('users', 'users'): 'Users', ('users', 'authservers'): 'Authentication Servers', ('certificates', 'authorities'): 'Authorities', ('certificates', 'certificates'): 'Certificates', ('certificates', 'crls'): 'CRLs', ('certificates', 'revocations'): 'Отозванные сертификаты', ('general', 'dns'): 'DNS Servers', ('general', 'webgui'): 'webConfigurator'}
@@ -37,6 +38,8 @@ def filtered(user, params):
     for key in ('component', 'table'):
         if params.get(key):
             rows = rows.filter(**{key: params[key]})
+    if params.get('component') == 'aliases' and params.get('alias_type') in ALIAS_TYPES:
+        rows = rows.filter(data__type__in=[[kind] for kind in ALIAS_TYPES[params['alias_type']]])
     if params.get('group'):
         if params.get('component') == 'firewall':
             group = params['group']

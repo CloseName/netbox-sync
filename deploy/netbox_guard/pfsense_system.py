@@ -60,9 +60,9 @@ def relationships(entries):
     """Join only explicit identifiers within one appliance; ambiguous IDs stay unlinked."""
     targets = defaultdict(list)
     for obj in entries:
-        for field in ('refid', 'uid', 'name', 'ikeid'):
+        for field in ('refid', 'uid', 'name', 'ikeid', 'associated-rule-id'):
             for value in obj.data.get(field, []):
-                if value:
+                if value and not (field == 'associated-rule-id' and value in ('pass', 'none', 'new', 'add')):
                     targets[(obj.component, obj.table, field, value)].append(obj)
     common = {'caref': ('certificates', 'authorities', 'refid'),
               'ldap_caref': ('certificates', 'authorities', 'refid'),
@@ -71,6 +71,7 @@ def relationships(entries):
               'cert': ('certificates', 'certificates', 'refid'),
               'crlref': ('certificates', 'crls', 'refid')}
     specific = {
+        ('nat', 'port_forwards', 'associated-rule-id'): ('firewall', 'rules', 'associated-rule-id'),
         ('users', 'groups', 'member'): ('users', 'users', 'uid'),
         ('users', 'settings', 'authmode'): ('users', 'authservers', 'name'),
         ('ipsec', 'phase2', 'ikeid'): ('ipsec', 'phase1', 'ikeid'),
