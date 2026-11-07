@@ -59,7 +59,7 @@ Equal IP literals on different firewalls are independent observations.
 
 Rules use the source tracker; named objects use their source name/identifier.
 Reordering preserves UUIDs. Anonymous objects use a content fingerprint: changing
-their configuration creates a new object and retains the old one as removed.
+their configuration creates a new object and drops the superseded row.
 Duplicate source identifiers are marked ambiguous and use content identity.
 Do not interpret these identities as a guarantee that arbitrary NAT edits retain
 their UUID. User custom fields are supported as supplementary metadata and are
@@ -70,7 +70,7 @@ and API; a write-back constructor is not implemented.
 ## Collection and permissions
 
 Projection is in the same database transaction as an accepted inventory import.
-Successful absence marks previously observed rows removed; a component collection
+Confirmed absence in a successfully collected component deletes the corresponding catalog rows. A component collection
 error retains previous rows with a visible retained state. Older observations do
 not replace newer ones. Repeated identical imports preserve IDs. Upgrade backfills
 valid saved snapshots without connecting to firewalls or enabling schedules;

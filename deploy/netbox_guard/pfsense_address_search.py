@@ -93,7 +93,7 @@ def inspect_address(user, appliance, address):
                 rows = address_rows(net, extra, complete=False)
                 for row in rows:
                     row['owner_links'] = [(owner, links.get(owner)) for owner in row['owners']]
-            usable = current and fresh and unambiguous
+            usable = current and fresh and net['fresh'] and unambiguous
             state, owners = describe(rows, address, current and unambiguous, leases) if rows else ('Недостаточно данных', [])
             if state == 'Кандидат для статики' and not usable:
                 state = 'Недостаточно данных'

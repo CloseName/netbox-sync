@@ -193,14 +193,14 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     # Successful absence and failed collection are distinct, scoped states.
     vms[0].custom_field_data['pfsense_inventory']['collected_at'] = (stamp + timedelta(seconds=4)).isoformat()
     vms[0].custom_field_data['pfsense_inventory']['components']['firewall'].update(collection='error', configuration='unknown', tables={})
+    removed = first.entries.get(component='nat', table='port_forwards')
     vms[0].custom_field_data['pfsense_inventory']['components']['nat']['tables']['port_forwards'] = []
     vms[0].save(); project(vms[0])
     rule.refresh_from_db()
     assert rule.state == 'retained'
-    assert first.entries.get(component='nat', table='port_forwards').state == 'removed'
-    removed = first.entries.get(component='nat', table='port_forwards')
+    assert not first.entries.filter(pk=removed.pk).exists()
     assert client.get(removed.get_absolute_url()).status_code == 404
-    assert 'Web NAT' not in client.get(search_url, {'scope':'firewall', 'state':'removed', 'q':'Web NAT'}).content.decode()
+    assert removed.get_absolute_url() not in client.get(search_url, {'scope':'firewall', 'state':'removed', 'q':'Web NAT'}).content.decode()
     assert private.entries.get(component='firewall').state == 'current'
     # Native interface and prefix links require current same-VM/MAC identity.
     nic = VMInterface.objects.create(virtual_machine=vms[0], name='vtnet0')
@@ -225,6 +225,7 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     assert data['native_interface_id'] == nic.pk and data['prefixes'][0]['id'] == prefix.pk
     from netbox_guard.pfsense_address_search import inspect_address
     from ipaddress import ip_address
+    first.refresh_from_db()
     detail = inspect_address(admin, first, ip_address('192.0.2.1'))
     assert detail['contexts'][0]['prefix'] == prefix and detail['contexts'][0]['state'] == 'Шлюз / VIP'
     vms[0].custom_field_data['pfsense_inventory']['ipam'] = dict(configuration='ok', leases='ok', arp='ok',

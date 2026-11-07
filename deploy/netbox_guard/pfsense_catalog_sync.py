@@ -24,7 +24,7 @@ def project(vm):
     network = (vm.custom_field_data or {}).get('pfsense_network') or {}
     if not isinstance(network, dict):
         network = {}
-    digest = sha256(json.dumps(['system-navigation-v1', raw, network], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    digest = sha256(json.dumps(['current-catalog-v2', raw, network], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     appliance = FirewallAppliance.objects.filter(vm=vm).first()
     if appliance and (appliance.observed_at > stamp or appliance.digest == digest):
         return appliance
@@ -53,9 +53,9 @@ def project(vm):
     appliance, _ = FirewallAppliance.objects.update_or_create(vm=vm, defaults=dict(
         observed_at=stamp, version=clean['version'], coverage=coverage, digest=digest))
     for component, tables in groups.items():
-        previous = FirewallObject.objects.filter(appliance=appliance, component=component).exclude(state='removed')
+        previous = FirewallObject.objects.filter(appliance=appliance, component=component)
         if coverage[component]['collection'] != 'ok':
-            previous.update(state='retained')
+            previous.exclude(state='removed').update(state='retained')
             continue
         seen = []
         for table, rows in tables.items():
@@ -80,7 +80,7 @@ def project(vm):
                     name=title(row, TITLES.get(table, table)), position=row['order'], enabled=enabled(row),
                     state='current', data=row, first_seen=stamp, last_seen=stamp))
                 seen.append(obj.pk)
-        previous.exclude(pk__in=seen).update(state='removed')
+        previous.exclude(pk__in=seen).delete()
     # Real foreign keys provide graph edges. Address literals remain observations.
     entries = list(FirewallObject.objects.filter(appliance=appliance).exclude(state='removed'))
     targets = defaultdict(list)
