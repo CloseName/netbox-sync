@@ -20,6 +20,12 @@ ALIAS_FIELDS = {'source/address', 'destination/address', 'source/port', 'destina
                 'address', 'network', 'target', 'external', 'port', 'local-port', 'natport'}
 
 
+def identity_fields(component, row):
+    # Empty fields introduced by newer collectors must preserve existing content IDs.
+    additions = {'firewall': {'defaultqueue', 'ackqueue', 'associated-rule-id'}, 'nat': {'nordr'}}
+    return {k: v for k, v in row.items() if k != 'order' and (v or k not in additions.get(component, ()))}
+
+
 def identity(component, table, row):
     # Never use rule position as identity. Anonymous entries have content identity:
     # edits create a new object, whereas a reorder preserves its UUID.
@@ -29,7 +35,7 @@ def identity(component, table, row):
     native = next(((key, row[key]) for key in keys if row.get(key) and row[key] != ['']), None)
     if (component, table) in {('general', 'settings'), ('general', 'webgui'), ('users', 'settings')}:
         native = ('singleton', [table])
-    basis = native or {k: v for k, v in row.items() if k != 'order'}
+    basis = native or identity_fields(component, row)
     digest = sha256(json.dumps([component, table, basis], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     return digest, 'native' if native else 'content'
 

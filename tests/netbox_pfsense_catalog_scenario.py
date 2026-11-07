@@ -49,8 +49,8 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     base['components']['aliases']['tables']['aliases'] = [row('aliases', 'aliases', name=['LAN'], type=['network'], address=['10.160.0.0/16']),
         {**row('aliases', 'aliases', name=['pass'], type=['host'], address=['203.0.113.7']), 'order': 2}]
     base['components']['firewall']['tables']['rules'] = [row('firewall', 'rules', tracker=['1001'], descr=['Allow web'],
-        type=['pass'], protocol=['tcp'], **{'destination/address': ['LAN'], 'destination/port': ['443'], 'source/any': ['']})]
-    base['components']['nat']['tables']['port_forwards'] = [row('nat', 'port_forwards', descr=['Web NAT'], target=['10.160.0.10'])]
+        type=['pass'], protocol=['tcp'], defaultqueue=['qLAN'], **{'associated-rule-id': ['nat_fixture'], 'destination/address': ['LAN'], 'destination/port': ['443'], 'source/any': ['']})]
+    base['components']['nat']['tables']['port_forwards'] = [row('nat', 'port_forwards', descr=['Web NAT'], target=['10.160.0.10'], **{'associated-rule-id':['nat_fixture']})]
     native_counts = (IPAddress.objects.count(), Prefix.objects.count())
     for vm in vms:
         vm.custom_field_data = {'pfsense_inventory': {**deepcopy(base), 'vm_id': vm.pk}}
@@ -62,6 +62,8 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     alias = first.entries.get(component='aliases', name='LAN')
     assert FirewallReference.objects.filter(source=rule, target=alias, field='destination/address').exists()
     assert not FirewallReference.objects.filter(source=rule, field='type').exists()
+    assert FirewallReference.objects.filter(source__appliance=first, source__component='nat',
+                                           target=rule, field='associated-rule-id').exists()
     assert len(list(results(user, {'q': '10.160.0.10'}))) == 3
     assert len(list(results(admin, {'q': '10.160.0.10'}))) == 6
     assert len(list(results(user, {'q': '203.0.113.7'}))) == 1
@@ -169,6 +171,16 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     assert len(seen) == 61
     local = client.get(search_url, {'section':'firewall', 'view':'rules', 'group':'lan', 'q':'Paging rule 59'})
     assert '<td>30</td>' in local.content.decode()
+    listing = client.get(search_url, {'section':'firewall', 'view':'rules', 'group':'lan'}).content.decode()
+    assert '<th>Порт назначения</th>' in listing and '<th>Содержание</th>' not in listing
+    assert '<th>Очередь</th>' not in listing and 'Paging rule 59' in listing
+    details = client.get(first.entries.get(name='Paging rule 59').get_absolute_url(), {
+        'back':'section=firewall&view=rules&group=lan&q=Paging+rule+59'}).content.decode()
+    assert '<mark>Paging rule 59</mark>' in details and 'Вернуться к списку' in details
+    ports = client.get(search_url, {'section':'firewall', 'view':'aliases', 'alias_type':'ports'}).content.decode()
+    assert 'Объекты не найдены' in ports
+    addresses = client.get(search_url, {'section':'firewall', 'view':'aliases', 'alias_type':'ip'}).content.decode()
+    assert '<th>Состав</th>' in addresses and '>LAN</a>' in addresses
     empty = client.get(api, {'q': 'Paging rule', 'appliance': private.pk}).json()
     assert empty['count'] == 0
     # Import failure rolls back both the snapshot and all derived objects.

@@ -42,10 +42,10 @@ function nsi_definitions(): array {
         'destination/any','destination/not','destination/network','destination/address','destination/port'];
     return [
         'firewall' => ['rules' => ['/pfsense/filter/rule', array_merge(
-            ['tracker','type','interface','floating','quick','direction','ipprotocol','protocol','disabled','log','descr','gateway','sched'], $endpoint)]],
+            ['tracker','type','interface','floating','quick','direction','ipprotocol','protocol','disabled','log','descr','gateway','sched','defaultqueue','ackqueue','associated-rule-id'], $endpoint)]],
         'nat' => [
             'mode' => ['/pfsense/nat/outbound', ['mode']],
-            'port_forwards' => ['/pfsense/nat/rule', array_merge(['interface','ipprotocol','protocol','target','local-port','disabled','descr','associated-rule-id','natreflection'], $endpoint)],
+            'port_forwards' => ['/pfsense/nat/rule', array_merge(['interface','ipprotocol','protocol','target','local-port','disabled','descr','associated-rule-id','natreflection','nordr'], $endpoint)],
             'outbound' => ['/pfsense/nat/outbound/rule', array_merge(['interface','protocol','target','targetip','natport','staticnatport','nonat','disabled','descr'], $endpoint)],
             'one_to_one' => ['/pfsense/nat/onetoone', array_merge(['interface','external','disabled','nobinat','descr','natreflection'], $endpoint)]],
         'aliases' => ['aliases' => ['/pfsense/aliases/alias', ['name','type','descr']]],

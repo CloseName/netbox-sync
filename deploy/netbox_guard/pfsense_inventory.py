@@ -6,7 +6,9 @@ from pathlib import Path
 
 FIELD = 'pfsense_inventory'
 SCHEMA = json.loads(Path(__file__).with_name('pfsense_inventory_schema.json').read_text(encoding='utf-8'))
-OPTIONAL_COLUMNS = {('openvpn', 'servers'): {'crlref'}, ('openvpn', 'clients'): {'crlref'}}
+OPTIONAL_COLUMNS = {('openvpn', 'servers'): {'crlref'}, ('openvpn', 'clients'): {'crlref'},
+                    ('firewall', 'rules'): {'defaultqueue', 'ackqueue', 'associated-rule-id'},
+                    ('nat', 'port_forwards'): {'nordr'}}
 OPTIONAL_COMPONENTS = {'general', 'users', 'certificates'}
 LABELS = {'general': 'General Setup', 'users': 'User Manager', 'certificates': 'Certificates', 'firewall':'Firewall', 'nat':'NAT', 'aliases':'Aliases', 'schedules':'Расписания',
           'routing':'Маршрутизация', 'openvpn':'OpenVPN', 'ipsec':'IPsec', 'wireguard':'WireGuard',
@@ -28,7 +30,7 @@ COLUMNS = {'refid':'Идентификатор источника', 'uid':'UID',
            'source/address':'Источник', 'destination/address':'Назначение', 'source/port':'Порт источника',
            'destination/port':'Порт назначения', 'status':'Состояние', 'content_omitted':'Содержимое исключено'}
 FLAGS = {'disabled','disable','enable','enabled','floating','quick','log','secondary','monitor_disable',
-         'source/any','source/not','destination/any','destination/not','content_omitted'}
+         'source/any','source/not','destination/any','destination/not','content_omitted','nordr','staticnatport','nobinat','nonat'}
 
 
 def string(value, limit=4096):

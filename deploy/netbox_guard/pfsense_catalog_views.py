@@ -1,5 +1,5 @@
 """Read-only pfSense pages with appliance-local search and native hierarchy."""
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode
 from ipaddress import ip_address
 import re
 from django.contrib.auth.decorators import login_required
@@ -11,8 +11,14 @@ from .pfsense_inventory import LABELS, STATE, panel
 from .pfsense_navigation import MENU, resolve, links, object_path
 from .pfsense_system import CHILD_FIELDS
 from .pfsense_address_search import inspect_address
-from .pfsense_catalog_policy import rule_groups
-from .pfsense_presentation import configuration, decorate, location, ROLE
+from .pfsense_catalog_policy import rule_groups, search_hits
+from .pfsense_presentation import configuration, decorate, location, reference_links, ROLE
+from .pfsense_tables import HEADINGS, LAYOUTS, table_cells
+
+
+def list_params(params):
+    keys = ('section', 'view', 'sub', 'group', 'alias_type', 'scope', 'q', 'enabled', 'page')
+    return {key: params[key][:256] for key in keys if params.get(key)}
 
 
 def host_for(user, appliance):
@@ -46,6 +52,7 @@ def search_context(request, obj, selected, path):
     groups = []
     if whole:
         params.pop('group', None)
+        params.pop('alias_type', None)
     else:
         params['component'], params['table'] = selected.get('component', ''), selected.get('table', '')
         if selected.get('group_by'):
@@ -74,7 +81,14 @@ def search_context(request, obj, selected, path):
                   inspection=inspection, fragment=bool(re.fullmatch(r'(?:\d{1,3}\.){1,2}\d{0,3}', term)))
     if whole or selected.get('component'):
         page = catalog.page(request.user, params)
-        decorate(page, obj, params.get('group'), labels)
+        back = list_params(params)
+        result['headers'] = decorate(page, obj, params.get('group'), labels, selected, urlencode(back))
+        if not whole and selected.get('component') == 'aliases':
+            base = {k: v for k, v in back.items() if k not in ('alias_type', 'page')}
+            result['alias_tabs'] = [
+                dict(label=name, active=params.get('alias_type', '') == key,
+                     url='?' + urlencode(dict(base, alias_type=key)))
+                for key, name in (('', 'Все'), ('ip', 'IP и сети'), ('ports', 'Порты'), ('urls', 'URL'))]
         result.update(page=page, direct=[hit for hit in page if not hit['covering']],
                       covering=[hit for hit in page if hit['covering']])
     return result
@@ -120,12 +134,15 @@ def appliance(request, pk):
         if context['inventory'] and not context['inventory'].get('invalid'):
             key = selected['special']
             context['runtime_rows'] = [r for r in context['inventory']['routes'] if (r['key'] == 'pf_nat') == (key == 'nat')]
+            for snapshot in context['runtime_rows']:
+                snapshot['unparsed'] = 'Вывод' in snapshot['columns']
     if selected.get('component') or request.GET.get('q', '').strip():
         context.update(search_context(request, obj, selected, path))
         if selected.get('special') and not context['whole'] and request.GET.get('q', '').strip():
             special_matches(context, selected['special'], request.GET['q'].strip())
-        if selected.get('component') in ('general', 'users') and selected.get('table') in ('settings', 'webgui') and not request.GET.get('q', '').strip():
-            context['settings_rows'] = [dict(object=hit['object'], fields=catalog.fields(hit['object'])) for hit in context['page']]
+        if selected.get('table') in ('settings', 'webgui', 'defaults', 'mode') and not request.GET.get('q', '').strip():
+            context['settings_rows'] = [dict(object=hit['object'], fields=[
+                field for field in catalog.fields(hit['object']) if field[0] != '№']) for hit in context['page']]
             context['settings_page'] = True
     return render(request, 'netbox_guard/pfsense_appliance.html', context)
 
@@ -138,10 +155,23 @@ def detail(request, uid):
     children = [ref for ref in incoming if ref.field in CHILD_FIELDS]
     labels = ((obj.appliance.vm.custom_field_data or {}).get('pfsense_inventory') or {}).get('interface_labels', {})
     document = catalog.document(request.user, obj)
-    refs = {(ref['field'], ref['name']): ref['url'] for ref in document['references']}
+    back = list_params(dict(parse_qsl(request.GET.get('back', '')[:4096])))
+    children_rows = []
+    child_refs = reference_links([ref.source for ref in children])
+    for ref in sorted(children, key=lambda ref: ref.source.position):
+        child = ref.source
+        columns = LAYOUTS[(child.component, child.table)].split()
+        children_rows.append(dict(object=child, headers=[HEADINGS[k] for k in columns],
+                                  columns=table_cells(child, columns, child_refs[child.pk])))
+    refs = reference_links([obj])[obj.pk]
+    term = back.get('q', '')
+    matches = search_hits(term, obj.data, catalog.aliases_for(obj.appliance_id),
+                          interface=obj.component == 'interfaces') if term else []
     return render(request, 'netbox_guard/pfsense_object.html', dict(
-        entry=obj, cells=configuration(obj, refs, detail=True), document=document,
-        section_url=obj.appliance.get_absolute_url() + object_path(obj.component, obj.table), children=children,
+        entry=obj, cells=configuration(obj, refs, term), document=document, matches=matches,
+        section_url=obj.appliance.get_absolute_url() + object_path(obj.component, obj.table),
+        return_url=obj.appliance.get_absolute_url() + '?' + urlencode(back) + '#obj-' + str(obj.uid) if back else '',
+        children=children_rows,
         state_label=catalog.STATES[obj.state],
         custom_fields=obj.get_custom_fields(omit_hidden=True),
         incoming=[dict(source=ref.source, path=location(ref.source, labels), role=ROLE.get(ref.field, ref.field))
