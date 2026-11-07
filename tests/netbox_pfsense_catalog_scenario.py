@@ -227,6 +227,14 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     from ipaddress import ip_address
     detail = inspect_address(admin, first, ip_address('192.0.2.1'))
     assert detail['contexts'][0]['prefix'] == prefix and detail['contexts'][0]['state'] == 'Шлюз / VIP'
+    vms[0].custom_field_data['pfsense_inventory']['ipam'] = dict(configuration='ok', leases='ok', arp='ok',
+        interval_seconds=3600, entries=[
+            dict(kind='dhcp', interface='lan', start='192.0.2.10', end='192.0.2.20', mac=''),
+            dict(kind='lease', interface='', start='192.0.2.15', end='192.0.2.15', mac='02:00:00:00:42:02')])
+    vms[0].save()
+    first.refresh_from_db()
+    assert 'В пуле DHCP' in inspect_address(admin, first, ip_address('192.0.2.12'))['contexts'][0]['state']
+    assert 'Выдан по DHCP' in inspect_address(admin, first, ip_address('192.0.2.15'))['contexts'][0]['state']
     assert not inspect_address(user, first, ip_address('192.0.2.1'))['contexts']
     html = client.get(search_url, {'q':'10.160.0.10', 'scope':'firewall'}).content.decode()
     assert 'Проверка IP' in html and '<details' in html

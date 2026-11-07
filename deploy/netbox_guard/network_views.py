@@ -72,6 +72,11 @@ def availability(binding, user, *, address_filter=None, allow_unscoped=True):
             else: links[owner]=address.get_absolute_url()
         evidence.append(dict(start=str(address.address.ip),state='reserved' if address.status=='reserved' else 'assigned',owner=owner))
     pools=IPRange.objects.filter(vrf_id=prefix.vrf_id)
+    if address_filter is not None:
+        readable = pools.restrict(user, 'view')
+        if readable.count() != pools.count():
+            fresh = False
+        pools = readable
     if pools.count() > 10000: raise ValueError('Too many IP ranges')
     for pool in pools:
         evidence.append(dict(start=str(pool.start_address.ip),end=str(pool.end_address.ip),state='reserved',owner='Диапазон IPAM'))
@@ -90,6 +95,13 @@ def availability(binding, user, *, address_filter=None, allow_unscoped=True):
     # Disputed guest addresses may intentionally be absent from native IPAM.
     # Scope only by the selected cluster and explicit VRF evidence, never names/MACs.
     guests=VMInterface.objects.filter(virtual_machine__cluster_id=binding.vm.cluster_id).exclude(custom_field_data__sync_network_observations=None)
+    if address_filter is not None:
+        if binding.vm.cluster_id is None:
+            guests = guests.filter(virtual_machine=binding.vm)
+        readable = guests.restrict(user, 'view').filter(virtual_machine__in=visible(VirtualMachine,user))
+        if readable.count() != guests.count():
+            fresh = False
+        guests = readable
     if guests.count()>10000: raise ValueError('Too many guest interfaces')
     for guest in guests:
         observations=(guest.custom_field_data or {}).get('sync_network_observations') or {}
@@ -100,7 +112,11 @@ def availability(binding, user, *, address_filter=None, allow_unscoped=True):
                 if address not in ip_network(str(prefix.prefix)): continue
                 if observation.get('scope_conflicts'):
                     fresh=False
-                if 'vrf_id' in observation and observation['vrf_id']==prefix.vrf_id:
+                if address_filter is not None and 'vrf_id' not in observation:
+                    if address == address_filter:
+                        fresh = False
+                    continue
+                if observation.get('vrf_id')==prefix.vrf_id:
                     evidence.append(dict(start=str(address),state='observed',owner='Guest address requiring review'))
     fresh = fresh and ip_network(str(prefix.prefix)).version==4
     fresh = fresh and (prefix.vrf.enforce_unique if prefix.vrf_id else get_config().ENFORCE_GLOBAL_UNIQUE)

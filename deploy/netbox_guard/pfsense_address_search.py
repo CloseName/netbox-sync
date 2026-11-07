@@ -97,6 +97,12 @@ def inspect_address(user, appliance, address):
             state, owners = describe(rows, address, current and unambiguous, leases) if rows else ('Недостаточно данных', [])
             if state == 'Кандидат для статики' and not usable:
                 state = 'Недостаточно данных'
+            gateways = appliance.entries.filter(component='routing', table='gateways', enabled=True, state='current',
+                data__interface__contains=[net['key']], data__gateway__contains=[str(address)])
+            for gateway in gateways:
+                owners.append(dict(text='Шлюз · ' + gateway.name, url=gateway.get_absolute_url()))
+                if state != 'Конфликт':
+                    state = 'Зарезервирован · шлюз'
             prefix = binding.prefix if binding else None
             vrf = ''
             if prefix:
@@ -106,4 +112,3 @@ def inspect_address(user, appliance, address):
             contexts.append(dict(network=net['cidr'], interface=net['name'], state=state, owners=owners,
                                  prefix=prefix, vrf=vrf, fresh=usable))
     return dict(address=str(address), contexts=contexts, observed_at=appliance.observed_at, leases=leases)
-

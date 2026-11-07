@@ -70,4 +70,3 @@ def decorate(page, appliance, group, labels):
         local = positions.get(obj.pk, {})
         number = local.get(group) or ', '.join(str(n) for n in local.values()) or obj.position
         hit.update(number=number, path=location(obj, labels), cells=configuration(obj, refs[obj.pk]))
-

@@ -80,6 +80,26 @@ def search_context(request, obj, selected, path):
     return result
 
 
+def special_matches(context, key, term):
+    """Filter the displayed snapshot rows on tabs without catalog objects."""
+    needle = term.casefold()
+    def matches(values):
+        return any(needle in str(value).casefold() for value in values)
+
+    context['coverage'] = [row for row in context['coverage'] if matches(row)]
+    inventory = context.get('inventory') or {}
+    if key == 'services':
+        inventory['summary'] = [row for row in inventory.get('summary', []) if matches(row)]
+    if key == 'packages':
+        inventory['packages'] = [row for row in inventory.get('packages', []) if matches(row.values())]
+    for item in context.get('runtime_rows', []):
+        item['rows'] = [row for row in item.get('rows', []) if matches(row)]
+        for group in item.get('groups', []):
+            group['records'] = [row for row in group['records']
+                                if matches(value for _, value in row['fields'])]
+        item['groups'] = [group for group in item.get('groups', []) if group['records']]
+
+
 @login_required
 @require_GET
 def appliance(request, pk):
@@ -102,6 +122,8 @@ def appliance(request, pk):
             context['runtime_rows'] = [r for r in context['inventory']['routes'] if (r['key'] == 'pf_nat') == (key == 'nat')]
     if selected.get('component') or request.GET.get('q', '').strip():
         context.update(search_context(request, obj, selected, path))
+        if selected.get('special') and not context['whole'] and request.GET.get('q', '').strip():
+            special_matches(context, selected['special'], request.GET['q'].strip())
         if selected.get('component') in ('general', 'users') and selected.get('table') in ('settings', 'webgui') and not request.GET.get('q', '').strip():
             context['settings_rows'] = [dict(object=hit['object'], fields=catalog.fields(hit['object'])) for hit in context['page']]
             context['settings_page'] = True
@@ -116,7 +138,7 @@ def detail(request, uid):
     children = [ref for ref in incoming if ref.field in CHILD_FIELDS]
     labels = ((obj.appliance.vm.custom_field_data or {}).get('pfsense_inventory') or {}).get('interface_labels', {})
     document = catalog.document(request.user, obj)
-    refs = {(ref['field'], name): ref['url'] for ref in document['references'] for name in [ref['name']]}
+    refs = {(ref['field'], ref['name']): ref['url'] for ref in document['references']}
     return render(request, 'netbox_guard/pfsense_object.html', dict(
         entry=obj, cells=configuration(obj, refs, detail=True), document=document,
         section_url=obj.appliance.get_absolute_url() + object_path(obj.component, obj.table), children=children,
