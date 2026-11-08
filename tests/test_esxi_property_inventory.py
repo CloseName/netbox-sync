@@ -191,7 +191,9 @@ def test_actual_worker_plan_or_bounded_provider_hang(tmp_path,monkeypatch,hang):
                     try: plan=supervisor.run(config.source_instance,'plan')
                     except worker.WorkerError as error: pytest.fail(json.dumps(error.diagnostic))
                     assert plan['digest'] and plan['items']
-                    if isinstance(hang,str):
+                    if hang == 'ip-conflict':
+                        assert plan['apply_allowed'] and any(i['reason_code']=='VM_NETWORK_DEFERRED' for i in plan['items'])
+                    elif hang == 'identity-conflict':
                         assert not plan['apply_allowed']
                         assert any(c['kind']==('VM_IDENTITY' if hang=='identity-conflict' else 'IP_ASSIGNMENT') for c in plan['conflicts'])
                         assert all(item['action']=='BLOCKED' for item in plan['items'])

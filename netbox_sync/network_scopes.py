@@ -88,7 +88,11 @@ def scoped_inventory(api, hosts, config):
         for vm in [*host.virtual_machines, *host.containers]:
             for nic in vm.interfaces:
                 nic.ip_vrf_id = lookup.get((host.source_id, nic.bridge, nic.vlan_id))
-    if "network_scope_rules" in mapping or mapping.get("ip_conflict_policy") == "observe":
+    if (
+        getattr(config, "source_type", None) == "esxi"
+        or "network_scope_rules" in mapping
+        or mapping.get("ip_conflict_policy") == "observe"
+    ):
         _observe_scope_conflicts(api, result)
     return result
 

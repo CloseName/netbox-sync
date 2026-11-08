@@ -98,4 +98,8 @@ def executable_inventory(api, hosts, config):
         field = next(row for row in reconcile(rows) if row["name"] == "sync_network_observations")
         if field["status"] != "ready":
             raise ObservationPrerequisiteError("Network observation prerequisite requires preparation")
+    if getattr(config, "source_type", None) == "esxi" and policy == "strict":
+        if any(c.kind not in ("IP_ASSIGNMENT", "MAC_ASSIGNMENT") for c in blockers):
+            raise ValueError("Inventory identity conflict")
+        return projected, blockers
     return projected, observations

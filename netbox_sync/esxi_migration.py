@@ -499,10 +499,10 @@ def _object_candidates(item):
     )
 
 
-def build_esxi_migration_plan(nb_api, hosts, config):
+def build_esxi_migration_plan(nb_api, hosts, config, *, independent_vms=False):
     """Build an immutable migration diagnosis without writing to NetBox."""
 
-    adoption = build_esxi_adoption_plan(nb_api, hosts, config)
+    adoption = build_esxi_adoption_plan(nb_api, hosts, config, independent_vms=independent_vms)
     adoption_by_identity = {item.identity: item for item in adoption.items}
     ownership = _NetworkOwnership(nb_api)
     host_results = []
