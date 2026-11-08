@@ -314,7 +314,11 @@ def execute_child(payload):
 
             hosts, _ = resolve_vm_identities(nb_api, hosts, config)
             review = _comparison(
-                lambda: build_esxi_review(build_esxi_adoption_plan(nb_api, hosts, config), config), hosts, config
+                lambda: build_esxi_review(
+                    build_esxi_adoption_plan(nb_api, hosts, config, independent_vms=True), config
+                ),
+                hosts,
+                config,
             )
     else:
         raise WorkerError("DISCOVERY_FAILED")

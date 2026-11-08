@@ -163,7 +163,7 @@ def test_scheduled_proxmox_executor_selects_endpoint(monkeypatch, fake_netbox):
 
 @pytest.mark.parametrize('names', [('AM - Docker 14', 'AM - Docker 14'),
     ('Same', 'same'), ('x' * 64 + 'A', 'x' * 64 + 'B')])
-def test_duplicate_vm_names_have_blocked_plan_without_writes(fake_netbox, names):
+def test_duplicate_vm_names_are_stable_across_collections(fake_netbox, names):
     from tests.test_esxi_runtime import _inventory
     from tests.test_first_sync import target
     hosts = _inventory(2)
@@ -171,22 +171,17 @@ def test_duplicate_vm_names_have_blocked_plan_without_writes(fake_netbox, names)
     for vm, name in zip(hosts[0].virtual_machines, names):
         vm.original_name = name
         vm.normalized_name = name
-    plan = build_runtime_plan(fake_netbox, hosts, config)
-    assert not plan.apply_allowed
-    assert plan.items[0].reason_code == 'DUPLICATE_VM_NAME'
-    assert fake_netbox.mutations == []
+    assert build_runtime_plan(fake_netbox, hosts, config).apply_allowed
+    execute_esxi_runtime(fake_netbox, hosts, config, confirmed=True)
+    cards = fake_netbox.virtualization.virtual_machines.all()
+    assert len({r.name.casefold() for r in cards}) == 2
+    assert all(len(r.name) <= 64 for r in cards)
+    assert sorted(next(iter(r.custom_fields['sync_original_names'].values())) for r in cards) == sorted(names)
+    fake_netbox.clear_mutations()
+    hosts[0].virtual_machines.reverse()
+    execute_esxi_runtime(fake_netbox, hosts, config, confirmed=True)
+    assert not fake_netbox.mutations
 
-
-def test_duplicate_names_reproduce_native_writer_failure(fake_netbox):
-    from tests.test_esxi_runtime import _inventory
-    from tests.test_first_sync import target
-    hosts = _inventory(2)
-    config = target(fake_netbox, _config())
-    for vm in hosts[0].virtual_machines:
-        vm.original_name = vm.normalized_name = 'AM - Docker 14'
-    with pytest.raises(RuntimeError, match='Duplicate discovered VM names'):
-        execute_esxi_runtime(fake_netbox, hosts, config, confirmed=True)
-    assert fake_netbox.mutations == []
 
 @pytest.mark.parametrize('mode, message', [
     ('duplicate_host', 'one source-owned host'),

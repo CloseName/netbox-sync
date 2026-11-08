@@ -91,9 +91,10 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write
         hosts, identity_conflicts = resolve_vm_identities(read_api, hosts, config)
         if identity_conflicts:
             raise EsxiRuntimeError("ESXi VM identity requires review; no writes allowed")
-        from .application.ip_observations import executable_inventory
+        from .application.ip_observations import executable_inventory, source_policy
 
-        hosts, _ = executable_inventory(read_api, hosts, config)
+        discovered_hosts = hosts
+        hosts, network_conflicts = executable_inventory(read_api, hosts, config)
 
         if config.source_type != "esxi":
             raise EsxiRuntimeError("ESXi runtime requires source_type=esxi")
@@ -104,10 +105,19 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write
 
         validate(read_api, config.target, hosts)
         try:
-            replacements = stage(read_api, hosts, config)
-            plan = build_esxi_migration_plan(read_api, hosts, config)
+            replacements = stage(read_api, discovered_hosts, config)
+            plan = build_esxi_migration_plan(read_api, discovered_hosts, config, independent_vms=True)
             managed_ids = _managed_vm_ids(plan)
             filtered_hosts = _filtered_hosts(hosts, config, managed_ids)
+            from .netbox_vm_name import allocate_esxi_names
+
+            allocate_esxi_names(read_api, filtered_hosts, plan.cluster_id)
+            deferred = (
+                {p.external_id for c in network_conflicts for p in c.participants}
+                if source_policy(config) == "strict"
+                else set()
+            )
+            network_guests = _filtered_hosts(filtered_hosts, config, managed_ids - deferred)
         except EsxiHostIdentityChanged:
             raise
         except EsxiRuntimeError:
@@ -174,7 +184,7 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write
         with phase("simulation_vms"):
             apply_virtual_machines(api, filtered_hosts, config.target, confirmed=True)
         with phase("simulation_vm_networks"):
-            apply_vm_networks(api, filtered_hosts, config, confirmed=True)
+            apply_vm_networks(api, network_guests, config, confirmed=True)
         with phase("simulation_placement"):
             apply_guest_placement(api, filtered_hosts, config, confirmed=True)
         with phase("simulation_disks"):

@@ -30,16 +30,21 @@ requires a fresh plan. The next plan matches the new UUID and finishes its manag
 fields; it must not blindly repeat the original plan. Reset receipts make the
 exact same request idempotent and reject changed payloads or generations.
 
-If proof is unavailable (including an older Guard), the new VM remains a separate
-`VM_RECREATED_NAME` review item; other safe objects can synchronize. The old card
-and its associations are preserved. The review links to that card. A unique name
-on the new VM allows a separate card without transferring old associations.
+When Guard cannot prove a safe replacement, a uniquely identified VM can get
+its own card. A retained card with a single, unique VM identity in this source
+does not compete for the new VM by name, MAC or IP. A new card whose display name
+is occupied receives a deterministic source-and-identity suffix within 64
+characters. The original ESXi name remains in the managed metadata. This also
+covers simultaneous case-insensitive and truncated-name collisions.
 
-Foreign or multiple owners, an old UUID still present in inventory, multiple
-candidates, and matching network addresses remain protected conflicts. Name
-comparison is case-insensitive. There are no per-host names or IDs in the rule.
-Proxmox generation replacement is not introduced by this change; its identifiers
-have different reuse semantics.
+Observe mode saves disputed IP and MAC reports as interface observations. In
+strict mode network writes for the participating guests are deferred, while VM
+resources and other guests can synchronize. Existing assignments keep their
+owners. Explicit VRFs continue to determine the IP address space.
+
+Weak evidence pointing to a legacy or foreign card is isolated for review.
+Conflicting exact identities, invalid placement and an untrustworthy source
+inventory can still block a plan. Explicit legacy adoption has its own preflight.
 
 ## Test acceptance
 
@@ -54,7 +59,7 @@ the configured scheduler resumes after the installer.
 3. Apply. Verify the new UUID/resources, same ID, no old NIC/disk residue.
 4. Rebuild: no second replacement and no duplicate card.
 5. Repeat with an IP or manually created component on the old card: it must stay
-   unchanged and require separate review. Existing pfSense and provider links
+   unchanged while the new VM receives a separate card. Existing pfSense and provider links
    must remain unchanged.
 
 Production is not an acceptance environment for this change.

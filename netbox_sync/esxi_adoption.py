@@ -2,6 +2,7 @@
 
 from .host_mapping import cluster_filter
 
+from collections import Counter
 import ipaddress
 import json
 import re
@@ -10,6 +11,7 @@ from enum import Enum
 
 from .source_identity import (
     V2_IDENTITY_MATCH,
+    SourceIdentity,
     host_source_identity,
     merge_original_name,
     merge_source_identities,
@@ -261,7 +263,7 @@ def _evidence(record, exact_name, matching_ips, matching_macs, conflicts=()):
     )
 
 
-def _classify(discovered, kind, identity, all_records, target_records, network):
+def _classify(discovered, kind, identity, all_records, target_records, network, *, legacy_records=None):
     managed = [record for record in all_records if _matches_identity(record, identity)]
     provider_match = False
     if kind == "host" and not managed:
@@ -294,7 +296,7 @@ def _classify(discovered, kind, identity, all_records, target_records, network):
     live_ips, live_macs = _discovered_network(kind, discovered)
     candidates = []
     unsafe = False
-    for record in target_records:
+    for record in target_records if legacy_records is None else legacy_records:
         record_ips, record_macs = network.for_object(kind, record)
         exact_name = str(record.name).casefold() == discovered.original_name.casefold()
         matching_ips = live_ips & record_ips
@@ -386,7 +388,19 @@ def _mark_shared_claims_ambiguous(items):
     )
 
 
-def build_esxi_adoption_plan(nb_api, hosts, config):
+def _weak_vm_candidate(candidate, external_id):
+    if not candidate.signals:
+        return False
+    if "existing_managed_identity" not in candidate.conflicts:
+        return True
+    owners = json.loads(candidate.custom_fields_snapshot).get("sync_identities")
+    return isinstance(owners, list) and all(
+        (identity := SourceIdentity.from_record(raw)) is not None and identity.external_id != external_id
+        for raw in owners
+    )
+
+
+def build_esxi_adoption_plan(nb_api, hosts, config, *, independent_vms=False):
     """Build an immutable read-only adoption plan for one ESXi source."""
 
     if config.source_type != "esxi":
@@ -395,8 +409,6 @@ def build_esxi_adoption_plan(nb_api, hosts, config):
     all_devices = list(nb_api.dcim.devices.all())
     # A newly usable BIOS identifier must not silently replace an owned MoRef
     # or UUID, even if the host name/address also changed.
-    from .source_identity import SourceIdentity
-
     discovered_ids = {host.source_id for host in hosts}
     for record in all_devices:
         for raw in _custom_fields(record).get("sync_identities") or []:
@@ -425,6 +437,22 @@ def build_esxi_adoption_plan(nb_api, hosts, config):
         )
     ]
     target_vms = [record for record in all_vms if _object_id(_serialized(record).get("cluster")) == cluster.id]
+    legacy_vms = target_vms
+    if independent_vms:
+        # Owned VM records participate in exact matching and placement checks.
+        # Reused names and network values cannot claim another generation.
+        def sole_owner(record):
+            raw = _custom_fields(record).get("sync_identities")
+            if not isinstance(raw, list) or len(raw) != 1:
+                return None
+            owner = SourceIdentity.from_record(raw[0])
+            if owner and (owner.type, owner.instance, owner.kind) == ("esxi", config.source_instance, "vm"):
+                return owner
+            return None
+
+        owners = {record.id: sole_owner(record) for record in all_vms}
+        counts = Counter(owners.values())
+        legacy_vms = [record for record in target_vms if not owners[record.id] or counts[owners[record.id]] != 1]
     network = _NetworkIndex(nb_api)
     items = []
     for host in hosts:
@@ -449,14 +477,14 @@ def build_esxi_adoption_plan(nb_api, hosts, config):
                     all_vms,
                     target_vms,
                     network,
+                    legacy_records=legacy_vms,
                 )
             )
     items = _mark_shared_claims_ambiguous(items)
     # Only an absent identity owned by this exact source can be isolated.
     # Network matches, foreign ownership and shared claims remain blockers.
-    from .source_identity import SourceIdentity
-
     live_ids = {virtual_machine_source_identity(vm) for host in hosts for vm in host.virtual_machines}
+    claims = Counter((item.object_kind, c.object_id) for item in items for c in item.candidates)
     isolated = []
     for item in items:
         if (
@@ -468,7 +496,8 @@ def build_esxi_adoption_plan(nb_api, hosts, config):
             raw = json.loads(candidate.custom_fields_snapshot).get("sync_identities", [])
             identities = [SourceIdentity.from_record(value) for value in raw] if isinstance(raw, list) else []
             if (
-                candidate.signals == ("exact_name",)
+                claims[(item.object_kind, candidate.object_id)] == 1
+                and candidate.signals == ("exact_name",)
                 and "existing_managed_identity" in candidate.conflicts
                 and set(candidate.conflicts) <= {"existing_managed_identity", "conflicting_ip", "conflicting_mac"}
                 and len(identities) == 1
@@ -479,6 +508,16 @@ def build_esxi_adoption_plan(nb_api, hosts, config):
                 and identities[0] not in live_ids
             ):
                 item = replace(item, classification=AdoptionClassification.RETAINED_NAME)
+        if (
+            independent_vms
+            and item.object_kind == "vm"
+            and item.classification == AdoptionClassification.AMBIGUOUS
+            and item.candidates
+            and all(_weak_vm_candidate(c, item.identity.external_id) for c in item.candidates)
+        ):
+            # Only weak legacy claims: the writer excludes this guest and all children.
+            # Exact identity/placement conflicts carry no weak signals and retain their fence.
+            item = replace(item, classification=AdoptionClassification.REVIEW_REQUIRED, selected_object_id=None)
         isolated.append(item)
     return EsxiAdoptionPlan(
         source_instance=config.source_instance,

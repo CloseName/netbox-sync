@@ -24,22 +24,16 @@ def test_replacement_is_isolated_other_vm_updates_and_old_network_survives(fake_
     before = deepcopy(old.serialize()), deepcopy(interface.serialize()), deepcopy(ip.serialize())
     plan = build_runtime_plan(fake_netbox, hosts, _config())
     assert plan.apply_allowed
-    row = next(i for i in plan.items if i.reason_code == 'VM_RECREATED_NAME')
-    assert row.action.value == 'REVIEW_REQUIRED'
-    assert row.matched_object_id is None  # Evidence is not permission to adopt.
-    candidate = dict(row.before)['matching_candidates'][0]
-    assert candidate['id'] == old.id
-    assert candidate['url'] == f'https://netbox.example/virtualization/virtual-machines/{old.id}/'
-    assert candidate['external_ids'] != [new.external_id]
+    assert any(i.action.value == 'CREATE' and i.object_kind == 'virtualization.virtual_machines' for i in plan.items)
     assert fake_netbox.mutations == []
     execute_esxi_runtime(fake_netbox, hosts, _config(), confirmed=True)
     assert managed.vcpus == 4
     assert (old.serialize(), interface.serialize(), ip.serialize()) == before
-    assert len(fake_netbox.virtualization.virtual_machines.all()) == 2
+    assert len(fake_netbox.virtualization.virtual_machines.all()) == 3
 
 
 @pytest.mark.parametrize('case', ['foreign', 'still_present', 'duplicate', 'network'])
-def test_real_ambiguities_remain_blocked(fake_netbox, case):
+def test_ownership_and_reuse_cases(fake_netbox, case):
     hosts, _, old, new = replacement(fake_netbox)
     if case == 'foreign':
         old.custom_fields['sync_identities'][0]['instance'] = 'another-source'
@@ -61,7 +55,9 @@ def test_real_ambiguities_remain_blocked(fake_netbox, case):
         _, ip = _manual_primary(fake_netbox, old)
         new.interfaces[0].ip_addresses = [str(ip.address)]
     plan = build_runtime_plan(fake_netbox, hosts, _config())
-    assert not plan.apply_allowed
+    assert plan.apply_allowed
+    if case in ('foreign', 'duplicate'):
+        assert any(i.action.value == 'REVIEW_REQUIRED' and i.external_id == new.external_id for i in plan.items)
     assert fake_netbox.mutations == []
 
 
@@ -139,7 +135,7 @@ def test_unproven_guard_evidence_keeps_isolated_review(fake_netbox):
     hosts, _, old, _ = replacement(fake_netbox)
     fake_netbox.replacement_review = lambda *args: None
     plan = build_runtime_plan(fake_netbox, hosts, _config())
-    assert plan.apply_allowed and any(i.reason_code == 'VM_RECREATED_NAME' for i in plan.items)
+    assert plan.apply_allowed and any(i.action.value == 'CREATE' and i.object_kind == 'virtualization.virtual_machines' for i in plan.items)
     assert not fake_netbox.mutations
 
 

@@ -11,7 +11,7 @@ from .inventory_conflicts import InventoryConflict
 
 
 PLAN_SCHEMA_VERSION = 1
-PLANNER_VERSION = "web-5a-19"
+PLANNER_VERSION = "web-5a-20"
 
 
 class SyncAction(str, Enum):

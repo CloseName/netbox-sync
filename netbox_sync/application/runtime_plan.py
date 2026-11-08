@@ -31,7 +31,8 @@ def build_runtime_plan(nb_api, hosts, config):
 
     hosts, identity_conflicts = resolve_vm_identities(nb_api, hosts, config)
     try:
-        hosts = scoped_inventory(nb_api, hosts, config)
+        if not identity_conflicts:
+            hosts = scoped_inventory(nb_api, hosts, config)
     except NetworkScopeError:
         return SyncPlan(
             source_instance=config.source_instance,
@@ -54,6 +55,13 @@ def build_runtime_plan(nb_api, hosts, config):
         )
     _, conflicts, observations = assignment_inventory(hosts, source_policy(config))
     conflicts = tuple(dict.fromkeys((*identity_conflicts, *conflicts)))
+    deferred_networks = ()
+    if (
+        config.source_type == "esxi"
+        and conflicts
+        and all(c.kind in ("IP_ASSIGNMENT", "MAC_ASSIGNMENT") for c in conflicts)
+    ):
+        deferred_networks, conflicts = conflicts, ()
     if conflicts:
         from dataclasses import asdict
 
@@ -118,7 +126,7 @@ def build_runtime_plan(nb_api, hosts, config):
         for vm in host.virtual_machines:
             by_name.setdefault(netbox_vm_name(vm).casefold(), []).append(vm)
     duplicate_names = {name: vms for name, vms in by_name.items() if len(vms) > 1}
-    if duplicate_names:
+    if duplicate_names and config.source_type != "esxi":
         return SyncPlan(
             source_instance=config.source_instance,
             source_id=config.id,
@@ -155,7 +163,7 @@ def build_runtime_plan(nb_api, hosts, config):
         review = (
             build_proxmox_review(nb_api, hosts, config)
             if config.source_type == "proxmox"
-            else build_esxi_review(build_esxi_adoption_plan(nb_api, hosts, config), config)
+            else build_esxi_review(build_esxi_adoption_plan(nb_api, hosts, config, independent_vms=True), config)
         )
     review_plan = plan_from_review(review, config)
     if not review_plan.apply_allowed:
@@ -228,7 +236,7 @@ def build_runtime_plan(nb_api, hosts, config):
             ),
         )
     plan = plan_from_mutations(review, config, planning_api.mutations)
-    if observations:
+    if observations or deferred_networks:
         from dataclasses import replace, asdict
 
         rows = tuple(
@@ -237,15 +245,23 @@ def build_runtime_plan(nb_api, hosts, config):
                 external_id=c.value,
                 name=c.value,
                 action=SyncAction.UNSUPPORTED,
-                reason_code="MAC_OBSERVATION_ONLY" if c.kind == "MAC_ASSIGNMENT" else "IP_OBSERVATION_ONLY",
+                reason_code=(
+                    "VM_NETWORK_DEFERRED"
+                    if deferred_networks
+                    else "MAC_OBSERVATION_ONLY" if c.kind == "MAC_ASSIGNMENT" else "IP_OBSERVATION_ONLY"
+                ),
                 reason=(
-                    "Stored on NetBox interfaces for review; disputed MAC assignments are not synchronized."
-                    if c.kind == "MAC_ASSIGNMENT"
-                    else "Stored on NetBox interfaces for review; disputed IPAM assignments are not synchronized."
+                    "Strict network policy: network writes for the affected guests are deferred."
+                    if deferred_networks
+                    else (
+                        "Stored on NetBox interfaces for review; disputed MAC assignments are not synchronized."
+                        if c.kind == "MAC_ASSIGNMENT"
+                        else "Stored on NetBox interfaces for review; disputed IPAM assignments are not synchronized."
+                    )
                 ),
                 after=(("participants", [asdict(p) for p in c.participants]),),
             )
-            for c in observations
+            for c in observations or deferred_networks
         )
         plan = replace(plan, items=(*plan.items, *rows))
     return plan
