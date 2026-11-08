@@ -504,7 +504,7 @@ def build_esxi_adoption_plan(nb_api, hosts, config, *, independent_vms=False):
             and item.object_kind == "vm"
             and item.classification == AdoptionClassification.AMBIGUOUS
             and item.candidates
-            and all(c.signals for c in item.candidates)
+            and all(c.signals and "existing_managed_identity" not in c.conflicts for c in item.candidates)
         ):
             # Only weak legacy claims: the writer excludes this guest and all children.
             # Exact identity/placement conflicts carry no weak signals and retain their fence.
