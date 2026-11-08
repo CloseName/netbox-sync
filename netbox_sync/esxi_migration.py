@@ -103,6 +103,7 @@ class EsxiMigrationPlan:
     cluster_id: object
     hosts: tuple[HostMigrationItem, ...]
     virtual_machines: tuple[VirtualMachineMigrationItem, ...]
+    deferred_interface_names: tuple = ()
 
 
 def _object_id(value):

@@ -173,12 +173,14 @@ def build_runtime_plan(nb_api, hosts, config):
     from ..esxi_host_network import HostNetworkPrerequisiteError
     from ..netbox_vm_network_apply import ManagedMACConflict
 
+    interface_names = ()
     try:
         with measured_phase("netbox_simulation"):
             if config.source_type == "proxmox":
                 apply_full_sync(planning_api, hosts, config.target, confirmed=True)
             else:
-                execute_esxi_runtime(planning_api, hosts, config, confirmed=True)
+                runtime = execute_esxi_runtime(planning_api, hosts, config, confirmed=True)
+                interface_names = runtime.deferred_interface_names
     except ManagedMACConflict as conflict:
         from dataclasses import replace
 
@@ -236,6 +238,23 @@ def build_runtime_plan(nb_api, hosts, config):
             ),
         )
     plan = plan_from_mutations(review, config, planning_api.mutations)
+    if interface_names:
+        from dataclasses import replace
+
+        rows = tuple(
+            SyncPlanItem(
+                object_kind="vminterface",
+                external_id=c.vm_id,
+                name=f"{c.vm_name} / {c.nic_name}",
+                action=SyncAction.REVIEW_REQUIRED,
+                reason_code="VM_NIC_NAME_OCCUPIED",
+                reason="An existing interface matches by name only. Network updates for this VM are deferred.",
+                matched_object_id=c.interface_ids[0] if len(c.interface_ids) == 1 else None,
+                after=(("existing_interface_ids", c.interface_ids),),
+            )
+            for c in interface_names
+        )
+        plan = replace(plan, items=(*plan.items, *rows))
     if observations or deferred_networks:
         from dataclasses import replace, asdict
 
