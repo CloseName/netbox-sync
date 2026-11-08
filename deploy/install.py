@@ -923,10 +923,12 @@ def validate_tls_material(root, public_url, tls_settings=None):
         if layout == 'corporate':
             _tls['protected_file'](directory/'dhparam.pem',0o640,10001)
             context.load_dh_params(directory/'dhparam.pem')
-        for args in (['-checkend','0'],['-checkhost',host]):
-            result=subprocess.run(['openssl','x509','-in',str(directory/certificate),'-noout',*args],
-                                  stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
-            if result.returncode:raise ValueError()
+        cert_path = str(directory/certificate)
+        # The leaf is trusted here solely to check its validity and DNS name.
+        # x509 -checkhost in OpenSSL 3.0 may exit zero even for a mismatch.
+        subprocess.run(['openssl','verify','-partial_chain','-trusted',cert_path,
+                        '-verify_hostname',host,cert_path], check=True,
+                       stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
     except (ValueError,OSError,ssl.SSLError,subprocess.SubprocessError):
         raise InstallError('TLS certificate/key invalid, expired, encrypted or hostname mismatch') from None
     validate_netbox_ca(root)

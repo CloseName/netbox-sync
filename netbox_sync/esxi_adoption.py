@@ -11,6 +11,7 @@ from enum import Enum
 
 from .source_identity import (
     V2_IDENTITY_MATCH,
+    SourceIdentity,
     host_source_identity,
     merge_original_name,
     merge_source_identities,
@@ -387,6 +388,18 @@ def _mark_shared_claims_ambiguous(items):
     )
 
 
+def _weak_vm_candidate(candidate, external_id):
+    if not candidate.signals:
+        return False
+    if "existing_managed_identity" not in candidate.conflicts:
+        return True
+    owners = json.loads(candidate.custom_fields_snapshot).get("sync_identities")
+    return isinstance(owners, list) and all(
+        (identity := SourceIdentity.from_record(raw)) is not None and identity.external_id != external_id
+        for raw in owners
+    )
+
+
 def build_esxi_adoption_plan(nb_api, hosts, config, *, independent_vms=False):
     """Build an immutable read-only adoption plan for one ESXi source."""
 
@@ -396,8 +409,6 @@ def build_esxi_adoption_plan(nb_api, hosts, config, *, independent_vms=False):
     all_devices = list(nb_api.dcim.devices.all())
     # A newly usable BIOS identifier must not silently replace an owned MoRef
     # or UUID, even if the host name/address also changed.
-    from .source_identity import SourceIdentity
-
     discovered_ids = {host.source_id for host in hosts}
     for record in all_devices:
         for raw in _custom_fields(record).get("sync_identities") or []:
@@ -472,8 +483,6 @@ def build_esxi_adoption_plan(nb_api, hosts, config, *, independent_vms=False):
     items = _mark_shared_claims_ambiguous(items)
     # Only an absent identity owned by this exact source can be isolated.
     # Network matches, foreign ownership and shared claims remain blockers.
-    from .source_identity import SourceIdentity
-
     live_ids = {virtual_machine_source_identity(vm) for host in hosts for vm in host.virtual_machines}
     claims = Counter((item.object_kind, c.object_id) for item in items for c in item.candidates)
     isolated = []
@@ -504,7 +513,7 @@ def build_esxi_adoption_plan(nb_api, hosts, config, *, independent_vms=False):
             and item.object_kind == "vm"
             and item.classification == AdoptionClassification.AMBIGUOUS
             and item.candidates
-            and all(c.signals and "existing_managed_identity" not in c.conflicts for c in item.candidates)
+            and all(_weak_vm_candidate(c, item.identity.external_id) for c in item.candidates)
         ):
             # Only weak legacy claims: the writer excludes this guest and all children.
             # Exact identity/placement conflicts carry no weak signals and retain their fence.
