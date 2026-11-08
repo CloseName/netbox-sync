@@ -68,6 +68,7 @@ def apply_vm_networks(
     config,
     *,
     confirmed=False,
+    deferred_names=None,
 ):
     """Validate VM network context, print its precheck and write only after confirmation."""
 
@@ -91,7 +92,7 @@ def apply_vm_networks(
     cluster = cluster_matches[0]
 
     inventory = prepare_vm_network_inventory(nb_api, cluster, _canonical_mac=_canonical_mac)
-    contexts = prepare_vm_network_contexts(hosts, inventory)
+    contexts = prepare_vm_network_contexts(hosts, inventory, deferred_names=deferred_names)
 
     print_vm_network_precheck(contexts, site, cluster)
 

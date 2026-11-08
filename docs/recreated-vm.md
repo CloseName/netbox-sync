@@ -5,6 +5,11 @@ an inventory can be incomplete, permissions can change, or a VM can move.
 An offline VM is not necessarily absent and is never considered deleted just because
 it is powered off or lacks VMware Tools.
 
+If an existing interface on a VM matches only the adapter name or network label,
+Sync reports `VM_NIC_NAME_OCCUPIED` with the VM, adapter and NetBox interface ID(s).
+Network writes for that VM resume on a fresh plan once the conflict is resolved.
+Inventory updates and other VMs continue during the conflict.
+
 ## Automatic replacement
 
 After a successful fresh ESXi discovery, a new UUID may reuse an old card when:

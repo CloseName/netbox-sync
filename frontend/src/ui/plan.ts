@@ -182,6 +182,7 @@ export function planReason(item:{reason_code:string;reason:string;action?:SyncAc
   VM_IDENTITY:'Shared VM identifier',
   IP_ASSIGNMENT:'Conflicting IP assignment',
   MAC_ASSIGNMENT:'Conflicting MAC assignment',
+  VM_NIC_NAME_OCCUPIED:'An existing interface matches by name only. Network updates for this VM are deferred.',
   VM_NETWORK_DEFERRED:'Strict network policy: network writes for the affected guests are deferred.',
   MAC_OBSERVATION_ONLY:'Stored on NetBox interfaces for review; disputed MAC assignments are not synchronized.',
   NETWORK_SCOPE_REVIEW_REQUIRED:'Selected network scope changed or no longer exists. Review the source VRF mapping.',

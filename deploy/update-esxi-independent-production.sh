@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 umask 077
 root=/netbox/containers
-previous=fe19677cd5d0d3f1f4481033da492adc089fbc99
+previous=ad8edb157633def3b50af7cbe67f9bfa86b52f06
 repo=$(cd "$(dirname "$0")/.." && pwd)
 release=$(git -C "$repo" rev-parse HEAD)
 timer=netbox-sync.timer
@@ -65,7 +65,7 @@ for name in api proxy; do
     done
     [[ $health == healthy ]]
 done
-docker exec netbox-sync-api python -B -c "from netbox_sync.application.sync_plan import PLANNER_VERSION; assert PLANNER_VERSION == 'web-5a-20'"
+docker exec netbox-sync-api python -B -c "from netbox_sync.application.sync_plan import PLANNER_VERSION; assert PLANNER_VERSION == 'web-5a-21'"
 "${https[@]}"
 stage=scheduler
 if [[ $was_active == active ]]; then systemctl start "$timer"; fi

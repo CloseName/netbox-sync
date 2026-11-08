@@ -4,6 +4,7 @@ from .netbox_record_values import object_id as _object_id
 from .interface_display import interface_display_name, validate_interface_names
 import ipaddress
 from .network_scopes import scope_key
+from dataclasses import dataclass
 
 from .netbox_vm_metadata import (
     find_vm_sync_identity_matches,
@@ -19,6 +20,27 @@ from .netbox_vm_interface_metadata import (
 
 class VMNetworkApplyError(RuntimeError):
     """A VM network identity or ownership check prevents safe application."""
+
+
+@dataclass(frozen=True)
+class InterfaceNameConflict:
+    """Existing interfaces with a matching label but no matching source identity."""
+
+    vm_id: str
+    vm_name: str
+    nic_name: str
+    interface_ids: tuple
+
+
+class UnmatchedInterfaceName(VMNetworkApplyError):
+    """Name-only matches cannot authorize adoption of a NetBox interface."""
+
+    def __init__(self, vm, nic, matches):
+        label = interface_display_name(vm, nic)
+        self.conflict = InterfaceNameConflict(
+            vm.external_id, vm.original_name, label, tuple(sorted(r.id for r in matches))
+        )
+        super().__init__(f"NIC adoption candidate exists without sync identity: vm={vm.original_name!r} nic={label!r}")
 
 
 class ManagedMACConflict(VMNetworkApplyError):
@@ -102,12 +124,7 @@ def _interface_match(
     ]
 
     if name_matches:
-        raise VMNetworkApplyError(
-            f"NIC adoption candidate exists "
-            f"without sync identity: "
-            f"vm={vm.original_name!r} "
-            f"nic={interface_display_name(vm, nic)!r}"
-        )
+        raise UnmatchedInterfaceName(vm, nic, name_matches)
 
     return None
 
@@ -375,7 +392,7 @@ def _prepare_vm_nic_context(vm, nic, existing_interfaces):
     }
 
 
-def _prepare_vm_network_context(vm, inventory, discovered_macs, discovered_ips):
+def _prepare_vm_network_context(vm, inventory, discovered_macs, discovered_ips, deferred_names):
     """Validate one VM in NIC order, then resolve its primary IPv4 policy."""
     netbox_vm = _find_vm(
         inventory.target_vms,
@@ -387,12 +404,13 @@ def _prepare_vm_network_context(vm, inventory, discovered_macs, discovered_ips):
         [],
     )
 
-    validate_interface_names(
-        vm,
-        existing_interfaces,
-        _interface_match,
-        VMNetworkApplyError,
-    )
+    try:
+        validate_interface_names(vm, existing_interfaces, _interface_match, VMNetworkApplyError)
+    except UnmatchedInterfaceName as exc:
+        if deferred_names is None:
+            raise
+        deferred_names.append(exc.conflict)
+        return None
 
     nic_names = {}
 
@@ -433,7 +451,7 @@ def _prepare_vm_network_context(vm, inventory, discovered_macs, discovered_ips):
     return vm_context
 
 
-def prepare_vm_network_contexts(hosts, inventory):
+def prepare_vm_network_contexts(hosts, inventory, *, deferred_names=None):
     """Validate all VM networks before reporting or writing any NetBox changes.
 
     Per-VM failures precede batch duplicates; duplicate MACs precede duplicate IPs.
@@ -444,7 +462,9 @@ def prepare_vm_network_contexts(hosts, inventory):
     discovered_ips = {}
     for host in hosts:
         for vm in host.virtual_machines:
-            contexts.append(_prepare_vm_network_context(vm, inventory, discovered_macs, discovered_ips))
+            context = _prepare_vm_network_context(vm, inventory, discovered_macs, discovered_ips, deferred_names)
+            if context is not None:
+                contexts.append(context)
 
     duplicate_macs = {value: locations for value, locations in discovered_macs.items() if len(locations) > 1}
 

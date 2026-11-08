@@ -159,11 +159,13 @@ def execute_child(payload):
         "status": "SUCCEEDED",
         "plan_digest": plan.digest,
         "network_complete": not any(
-            item.reason_code in ("IP_OBSERVATION_ONLY", "MAC_OBSERVATION_ONLY", "VM_NETWORK_DEFERRED")
+            item.reason_code
+            in ("IP_OBSERVATION_ONLY", "MAC_OBSERVATION_ONLY", "VM_NETWORK_DEFERRED", "VM_NIC_NAME_OCCUPIED")
             for item in plan.items
         ),
         "ipam_complete": not any(
-            item.reason_code in ("IP_OBSERVATION_ONLY", "VM_NETWORK_DEFERRED") for item in plan.items
+            item.reason_code in ("IP_OBSERVATION_ONLY", "VM_NETWORK_DEFERRED", "VM_NIC_NAME_OCCUPIED")
+            for item in plan.items
         ),
         "planner_version": plan.planner_version,
         "action_counts": ActionCounts.from_items(plan.items).__dict__,

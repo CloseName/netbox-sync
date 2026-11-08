@@ -157,7 +157,7 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write
             replace(host, interfaces=[], management_ip=None) for host in hosts if host.source_id in host_ids
         )
 
-    def stages(api):
+    def stages(api, *, deferred_names=None):
         for identifier, body in replacements:
             if isinstance(api, PlanningNetBox):
                 api.simulate_vm_replacement(identifier, body)
@@ -184,14 +184,18 @@ def execute_esxi_runtime(nb_api, hosts, config, *, confirmed=False, before_write
         with phase("simulation_vms"):
             apply_virtual_machines(api, filtered_hosts, config.target, confirmed=True)
         with phase("simulation_vm_networks"):
-            apply_vm_networks(api, network_guests, config, confirmed=True)
+            apply_vm_networks(api, network_guests, config, confirmed=True, deferred_names=deferred_names)
         with phase("simulation_placement"):
             apply_guest_placement(api, filtered_hosts, config, confirmed=True)
         with phase("simulation_disks"):
             apply_virtual_disks(api, filtered_hosts, config, confirmed=True)
 
     # Simulate dependent creates and every network ownership check before writes.
-    stages(PlanningNetBox(read_api))
+    collisions = []
+    stages(PlanningNetBox(read_api), deferred_names=collisions)
+    if collisions:
+        plan = replace(plan, deferred_interface_names=tuple(collisions))
+        network_guests = _filtered_hosts(network_guests, config, managed_ids - deferred - {c.vm_id for c in collisions})
     if not confirmed:
         print("ESXi runtime preflight completed. No changes were written to NetBox.")
         return plan

@@ -54,6 +54,7 @@ export const ru: Record<string,string> = {
   "Sunday": "Воскресенье",
   "Inventory synchronized with network observations. Disputed address or MAC assignments remain incomplete; review the NetBox interfaces.": "Инвентарь синхронизирован с сетевыми наблюдениями. Спорные назначения адресов или MAC не выполнены; проверьте интерфейсы NetBox.",
   "Conflicting MAC assignment": "Неоднозначное назначение MAC",
+  "An existing interface matches by name only. Network updates for this VM are deferred.": "Имя интерфейса совпало, но его идентификатор не подтверждён. Обновление сети этой ВМ отложено.",
   "Strict network policy: network writes for the affected guests are deferred.": "При строгой политике обновление сети перечисленных ВМ отложено до разрешения конфликта.",
   "Stored on NetBox interfaces for review; disputed MAC assignments are not synchronized.": "Сохраняется на интерфейсах NetBox для проверки; спорные назначения MAC не синхронизируются.",
   "Selected network scope changed or no longer exists. Review the source VRF mapping.": "Выбранная сетевая область изменилась или больше не существует. Проверьте сопоставление VRF источника.",
