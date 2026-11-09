@@ -1,4 +1,4 @@
-{% extends 'generic/object.html' %}
+{% extends 'virtualization/virtualmachine/base.html' %}
 {% load firewall_labels %}
 {% block content %}
 <p>{% fwlabel 'Last collection' %} · {{ appliance.observed_at }} · {{ appliance.version }}</p>

@@ -119,5 +119,5 @@ def decorate(page, appliance, group, labels, selected, back):
                     'section': 'services', 'view': 'dhcp', 'sub': 'static_ipv4', 'scope': 'firewall', 'q': address})
         hit.update(number=number, path=location(obj, labels),
                    url=obj.get_absolute_url() + '?' + urlencode({'back': back}),
-                   columns=table_cells(obj, columns, refs[obj.pk], related[obj.pk]))
+                   columns=table_cells(obj, columns, refs[obj.pk], related[obj.pk], translate=ui_label))
     return [HEADINGS[key] for key in columns]

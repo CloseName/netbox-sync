@@ -135,6 +135,13 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     assert native.status_code == 200 and 'Changed web' in native.content.decode()
     assert 'Межсетевой экран' in client.get(vms[0].get_absolute_url()).content.decode()
     assert 'Search this firewall' in english.get(vm_tab).content.decode()
+    overview = english.get(vms[0].get_absolute_url()).content.decode()
+    disks_url = reverse('virtualization:virtualmachine_disks', args=[vms[0].pk])
+    assert overview.index(f'href="{disks_url}"') < overview.index(f'href="{vm_tab}"')
+    ordinary = VirtualMachine.objects.create(name='ordinary-vm-without-firewall')
+    ordinary_tab = reverse('virtualization:virtualmachine_firewall', args=[ordinary.pk])
+    assert ordinary_tab not in english.get(ordinary.get_absolute_url()).content.decode()
+    assert english.get(ordinary_tab).status_code == 404
     assert client.get(reverse('virtualization:virtualmachine_firewall', args=[vms[1].pk])).status_code == 404
     assert denied.get(vm_tab).status_code in (403, 404)
     legacy_html = client.get(first.get_absolute_url(), {'section': 'system', 'view': 'users'}).content.decode()

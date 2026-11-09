@@ -223,4 +223,4 @@ print('PASS: infrastructure API permissions, unique node IDs, firewall runtime e
 client=Client();client.force_login(user)
 assert client.get(vm.get_absolute_url()).status_code==200
 assert client.get(host.get_absolute_url()).status_code==200
-print('PASS: native VM and Device pages render with the common network panel')
+print('PASS: native VM and Device pages render after retiring the common network panel')

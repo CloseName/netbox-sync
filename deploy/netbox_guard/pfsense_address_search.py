@@ -4,6 +4,7 @@ from ipaddress import ip_address, ip_network
 from ipam.models import IPAddress, Prefix
 from virtualization.models import VirtualMachine, VMInterface
 
+from .pfsense_locale import label
 from .ipam_availability import freshness
 from .infrastructure import same_network
 from .models import NetworkBinding
@@ -42,7 +43,7 @@ def describe(rows, address, current, lease_ok):
     for owner in row['owners']:
         kind, sep, suffix = owner.partition(' · ')
         kinds.add(kind)
-        owners.append(dict(text=EVIDENCE.get(kind, kind) + sep + suffix, url=links.get(owner)))
+        owners.append(dict(text=label(EVIDENCE[kind]) + sep + suffix if kind in EVIDENCE else owner, url=links.get(owner)))
     state = row['label']
     if row['state'] == 'candidate':
         state = 'Кандидат для статики' if current else 'Недостаточно данных'
@@ -100,7 +101,7 @@ def inspect_address(user, appliance, address):
             gateways = appliance.entries.filter(component='routing', table='gateways', enabled=True, state='current',
                 data__interface__contains=[net['key']], data__gateway__contains=[str(address)])
             for gateway in gateways:
-                owners.append(dict(text='Шлюз · ' + gateway.name, url=gateway.get_absolute_url()))
+                owners.append(dict(text=label('Шлюз') + ' · ' + gateway.name, url=gateway.get_absolute_url()))
                 if state != 'Конфликт':
                     state = 'Зарезервирован · шлюз'
             prefix = binding.prefix if binding else None

@@ -13,6 +13,7 @@ from .pfsense_system import CHILD_FIELDS
 from .pfsense_address_search import inspect_address
 from .pfsense_catalog_policy import rule_groups, search_hits
 from .pfsense_presentation import configuration, decorate, location, reference_links, ROLE
+from .pfsense_locale import label as ui_label
 from .pfsense_tables import HEADINGS, LAYOUTS, table_cells
 
 
@@ -166,7 +167,7 @@ def detail(request, uid):
         child = ref.source
         columns = LAYOUTS[(child.component, child.table)].split()
         children_rows.append(dict(object=child, headers=[HEADINGS[k] for k in columns],
-                                  columns=table_cells(child, columns, child_refs[child.pk])))
+                                  columns=table_cells(child, columns, child_refs[child.pk], translate=ui_label)))
     refs = reference_links([obj])[obj.pk]
     term = back.get('q', '')
     matches = search_hits(term, obj.data, catalog.aliases_for(obj.appliance_id),
