@@ -1,15 +1,16 @@
+{% load firewall_labels %}
 <div class="table-responsive"><table class="table align-top">
 <thead><tr><th>№</th>
-{% if filters.q %}<th>Объект</th><th>Раздел</th><th>Почему найден</th>
-{% else %}{% for label in headers %}<th>{{ label }}</th>{% endfor %}{% endif %}
-<th>Состояние</th></tr></thead><tbody>
+{% if filters.q %}<th>{% fwlabel 'Object' %}</th><th>{% fwlabel 'Section' %}</th><th>{% fwlabel 'Match reason' %}</th>
+{% else %}{% for label in headers %}<th>{{ label|fwlabel }}</th>{% endfor %}{% endif %}
+<th>{% fwlabel 'Status' %}</th></tr></thead><tbody>
 {% for hit in hits %}<tr id="obj-{{ hit.object.uid }}">
 {% if filters.q %}
 <td>{{ hit.number }}</td><td class="text-break"><a href="{{ hit.url }}">{{ hit.object.name }}</a></td>
-<td>{{ hit.path }}</td><td class="text-break">{% for reason in hit.reasons %}<div>{{ reason }}</div>{% empty %}Идентификатор объекта{% endfor %}</td>
+<td>{{ hit.path }}</td><td class="text-break">{% for reason in hit.reasons %}<div>{{ reason|fwreason }}</div>{% empty %}{% fwlabel 'Object identifier' %}{% endfor %}</td>
 {% else %}
-<td><a href="{{ hit.url }}" aria-label="Открыть {{ hit.object.name }}">{{ hit.number }}</a></td>
+<td><a href="{{ hit.url }}" aria-label="{% fwlabel 'Open' %} {{ hit.object.name }}">{{ hit.number }}</a></td>
 {% include 'netbox_guard/pfsense_table_cells.html' with columns=hit.columns url=hit.url %}
 {% endif %}
-<td>{% if hit.object.state == 'retained' %}Снимок от {{ hit.object.last_seen }} · {% endif %}{% if hit.object.enabled %}Включено{% else %}Отключено{% endif %}</td>
+<td>{% if hit.object.state == 'retained' %}{% fwlabel 'Snapshot from' %} {{ hit.object.last_seen }} · {% endif %}{% if hit.object.enabled %}{% fwlabel 'Enabled' %}{% else %}{% fwlabel 'Disabled' %}{% endif %}</td>
 </tr>{% endfor %}</tbody></table></div>

@@ -1,5 +1,7 @@
 # pfSense object catalog
 
+The Firewalls list opens the selected appliance directly. The name includes its visible placement host. A linked VM also exposes the same snapshot from its Firewall tab after Virtual Disks. Both entry points enforce NetBox VM view permissions. Firewall labels use the active NetBox language (English or Russian). Names and values in the saved configuration come from the appliance.
+
 The NetBox plugin menu has one pfSense overview: Host, pfSense, VM in NetBox,
 Site, Last collection and State. Host links to the VM's explicitly assigned Device,
 subject to Device permissions; no cluster-based inference is made. The VM link has

@@ -170,7 +170,7 @@ print('PASS: constrained add permission rolls back address and receipt')
 from dcim.models import Device, DeviceType, Manufacturer, DeviceRole, Site
 from netbox_guard.infrastructure import read_networks, document
 from netbox_guard.network_views import networks
-from netbox_guard.template_content import template_extensions, NetworkLinks
+from netbox_guard.template_content import template_extensions
 from virtualization.models import VirtualDisk
 site=Site.objects.create(name='backlog-'+suffix,slug='backlog-'+suffix)
 maker=Manufacturer.objects.create(name='backlog-'+suffix,slug='backlog-'+suffix)
@@ -196,7 +196,7 @@ assert page.status_code==200 and 'DHCP-пул'.encode() in page.content
 req=factory.get('/networks/',{'ip':'10.25.0.2'});req.user=user
 assert 'не относится к известным сетям'.encode() in networks(req,'cluster',cluster.pk).content
 assert SyncDetails not in template_extensions
-assert 'virtualization.virtualmachine' in NetworkLinks.models
+assert all(panel.__name__ not in ('NetworkLinks', 'PfsenseInventoryDetails') for panel in template_extensions)
 assert read_networks(limited,guests)==[]  # No permission to view the matched NIC.
 assert CustomField.objects.get(name='sync_disk_identity').type=='json'
 VirtualDisk.objects.create(virtual_machine=vm,name='disk-test',size=1024,custom_field_data={'sync_disk_identity':{'external_id':'test'}})

@@ -1,4 +1,5 @@
 """Provider inventory entry point; visibility matches the registry view permission."""
+from .pfsense_locale import lazy_label
 from netbox.plugins import PluginMenu, PluginMenuItem
 
 
@@ -6,8 +7,8 @@ menu = PluginMenu(
     label='NetBox Sync',
     icon_class='mdi mdi-sync',
     groups=(
-        ('pfSense', (
-            PluginMenuItem(link='plugins:netbox_guard:pfsense_overview', link_text='pfSense',
+        ('', (
+            PluginMenuItem(link='plugins:netbox_guard:pfsense_overview', link_text=lazy_label('Firewalls'),
                            permissions=['virtualization.view_virtualmachine']),
         )),
         ('Selectel', (

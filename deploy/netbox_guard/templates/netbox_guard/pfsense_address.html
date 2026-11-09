@@ -1,8 +1,9 @@
-<section class="card mb-3"><h2 class="card-header">Проверка IP · {{ inspection.address }}</h2>
-<div class="card-body"><p>Сбор pfSense · {{ inspection.observed_at }}</p>
-{% for item in inspection.contexts %}<p><strong>{{ item.state }}</strong> · {{ item.interface }} ·
-{% if item.prefix %}<a href="{{ item.prefix.get_absolute_url }}">{{ item.network }}</a> · {{ item.vrf }}{% else %}{{ item.network }} · привязка IPAM не подтверждена{% endif %}
+{% load firewall_labels %}
+<section class="card mb-3"><h2 class="card-header">{% fwlabel 'IP address lookup' %} · {{ inspection.address }}</h2>
+<div class="card-body"><p>{% fwlabel 'pfSense collection' %} · {{ inspection.observed_at }}</p>
+{% for item in inspection.contexts %}<p><strong>{{ item.state|fwlabel }}</strong> · {{ item.interface }} ·
+{% if item.prefix %}<a href="{{ item.prefix.get_absolute_url }}">{{ item.network }}</a> · {{ item.vrf }}{% else %}{{ item.network }} · {% fwlabel 'IPAM binding unconfirmed' %}{% endif %}
 {% for owner in item.owners %}<br>{% if owner.url %}<a href="{{ owner.url }}">{{ owner.text }}</a>{% else %}{{ owner.text }}{% endif %}{% endfor %}
-{% if not item.fresh %}<br>Сведения неполные или требуют обновления.{% endif %}</p>
-{% empty %}<p>Недостаточно данных. Среди доступных сетей этого pfSense подсеть адреса не подтверждена.</p>{% endfor %}
-{% if not inspection.leases %}<p>Данные об арендах DHCP недоступны.</p>{% endif %}</div></section>
+{% if not item.fresh %}<br>{% fwlabel 'Information is incomplete or out of date.' %}{% endif %}</p>
+{% empty %}<p>{% fwlabel 'No confirmed subnet for this address among the accessible networks on this firewall.' %}</p>{% endfor %}
+{% if not inspection.leases %}<p>{% fwlabel 'DHCP lease data is unavailable.' %}</p>{% endif %}</div></section>

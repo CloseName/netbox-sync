@@ -1,5 +1,7 @@
 # pfSense web onboarding (test rollout)
 
+The address entered during setup remains a candidate until the first successful import. A failed first attempt can be corrected. The pfSense list and connection form show the last confirmed management endpoint even for VMs without a primary address. Errors identify the HTTPS, SSH or NetBox stage and the relevant remote port when known.
+
 For NetBox object pages, scoped configuration search and the read-only Map API,
 see the [pfSense object catalog](pfsense-object-catalog.md).
 

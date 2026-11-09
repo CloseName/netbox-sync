@@ -1,5 +1,6 @@
+{% load firewall_labels %}
 {% for cell in columns %}<td class="text-break">
-{% if cell.prefix %}{{ cell.prefix }} {% endif %}
+{% if cell.prefix %}{{ cell.prefix|fwlabel }} {% endif %}
 {% for value in cell.preview %}<div>{% if value.url %}<a href="{{ value.url }}">{{ value.text }}</a>{% elif cell.primary %}<a href="{{ url }}">{{ value.text }}</a>{% else %}{{ value.text }}{% endif %}</div>{% empty %}—{% endfor %}
-{% if cell.remaining %}<a href="{{ url }}">ещё {{ cell.remaining }}</a>{% endif %}
+{% if cell.remaining %}<a href="{{ url }}">{% fwlabel 'more' %} {{ cell.remaining }}</a>{% endif %}
 </td>{% endfor %}

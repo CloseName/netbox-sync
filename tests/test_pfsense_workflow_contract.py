@@ -88,6 +88,9 @@ def test_collection_or_matching_failure_keeps_progress_without_import(workflow, 
     progress = {}
     with pytest.raises(module.SetupError, match=error):
         module.run(value, progress)
-    assert progress == {"ssh_port": 2222, "host_key": "pinned"}
+    expected = {"ssh_port": 2222, "host_key": "pinned"}
+    if failure == "collect":
+        expected["error_stage"] = "ssh"
+    assert progress == expected
     assert len(posts) == 1
     assert events[-1] == "collect"

@@ -118,6 +118,10 @@ def special_matches(context, key, term):
 @require_GET
 def appliance(request, pk):
     obj = get_object_or_404(catalog.appliances(request.user), pk=pk)
+    return render(request, 'netbox_guard/pfsense_appliance.html', appliance_context(request, obj))
+
+
+def appliance_context(request, obj):
     section, page, selected, path = resolve(request.GET)
     context = dict(appliance=obj, host=host_for(request.user, obj), selected=selected, path=path,
                    sections=links(MENU, {}, 'section'), views=links(section['children'], {'section': section['key']}, 'view'),
@@ -144,7 +148,7 @@ def appliance(request, pk):
             context['settings_rows'] = [dict(object=hit['object'], fields=[
                 field for field in catalog.fields(hit['object']) if field[0] != '№']) for hit in context['page']]
             context['settings_page'] = True
-    return render(request, 'netbox_guard/pfsense_appliance.html', context)
+    return context
 
 
 @login_required
