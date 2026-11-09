@@ -183,3 +183,23 @@ def test_connect_reuses_key_and_rejects_changed_endpoint(control, changed):
         child = next(e for e in events if isinstance(e, tuple) and e[0] == "child")
         assert child[1]["data"]["password"] == "fixture-secret"
         assert value["sync_enabled"] is False and value["interval_minutes"] == 20
+
+
+def test_failed_candidate_can_be_corrected_then_becomes_confirmed(control):
+    call, state, _, _ = control
+    state.update(status="ATTENTION", error="DNS_FAILED")
+    data = dict(
+        address="fw.correct.test", port=8443, verify_tls=True, username="reader", password="fixture", policy_revision=1
+    )
+    assert not call("status").get("confirmed_address")
+    assert call("connect", data)["confirmed_address"] == "fw.correct.test"
+    assert call("connect", dict(data, address="fw.other.test"))["error"] == "ENDPOINT_CHANGED"
+
+
+def test_legacy_confirmed_address_survives_failed_refresh(control):
+    call, state, result, _ = control
+    state.update(collected_at=100)
+    result.update(error="TIMEOUT", error_stage="ssh")
+    response = call()
+    assert response["confirmed_address"] == "10.0.0.1"
+    assert response["error_stage"] == "ssh" and response["ssh_port"] == 22

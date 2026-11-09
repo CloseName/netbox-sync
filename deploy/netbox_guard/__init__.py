@@ -14,6 +14,6 @@ class NetBoxGuardConfig(PluginConfig):
 
     def ready(self):
         super().ready()
-        from . import signals  # noqa: F401
+        from . import firewall_tab, signals  # noqa: F401
 
 config = NetBoxGuardConfig

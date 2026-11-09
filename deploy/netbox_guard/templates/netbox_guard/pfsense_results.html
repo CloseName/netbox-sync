@@ -1,14 +1,15 @@
+{% load firewall_labels %}
 {% if direct %}
   {% include 'netbox_guard/pfsense_hits.html' with hits=direct %}
 {% elif not covering %}
-  <p>Объекты не найдены.</p>
+  <p>{% fwlabel 'No matching objects.' %}</p>
 {% endif %}
 {% if covering %}
   <details class="mb-2">
-    <summary>Подсети, диапазоны и правила, охватывающие запрос ({{ page.covering_count }})</summary>
+    <summary>{% fwlabel 'Covering subnets, ranges and rules' %} ({{ page.covering_count }})</summary>
     {% include 'netbox_guard/pfsense_hits.html' with hits=covering %}
   </details>
 {% endif %}
-<div class="my-3">{{ page.paginator.count }} объектов · Страница {{ page.number }} из {{ page.paginator.num_pages }}
-{% if page.has_previous %}<a href="?{{ page_query }}&amp;page={{ page.previous_page_number }}">Назад</a>{% endif %}
-{% if page.has_next %}<a href="?{{ page_query }}&amp;page={{ page.next_page_number }}">Далее</a>{% endif %}</div>
+<div class="my-3">{{ page.paginator.count }} {% fwlabel 'objects' %} · {% fwlabel 'Page' %} {{ page.number }} {% fwlabel 'of' %} {{ page.paginator.num_pages }}
+{% if page.has_previous %}<a href="?{{ page_query }}&amp;page={{ page.previous_page_number }}">{% fwlabel 'Previous' %}</a>{% endif %}
+{% if page.has_next %}<a href="?{{ page_query }}&amp;page={{ page.next_page_number }}">{% fwlabel 'Next' %}</a>{% endif %}</div>

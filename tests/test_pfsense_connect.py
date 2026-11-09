@@ -131,5 +131,21 @@ def test_import_failure_preserves_preparation_and_selected_interval(monkeypatch)
     with pytest.raises(m.SetupError,match='PERMISSION_DENIED'):
         m.run(dict(url='https://nb.test',vm_id=1,read_token='read',apply_token='apply',guard_instance='guard',
                    operation='connect',state={},data={'interval_minutes':10},policy={}),progress)
-    assert progress=={'ssh_port':2233,'host_key':'pinned'}
+    assert progress=={'ssh_port':2233,'host_key':'pinned','error_stage':'netbox'}
     assert posts[1][1]['json']['snapshot']['collection_interval_seconds']==600
+
+
+@pytest.mark.parametrize(
+    "stage,exc,code",
+    [
+        ("https", m.requests.exceptions.ConnectTimeout(), "TIMEOUT"),
+        ("ssh", TimeoutError(), "TIMEOUT"),
+        ("https", m.socket.gaierror(), "DNS_FAILED"),
+        ("https", m.requests.exceptions.SSLError(), "TLS_FAILED"),
+    ],
+)
+def test_endpoint_failure_keeps_stage_without_raw_errors(stage, exc, code):
+    progress = {}
+    with pytest.raises(m.SetupError, match=code), m.operation_stage(progress, stage):
+        raise exc
+    assert progress == {"error_stage": stage}

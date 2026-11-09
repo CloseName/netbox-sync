@@ -7,10 +7,12 @@ import re
 import socket
 import sys
 import time
+from contextlib import contextmanager
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlsplit
 import requests
+from .application.onboarding import OnboardingError
 from .api.egress import EgressPolicy, pinned_dns
 from .bootstrap_probe import fetch
 from .netbox_tls import configure_session
@@ -25,6 +27,26 @@ class SetupError(Exception):
     """Report pfSense setup or collection refusal to the parent worker."""
 
     pass
+
+
+@contextmanager
+def operation_stage(progress, stage):
+    """Return bounded diagnostic codes without persisting exception messages."""
+    if progress is not None:
+        progress["error_stage"] = stage
+    try:
+        yield
+    except OnboardingError as exc:
+        raise SetupError("DESTINATION_DENIED") from exc
+    except socket.gaierror as exc:
+        raise SetupError("DNS_FAILED") from exc
+    except (requests.exceptions.Timeout, TimeoutError) as exc:
+        raise SetupError("TIMEOUT") from exc
+    except requests.exceptions.SSLError as exc:
+        raise SetupError("TLS_FAILED") from exc
+    else:
+        if progress is not None:
+            progress.pop("error_stage", None)
 
 
 class Page(HTMLParser):
@@ -364,18 +386,21 @@ def run(value, progress=None):
     """Check guard readiness and VM identity before setup, collection and guarded import."""
 
     parsed = urlsplit(value["url"])
-    host, address = EgressPolicy(allowed_hosts=(parsed.hostname,)).resolve(parsed.hostname, parsed.port or 443)
-    with pinned_dns(host, address, parsed.port or 443), requests.Session() as session:
-        configure_session(session)
-        interfaces = _netbox_preflight(session, value)
+    with operation_stage(progress, "netbox"):
+        host, address = EgressPolicy(allowed_hosts=(parsed.hostname,)).resolve(parsed.hostname, parsed.port or 443)
+        with pinned_dns(host, address, parsed.port or 443), requests.Session() as session:
+            configure_session(session)
+            interfaces = _netbox_preflight(session, value)
     state = dict(value["state"])
     if value["operation"] == "connect":
-        state.update({k: v for k, v in setup(value, interfaces).items() if k in ("ssh_port", "host_key")})
+        with operation_stage(progress, "https"):
+            state.update({k: v for k, v in setup(value, interfaces).items() if k in ("ssh_port", "host_key")})
     if "host_key" not in state:
         raise SetupError("CONNECT_REQUIRED")
     if progress is not None:
         progress.update(ssh_port=state["ssh_port"], host_key=state["host_key"])
-    snapshot = collect(state, value["policy"])
+    with operation_stage(progress, "ssh"):
+        snapshot = collect(state, value["policy"])
     snapshot["collection_interval_seconds"] = (
         value.get("data", {}).get("interval_minutes", state.get("interval_minutes", 60))
         if value["operation"] == "connect"
@@ -384,7 +409,11 @@ def run(value, progress=None):
     preview = build_preview(snapshot["network"], interfaces, value["vm_id"])
     if not preview["all_interfaces_matched"] or preview["unmatched_vm_interfaces"]:
         raise SetupError("VM_IDENTITY_MISMATCH")
-    with pinned_dns(host, address, parsed.port or 443), requests.Session() as session:
+    with (
+        operation_stage(progress, "netbox"),
+        pinned_dns(host, address, parsed.port or 443),
+        requests.Session() as session,
+    ):
         configure_session(session)
         _import_snapshot(session, value, snapshot)
     return {"collected_at": snapshot["collected_at"], "ssh_port": state["ssh_port"], "host_key": state["host_key"]}

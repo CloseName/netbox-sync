@@ -82,6 +82,16 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
     assert rule.name == 'Changed web' and rule.custom_field_data['operator_note'] == 'keep'
     assert rule.uid in ids
     client = Client(); client.force_login(user)
+    from django.conf import settings
+    client.cookies[settings.LANGUAGE_COOKIE_NAME] = 'ru'
+    english = Client()
+    english.force_login(admin)
+    english.cookies[settings.LANGUAGE_COOKIE_NAME] = 'en'
+    overview_url = reverse('plugins:netbox_guard:pfsense_overview')
+    assert 'Имя и размещение' in client.get(overview_url).content.decode()
+    english_html = english.get(overview_url).content.decode()
+    assert 'Name and placement' in english_html and 'Last collection' in english_html
+    assert 'Имя и размещение' not in english_html
     denied = Client(); denied.force_login(guest)
     for url in (reverse('plugins:netbox_guard:pfsense_overview'), first.get_absolute_url(), rule.get_absolute_url()):
         response = client.get(url)
@@ -118,8 +128,22 @@ with transaction.atomic(), override_settings(ALLOWED_HOSTS=['testserver']):
                 response = client.get(first.get_absolute_url(), {'section': section['key'], 'view': view['key'], 'sub': sub['key']})
                 assert response.status_code == 200, (section, view, sub, response.status_code)
     overview_html = client.get(reverse('plugins:netbox_guard:pfsense_overview')).content.decode()
-    assert '<th>Хост</th>' in overview_html and '<th>Правила</th>' not in overview_html
-    assert '>VM в NetBox</a>' in overview_html
+    assert first.get_absolute_url() in overview_html
+    assert '>VM в NetBox</a>' not in overview_html
+    vm_tab = reverse('virtualization:virtualmachine_firewall', args=[vms[0].pk])
+    native = client.get(vm_tab, {'scope':'firewall', 'q':'Changed web'})
+    assert native.status_code == 200 and 'Changed web' in native.content.decode()
+    assert 'Межсетевой экран' in client.get(vms[0].get_absolute_url()).content.decode()
+    assert 'Search this firewall' in english.get(vm_tab).content.decode()
+    overview = english.get(vms[0].get_absolute_url()).content.decode()
+    disks_url = reverse('virtualization:virtualmachine_disks', args=[vms[0].pk])
+    assert overview.index(f'href="{disks_url}"') < overview.index(f'href="{vm_tab}"')
+    ordinary = VirtualMachine.objects.create(name='ordinary-vm-without-firewall')
+    ordinary_tab = reverse('virtualization:virtualmachine_firewall', args=[ordinary.pk])
+    assert ordinary_tab not in english.get(ordinary.get_absolute_url()).content.decode()
+    assert english.get(ordinary_tab).status_code == 404
+    assert client.get(reverse('virtualization:virtualmachine_firewall', args=[vms[1].pk])).status_code == 404
+    assert denied.get(vm_tab).status_code in (403, 404)
     legacy_html = client.get(first.get_absolute_url(), {'section': 'system', 'view': 'users'}).content.decode()
     assert 'Этот раздел ещё не собран' in legacy_html
     # Scoped UI search ignores attempts to inject another firewall or category.

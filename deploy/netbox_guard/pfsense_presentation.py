@@ -2,6 +2,7 @@
 from collections import Counter, defaultdict
 from urllib.parse import parse_qsl, urlencode
 
+from .pfsense_locale import label as ui_label
 from .models import FirewallReference
 from .pfsense_catalog import fields
 from .pfsense_catalog_policy import ALIAS_FIELDS, contains, rule_groups, tokens
@@ -20,9 +21,9 @@ def interface_label(key, labels):
 
 def location(obj, labels):
     section, page, leaf, _ = resolve(dict(parse_qsl(object_path(obj.component, obj.table)[1:])))
-    parts = [section['label'], page['label']]
+    parts = [ui_label(section['label']), ui_label(page['label'])]
     if page is not leaf:
-        parts.append(leaf['label'])
+        parts.append(ui_label(leaf['label']))
     if obj.component == 'firewall':
         parts.extend(interface_label(key, labels) for key in rule_groups(obj.data))
     return ' → '.join(parts)
@@ -118,5 +119,5 @@ def decorate(page, appliance, group, labels, selected, back):
                     'section': 'services', 'view': 'dhcp', 'sub': 'static_ipv4', 'scope': 'firewall', 'q': address})
         hit.update(number=number, path=location(obj, labels),
                    url=obj.get_absolute_url() + '?' + urlencode({'back': back}),
-                   columns=table_cells(obj, columns, refs[obj.pk], related[obj.pk]))
+                   columns=table_cells(obj, columns, refs[obj.pk], related[obj.pk], translate=ui_label))
     return [HEADINGS[key] for key in columns]

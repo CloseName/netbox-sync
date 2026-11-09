@@ -131,7 +131,7 @@ VALIDITY = {"valid": "Действует", "expired": "Истёк", "not_yet_val
 PRIMARY = {"name", "description", "descr", "network", "ipaddr", "fqdn", "domain", "serial", "common_name"}
 
 
-def cell_data(obj, key, refs, related):
+def cell_data(obj, key, refs, related, translate=str):
     data = obj.data
 
     def item(text, url=None):
@@ -147,7 +147,7 @@ def cell_data(obj, key, refs, related):
     def endpoint(side):
         found = values(side + "/address") + values(side + "/network")
         if data.get(side + "/any"):
-            found.append(item("Любой"))
+            found.append(item(translate("Любой")))
         return found
 
     def paired(left, right, delimiter):
@@ -160,13 +160,13 @@ def cell_data(obj, key, refs, related):
         side = key.split("_")[0]
         parts = endpoint(side)
         if key.endswith("_endpoint") and data.get(side + "/port"):
-            parts.extend(item("порт " + v["text"], v["url"]) for v in values(side + "/port"))
+            parts.extend(item(translate("порт") + " " + v["text"], v["url"]) for v in values(side + "/port"))
         return parts
     if key in ("source/port", "destination/port"):
-        return values(key) or [item("Любой")]
+        return values(key) or [item(translate("Любой"))]
     if key == "members":
         if data.get("content_omitted"):
-            return [item("Содержимое не собрано")]
+            return [item(translate("Содержимое не собрано"))]
         return [
             item(v, refs.get(("address", v)))
             for part in data.get("address", [])
@@ -177,26 +177,26 @@ def cell_data(obj, key, refs, related):
     if key == "transport":
         families = {"inet": "IPv4", "inet6": "IPv6", "inet46": "IPv4/IPv6"}
         family = joined("ipprotocol")
-        return [item(" ".join(filter(None, [families.get(family, family), joined("protocol").upper() or "Любой"])))]
+        return [item(" ".join(filter(None, [families.get(family, family), joined("protocol").upper() or translate("Любой")])))]
     if key == "action":
         return [item(joined("type").capitalize())] if joined("type") else []
     if key == "queue":
         return values("defaultqueue") + [item("ACK " + v["text"]) for v in values("ackqueue")]
     if key == "redirect":
         return (
-            [item("Без NAT")]
+            [item(translate("Без NAT"))]
             if data.get("nordr")
-            else values("target") + [item("порт " + v["text"], v["url"]) for v in values("local-port")]
+            else values("target") + [item(translate("порт") + " " + v["text"], v["url"]) for v in values("local-port")]
         )
     if key == "translation_mode":
-        return [item("Без NAT" if data.get("nobinat") else "1:1")]
+        return [item(translate("Без NAT") if data.get("nobinat") else "1:1")]
     if key == "translation":
         if data.get("nonat"):
-            return [item("Без NAT")]
+            return [item(translate("Без NAT"))]
         parts = values("targetip") or values("target")
-        parts.extend(item("порт " + v["text"], v["url"]) for v in values("natport"))
+        parts.extend(item(translate("порт") + " " + v["text"], v["url"]) for v in values("natport"))
         if data.get("staticnatport"):
-            parts.append(item("Сохранить порт"))
+            parts.append(item(translate("Сохранить порт")))
         return parts
     if key == "fqdn":
         return [item(".".join(v for v in (joined("host"), joined("domain")) if v))]
@@ -210,14 +210,14 @@ def cell_data(obj, key, refs, related):
         path = "allowedips/item/" if key == "allowed_networks" else "addresses/item/"
         return paired(path + "address", path + "mask", "/")
     if key == "validity":
-        return [item(VALIDITY.get(v, v)) for v in data.get(key, [])]
+        return [item(translate(VALIDITY[v]) if v in VALIDITY else v) for v in data.get(key, [])]
     return values(key)
 
 
-def table_cells(obj, columns, references, related=None):
+def table_cells(obj, columns, references, related=None, translate=str):
     cells = []
     for key in columns:
-        items = cell_data(obj, key, references, related or {})
+        items = cell_data(obj, key, references, related or {}, translate)
         side = key.split("_")[0]
         prefix = "Кроме" if side in ("source", "destination") and obj.data.get(side + "/not") else ""
         cells.append(

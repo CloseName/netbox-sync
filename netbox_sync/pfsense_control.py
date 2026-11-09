@@ -15,6 +15,7 @@ from .child_process import child_process, stop_child
 PUBLIC = (
     "status",
     "error",
+    "error_stage",
     "address",
     "port",
     "verify_tls",
@@ -30,7 +31,10 @@ PUBLIC = (
 def public(value):
     """Project public pfSense connection state without private key material."""
 
-    return {k: value[k] for k in PUBLIC if k in value}
+    result = {k: value[k] for k in PUBLIC if k in value}
+    if value.get("collected_at") and value.get("address"):
+        result["confirmed_address"] = value["address"]
+    return result
 
 
 def atomic(path, value):
@@ -106,7 +110,10 @@ def _prepare_connection(state, data):
     data["password"] = original["password"]
     endpoint = {k: data[k] for k in ("address", "port", "verify_tls")}
     if "key" in state and any(state.get(k) != endpoint[k] for k in ("address", "port")):
-        return data, {"error": "ENDPOINT_CHANGED", "status": state["status"]}
+        if state.get("collected_at") or state["status"] == "CONNECTED":
+            return data, {"error": "ENDPOINT_CHANGED", "status": state["status"]}
+        # A different candidate gets a separate key, ownership marker and host pin.
+        state.clear()
     if "key" not in state:
         key = Ed25519PrivateKey.generate()
         state.update(
@@ -153,7 +160,7 @@ def _collect(store, path, state, command, policy):
     """Persist reservation before remote work and retain successful SSH preparation."""
     vm, operation, data = command
     state["next_attempt"] = time.time() + state.get("interval_minutes", 60) * 60
-    state.update(status="RUNNING", error=None, started_at=time.time())
+    state.update(status="RUNNING", error=None, error_stage=None, started_at=time.time())
     atomic(path, state)  # Persist key before any remote mutation; retries reuse it.
     url, read_token = runtime_netbox(store.path, "read")
     _, apply_token = runtime_netbox(store.path, "apply")
@@ -178,7 +185,7 @@ def _collect(store, path, state, command, policy):
     ):
         state.update(ssh_port=result["ssh_port"], host_key=result["host_key"])
     if result.get("error"):
-        state.update(status="ATTENTION", error=result["error"])
+        state.update(status="ATTENTION", error=result["error"], error_stage=result.get("error_stage"))
     else:
         if operation == "connect":
             state.update(sync_enabled=data["sync_enabled"], interval_minutes=data["interval_minutes"])
